@@ -36,6 +36,9 @@ class CartController extends Controller
 
         $item = MenuItem::findOrFail($data['menu_item_id']);
         if (! $item->is_available) {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json(['ok' => false, 'error' => 'الصنف غير متوفر حالياً'], 422);
+            }
             return back()->with('error', 'الصنف غير متوفر حالياً');
         }
 
@@ -44,13 +47,13 @@ class CartController extends Controller
 
         $row = [
             'id' => uniqid(),
-            'menu_item_id' => $item->id,
+            'menu_item_id' => (int) $item->id,
             'name' => $item->name,
             'image' => $item->imageUrl(),
-            'quantity' => $data['quantity'],
+            'quantity' => (int) $data['quantity'],                // force int — avoids "1"+1="11" on client
             'unit_price' => (float) $item->price,
             'modifier_ids' => $data['modifier_ids'] ?? [],
-            'modifiers' => $modifiers->map(fn($m) => ['id'=>$m->id, 'name'=>$m->name, 'price_delta'=>(float)$m->price_delta])->values()->toArray(),
+            'modifiers' => $modifiers->map(fn($m) => ['id'=>(int)$m->id, 'name'=>$m->name, 'price_delta'=>(float)$m->price_delta])->values()->toArray(),
             'modifiers_total' => (float) $modifiers->sum('price_delta'),
             'notes' => $data['notes'] ?? null,
         ];
@@ -58,6 +61,12 @@ class CartController extends Controller
 
         $cart[] = $row;
         session()->put('cart.'.$session->token, $cart);
+
+        // AJAX requests get back the row (so the client can replace its tmp_id
+        // with the server-generated id and future update/remove calls work).
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json(['ok' => true, 'row' => $row]);
+        }
 
         return redirect()->route('customer.cart.view')->with('success', 'تمت إضافة الصنف للسلة');
     }
@@ -74,8 +83,9 @@ class CartController extends Controller
         foreach ($cart as $i => $row) {
             if ($row['id'] === $data['row_id']) {
                 if (array_key_exists('quantity', $data) && $data['quantity'] !== null) {
-                    $cart[$i]['quantity'] = $data['quantity'];
-                    $cart[$i]['subtotal'] = ($row['unit_price'] + $row['modifiers_total']) * $data['quantity'];
+                    $qty = (int) $data['quantity'];                 // force int
+                    $cart[$i]['quantity'] = $qty;
+                    $cart[$i]['subtotal'] = ($row['unit_price'] + $row['modifiers_total']) * $qty;
                 }
                 if (array_key_exists('notes', $data)) {
                     $cart[$i]['notes'] = $data['notes'];

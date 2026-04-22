@@ -500,6 +500,112 @@ body { padding-bottom: env(safe-area-inset-bottom); min-height: 100vh; }
 @keyframes pulse-brand { 0%, 100% { box-shadow: 0 0 0 0 rgba(5,150,105,.5); } 50% { box-shadow: 0 0 0 12px rgba(5,150,105,0); } }
 .pulse { animation: pulse-brand 1.8s infinite; }
 
+
+/* ═══════════════════════════════════════════════════════════════════════
+   RESPONSIVE OVERRIDES — mobile (<576px) + tablet (576-991px)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Global: always reserve bottom space for the fixed cart FAB on mobile/tablet
+   (prevents it from covering the last dish row). */
+body { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+@media (min-width: 992px) {
+    body { padding-bottom: env(safe-area-inset-bottom); }
+}
+
+/* ── PHONES (<576px) ───────────────────────────────────────────────── */
+@media (max-width: 575.98px) {
+    /* Topbar — shrink padding + typography so it's ~64px not 90px */
+    .app-topbar { padding: .55rem .75rem; }
+    .app-topbar h4 { font-size: 1rem; gap: 6px; }
+    .app-topbar .sub { font-size: .7rem; }
+    .logo-icon { width: 28px; height: 28px; }
+    .logo-icon svg { width: 16px; height: 16px; }
+    .table-big { padding: 2px 8px; font-size: .72rem; border-radius: 8px; }
+    .chip { padding: 3px 8px; font-size: .7rem; }
+    .chip-orders { padding: 4px 10px; font-size: .7rem; }
+    .chip-badge { min-width: 16px; height: 16px; font-size: .62rem; }
+
+    /* Hero — cut vertical space roughly 40% */
+    .hero { padding: .85rem .75rem .5rem; }
+    .hero h2 { font-size: 1.1rem; margin: .25rem 0 .1rem; }
+    .hero .welcome-emoji { font-size: 1.9rem; }
+    .hero .subtitle { font-size: .78rem; }
+    .hero::before, .hero::after { width: 100px; height: 100px; }
+
+    /* Category tabs — compact chips */
+    .cat-tabs { padding: .45rem 0; }
+    .cat-tab { padding: 5px 12px; font-size: .78rem; }
+    .cat-tabs-scroll { gap: 6px; padding: 0 .75rem; }
+
+    /* Section title (per category) — smaller */
+    .cat-section { padding: .6rem .75rem .2rem; }
+    .cat-title { font-size: .95rem; }
+    .cat-title .count { font-size: .65rem; padding: 1px 7px; }
+    .view-toggle { font-size: .7rem; padding: 3px 9px; }
+
+    /* Dish cards — tighten to maximize content visible */
+    .menu-grid { gap: .5rem; padding: .5rem; }
+    .dish-body { padding: .6rem .55rem .55rem; }
+    .dish-name { font-size: .85rem; line-height: 1.2; margin-bottom: 2px; }
+    .dish-desc { font-size: .66rem; -webkit-line-clamp: 2; }
+    .dish-price { font-size: .95rem; }
+    .dish-foot { padding-top: 6px; gap: 6px; }
+    .dish-add-fab { width: 32px; height: 32px; font-size: 1.1rem; }
+    .dish-stepper button { width: 28px; height: 32px; font-size: 1rem; }
+    .dish-stepper .qty { padding: 0 6px; font-size: .85rem; min-width: 18px; }
+    .badge-today, .badge-prep, .badge-options { font-size: .6rem; padding: 2px 6px; }
+
+    /* Slider track — show ~1.8 cards so user sees there's MORE to swipe */
+    .slider-track > .dish { flex: 0 0 calc(55% - .35rem); }
+
+    /* Cart FAB — smaller + less obtrusive */
+    .cart-fab {
+        padding: 11px 14px;
+        font-size: .88rem;
+        bottom: calc(.75rem + env(safe-area-inset-bottom));
+        left: .75rem; right: .75rem;
+        border-radius: 14px;
+    }
+    .cart-fab .count { min-width: 24px; height: 24px; font-size: .8rem; }
+
+    /* Sheet modals — take full viewport on phone (was 85vh) */
+    .sheet { max-height: 92vh; border-radius: 18px 18px 0 0; }
+    .sheet-body { padding: 0 .85rem 1rem; }
+    .sheet-header { padding: .75rem .85rem; }
+    .sheet-footer { padding: .75rem .85rem calc(.75rem + env(safe-area-inset-bottom)); }
+    .sheet-header h5 { font-size: 1rem; }
+
+    /* Modifier option rows — slightly denser */
+    .mod-opt { padding: 8px 10px; font-size: .88rem; }
+
+    /* Dish image on mobile — slightly shorter so 2 rows fit above fold */
+    .dish-img { aspect-ratio: 4/3; }
+}
+
+/* ── TABLETS (576-991px) ───────────────────────────────────────────── */
+@media (min-width: 576px) and (max-width: 991.98px) {
+    /* 3 columns on tablet feels right for dish cards */
+    .menu-grid { grid-template-columns: repeat(3, 1fr); }
+
+    /* Slider shows 3 cards fully visible + hint of 4th */
+    .slider-track > .dish { flex: 0 0 calc(33% - .5rem); }
+
+    /* Topbar still compact — don't let the h4 wrap */
+    .app-topbar h4 { font-size: 1.15rem; }
+
+    /* Hero balanced — not as tall as desktop */
+    .hero { padding: 1.1rem 1rem .6rem; }
+    .hero h2 { font-size: 1.25rem; }
+}
+
+/* ── Orientation: landscape phone (very short viewport) ──────────── */
+@media (max-height: 500px) and (orientation: landscape) {
+    .hero { padding: .5rem .75rem .4rem; }
+    .hero .welcome-emoji { font-size: 1.5rem; }
+    .hero h2 { font-size: 1rem; margin: 0 0 .1rem; }
+    .hero .subtitle { font-size: .7rem; }
+}
+
 /* ── Unavailable item: dim, non-interactive, clear visual cue ────────── */
 .dish.is-unavailable {
     opacity: .55;
@@ -524,6 +630,17 @@ body { padding-bottom: env(safe-area-inset-bottom); min-height: 100vh; }
     cursor: not-allowed;
     flex-shrink: 0;
 }
+
+/* Optimistic-update: mildly dim stepper+qty while server is syncing (rare, <300ms usually) */
+.dish-stepper.is-pending { opacity: .75; }
+.dish-stepper.is-pending .qty::after {
+    content: '…';
+    display: inline-block;
+    margin-inline-start: 2px;
+    animation: dot-pulse 1s infinite;
+    opacity: .6;
+}
+@keyframes dot-pulse { 0%,100% { opacity:.6; } 50% { opacity:.1; } }
 
 /* Improved "unavailable" overlay (more readable) */
 .badge-unavail {
@@ -641,33 +758,38 @@ body { padding-bottom: env(safe-area-inset-bottom); min-height: 100vh; }
             </div>
         </div>
         <div class="d-flex align-items-center gap-2">
-            @php
-                $curSvc = app(\App\Services\CurrencyService::class);
-                $activeCurrencies = $curSvc->active();
-                $currentCurrency = $curSvc->current();
-            @endphp
-            @if($activeCurrencies->count() > 1)
-                <div class="dropdown">
-                    <button class="chip" type="button" data-bs-toggle="dropdown" aria-expanded="false" style="background: rgba(255,255,255,.12);">
-                        <i class="bi bi-currency-exchange"></i>
-                        {{ $currentCurrency->code }}
-                    </button>
-                    <ul class="dropdown-menu dropdown-menu-end" style="min-width: 200px;">
-                        <li class="dropdown-header small">اختر العملة</li>
-                        @foreach($activeCurrencies as $cur)
-                            <li>
-                                <form method="POST" action="{{ route('customer.currency.switch') }}" class="m-0">
-                                    @csrf
-                                    <input type="hidden" name="code" value="{{ $cur->code }}">
-                                    <button class="dropdown-item d-flex justify-content-between align-items-center {{ $cur->id === $currentCurrency->id ? 'active' : '' }}" type="submit">
-                                        <span>{{ $cur->name }}</span>
-                                        <span class="text-muted fw-bold">{{ $cur->code }} {{ $cur->symbol }}</span>
-                                    </button>
-                                </form>
-                            </li>
-                        @endforeach
-                    </ul>
-                </div>
+            {{-- Currency switcher — hidden by default. Enable via config
+                 `restaurant.customer.currency_switcher` when you need
+                 multi-currency UX. --}}
+            @if(config('restaurant.customer.currency_switcher', false))
+                @php
+                    $curSvc = app(\App\Services\CurrencyService::class);
+                    $activeCurrencies = $curSvc->active();
+                    $currentCurrency = $curSvc->current();
+                @endphp
+                @if($activeCurrencies->count() > 1)
+                    <div class="dropdown">
+                        <button class="chip" type="button" data-bs-toggle="dropdown" aria-expanded="false" style="background: rgba(255,255,255,.12);">
+                            <i class="bi bi-currency-exchange"></i>
+                            {{ $currentCurrency->code }}
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end" style="min-width: 200px;">
+                            <li class="dropdown-header small">اختر العملة</li>
+                            @foreach($activeCurrencies as $cur)
+                                <li>
+                                    <form method="POST" action="{{ route('customer.currency.switch') }}" class="m-0">
+                                        @csrf
+                                        <input type="hidden" name="code" value="{{ $cur->code }}">
+                                        <button class="dropdown-item d-flex justify-content-between align-items-center {{ $cur->id === $currentCurrency->id ? 'active' : '' }}" type="submit">
+                                            <span>{{ $cur->name }}</span>
+                                            <span class="text-muted fw-bold">{{ $cur->code }} {{ $cur->symbol }}</span>
+                                        </button>
+                                    </form>
+                                </li>
+                            @endforeach
+                        </ul>
+                    </div>
+                @endif
             @endif
 
             @if($activeOrdersCount > 0)

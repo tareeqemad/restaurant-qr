@@ -5,6 +5,14 @@ return [
     'currency' => env('RESTAURANT_CURRENCY', 'JOD'),
     'currency_symbol' => env('RESTAURANT_CURRENCY_SYMBOL', 'د.أ'),
 
+    // Customer-facing feature flags
+    'customer' => [
+        // Show a currency switcher in the customer topbar (dropdown).
+        // Default OFF — most restaurants only need one currency.
+        // Enable via env when you actually want multi-currency UX.
+        'currency_switcher' => env('CUSTOMER_CURRENCY_SWITCHER', false),
+    ],
+
     'tax' => [
         'enabled' => env('RESTAURANT_TAX_ENABLED', true),
         'rate' => (float) env('RESTAURANT_TAX_RATE', 16),

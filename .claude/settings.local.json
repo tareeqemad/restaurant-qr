@@ -219,7 +219,14 @@
       "Bash(grep -c \"scrollTo\\\\|scrollBy\\\\|slide\\(direction\\)\\\\|sliderSection\" /tmp/m.html echo \"---\" tail -50 /tmp/m.html)",
       "Bash(git init *)",
       "Bash(grep -E \"^\\\\?\\\\? \\\\.env$\")",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git config *)",
+      "Bash(echo \"user: $\\(git config user.name\\) <$\\(git config user.email\\)>\")",
+      "Bash(git commit -m ' *)",
+      "Bash(git remote *)",
+      "Bash(git branch *)",
+      "Bash(git push *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:8000/menu/XegsLHMImteEuFzni1HmbIRk)"
     ]
   }
 }

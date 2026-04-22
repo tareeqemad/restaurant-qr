@@ -266,9 +266,9 @@
 
                             <div class="d-flex justify-content-between align-items-center mt-2">
                                 <div class="stepper stepper-sm">
-                                    <button type="button" @click="updateQty(row.id, row.quantity - 1)">−</button>
-                                    <input type="number" :value="row.quantity" readonly>
-                                    <button type="button" @click="updateQty(row.id, row.quantity + 1)">+</button>
+                                    <button type="button" @click="updateQty(row.id, Number(row.quantity) - 1)">−</button>
+                                    <input type="number" :value="Number(row.quantity)" readonly>
+                                    <button type="button" @click="updateQty(row.id, Number(row.quantity) + 1)">+</button>
                                 </div>
                                 <button type="button" class="btn btn-sm btn-link text-danger" @click="removeRow(row.id)">
                                     <i class="bi bi-trash3"></i> إزالة
@@ -416,27 +416,71 @@ function menuApp() {
             if (itemData.has_modifiers) this.openItem(itemData);
         },
 
-        // Quick add: creates new row or increments existing matching row (same item + same notes)
+        // Quick add — OPTIMISTIC: UI flips to stepper IMMEDIATELY, server
+        // sync happens in background. On failure, we roll back.
         async quickAdd(itemData) {
             const notes = (this.cardNotes[itemData.id] || '').trim();
+            const sourceImg = document.querySelector(`[data-dish-img="${itemData.id}"]`);
 
-            // Find existing simple row for same item with same notes
+            /* ── CASE A: this item already has a simple row in cart → bump qty ── */
             const existing = this.cart.find(r =>
                 Number(r.menu_item_id) === Number(itemData.id)
                 && (r.modifiers || []).length === 0
                 && (r.notes || '') === notes
             );
-
-            const sourceImg = document.querySelector(`[data-dish-img="${itemData.id}"]`);
-
             if (existing) {
-                const newQty = Number(existing.quantity) + 1;
-                await this.updateQty(existing.id, newQty);
+                // Optimistic bump
+                const oldQty = Number(existing.quantity);
+                const newQty = oldQty + 1;
+                existing.quantity = newQty;
+                existing.subtotal = (Number(existing.unit_price) + Number(existing.modifiers_total)) * newQty;
                 this.flyToCart(sourceImg, itemData.image, itemData.name);
+
+                // Sync in background
+                try {
+                    const fd = new FormData();
+                    fd.append('_token', document.querySelector('meta[name=csrf-token]').content);
+                    fd.append('row_id', existing.id);
+                    fd.append('quantity', newQty);
+                    const res = await fetch(@json(route('customer.cart.update')), {
+                        method: 'POST',
+                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+                        body: fd,
+                        credentials: 'same-origin',
+                    });
+                    if (! res.ok && ! res.redirected) {
+                        // Rollback
+                        existing.quantity = oldQty;
+                        existing.subtotal = (Number(existing.unit_price) + Number(existing.modifiers_total)) * oldQty;
+                        showToast('تعذّر تحديث الكمية', 'danger');
+                    }
+                } catch (e) {
+                    existing.quantity = oldQty;
+                    existing.subtotal = (Number(existing.unit_price) + Number(existing.modifiers_total)) * oldQty;
+                    showToast('خطأ اتصال — حاول مجدداً', 'danger');
+                }
                 return;
             }
 
-            // New row via server
+            /* ── CASE B: new row — push to cart INSTANTLY, then verify with server ── */
+            const tmpId = 'tmp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+            const optimisticRow = {
+                id: tmpId,
+                menu_item_id: itemData.id,
+                name: itemData.name,
+                image: itemData.image,
+                quantity: 1,
+                unit_price: Number(itemData.price),
+                modifiers: [],
+                modifiers_total: 0,
+                subtotal: Number(itemData.price),
+                notes: notes,
+                _pending: true,   // visual hint (dimmed) while server confirms
+            };
+            this.cart.push(optimisticRow);
+            this.flyToCart(sourceImg, itemData.image, itemData.name);
+
+            // Background sync
             const fd = new FormData();
             fd.append('_token', document.querySelector('meta[name=csrf-token]').content);
             fd.append('menu_item_id', itemData.id);
@@ -451,41 +495,37 @@ function menuApp() {
                     credentials: 'same-origin',
                 });
                 if (res.status === 419) {
+                    this.cart = this.cart.filter(r => r.id !== tmpId);
                     this.handleSessionExpired();
                     return;
                 }
-                if (res.ok || res.redirected) {
-                    this.cart.push({
-                        id: 'tmp_' + Date.now(),
-                        menu_item_id: itemData.id,
-                        name: itemData.name,
-                        image: itemData.image,
-                        quantity: 1,
-                        unit_price: Number(itemData.price),
-                        modifiers: [],
-                        modifiers_total: 0,
-                        subtotal: Number(itemData.price),
-                        notes: notes,
-                    });
-                    this.flyToCart(sourceImg, itemData.image, itemData.name);
-                } else {
-                    // Try to surface the server error so user sees WHY
-                    let msg = 'تعذّر إضافة الصنف';
+                if (res.ok) {
+                    // Replace tmp id with server's real row id so future
+                    // updates/removes match on the server side.
                     try {
-                        const body = await res.text();
-                        // Check if Laravel responded with a flash error in HTML
-                        const m = body.match(/name="error-message"\s+content="([^"]+)"/);
-                        if (m) msg = m[1];
-                        else if (res.status === 422) msg = 'الصنف غير متوفر أو نقص في المخزون';
-                        else if (res.status === 403) msg = 'لا يُسمح بإضافة هذا الصنف الآن';
-                        else msg += ` (HTTP ${res.status})`;
-                    } catch (_) { msg += ` (HTTP ${res.status})`; }
-                    console.warn('[Cart] add failed for item', itemData.id, itemData.name, 'status:', res.status);
+                        const data = await res.json();
+                        if (data && data.row && data.row.id) {
+                            optimisticRow.id = data.row.id;
+                        }
+                    } catch (_) { /* non-JSON response is fine too */ }
+                    optimisticRow._pending = false;
+                } else if (res.redirected) {
+                    // Non-AJAX redirect — server accepted but gave us HTML back.
+                    // Tmp id stays; not ideal but the add succeeded.
+                    optimisticRow._pending = false;
+                } else {
+                    // Rollback on failure
+                    this.cart = this.cart.filter(r => r.id !== tmpId);
+                    let msg = 'تعذّر إضافة الصنف';
+                    if (res.status === 422) msg = 'الصنف غير متوفر';
+                    else if (res.status === 403) msg = 'لا يُسمح بهذا الصنف الآن';
+                    console.warn('[Cart] add failed', res.status, itemData.name);
                     showToast(msg, 'danger');
                 }
             } catch (e) {
+                this.cart = this.cart.filter(r => r.id !== tmpId);
                 console.error('[Cart] fetch error:', e);
-                showToast('خطأ اتصال بالخادم — حاول مجدداً', 'danger');
+                showToast('خطأ اتصال — حاول مجدداً', 'danger');
             }
         },
 
@@ -563,6 +603,7 @@ function menuApp() {
         },
 
         async addToCart() {
+            // Client-side validation first
             for (const g of (this.selectedItem.modifier_groups || [])) {
                 const picked = this.selectedMods.filter(x => x.group_id === g.id).length;
                 if (g.required && picked < g.min_select) {
@@ -575,47 +616,71 @@ function menuApp() {
                 }
             }
 
+            const addedImage = this.selectedItem.image;
+            const addedName = this.selectedItem.name;
+            const addedId   = this.selectedItem.id;
+            const sourceImg = document.querySelector(`[data-dish-img="${addedId}"]`);
+
+            // Optimistic: push row to cart + close modal + fly animation — ALL IMMEDIATELY
+            const tmpId = 'tmp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+            const optimisticRow = {
+                id: tmpId,
+                menu_item_id: addedId,
+                name: addedName,
+                image: addedImage,
+                quantity: this.itemQty,
+                unit_price: Number(this.selectedItem.price),
+                modifiers: this.selectedMods.map(m => ({
+                    id: m.id,
+                    name: (this.selectedItem.modifier_groups.flatMap(g => g.modifiers).find(mm => mm.id === m.id) || {}).name,
+                    price_delta: m.price_delta,
+                })),
+                modifiers_total: this.selectedMods.reduce((s, m) => s + m.price_delta, 0),
+                subtotal: this.computePrice(),
+                notes: this.itemNotes,
+                _pending: true,
+            };
+            this.cart.push(optimisticRow);
+            this.closeAll();
+            setTimeout(() => this.flyToCart(sourceImg, addedImage, addedName), 100);
+
+            // Sync with server
             const fd = new FormData();
             fd.append('_token', document.querySelector('meta[name=csrf-token]').content);
-            fd.append('menu_item_id', this.selectedItem.id);
-            fd.append('quantity', this.itemQty);
-            fd.append('notes', this.itemNotes);
+            fd.append('menu_item_id', addedId);
+            fd.append('quantity', optimisticRow.quantity);
+            fd.append('notes', optimisticRow.notes || '');
             this.selectedMods.forEach(m => fd.append('modifier_ids[]', m.id));
 
             try {
-                const res = await fetch(@json(route('customer.cart.add')), { method: 'POST', body: fd, credentials: 'same-origin' });
-                if (res.ok || res.redirected) {
-                    const addedImage = this.selectedItem.image;
-                    const addedName = this.selectedItem.name;
-
-                    this.cart.push({
-                        id: 'tmp_' + Date.now(),
-                        menu_item_id: this.selectedItem.id,
-                        name: addedName,
-                        image: addedImage,
-                        quantity: this.itemQty,
-                        unit_price: Number(this.selectedItem.price),
-                        modifiers: this.selectedMods.map(m => ({
-                            id: m.id,
-                            name: (this.selectedItem.modifier_groups.flatMap(g => g.modifiers).find(mm => mm.id === m.id) || {}).name,
-                            price_delta: m.price_delta,
-                        })),
-                        modifiers_total: this.selectedMods.reduce((s, m) => s + m.price_delta, 0),
-                        subtotal: this.computePrice(),
-                        notes: this.itemNotes,
-                    });
-
-                    // Get source image element & cart target
-                    const sourceImg = document.querySelector(`[data-dish-img="${this.selectedItem.id}"]`);
-                    this.closeAll();
-
-                    // Fly animation after sheet closes
-                    setTimeout(() => this.flyToCart(sourceImg, addedImage, addedName), 100);
+                const res = await fetch(@json(route('customer.cart.add')), {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+                    body: fd,
+                    credentials: 'same-origin',
+                });
+                if (res.status === 419) {
+                    this.cart = this.cart.filter(r => r.id !== tmpId);
+                    this.handleSessionExpired();
+                    return;
+                }
+                if (res.ok) {
+                    try {
+                        const data = await res.json();
+                        if (data && data.row && data.row.id) optimisticRow.id = data.row.id;
+                    } catch (_) {}
+                    optimisticRow._pending = false;
+                } else if (res.redirected) {
+                    optimisticRow._pending = false;
                 } else {
-                    alert('حدث خطأ، حاول مجدداً');
+                    // Rollback
+                    this.cart = this.cart.filter(r => r.id !== tmpId);
+                    showToast('تعذّر إضافة الصنف — حاول مجدداً', 'danger');
                 }
             } catch (e) {
-                alert('خطأ اتصال');
+                this.cart = this.cart.filter(r => r.id !== tmpId);
+                console.error('[Cart] modifier add failed:', e);
+                showToast('خطأ اتصال', 'danger');
             }
         },
 
@@ -652,7 +717,11 @@ function menuApp() {
         },
 
         async updateQty(rowId, qty) {
-            if (qty < 1) return this.removeRow(rowId);
+            // Force numeric — defends against `"1" + 1 = "11"` bug if any caller
+            // passes a string from an `<input>` or JSON payload.
+            qty = Number(qty);
+            if (!Number.isFinite(qty) || qty < 1) return this.removeRow(rowId);
+
             const fd = new FormData();
             fd.append('_token', document.querySelector('meta[name=csrf-token]').content);
             fd.append('row_id', rowId);
