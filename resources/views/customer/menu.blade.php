@@ -31,7 +31,7 @@
         <main class="menu-main">
             {{-- Featured --}}
             @if($featured->count())
-                <div class="menu-section" id="cat-featured" x-data="sliderSection()">
+                <div class="menu-section" id="cat-featured" x-data="sliderSection()" x-init="$nextTick(() => initSlider())">
                     <div class="cat-section">
                         <div class="cat-title">
                             <span class="bar"></span>
@@ -64,7 +64,7 @@
 
             {{-- Categories --}}
             @foreach($categories as $cat)
-                <div class="menu-section" id="cat-{{ $cat->id }}" x-data="sliderSection()">
+                <div class="menu-section" id="cat-{{ $cat->id }}" x-data="sliderSection()" x-init="$nextTick(() => initSlider())">
                     <div class="cat-section">
                         <div class="cat-title">
                             <span class="bar" @if($cat->color) style="background:{{ $cat->color }};" @endif></span>
@@ -812,25 +812,40 @@ function sliderSection() {
             this.$el.classList.toggle('grid-mode', this.mode === 'grid');
         },
         slide(direction) {
-            /* scrollBy is the safest cross-browser approach for RTL sliders.
-               In CSSOM View spec (all modern browsers), `scrollBy({left: X})`
-               uses LOGICAL coordinates: positive X = toward END of content
-               regardless of LTR/RTL. Direction maps 1:1 with scrollBy.left. */
+            /* Simpler, more robust: use 80% of the VISIBLE width as the step.
+               Works identically whether the track has 3 large cards or 10
+               tiny ones — each tap scrolls the visible viewport by ~80%.
+               Browser normalizes scrollBy.left for RTL automatically. */
             const track = this.$el.querySelector('.slider-track');
             if (! track) return;
-            const card = track.querySelector('.dish');
-            if (! card) return;
-            const step = (card.offsetWidth + 11) * 2;       // 2 cards
-
-            const before = track.scrollLeft;
+            const step = Math.max(200, track.clientWidth * 0.8);
             track.scrollBy({ left: direction * step, behavior: 'smooth' });
+            // After scroll settles, update arrow disabled states
+            setTimeout(() => this.updateArrows(), 350);
+        },
+        updateArrows() {
+            const track = this.$el.querySelector('.slider-track');
+            if (! track) return;
+            const prev = this.$el.querySelector('.slider-arrow-prev');
+            const next = this.$el.querySelector('.slider-arrow-next');
+            if (! prev || ! next) return;
 
-            // Diagnostic — visible only in devtools console
-            console.log('[slider] dir=' + direction,
-                'scrollLeft before=' + before,
-                'target delta=' + (direction * step),
-                'track.scrollWidth=' + track.scrollWidth,
-                'clientWidth=' + track.clientWidth);
+            const maxScroll = track.scrollWidth - track.clientWidth;
+            // In RTL, scrollLeft goes from 0 (start/visual-right) to -maxScroll
+            // (end/visual-left). Normalize to absolute distance from start.
+            const sl = Math.abs(track.scrollLeft);
+            const atStart = sl < 5;
+            const atEnd   = sl > maxScroll - 5;
+
+            prev.disabled = atStart;
+            next.disabled = atEnd;
+        },
+        initSlider() {
+            const track = this.$el.querySelector('.slider-track');
+            if (! track) return;
+            this.updateArrows();
+            track.addEventListener('scroll', () => this.updateArrows(), { passive: true });
+            window.addEventListener('resize', () => this.updateArrows());
         },
     };
 }

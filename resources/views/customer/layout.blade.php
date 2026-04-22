@@ -249,7 +249,7 @@ body { padding-bottom: env(safe-area-inset-bottom); min-height: 100vh; }
 @media (min-width: 576px) { .slider-track > .dish { flex: 0 0 calc(40% - .35rem); } }
 @media (min-width: 992px) { .slider-track > .dish { flex: 0 0 240px; } }
 
-/* Arrow nav — bigger click target, always visible on desktop */
+/* Arrow nav — visible on tablet (576px+) and desktop; swipe-only on phones */
 .slider-arrow {
     position: absolute; top: 50%; transform: translateY(-50%);
     width: 44px; height: 44px;
@@ -267,6 +267,8 @@ body { padding-bottom: env(safe-area-inset-bottom); min-height: 100vh; }
     z-index: 3;
     transition: all .18s ease;
     line-height: 1;
+    /* Prevent any iOS tap-highlight flash on the round button */
+    -webkit-tap-highlight-color: transparent;
 }
 .slider-arrow:hover {
     background: var(--brand-dark);
@@ -280,9 +282,16 @@ body { padding-bottom: env(safe-area-inset-bottom); min-height: 100vh; }
 .slider-arrow-prev { inset-inline-end: -6px; }
 .slider-arrow-next { inset-inline-start: -6px; }
 
-@media (min-width: 992px) { .slider-arrow { display: flex; } }
-/* Mobile: tap hints in place of arrows */
-@media (max-width: 991.98px) { .slider-arrow { display: none; } }
+/* Show arrows from tablet and up (was desktop-only — too restrictive) */
+@media (min-width: 576px) { .slider-arrow { display: flex; } }
+/* Small tablets: slightly smaller arrows so they don't dominate the row */
+@media (min-width: 576px) and (max-width: 991.98px) {
+    .slider-arrow { width: 38px; height: 38px; font-size: 1.2rem; }
+    .slider-arrow-prev { inset-inline-end: 2px; }
+    .slider-arrow-next { inset-inline-start: 2px; }
+}
+/* Phones (<576px): swipe-only, arrows hidden */
+@media (max-width: 575.98px) { .slider-arrow { display: none; } }
 
 /* View mode toggle button */
 .view-toggle {
