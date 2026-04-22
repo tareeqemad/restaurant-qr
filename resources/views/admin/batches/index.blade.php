@@ -1,0 +1,170 @@
+@extends('layouts.admin')
+@section('title', 'دفعات المكونات')
+
+@section('content')
+<x-admin.breadcrumb title="دفعات المكونات" icon="bi-box2-fill"
+    subtitle="تتبع الدفعات وتواريخ الصلاحية (FIFO)" />
+
+<x-admin.stat-rail :stats="[
+    ['label' => 'دفعات نشطة',          'value' => $stats['active'],                                'icon' => 'bi-box2-fill',                'color' => 'primary'],
+    ['label' => 'تنتهي خلال 7 أيام',    'value' => $stats['expiring'],                              'icon' => 'bi-alarm-fill',                'color' => 'accent'],
+    ['label' => 'منتهية الصلاحية',      'value' => $stats['expired'],                               'icon' => 'bi-x-octagon-fill',           'color' => 'danger'],
+    ['label' => 'قيمة المخزون',          'value' => \App\Helpers\Money::format($stats['total_value']),'icon' => 'bi-cash-coin',                'color' => 'success'],
+]" />
+
+@if($stats['expired'] > 0)
+<div class="alert alert-danger">
+    <i class="bi bi-exclamation-triangle-fill"></i>
+    يوجد <strong>{{ $stats['expired'] }}</strong> دفعة منتهية الصلاحية ولها مخزون متبقٍ!
+    يرجى معالجتها كـ "هدر" لإزالتها من المخزون.
+    <a href="?expired=1" class="alert-link">عرضها الآن</a>
+</div>
+@endif
+
+<x-admin.data-panel title="الدفعات" :count="$batches->total()" icon="bi-box2">
+    <x-slot:actions>
+        @if(request()->hasAny(['ingredient_id', 'expired', 'expiring', 'active']))
+            <a href="{{ route('admin.batches.index') }}" class="btn btn-light"><i class="bi bi-x-circle"></i> مسح</a>
+        @endif
+    </x-slot:actions>
+
+    <x-slot:filters>
+        <form class="row g-2">
+            <div class="col-md-4">
+                <select name="ingredient_id" class="form-select">
+                    <option value="">كل المكونات</option>
+                    @foreach($ingredients as $ing)
+                        <option value="{{ $ing->id }}" @selected(request('ingredient_id')==$ing->id)>{{ $ing->name }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="col-md-6 d-flex gap-3 align-items-center">
+                <label><input type="checkbox" name="active"  value="1" @checked(request('active'))>  نشطة فقط</label>
+                <label><input type="checkbox" name="expiring" value="1" @checked(request('expiring'))> تنتهي قريباً</label>
+                <label><input type="checkbox" name="expired"  value="1" @checked(request('expired'))>  منتهية</label>
+            </div>
+            <div class="col-md-2"><button class="btn btn-primary w-100"><i class="bi bi-funnel"></i> تطبيق</button></div>
+        </form>
+    </x-slot:filters>
+
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead class="bg-light">
+                <tr>
+                    <th>المكوّن</th>
+                    <th>رقم الدفعة</th>
+                    <th>تاريخ الاستلام</th>
+                    <th>الصلاحية</th>
+                    <th>الكمية الأولية</th>
+                    <th>المتبقي</th>
+                    <th>التكلفة/وحدة</th>
+                    <th>القيمة الحالية</th>
+                </tr>
+            </thead>
+            <tbody>
+                @forelse($batches as $b)
+                    @php
+                        $days = $b->daysUntilExpiry();
+                        $rowClass = $b->isExpired() ? 'table-danger' : ($b->isNearExpiry() ? 'table-warning' : '');
+                    @endphp
+                    <tr class="{{ $rowClass }} {{ $b->isDepleted() ? 'text-muted' : '' }}">
+                        <td class="fw-bold">{{ $b->ingredient?->name ?? '—' }}</td>
+                        <td>{{ $b->batch_number ?: '—' }}</td>
+                        <td>{{ $b->received_date->format('Y-m-d') }}</td>
+                        <td>
+                            @if($b->expiry_date)
+                                {{ $b->expiry_date->format('Y-m-d') }}
+                                @if($b->isExpired())
+                                    <br><small class="text-danger fw-bold">منتهية!</small>
+                                @elseif($b->isNearExpiry(7))
+                                    <br><small class="fw-bold" style="color:#8a6920;">خلال {{ $days }} يوم</small>
+                                @endif
+                            @else
+                                <span class="text-muted">—</span>
+                            @endif
+                        </td>
+                        <td>{{ number_format((float) $b->initial_qty, 4) }} {{ $b->ingredient?->baseUnit?->code }}</td>
+                        <td class="fw-bold">
+                            @if($b->isDepleted())
+                                <span class="text-muted"><i class="bi bi-check2"></i> نفذت</span>
+                            @else
+                                {{ number_format((float) $b->remaining_qty, 4) }}
+                            @endif
+                        </td>
+                        <td>{{ number_format((float) $b->unit_cost, 4) }}</td>
+                        <td class="fw-bold" style="color:var(--primary);">
+                            {{ \App\Helpers\Money::format((float) $b->remaining_qty * (float) $b->unit_cost) }}
+                        </td>
+                    </tr>
+                @empty
+                    <tr><td colspan="8">
+                        <x-admin.empty-state
+                            icon="bi-box2"
+                            title="ما في دفعات بعد"
+                            message="تُنشأ الدفعات تلقائياً عند استلام أوامر الشراء، أو يمكنك إضافتها يدوياً." />
+                    </td></tr>
+                @endforelse
+            </tbody>
+        </table>
+    </div>
+
+    <x-slot:footer>{{ $batches->links() }}</x-slot:footer>
+</x-admin.data-panel>
+
+{{-- Manual batch modal --}}
+<div class="modal fade" id="addBatch" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ route('admin.batches.store') }}">
+                @csrf
+                <div class="modal-header">
+                    <h5>إضافة دفعة يدوية</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info small">
+                        تُستخدم عادة لتسجيل مخزون موجود سلفاً لم يدخل عبر PO. ستتم زيادة المخزون تلقائياً.
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">المكوّن <span class="text-danger">*</span></label>
+                        <select name="ingredient_id" class="form-select" required>
+                            <option value="">— اختر —</option>
+                            @foreach($ingredients as $ing)
+                                <option value="{{ $ing->id }}">{{ $ing->name }} ({{ $ing->baseUnit?->code }})</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label">الكمية <span class="text-danger">*</span></label>
+                            <input type="number" step="0.0001" min="0.0001" name="qty" class="form-control" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">التكلفة / وحدة</label>
+                            <input type="number" step="0.0001" min="0" name="unit_cost" class="form-control">
+                        </div>
+                    </div>
+                    <div class="row g-2 mt-1">
+                        <div class="col-6">
+                            <label class="form-label">رقم الدفعة</label>
+                            <input type="text" name="batch_number" class="form-control" placeholder="(اختياري)">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">تاريخ الصلاحية</label>
+                            <input type="date" name="expiry_date" class="form-control">
+                        </div>
+                    </div>
+                    <div class="mt-2">
+                        <label class="form-label">ملاحظات</label>
+                        <textarea name="notes" class="form-control" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">تراجع</button>
+                    <button class="btn btn-primary"><i class="bi bi-plus-lg"></i> إنشاء الدفعة</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+@endsection

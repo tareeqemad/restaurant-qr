@@ -1,0 +1,139 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\Ingredient;
+use App\Models\IngredientBatch;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
+
+/**
+ * Manages ingredient batches for FIFO-by-expiry picking and near-expiry alerts.
+ *
+ * This service is additive — it lives alongside InventoryService without
+ * replacing it. When a restaurant wants batch tracking, callers use
+ * `createBatchOnReceipt()` after a purchase receipt, and `deductFifo()` when
+ * stock is consumed.
+ *
+ * Key operations:
+ *   createBatchOnReceipt(ing, qty, unitCost, expiryDate?, batchNumber?, source?)
+ *       → Creates a new batch row + returns it. Caller separately records
+ *         the inventory movement; this service just manages batches.
+ *
+ *   deductFifo(ing, qtyBase) → array of [batch, qtyTaken] consumed
+ *       → Walks batches in FIFO order, subtracting remaining_qty.
+ *         Throws if insufficient stock across all batches.
+ *
+ *   expiringSoon(days = 7) → Collection of batches expiring within N days
+ *   expired()              → Collection of batches already expired (still has stock)
+ */
+class BatchInventoryService
+{
+    /**
+     * Create a new batch when stock arrives (typically from a PO receipt).
+     */
+    public function createBatchOnReceipt(
+        Ingredient $ingredient,
+        float      $qtyBase,
+        float      $unitCost,
+        ?string    $expiryDate = null,
+        ?string    $batchNumber = null,
+        $source = null,
+        ?string    $notes = null,
+    ): IngredientBatch {
+        if ($qtyBase <= 0) {
+            throw ValidationException::withMessages(['qty' => 'كمية الدفعة يجب أن تكون أكبر من صفر.']);
+        }
+
+        return IngredientBatch::create([
+            'ingredient_id' => $ingredient->id,
+            'batch_number'  => $batchNumber,
+            'received_date' => now()->toDateString(),
+            'expiry_date'   => $expiryDate,
+            'initial_qty'   => $qtyBase,
+            'remaining_qty' => $qtyBase,
+            'unit_cost'     => $unitCost,
+            'source_type'   => $source ? get_class($source) : null,
+            'source_id'     => $source?->getKey(),
+            'notes'         => $notes,
+        ]);
+    }
+
+    /**
+     * Deduct stock from batches in FIFO-by-expiry order.
+     *
+     * @return array List of [ 'batch' => IngredientBatch, 'qty' => float ] taken
+     * @throws ValidationException if total stock across batches is insufficient
+     */
+    public function deductFifo(Ingredient $ingredient, float $qtyBase): array
+    {
+        if ($qtyBase <= 0) return [];
+
+        return DB::transaction(function () use ($ingredient, $qtyBase) {
+            $batches = IngredientBatch::where('ingredient_id', $ingredient->id)
+                ->fifo()
+                ->lockForUpdate()
+                ->get();
+
+            $totalAvailable = (float) $batches->sum('remaining_qty');
+            if ($totalAvailable + 0.0001 < $qtyBase) {
+                throw ValidationException::withMessages([
+                    'stock' => "المخزون المتاح في الدفعات ({$totalAvailable}) أقل من المطلوب ({$qtyBase}) للمكوّن {$ingredient->name}.",
+                ]);
+            }
+
+            $taken = [];
+            $remaining = $qtyBase;
+
+            foreach ($batches as $batch) {
+                if ($remaining <= 0) break;
+
+                $batchQty = (float) $batch->remaining_qty;
+                $takeNow = min($batchQty, $remaining);
+
+                $batch->update(['remaining_qty' => $batchQty - $takeNow]);
+
+                $taken[] = ['batch' => $batch, 'qty' => $takeNow];
+                $remaining -= $takeNow;
+            }
+
+            return $taken;
+        });
+    }
+
+    /**
+     * Return to batch on cancellation — adds qty back to the original batch.
+     * If the batch was deleted, creates a new reversal batch.
+     */
+    public function returnToBatch(IngredientBatch $batch, float $qtyBase): IngredientBatch
+    {
+        $batch->increment('remaining_qty', $qtyBase);
+        return $batch->fresh();
+    }
+
+    /**
+     * Batches expiring within the given window.
+     */
+    public function expiringSoon(int $withinDays = 7)
+    {
+        return IngredientBatch::where('remaining_qty', '>', 0)
+            ->whereNotNull('expiry_date')
+            ->whereBetween('expiry_date', [now()->toDateString(), now()->addDays($withinDays)->toDateString()])
+            ->with('ingredient.baseUnit')
+            ->orderBy('expiry_date')
+            ->get();
+    }
+
+    /**
+     * Batches that have already expired but still have stock (should be wasted).
+     */
+    public function expired()
+    {
+        return IngredientBatch::where('remaining_qty', '>', 0)
+            ->whereNotNull('expiry_date')
+            ->whereDate('expiry_date', '<', now()->toDateString())
+            ->with('ingredient.baseUnit')
+            ->orderBy('expiry_date')
+            ->get();
+    }
+}

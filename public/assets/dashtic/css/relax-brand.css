@@ -1,0 +1,235 @@
+/* =========================================================================
+   RELAX BRAND CSS — Minimal color overrides on top of Dashtic
+   =========================================================================
+   Philosophy: let Dashtic do ALL the layout (horizontal nav, vertical,
+   menu variants, positioning, spacing, responsive). We only override:
+     1. CSS variables (--primary-rgb, --body-bg-rgb, --accent-rgb)
+     2. Brand-specific small pieces (role-pill, breadcrumb, loader)
+     3. Our own utility classes (.btn-accent, .text-accent, etc.)
+
+   NO positioning, NO layout rules, NO structural overrides.
+   ========================================================================= */
+
+
+/* ═══ 1. Dashtic variable overrides (the ONLY thing needed for re-theming) ═══ */
+:root {
+    /* Primary (forest green) — flows to Dashtic's --primary01..09 tiers */
+    --primary-rgb: 31, 71, 51;
+
+    /* Semantic colors — desaturated to live harmoniously next to forest+gold
+       palette. Dashtic defaults are too vivid (emerald #2dce89, bright red
+       #ff5b51, yellow #ecb403) and clash with brand. */
+    --success-rgb: 94,  145, 101;    /* muted sage — works with forest */
+    --danger-rgb:  184,  79,  79;    /* muted terracotta */
+    --warning-rgb: 201, 154,  56;    /* warm amber, near our accent */
+    --info-rgb:     78, 121, 148;    /* dusty teal */
+
+    /* Body surface (cream) */
+    --body-bg-rgb: 250, 245, 235;
+    --body-bg-rgb2: 255, 255, 245;
+    --default-body-bg-color: rgb(var(--body-bg-rgb));
+
+    /* Hover / form tints */
+    --light-rgb: 240, 232, 216;
+    --form-control-bg: #ffffff;
+    --input-border: rgba(var(--primary-rgb), 0.16);
+
+    /* Text + border */
+    --default-text-color: #1c1917;
+    --default-border: rgba(var(--primary-rgb), 0.12);
+
+    /* Arabic-first typography */
+    --default-font-family: "Tajawal", "Segoe UI", sans-serif;
+}
+
+/* Bootstrap semantic overrides (so .btn-success / .bg-danger / .text-warning
+   all inherit our muted palette automatically) */
+:root {
+    --bs-success-rgb: 94,  145, 101;
+    --bs-danger-rgb:  184,  79,  79;
+    --bs-warning-rgb: 201, 154,  56;
+    --bs-info-rgb:     78, 121, 148;
+    /* Warm cream light surface (harmonizes with forest + gold + cream body).
+       Used by .bg-light, <thead class="bg-light">, .btn-light backgrounds. */
+    --bs-light-rgb:   252, 246, 232;
+    --bs-dark-rgb:     18,  45,  30;
+}
+
+/* Tab-pane display fix: Bootstrap's default rule `.tab-content > .tab-pane`
+   uses a direct-child selector, which breaks when tab-panes are wrapped in
+   a <form> (e.g. our settings page, where tabs 1+2 share one form while
+   tab 3 is outside). Without this override, inactive panes stay as
+   display:block and pile up, creating a huge gap. This catches nested
+   panes too. */
+.tab-content .tab-pane {
+    display: none;
+}
+.tab-content .tab-pane.active,
+.tab-content .tab-pane.show.active {
+    display: block;
+}
+
+
+/* Sub-menu bullet fix: Dashtic renders a small arrow before every sub-item
+   via `content: "\e048"; font-family: typicons`. We deleted typicons font
+   (87MB of unused icon fonts). Replace with a simple unicode bullet so the
+   marker shows up as a tiny gold dot instead of an empty square. */
+.app-sidebar .slide-menu.child1 .side-menu__item::before,
+.app-sidebar .slide-menu.child2 .side-menu__item::before,
+.app-sidebar .slide-menu.child3 .side-menu__item::before {
+    content: "•" !important;
+    font-family: inherit !important;
+    font-size: 1rem !important;
+    color: var(--accent, #b8872a) !important;
+    opacity: .75 !important;
+    margin-inline-end: 8px;
+    line-height: 1;
+    transform: none !important;        /* drop Dashtic's 180deg RTL flip (a bullet doesn't need flipping) */
+}
+
+/* Explicit override for .bg-light so it looks warm, not stark white.
+   Some Bootstrap rules compete with Dashtic's — forcing our value wins. */
+.bg-light,
+table thead.bg-light,
+.table thead.bg-light {
+    background-color: rgba(var(--accent-rgb), 0.06) !important;
+}
+
+/* .btn-light — sits cleanly inside our warm cream palette */
+.btn-light {
+    background-color: rgba(var(--accent-rgb), 0.08) !important;
+    border-color: rgba(var(--accent-rgb), 0.2) !important;
+    color: rgb(var(--primary-rgb)) !important;
+    font-weight: 600;
+}
+.btn-light:hover,
+.btn-light:focus {
+    background-color: rgba(var(--accent-rgb), 0.16) !important;
+    border-color: rgba(var(--accent-rgb), 0.35) !important;
+    color: rgb(var(--primary-rgb)) !important;
+}
+
+/* Dark-mode scaffolding (activated only when user toggles via switcher) */
+[data-theme-mode="dark"] {
+    --body-bg-rgb: 18, 45, 30;
+    --body-bg-rgb2: 32, 59, 44;
+    --light-rgb: 24, 50, 36;
+    --form-control-bg: rgb(24, 50, 36);
+    --input-border: rgba(255, 255, 255, 0.08);
+    --default-text-color: #e7e5e4;
+}
+
+
+/* ═══ 1b. Horizontal layout: flex-column stacking (no gap between header & menu) ═══
+   Dashtic's default uses position:fixed on the header + absolute/sticky on
+   the sidebar with hard-coded `inset-block-start: 4rem` on the sidebar. If
+   the header renders taller than 4rem (e.g. due to font weight / avatar
+   size / line-height), a visible cream strip appears between them. Instead
+   we turn .page into a vertical flex container so the header, horizontal
+   menu, and content stack in natural flow. Zero guess-work required. */
+@media (min-width: 992px) {
+    [data-nav-layout="horizontal"] .page {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+    }
+    [data-nav-layout="horizontal"] .app-header {
+        position: sticky !important;
+        inset-block-start: 0 !important;
+        inset-inline: 0 !important;
+        width: 100% !important;
+        flex: 0 0 auto;
+        z-index: 100;
+    }
+    [data-nav-layout="horizontal"] .app-sidebar {
+        position: sticky !important;
+        inset-block-start: auto !important;
+        width: 100% !important;
+        height: auto !important;
+        flex: 0 0 auto;
+        z-index: 99;
+    }
+    [data-nav-layout="horizontal"] .app-content {
+        margin-block-start: 0 !important;
+        min-height: auto !important;
+        flex: 1 1 auto;
+    }
+}
+
+
+/* ═══ 2. Body + loader ═══ */
+body {
+    font-family: var(--default-font-family);
+    color: var(--default-text-color);
+}
+#loader {
+    position: fixed; inset: 0;
+    background: rgb(var(--body-bg-rgb));
+    display: flex; align-items: center; justify-content: center;
+    z-index: 99999;
+    transition: opacity .3s;
+}
+#loader.hidden { opacity: 0; pointer-events: none; }
+
+
+/* ═══ 3. Brand-specific buttons (ours on top of Dashtic's) ═══ */
+.btn-accent {
+    background-color: var(--accent, #b8872a);
+    border-color: var(--accent, #b8872a);
+    color: var(--dark, #122d1e);
+    font-weight: 800;
+}
+.btn-accent:hover,
+.btn-accent:focus {
+    background-color: #a87921;
+    border-color: #a87921;
+    color: #ffffff;
+}
+
+.text-accent { color: var(--accent, #b8872a) !important; }
+.bg-accent   { background-color: var(--accent, #b8872a) !important; }
+
+
+/* ═══ 4. Pending-orders badge (gold) in header ═══ */
+.app-header .header-icon-badge {
+    background: var(--accent, #b8872a) !important;
+    color: var(--dark, #122d1e) !important;
+    font-weight: 900 !important;
+}
+
+
+/* ═══ 5. User role-pill in header profile ═══ */
+.role-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: var(--accent, #b8872a);
+    color: #ffffff;
+    padding: 2px 10px;
+    border-radius: 99px;
+    font-size: .68rem;
+    font-weight: 800;
+    margin-top: 3px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+.role-pill-subtle {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.75);
+    padding: 2px 10px;
+    border-radius: 99px;
+    font-size: .64rem;
+    font-weight: 600;
+    margin-top: 3px;
+    border: 1px solid rgba(var(--accent-rgb), 0.35);
+}
+.role-pill-subtle i { color: #10b981; font-size: .55rem; }
+
+
+/* ═══ 6. Page-header (breadcrumb) ═══
+   We use Dashtic's OWN classes: .page-header, .page-title, .page-header-bredcrumb,
+   .breadcrumb, .breadcrumb-item, .breadcrumb-icon — all styled natively by
+   Dashtic's styles.min.css. No custom rules needed. The only small tweak
+   below is to let our <x-slot:actions> buttons sit inside the breadcrumb
+   row cleanly. */
+.page-header .page-header-actions .btn {
+    white-space: nowrap;
+}

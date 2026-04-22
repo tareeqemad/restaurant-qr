@@ -1,0 +1,94 @@
+@php
+    $payload = [
+        'id' => $item->id,
+        'name' => $item->name,
+        'description' => $item->description,
+        'price' => (float) $item->price,
+        'image' => $item->imageUrl(),
+        'has_modifiers' => $item->modifierGroups->count() > 0,
+        'modifier_groups' => $item->modifierGroups->map(fn($g) => [
+            'id' => $g->id,
+            'name' => $g->name,
+            'min_select' => $g->min_select,
+            'max_select' => $g->max_select,
+            'required' => (bool) $g->required,
+            'modifiers' => $g->modifiers->map(fn($m) => [
+                'id' => $m->id,
+                'name' => $m->name,
+                'price_delta' => (float) $m->price_delta,
+            ])->values()->toArray(),
+        ])->values()->toArray(),
+    ];
+    $hasModifiers = $item->modifierGroups->count() > 0;
+@endphp
+<div class="dish {{ $item->is_available ? '' : 'is-unavailable' }} {{ $hasModifiers ? 'has-mods' : '' }}"
+     @if($item->is_available)
+     @click="onCardClick({{ \Illuminate\Support\Js::from($payload) }}, $event)"
+     @endif>
+    <div class="dish-img">
+        <img src="{{ $item->imageUrl() }}" alt="{{ $item->name }}" loading="lazy" data-dish-img="{{ $item->id }}">
+        @if($item->is_featured && $item->is_available)
+            <span class="badge-today">متاح اليوم</span>
+        @endif
+        @if($item->prep_time_minutes && $item->is_available)
+            <span class="badge-prep"><i class="bi bi-clock"></i> {{ $item->prep_time_minutes }} د</span>
+        @endif
+        @if($hasModifiers && $item->is_available)
+            <span class="badge-options" title="هذا الصنف فيه خيارات (حجم/إضافات)">
+                <i class="bi bi-sliders2"></i> خيارات
+            </span>
+        @endif
+        @unless($item->is_available)
+            <div class="badge-unavail"><i class="bi bi-x-circle"></i> غير متوفر</div>
+        @endunless
+    </div>
+    <div class="dish-body">
+        <h6 class="dish-name">{{ $item->name }}</h6>
+        @if($item->description)
+            <p class="dish-desc">{{ $item->description }}</p>
+        @endif
+        @if($item->allergens->count())
+            <div class="allergens">
+                @foreach($item->allergens as $a)
+                    <span class="allergen-chip">{{ $a->icon }} {{ $a->name }}</span>
+                @endforeach
+            </div>
+        @endif
+
+        {{-- Notes were previously inline on every card. Moved to the cart flow
+             where users actually need them (per-item notes in cart sheet +
+             notes textarea inside the modifier modal). Keeps the menu clean. --}}
+
+        <div class="dish-foot">
+            <span class="dish-price">{{ \App\Helpers\Money::format($item->price) }}</span>
+
+            @if(! $item->is_available)
+                {{-- Unavailable: no + button, just a disabled-looking indicator --}}
+                <span class="dish-unavail-btn" title="هذا الصنف غير متوفر حالياً">
+                    <i class="bi bi-slash-circle"></i>
+                </span>
+            @else
+                {{-- + button (or stepper if already in cart) — only when item is available --}}
+                <template x-if="qtyOf({{ $item->id }}) === 0">
+                    <button type="button" class="dish-add-fab {{ $hasModifiers ? 'has-mods' : '' }}"
+                            @click.stop="onPlus({{ \Illuminate\Support\Js::from($payload) }})"
+                            aria-label="{{ $hasModifiers ? 'اختر الخيارات وأضف' : 'أضف للسلة' }}"
+                            title="{{ $hasModifiers ? 'اختر الخيارات' : 'أضف للسلة' }}">
+                        @if($hasModifiers)
+                            <i class="bi bi-sliders2"></i>
+                        @else
+                            +
+                        @endif
+                    </button>
+                </template>
+                <template x-if="qtyOf({{ $item->id }}) > 0">
+                    <div class="dish-stepper" @click.stop>
+                        <button type="button" @click="onMinus({{ \Illuminate\Support\Js::from($payload) }})" aria-label="ناقص">−</button>
+                        <span class="qty" x-text="qtyOf({{ $item->id }})"></span>
+                        <button type="button" @click="onPlus({{ \Illuminate\Support\Js::from($payload) }})" aria-label="زيد">+</button>
+                    </div>
+                </template>
+            @endif
+        </div>
+    </div>
+</div>
