@@ -1,2 +1,6 @@
 *
 !.gitignore
+# Allow seeded/branded menu images to be committed so anyone cloning
+# sees the same dishes without re-downloading from Unsplash.
+!menu-items/
+!menu-items/**
