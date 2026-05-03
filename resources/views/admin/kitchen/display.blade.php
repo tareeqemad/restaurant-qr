@@ -14,7 +14,10 @@
     :station-color="$station->color ?: '#1f4733'" />
 
 @push('scripts')
+{{-- @livewireScripts bundles Alpine in Livewire v4 — loading a second
+     copy from CDN caused "Alpine already initialized" warnings and, worse,
+     broke some wire:click DOM updates so actions saved but the UI didn't
+     refresh until the page was reloaded. --}}
 @livewireScripts
-<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
 @endpush
 @endsection

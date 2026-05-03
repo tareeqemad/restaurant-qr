@@ -233,3 +233,244 @@ body {
 .page-header .page-header-actions .btn {
     white-space: nowrap;
 }
+
+
+
+
+/* ═══ 7. Logo sizing — visual scale only ═══
+   Use transform:scale() so the logo APPEARS bigger without changing
+   its layout footprint. This way the header height + sidebar header
+   stay exactly as Dashtic designed them. */
+
+.app-header .horizontal-logo .header-logo img {
+    transform: scale(1.3);
+    transform-origin: center;
+}
+.main-sidebar-header .header-logo img {
+    transform: scale(1.35);
+    transform-origin: center;
+}
+
+
+/* ═══ 8. Compact header + nav ═══
+   Dashtic ships with a generous ~80px header. Combined with the horizontal
+   nav row underneath, the chrome eats ~140px before any content shows.
+   We trim both rows aggressively so the working area is taller and feels
+   less heavy on small laptops. Target: ~56px header + ~44px nav. */
+.app-header,
+.app-header .main-header-container {
+    min-height: 56px !important;
+    padding-block: 4px !important;
+}
+.app-header .header-element {
+    align-items: center;
+}
+.app-header .header-element .header-link {
+    padding-block: 4px;
+    padding-inline: 8px;
+}
+.app-header .header-link-icon {
+    width: 20px !important;
+    height: 20px !important;
+}
+/* Profile name+role: shrink line-height + font so the avatar dictates
+   the row height, not the two-line text block. */
+.app-header .main-profile-user h6 {
+    font-size: 12px !important;
+    line-height: 1.1;
+    margin-bottom: 1px;
+}
+.app-header .main-profile-user span {
+    font-size: 10px !important;
+    line-height: 1.1;
+}
+.app-header .header-profile-img {
+    width: 32px !important;
+    height: 32px !important;
+}
+
+/* Horizontal menu row — tighter padding, slightly smaller icons so the
+   row sits at ~48px without truncating any label. */
+[data-nav-layout="horizontal"] .app-sidebar .main-menu > li.slide > .side-menu__item {
+    padding-block: 8px !important;
+    padding-inline: 12px !important;
+    gap: 8px;
+}
+[data-nav-layout="horizontal"] .app-sidebar .side-menu__icon {
+    width: 18px !important;
+    height: 18px !important;
+    flex-shrink: 0;
+}
+[data-nav-layout="horizontal"] .app-sidebar .side-menu__label {
+    font-size: .82rem;
+    font-weight: 600;
+    line-height: 1.2;
+}
+/* Section divider ("العمليات", "إدارة", …) shouldn't add vertical padding
+   when in horizontal mode — the heading itself isn't a clickable row. */
+[data-nav-layout="horizontal"] .app-sidebar .slide__category {
+    display: none;
+}
+
+
+/* ═══ 8b. Dropdown trap — defeat SimpleBar's stacking + clipping ═══
+   The horizontal nav is wrapped in SimpleBar's scrollbar shell, which
+   inserts a `<div class="simplebar-mask" style="z-index:0">` plus a
+   `<div class="simplebar-content" style="overflow:hidden">` around the
+   menu. The mask creates a NEW stacking context that traps the dropdown
+   submenu at z-0 (so the page content paints over it), and the content
+   wrapper's `overflow:hidden` clips anything that tries to overflow
+   downward. Result: hover/click opens the dropdown logically, but it
+   is invisible AND clipped.
+
+   SimpleBar exists for VERTICAL sidebar overflow — irrelevant in
+   horizontal mode. We kill its stacking context + clipping there and
+   bump the submenu explicitly above the page content. */
+@media (min-width: 992px) {
+    html[data-nav-layout="horizontal"] .app-sidebar .simplebar-mask,
+    html[data-nav-layout="horizontal"] .app-sidebar .simplebar-content,
+    html[data-nav-layout="horizontal"] .app-sidebar .simplebar-content-wrapper,
+    html[data-nav-layout="horizontal"] .app-sidebar .simplebar-offset,
+    html[data-nav-layout="horizontal"] .app-sidebar .simplebar-wrapper {
+        overflow: visible !important;
+        z-index: auto !important;
+    }
+    html[data-nav-layout="horizontal"] .app-sidebar .slide-menu {
+        z-index: 1050 !important;
+    }
+}
+
+
+/* ═══ 8c. Submenu icons + open animation ═══
+   Sub-submenu items (الموظفون, الأقسام, …) carry a small `.submenu-icon`
+   <i class="bi"> next to their label. We size it consistently with the
+   main-menu icons (~14px) and tint it neutral; the active/hover green
+   inherits from the parent link via currentColor. */
+.app-sidebar .slide-menu .side-menu__item .submenu-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    margin-inline-end: 8px;
+    font-size: 14px;
+    color: #9ca3af;
+    flex-shrink: 0;
+}
+.app-sidebar .slide-menu .side-menu__item:hover .submenu-icon,
+.app-sidebar .slide-menu .side-menu__item.active .submenu-icon {
+    color: var(--primary, #1f4733);
+}
+
+/* Subtle fade + slide-down on dropdown open. The animation runs only on the
+   "appear" phase — closing happens via display:none from the base rules so
+   no exit animation needed. Two declaration blocks because horizontal mode
+   has a per-direction trigger set; we cover both first and second levels. */
+@keyframes relaxDropdownIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes relaxDropdownInRtl {
+    from { opacity: 0; transform: translateX(6px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+
+@media (min-width: 992px) {
+    /* First-level dropdowns drop DOWN — slide along Y */
+    html[data-nav-layout="horizontal"] .app-sidebar .main-menu > .slide.has-sub:hover > .slide-menu,
+    html[data-nav-layout="horizontal"] .app-sidebar .main-menu > .slide.has-sub:focus-within > .slide-menu,
+    html[data-nav-layout="horizontal"] .app-sidebar .main-menu > .slide.has-sub.relax-hover-open > .slide-menu,
+    html[data-nav-layout="horizontal"] .app-sidebar .main-menu > .slide.has-sub.relax-pinned-open > .slide-menu {
+        animation: relaxDropdownIn .15s ease-out;
+    }
+    /* Second-level (RTL) flies out leftward — slide along X */
+    html[dir="rtl"][data-nav-layout="horizontal"] .app-sidebar .slide-menu .slide.has-sub:hover > .slide-menu,
+    html[dir="rtl"][data-nav-layout="horizontal"] .app-sidebar .slide-menu .slide.has-sub:focus-within > .slide-menu,
+    html[dir="rtl"][data-nav-layout="horizontal"] .app-sidebar .slide-menu .slide.has-sub.relax-hover-open > .slide-menu,
+    html[dir="rtl"][data-nav-layout="horizontal"] .app-sidebar .slide-menu .slide.has-sub.relax-pinned-open > .slide-menu {
+        animation: relaxDropdownInRtl .15s ease-out;
+    }
+}
+
+
+/* ═══ 9. Slide-left / slide-right arrows ═══
+   Dashtic renders them as 40-something px circles with a heavy fill that
+   looks like a button. The intent is just "scroll the menu sideways" —
+   make them subtle rectangular chips that match the rest of the nav. */
+.app-sidebar .slide-left,
+.app-sidebar .slide-right {
+    width: 28px !important;
+    height: 32px !important;
+    border-radius: 6px !important;
+    background: rgba(0, 0, 0, .03) !important;
+    border: 1px solid rgba(0, 0, 0, .08) !important;
+    box-shadow: none !important;
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    margin: 0 4px !important;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+}
+.app-sidebar .slide-left:hover,
+.app-sidebar .slide-right:hover {
+    background: rgba(var(--primary-rgb), .08) !important;
+    border-color: rgba(var(--primary-rgb), .25) !important;
+}
+.app-sidebar .slide-left svg,
+.app-sidebar .slide-right svg {
+    width: 14px !important;
+    height: 14px !important;
+    fill: #6b7280 !important;
+}
+
+
+/* ═══ 10. Notifications dropdown (header bell) ═══
+   Dashtic ships a generic .notifications-dropdown box of width 15rem.
+   Our pending-orders preview needs more room (number + customer + amount
+   on each row). Override the width, drop the caret on the trigger, and
+   give each row an avatar + tidy hover state. */
+.app-header .notifications-dropdown .dropdown-toggle.no-caret::after {
+    display: none !important;
+}
+.main-header-container .notifications-dropdown .main-header-dropdown.notifications-menu {
+    width: 22rem !important;
+    max-width: calc(100vw - 1rem);
+    padding: 0;
+    overflow: hidden;
+}
+.notifications-menu .notifications-list {
+    max-height: 360px;
+    overflow-y: auto;
+}
+.notifications-menu .notify-avatar {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+}
+.notifications-menu .dropdown-item {
+    border-bottom: 1px solid rgba(var(--primary-rgb), .06);
+    white-space: normal !important;
+    transition: background .12s;
+}
+.notifications-menu .dropdown-item:last-child {
+    border-bottom: 0;
+}
+.notifications-menu .dropdown-item:hover {
+    background: rgba(var(--primary-rgb), .04);
+}
+.notifications-menu .min-w-0 {
+    min-width: 0; /* lets text-truncate work inside flex */
+}
+/* Slim the scrollbar inside the list */
+.notifications-menu .notifications-list::-webkit-scrollbar {
+    width: 6px;
+}
+.notifications-menu .notifications-list::-webkit-scrollbar-thumb {
+    background: rgba(var(--primary-rgb), .2);
+    border-radius: 3px;
+}

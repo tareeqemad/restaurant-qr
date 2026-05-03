@@ -1,5 +1,9 @@
 @csrf
-@php $supplier = $supplier ?? null; @endphp
+@php
+    $supplier = $supplier ?? null;
+    $branches = $branches ?? collect();
+    $selectedBranchIds = $selectedBranchIds ?? [];
+@endphp
 
 <div class="form-section">
     <div class="form-section-head">
@@ -39,6 +43,34 @@
         </div>
     </div>
 </div>
+
+@if($branches->count() > 0)
+    <div class="form-section">
+        <div class="form-section-head">
+            <i class="bi bi-building"></i>
+            <span>الفروع التي يخدمها هذا المورّد</span>
+        </div>
+        <div class="alert alert-info py-2 mb-2" style="font-size: 13px;">
+            <i class="bi bi-info-circle"></i>
+            اختر الفروع التي يخدمها هذا المورّد فقط. لو تركتها فارغة، سيُربط بالفرع الحالي تلقائياً.
+            موظفو الفرع لن يروا هذا المورّد إلا إذا كان مرتبطاً بفرعهم.
+        </div>
+        <div class="row g-2">
+            @foreach($branches as $branch)
+                <div class="col-md-4 col-sm-6">
+                    <label class="d-flex align-items-center gap-2 p-2 border rounded">
+                        <input type="checkbox"
+                               name="branch_ids[]"
+                               value="{{ $branch->id }}"
+                               class="form-check-input"
+                               @checked(in_array($branch->id, old('branch_ids', $selectedBranchIds))) >
+                        <span>{{ $branch->name }}</span>
+                    </label>
+                </div>
+            @endforeach
+        </div>
+    </div>
+@endif
 
 <div class="form-section">
     <div class="form-section-head">

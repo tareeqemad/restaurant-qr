@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Customer;
 use App\Enums\OrderStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
+use App\Models\Setting;
 use App\Services\OrderService;
 use Illuminate\Http\Request;
 
@@ -19,12 +20,12 @@ class OrderStatusController extends Controller
 
     public function track(Request $request)
     {
-        $session = $request->attributes->get('table_session');
-        $orders = Order::with(['items.modifiers', 'items.station'])
-            ->where('table_session_id', $session->id)
-            ->latest()
-            ->get();
-        return view('customer.track', compact('orders', 'session'));
+        // The view just hosts the Livewire <livewire:customer.order-tracker>
+        // component which queries orders itself and refreshes every 5 s.
+        // We no longer need to pass $orders from here.
+        return view('customer.track', [
+            'session' => $request->attributes->get('table_session'),
+        ]);
     }
 
     public function saveProfile(Request $request)
@@ -43,7 +44,11 @@ class OrderStatusController extends Controller
         $session = $request->attributes->get('table_session');
         abort_unless($order->table_session_id === $session->id, 403);
 
-        if (! $order->isCancellable()) {
+        $cancelWindow = (int) Setting::get('customer_cancel_window_seconds', config('restaurant.order.customer_cancel_window_seconds', 120));
+        $submittedAt = $order->submitted_at ?? $order->created_at;
+        $windowExpired = $cancelWindow <= 0 || ($submittedAt && $submittedAt->lt(now()->subSeconds($cancelWindow)));
+
+        if (! $order->isCancellable() || $order->status !== OrderStatus::Pending->value || $windowExpired) {
             return back()->with('error', 'لا يمكن إلغاء هذا الطلب');
         }
 

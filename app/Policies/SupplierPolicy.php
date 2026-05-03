@@ -13,7 +13,9 @@ class SupplierPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->hasAnyRole(['super_admin', 'admin', 'manager']);
+        return $user->isOwnerLevel()
+            || $user->hasAnyRole(['admin', 'manager'])
+            || $user->hasPermission('suppliers.viewAny');
     }
 
     public function view(User $user, Supplier $supplier): bool
@@ -23,16 +25,22 @@ class SupplierPolicy
 
     public function create(User $user): bool
     {
-        return $user->hasAnyRole(['super_admin', 'admin', 'manager']);
+        return $user->isOwnerLevel()
+            || $user->hasAnyRole(['admin', 'manager'])
+            || $user->hasPermission('suppliers.create');
     }
 
     public function update(User $user, Supplier $supplier): bool
     {
-        return $user->hasAnyRole(['super_admin', 'admin', 'manager']);
+        return $user->isOwnerLevel()
+            || $user->hasAnyRole(['admin', 'manager'])
+            || $user->hasPermission('suppliers.update');
     }
 
     public function delete(User $user, Supplier $supplier): bool
     {
-        return $user->hasAnyRole(['super_admin', 'admin']);
+        return $user->isOwnerLevel()
+            || $user->isAdmin()
+            || $user->hasPermission('suppliers.delete');
     }
 }

@@ -8,7 +8,7 @@ use Illuminate\Support\Collection;
 /**
  * Currency conversion & display.
  *
- * Architecture: all storage stays in base currency (JOD). This service only
+ * Architecture: all storage stays in base currency (ILS). This service only
  * affects what's DISPLAYED to the customer. The customer's preference is
  * saved in the session (cookie) and read back on every page.
  *
@@ -67,8 +67,8 @@ class CurrencyService
     /**
      * Convert a base-currency amount to the display currency & format it.
      * Always shows the base amount too, for transparency:
-     *   "12.50 د.أ ≈ $17.60"
-     * Falls back to just "12.50 د.أ" if display == base.
+     *   "12.50 ₪ ≈ $3.40"
+     * Falls back to just "12.50 ₪" if display == base.
      */
     public function display(float $baseAmount): string
     {

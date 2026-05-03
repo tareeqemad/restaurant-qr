@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,12 +10,14 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class InventoryMovement extends Model
 {
-    use HasFactory;
+    use BelongsToBranch, HasFactory;
 
     protected $fillable = [
-        'ingredient_id', 'type', 'quantity', 'unit_id', 'quantity_in_base',
+        'ingredient_id', 'batch_id', 'storage_location_id',
+        'type', 'quantity', 'unit_id', 'quantity_in_base',
         'unit_cost', 'total_cost', 'stock_before', 'stock_after',
-        'reference_type', 'reference_id', 'reason', 'user_id', 'occurred_at',
+        'reference_type', 'reference_id', 'reason', 'waste_reason',
+        'user_id', 'occurred_at',
     ];
 
     protected $casts = [
@@ -45,5 +48,22 @@ class InventoryMovement extends Model
     public function reference(): MorphTo
     {
         return $this->morphTo();
+    }
+
+    public function batch(): BelongsTo
+    {
+        return $this->belongsTo(IngredientBatch::class, 'batch_id');
+    }
+
+    public function storageLocation(): BelongsTo
+    {
+        return $this->belongsTo(StorageLocation::class);
+    }
+
+    public function wasteReasonEnum(): ?\App\Enums\WasteReason
+    {
+        return $this->waste_reason
+            ? \App\Enums\WasteReason::tryFrom($this->waste_reason)
+            : null;
     }
 }

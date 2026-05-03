@@ -19,6 +19,7 @@ class CartController extends Controller
     public function view(Request $request)
     {
         $session = $request->attributes->get('table_session');
+        $session->loadMissing('table.branch');
         $cart = session('cart.'.$session->token, []);
         return view('customer.cart', compact('cart', 'session'));
     }
@@ -26,6 +27,20 @@ class CartController extends Controller
     public function add(Request $request)
     {
         $session = $request->attributes->get('table_session');
+        if ($this->hasIssuedInvoice($session)) {
+            $message = 'الفاتورة صدرت بالفعل. اطلب من الجرسون إلغاءها إذا بدك تضيف طلب جديد.';
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'ok' => false,
+                    'error' => 'invoice_already_issued',
+                    'message' => $message,
+                ], 422);
+            }
+
+            return redirect()->route('customer.bill')->with('error', $message);
+        }
+
         $data = $request->validate([
             'menu_item_id' => ['required', 'exists:menu_items,id'],
             'quantity' => ['required', 'numeric', 'min:1'],
@@ -61,6 +76,7 @@ class CartController extends Controller
 
         $cart[] = $row;
         session()->put('cart.'.$session->token, $cart);
+        $session->touch();
 
         // AJAX requests get back the row (so the client can replace its tmp_id
         // with the server-generated id and future update/remove calls work).
@@ -94,6 +110,7 @@ class CartController extends Controller
             }
         }
         session()->put('cart.'.$session->token, $cart);
+        $session->touch();
         return response()->json(['ok' => true]);
     }
 
@@ -103,12 +120,18 @@ class CartController extends Controller
         $data = $request->validate(['row_id' => ['required', 'string']]);
         $cart = collect(session('cart.'.$session->token, []))->reject(fn($r) => $r['id'] === $data['row_id'])->values()->toArray();
         session()->put('cart.'.$session->token, $cart);
+        $session->touch();
         return back();
     }
 
     public function submit(Request $request)
     {
         $session = $request->attributes->get('table_session');
+        if ($this->hasIssuedInvoice($session)) {
+            return redirect()->route('customer.bill')
+                ->with('error', 'الفاتورة صدرت بالفعل. أي طلب إضافي يحتاج إلغاء الفاتورة الحالية من الكاشير أولاً.');
+        }
+
         $cart = session('cart.'.$session->token, []);
         if (empty($cart)) return back()->with('error', 'السلة فارغة');
 
@@ -135,5 +158,13 @@ class CartController extends Controller
         session()->forget('cart.'.$session->token);
 
         return redirect()->route('customer.track')->with('success', "تم إرسال طلبك #{$order->number} — الجرسون سيعتمده قريباً");
+    }
+
+    protected function hasIssuedInvoice($session): bool
+    {
+        $session->loadMissing('invoice');
+
+        return $session->invoice
+            && ! in_array($session->invoice->status, ['cancelled'], true);
     }
 }

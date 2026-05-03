@@ -8,11 +8,18 @@ use Illuminate\Support\Facades\Auth;
 
 class LoginController extends Controller
 {
-    public function show()
+    public function show(Request $request)
     {
-        if (auth()->check()) {
-            return redirect()->route('admin.dashboard');
+        if ($user = Auth::user()) {
+            if ($user->canLogin() && $user->canAccessAdmin()) {
+                return redirect()->route('admin.dashboard');
+            }
+
+            Auth::logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
         }
+
         return view('auth.login');
     }
 

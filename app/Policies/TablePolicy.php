@@ -14,7 +14,8 @@ class TablePolicy extends BasePolicy
 
     public function view(User $user, Table $table): bool
     {
-        return $this->viewAny($user);
+        return $this->viewAny($user)
+            && $this->inUserBranch($user, $table);
     }
 
     public function create(User $user): bool
@@ -24,11 +25,13 @@ class TablePolicy extends BasePolicy
 
     public function update(User $user, Table $table): bool
     {
-        return $user->hasAnyRole(['admin', 'manager']);
+        return $user->hasAnyRole(['admin', 'manager'])
+            && $this->inUserBranch($user, $table);
     }
 
     public function delete(User $user, Table $table): bool
     {
-        return $user->hasAnyRole(['admin', 'manager']);
+        return $user->hasAnyRole(['admin', 'manager'])
+            && $this->inUserBranch($user, $table);
     }
 }

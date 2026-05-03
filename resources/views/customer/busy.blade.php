@@ -4,7 +4,7 @@
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#1f4733">
 <title>الطاولة مشغولة · {{ config('restaurant.name') }}</title>
-<link rel="icon" href="{{ asset('assets/dashtic/images/brand-logos/favicon.ico') }}">
+<link rel="icon" href="{{ \App\Helpers\Brand::faviconUrl() }}">
 <link href="{{ asset('assets/dashtic/libs/bootstrap/css/bootstrap.rtl.min.css') }}" rel="stylesheet">
 <link href="{{ asset('assets/dashtic/icon-fonts/bootstrap-icons/icons/font/bootstrap-icons.css') }}" rel="stylesheet">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -213,6 +213,7 @@ body::after  { background: radial-gradient(circle, var(--gold-light), transparen
     margin-bottom: 2px;
 }
 </style>
+@include('partials.runtime-theme')
 </head>
 <body>
 <div class="wrap">

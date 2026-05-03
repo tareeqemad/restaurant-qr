@@ -2,8 +2,11 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Events\TableStatusChanged;
+use App\Helpers\SafeBroadcast;
 use App\Http\Controllers\Controller;
 use App\Models\Table;
+use App\Support\BranchContext;
 use BaconQrCode\Renderer\ImageRenderer;
 use BaconQrCode\Renderer\Image\SvgImageBackEnd;
 use BaconQrCode\Renderer\RendererStyle\RendererStyle;
@@ -30,7 +33,9 @@ class TableController extends Controller
     public function create()
     {
         $this->authorize('create', Table::class);
-        return view('admin.tables.create');
+        return view('admin.tables.create', [
+            'zones' => \App\Models\Lookup::for('zones'),
+        ]);
     }
 
     public function store(Request $request)
@@ -38,26 +43,38 @@ class TableController extends Controller
         $this->authorize('create', Table::class);
         $data = $this->valid($request);
         $table = Table::create($data);
+        // New table → tables board should refresh (treat it as a "was-nothing → now-status" change)
+        SafeBroadcast::dispatch(new TableStatusChanged($table, ''));
         return redirect()->route('admin.tables.index')->with('success', 'تم إنشاء الطاولة');
     }
 
     public function edit(Table $table)
     {
         $this->authorize('update', $table);
-        return view('admin.tables.edit', compact('table'));
+        return view('admin.tables.edit', [
+            'table' => $table,
+            'zones' => \App\Models\Lookup::for('zones'),
+        ]);
     }
 
     public function update(Request $request, Table $table)
     {
         $this->authorize('update', $table);
+        $previousStatus = $table->status;
         $table->update($this->valid($request, $table->id));
+        if ($table->wasChanged('status')) {
+            SafeBroadcast::dispatch(new TableStatusChanged($table->refresh(), $previousStatus));
+        }
         return redirect()->route('admin.tables.index')->with('success', 'تم التحديث');
     }
 
     public function destroy(Table $table)
     {
         $this->authorize('delete', $table);
+        $previousStatus = $table->status;
         $table->delete();
+        // Deleted → broadcast with a sentinel status so the board refreshes and drops the card
+        SafeBroadcast::dispatch(new TableStatusChanged($table, $previousStatus));
         return back()->with('success', 'تم الحذف');
     }
 
@@ -74,6 +91,8 @@ class TableController extends Controller
 
     public function qrPrint(Table $table)
     {
+        $table->loadMissing(['branch', 'zone']);
+
         $renderer = new ImageRenderer(
             new RendererStyle(400, 2),
             new SvgImageBackEnd()
@@ -85,13 +104,32 @@ class TableController extends Controller
 
     protected function valid(Request $request, ?int $id = null): array
     {
+        // Number is unique within the active branch — same display
+        // number is fine across branches (composite uniq at the DB).
+        $branchId = BranchContext::current();
+
         return $request->validate([
-            'number' => ['required', 'string', 'max:16', \Illuminate\Validation\Rule::unique('tables')->ignore($id)],
-            'name' => ['nullable', 'string', 'max:255'],
-            'capacity' => ['required', 'integer', 'min:1', 'max:50'],
-            'zone' => ['nullable', 'string', 'max:64'],
-            'status' => ['required', \Illuminate\Validation\Rule::in(['available','occupied','reserved','out_of_service'])],
-            'active' => ['sometimes', 'boolean'],
+            'number'   => [
+                'required', 'string', 'max:16',
+                \Illuminate\Validation\Rule::unique('tables')
+                    ->where(fn ($q) => $q->where('branch_id', $branchId)->whereNull('deleted_at'))
+                    ->ignore($id),
+            ],
+            'name'           => ['nullable', 'string', 'max:255'],
+            'capacity'       => ['required', 'integer', 'min:1', 'max:50'],
+            'zone_lookup_id' => [
+                'nullable',
+                \Illuminate\Validation\Rule::exists('lookups', 'id')->where(fn ($q) =>
+                    $q->where('group', 'zones')->where('is_active', true)
+                ),
+            ],
+            'status'         => ['required', \Illuminate\Validation\Rule::in(['available','occupied','reserved','out_of_service'])],
+            'active'         => ['sometimes', 'boolean'],
+        ], [
+            'number.unique' => 'رقم الطاولة مستخدم بالفعل في هذا الفرع.',
+        ], [
+            'zone_lookup_id' => 'المنطقة',
+            'number'         => 'رقم الطاولة',
         ]);
     }
 }

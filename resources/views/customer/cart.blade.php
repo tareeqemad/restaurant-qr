@@ -11,7 +11,20 @@
             <a href="{{ route('customer.menu') }}" class="btn btn-danger">تصفح القائمة</a>
         </div>
     @else
-        @php $total = collect($cart)->sum('subtotal'); @endphp
+        @php
+            $total = collect($cart)->sum('subtotal');
+            $taxEnabled = (bool) \App\Models\Setting::get('tax_enabled', config('restaurant.tax.enabled'));
+            $taxRate = $taxEnabled ? (float) \App\Models\Setting::get('tax_rate', config('restaurant.tax.rate')) : 0.0;
+            $serviceEnabled = (bool) \App\Models\Setting::get('service_enabled', config('restaurant.service_charge.enabled'));
+            $serviceRate = $serviceEnabled ? (float) \App\Models\Setting::get('service_rate', config('restaurant.service_charge.rate')) : 0.0;
+            $taxDisplayMode = $session->table?->branch?->customerTaxDisplayMode()
+                ?? \App\Models\Setting::get('customer_tax_display', 'exclusive');
+            $taxDisplayMode = in_array($taxDisplayMode, ['exclusive', 'inclusive'], true) ? $taxDisplayMode : 'exclusive';
+            $taxTotal = $taxEnabled ? round($total * ($taxRate / 100), 2) : 0.0;
+            $serviceTotal = $serviceEnabled ? round($total * ($serviceRate / 100), 2) : 0.0;
+            $displayTotal = $taxDisplayMode === 'inclusive' ? $total + $taxTotal + $serviceTotal : $total;
+            $displayLabel = $taxDisplayMode === 'inclusive' ? 'الإجمالي شامل الضريبة' : 'الإجمالي قبل الضريبة';
+        @endphp
         @foreach($cart as $row)
             <div class="menu-card p-3 mb-2">
                 <div class="d-flex gap-2">
@@ -47,10 +60,21 @@
 
         <div class="card mt-3"><div class="card-body">
             <div class="d-flex justify-content-between fs-5 fw-bold mb-2">
-                <span>الإجمالي:</span>
-                <span class="text-danger">{{ \App\Helpers\Money::format($total) }}</span>
+                <span>{{ $displayLabel }}:</span>
+                <span class="text-danger">{{ \App\Helpers\Money::format($displayTotal) }}</span>
             </div>
-            <small class="text-muted d-block">سيتم إضافة الضريبة والخدمة عند الفوترة</small>
+            <div class="small text-muted">
+                <div>المجموع: {{ \App\Helpers\Money::format($total) }}</div>
+                @if($taxDisplayMode === 'inclusive' && $taxTotal > 0)
+                    <div>الضريبة ({{ $taxRate }}%): {{ \App\Helpers\Money::format($taxTotal) }}</div>
+                @endif
+                @if($taxDisplayMode === 'inclusive' && $serviceTotal > 0)
+                    <div>الخدمة ({{ $serviceRate }}%): {{ \App\Helpers\Money::format($serviceTotal) }}</div>
+                @endif
+                @if($taxDisplayMode === 'exclusive' && ($taxTotal > 0 || $serviceTotal > 0))
+                    <div>الضريبة والخدمة تظهر في الفاتورة بعد اعتماد الطلب.</div>
+                @endif
+            </div>
 
             <form action="{{ route('customer.cart.submit') }}" method="POST" class="mt-3">@csrf
                 <textarea name="notes" class="form-control mb-2" rows="2" placeholder="ملاحظات عامة للجرسون"></textarea>

@@ -52,9 +52,11 @@
 
     <div class="table-responsive">
         <table class="table align-middle">
+            @php $showBranchCol = (bool) session('view_all_branches'); @endphp
             <thead class="bg-light">
                 <tr>
                     <th>الرقم</th>
+                    @if($showBranchCol)<th>الفرع</th>@endif
                     <th>الطاولة</th>
                     <th>الأصناف</th>
                     <th>الإجمالي</th>
@@ -67,6 +69,9 @@
                 @forelse($orders as $o)
                     <tr>
                         <td class="fw-bold">{{ $o->number }}</td>
+                        @if($showBranchCol)
+                            <td><x-admin.branch-tag :branch="$o->branch" /></td>
+                        @endif
                         <td>{{ $o->table?->number ?? '—' }}</td>
                         <td>{{ $o->items->count() }}</td>
                         <td>{{ \App\Helpers\Money::format($o->total) }}</td>
@@ -105,8 +110,21 @@
 
 @push('scripts')
 <script>
-window.onNewOrder   = function() { setTimeout(() => location.reload(), 1500); };
-window.onOrderStatus = function() { setTimeout(() => location.reload(), 1500); };
+/* Paginated Blade list — refresh every 20 s so the operator sees new
+   orders without manual refresh. Longer interval than the board because
+   this is a list, not a live feed. Pauses on hidden tab and skips when
+   the user is typing in a filter/search. */
+(function () {
+    const INTERVAL = 20000;
+    function maybeReload() {
+        if (document.hidden) return schedule();
+        const el = document.activeElement;
+        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) return schedule();
+        location.reload();
+    }
+    function schedule() { setTimeout(maybeReload, INTERVAL); }
+    schedule();
+})();
 </script>
 @endpush
 @endsection

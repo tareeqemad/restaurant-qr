@@ -205,6 +205,65 @@
 }
 .bill-note strong { color: var(--brand-dark); display: block; margin-bottom: 2px; }
 
+.bill-status {
+    margin: 1rem 0;
+    padding: .95rem 1rem;
+    border-radius: 14px;
+    display: flex;
+    align-items: flex-start;
+    gap: .75rem;
+    font-size: .88rem;
+    line-height: 1.6;
+}
+.bill-status i { font-size: 1.15rem; flex-shrink: 0; margin-top: 2px; }
+.bill-status--waiting {
+    background: #fff7ed;
+    border: 1px solid #fed7aa;
+    color: #7c2d12;
+}
+.bill-status--issued {
+    background: #ecfdf5;
+    border: 1px solid #bbf7d0;
+    color: #14532d;
+}
+.bill-request-form {
+    margin-top: 1rem;
+    display: grid;
+    gap: .65rem;
+}
+.bill-request-form textarea {
+    width: 100%;
+    min-height: 72px;
+    resize: vertical;
+    border: 1px solid rgba(31,71,51,.14);
+    border-radius: 12px;
+    padding: .8rem .9rem;
+    font-family: inherit;
+    background: #fff;
+}
+.bill-request-form textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(184,135,42,.12);
+}
+.bill-request-btn {
+    border: 0;
+    border-radius: 14px;
+    padding: .9rem 1rem;
+    background: linear-gradient(135deg, var(--brand), var(--brand-dark));
+    color: #fff;
+    font-weight: 900;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .5rem;
+    box-shadow: 0 10px 26px rgba(31,71,51,.24);
+}
+.bill-request-btn:disabled {
+    opacity: .65;
+    box-shadow: none;
+}
+
 /* Decorative receipt-bottom scallop */
 .bill-scallop {
     height: 14px;
@@ -237,6 +296,10 @@
 @endpush
 
 @section('content')
+@php
+    $hasActiveInvoice = $invoice && ! in_array($invoice->status, ['cancelled'], true);
+    $billRequested = $session->bill_requested_at && ! $hasActiveInvoice;
+@endphp
 <div class="bill-wrap">
     <div class="bill-card">
         {{-- Header --}}
@@ -260,6 +323,29 @@
                 </div>
             </div>
         </div>
+
+        @if($hasActiveInvoice)
+            <div class="bill-status bill-status--issued" style="margin-inline:1.25rem;">
+                <i class="bi bi-check-circle-fill"></i>
+                <div>
+                    <strong>الفاتورة صدرت للكاشير</strong>
+                    رقم الفاتورة {{ $invoice->number }}.
+                    @if((float) $invoice->balance > 0)
+                        المتبقي للدفع: <strong>{{ \App\Helpers\Money::format($invoice->balance) }}</strong>.
+                    @else
+                        تم تسجيل الدفع وسيتم إغلاق الجلسة قريباً.
+                    @endif
+                </div>
+            </div>
+        @elseif($billRequested)
+            <div class="bill-status bill-status--waiting" style="margin-inline:1.25rem;">
+                <i class="bi bi-hourglass-split"></i>
+                <div>
+                    <strong>طلب الفاتورة وصل للكاشير</strong>
+                    تم الإرسال {{ $session->bill_requested_at->diffForHumans() }}. يرجى انتظار الجرسون أو الكاشير.
+                </div>
+            </div>
+        @endif
 
         @if($orders->isEmpty())
             <div class="bill-empty">
@@ -354,6 +440,16 @@
                 اطلب من الجرسون استلام الفاتورة والدفع. شكراً لاختيارك {{ config('restaurant.name') }} ✨
             </div>
         </div>
+    @endif
+    @if(! $hasActiveInvoice)
+        <form method="POST" action="{{ route('customer.bill.request') }}" class="bill-request-form">
+            @csrf
+            <textarea name="note" maxlength="500" placeholder="ملاحظة اختيارية للكاشير: طريقة دفع، استعجال، تقسيم الفاتورة...">{{ old('note', $session->bill_request_note) }}</textarea>
+            <button class="bill-request-btn" {{ $billRequested ? 'disabled' : '' }}>
+                <i class="bi {{ $billRequested ? 'bi-check2-circle' : 'bi-receipt-cutoff' }}"></i>
+                {{ $billRequested ? 'تم طلب الفاتورة' : ($orders->isEmpty() ? 'طلب إنهاء الجلسة' : 'طلب الفاتورة من الكاشير') }}
+            </button>
+        </form>
     @endif
 </div>
 @endsection

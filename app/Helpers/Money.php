@@ -2,11 +2,16 @@
 
 namespace App\Helpers;
 
+use App\Models\Setting;
+
 class Money
 {
     public static function format(float|int|string $amount, ?string $symbol = null): string
     {
-        $symbol = $symbol ?? config('restaurant.currency_symbol', 'د.أ');
+        if ($symbol === null) {
+            $symbol = Setting::get('currency_symbol', config('restaurant.currency_symbol', '₪'));
+        }
+        $symbol = $symbol ?? config('restaurant.currency_symbol', '₪');
         return number_format((float) $amount, 2, '.', ',').' '.$symbol;
     }
 
@@ -17,8 +22,9 @@ class Money
 
     public static function applyTax(float $subtotal, ?float $rate = null): array
     {
-        $rate = $rate ?? (float) config('restaurant.tax.rate', 16);
-        $enabled = config('restaurant.tax.enabled', true);
+        $hasExplicitRate = $rate !== null;
+        $rate = $rate ?? (float) Setting::get('tax_rate', config('restaurant.tax.rate', 16));
+        $enabled = $hasExplicitRate ? $rate > 0 : (bool) Setting::get('tax_enabled', config('restaurant.tax.enabled', true));
 
         if (! $enabled || $rate <= 0) {
             return ['tax' => 0.0, 'rate' => 0.0];
@@ -35,8 +41,9 @@ class Money
 
     public static function applyService(float $subtotal, ?float $rate = null): array
     {
-        $rate = $rate ?? (float) config('restaurant.service_charge.rate', 10);
-        $enabled = config('restaurant.service_charge.enabled', false);
+        $hasExplicitRate = $rate !== null;
+        $rate = $rate ?? (float) Setting::get('service_rate', config('restaurant.service_charge.rate', 10));
+        $enabled = $hasExplicitRate ? $rate > 0 : (bool) Setting::get('service_enabled', config('restaurant.service_charge.enabled', false));
 
         if (! $enabled || $rate <= 0) {
             return ['service' => 0.0, 'rate' => 0.0];

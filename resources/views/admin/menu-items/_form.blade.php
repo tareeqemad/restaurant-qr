@@ -18,7 +18,7 @@
         </div>
         <div class="col-md-4">
             <label class="form-label">القسم <span class="req">*</span></label>
-            <select name="category_id" class="form-select" required>
+            <select name="category_id" class="form-select" required data-relax-choice data-choice-search-placeholder="ابحث عن قسم...">
                 @foreach($categories as $c)<option value="{{ $c->id }}" @selected(old('category_id', $item->category_id ?? '')==$c->id)>{{ $c->name }}</option>@endforeach
             </select>
         </div>
@@ -55,7 +55,7 @@
             <label class="form-label">السعر <span class="req">*</span></label>
             <div class="input-group input-group-lg">
                 <input type="number" step="0.01" name="price" value="{{ old('price', $item->price ?? 0) }}" class="form-control" required>
-                <span class="input-group-text" style="background:rgba(184,135,42,.1); color:#8a6920; font-weight:800;">{{ config('restaurant.currency_symbol') }}</span>
+                <span class="input-group-text" style="background:rgba(184,135,42,.1); color:#8a6920; font-weight:800;">{{ \App\Models\Setting::get('currency_symbol', config('restaurant.currency_symbol')) }}</span>
             </div>
         </div>
         <div class="col-md-3">
@@ -173,7 +173,7 @@
         @foreach($existingRecipe as $idx => $r)
             <div class="recipe-row row g-2 align-items-center">
                 <div class="col-md-5">
-                    <select name="recipe[{{ $idx }}][ingredient_id]" class="form-select">
+                    <select name="recipe[{{ $idx }}][ingredient_id]" class="form-select" data-relax-choice data-choice-search-placeholder="ابحث عن مكوّن...">
                         <option value="">— اختر مكون —</option>
                         @foreach($ingredients as $ing)<option value="{{ $ing->id }}" @selected($r->ingredient_id==$ing->id)>{{ $ing->name }} ({{ $ing->baseUnit->code ?? '' }})</option>@endforeach
                     </select>
@@ -223,7 +223,14 @@ function addRecipeRow() {
           <div class="col-md-3"><select name="recipe[${idx}][unit_id]" class="form-select">${unitOpts}</select></div>
           <div class="col-md-1"><button type="button" class="btn btn-outline-danger" onclick="this.closest('.recipe-row').remove()"><i class="bi bi-x"></i></button></div>
       </div>`;
-    document.getElementById('recipe-wrap').insertAdjacentHTML('beforeend', html);
+    const wrap = document.getElementById('recipe-wrap');
+    wrap.insertAdjacentHTML('beforeend', html);
+    const ingredientSelect = wrap.lastElementChild?.querySelector('select[name$="[ingredient_id]"]');
+    if (ingredientSelect) {
+        ingredientSelect.setAttribute('data-relax-choice', '');
+        ingredientSelect.setAttribute('data-choice-search-placeholder', 'ابحث عن مكوّن...');
+        window.relaxChoices?.refresh(ingredientSelect);
+    }
 }
 </script>
 @endpush

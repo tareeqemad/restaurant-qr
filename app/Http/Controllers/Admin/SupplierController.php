@@ -13,7 +13,16 @@ class SupplierController extends Controller
     {
         $this->authorize('viewAny', Supplier::class);
 
-        $q = Supplier::query()->withCount('ingredients');
+        $q = Supplier::query()->with('branches:id,name')->withCount('ingredients');
+
+        // Branch-aware: branch users see only their suppliers; owner-level sees all.
+        $user = auth()->user();
+        if ($user && ! $user->isOwnerLevel()) {
+            $branchId = \App\Support\BranchContext::current()
+                ?? optional($user->primaryBranch())->id;
+            if ($branchId) $q->servingBranch($branchId);
+        }
+
         if ($s = $request->get('search')) {
             $q->where(function ($qq) use ($s) {
                 $qq->where('name', 'like', "%$s%")
@@ -38,28 +47,80 @@ class SupplierController extends Controller
     public function create()
     {
         $this->authorize('create', Supplier::class);
-        return view('admin.suppliers.create');
+        return view('admin.suppliers.create', [
+            'branches' => $this->availableBranches(),
+        ]);
     }
 
     public function store(Request $request)
     {
         $this->authorize('create', Supplier::class);
         $data = $this->validated($request);
+        $branchIds = $this->validatedBranchIds($request);
+
         $supplier = Supplier::create($data);
+        $supplier->branches()->sync($this->resolveBranchIds($branchIds));
+
         return redirect()->route('admin.suppliers.index')->with('success', 'تم إضافة المورد "'.$supplier->name.'"');
     }
 
     public function edit(Supplier $supplier)
     {
         $this->authorize('update', $supplier);
-        return view('admin.suppliers.edit', compact('supplier'));
+        $supplier->load('branches:id');
+        return view('admin.suppliers.edit', [
+            'supplier' => $supplier,
+            'branches' => $this->availableBranches(),
+            'selectedBranchIds' => $supplier->branches->pluck('id')->all(),
+        ]);
     }
 
     public function update(Request $request, Supplier $supplier)
     {
         $this->authorize('update', $supplier);
         $supplier->update($this->validated($request));
+
+        $branchIds = $this->validatedBranchIds($request);
+        $supplier->branches()->sync($this->resolveBranchIds($branchIds));
+
         return redirect()->route('admin.suppliers.index')->with('success', 'تم تحديث المورد');
+    }
+
+    /** Branches the current user is allowed to assign suppliers to. */
+    protected function availableBranches()
+    {
+        $user = auth()->user();
+        if (! $user) return collect();
+
+        if ($user->isOwnerLevel()) {
+            return \App\Models\Branch::where('is_active', true)
+                ->orderBy('display_order')->orderBy('name')
+                ->get(['id', 'name']);
+        }
+        // Branch-scoped users can only assign their own branches
+        return $user->branches()->where('is_active', true)
+            ->orderBy('display_order')->orderBy('name')
+            ->get(['branches.id', 'branches.name']);
+    }
+
+    protected function validatedBranchIds(Request $request): array
+    {
+        return $request->validate([
+            'branch_ids'   => ['nullable', 'array'],
+            'branch_ids.*' => ['integer', 'exists:branches,id'],
+        ])['branch_ids'] ?? [];
+    }
+
+    /**
+     * If empty (no branches selected), default to attaching the current
+     * branch — keeps the supplier private to where it was created instead
+     * of leaking globally. Owner-level edit lets them clear/expand.
+     */
+    protected function resolveBranchIds(array $ids): array
+    {
+        if (! empty($ids)) return $ids;
+        $current = \App\Support\BranchContext::current();
+        return $current ? [$current] : [];
     }
 
     public function destroy(Supplier $supplier)

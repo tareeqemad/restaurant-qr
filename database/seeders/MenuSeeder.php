@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\Allergen;
+use App\Models\Branch;
 use App\Models\Category;
 use App\Models\Ingredient;
 use App\Models\MenuItem;
@@ -12,11 +13,22 @@ use App\Models\RecipeItem;
 use App\Models\Station;
 use App\Models\Supplier;
 use App\Models\Unit;
+use App\Support\BranchContext;
 use Illuminate\Database\Seeder;
 
 class MenuSeeder extends Seeder
 {
     public function run(): void
+    {
+        // Pin the seed run to Khan Yunis so BelongsToBranch auto-fills
+        // `branch_id` on every Category / MenuItem / ModifierGroup created
+        // below — without us having to thread the id through every call.
+        $branch = Branch::where('code', 'main-khan-yunis')->firstOrFail();
+
+        BranchContext::forBranch($branch->id, fn () => $this->seedMenu());
+    }
+
+    protected function seedMenu(): void
     {
         $kitchen = Station::where('code', 'kitchen')->first();
         $bar = Station::where('code', 'bar')->first();

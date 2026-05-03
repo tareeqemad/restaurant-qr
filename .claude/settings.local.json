@@ -226,7 +226,10 @@
       "Bash(git remote *)",
       "Bash(git branch *)",
       "Bash(git push *)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:8000/menu/XegsLHMImteEuFzni1HmbIRk)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:8000/menu/XegsLHMImteEuFzni1HmbIRk)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(xargs -I {} grep -l \"invoices\" database/migrations/{})",
+      "Bash(php -l app/Services/DemoResetService.php app/Http/Controllers/Admin/SystemController.php app/Console/Commands/InstallApp.php database/seeders/SystemSeeder.php database/seeders/DemoSeeder.php)"
     ]
   }
 }

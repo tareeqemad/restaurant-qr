@@ -12,7 +12,7 @@
     <div class="row g-3">
         <div class="col-md-5">
             <label class="form-label">المورد <span class="req">*</span></label>
-            <select name="supplier_id" class="form-select form-select-lg" required>
+            <select name="supplier_id" class="form-select form-select-lg" required data-relax-choice data-choice-search-placeholder="ابحث عن مورد...">
                 <option value="">— اختر مورد —</option>
                 @foreach($suppliers as $s)
                     <option value="{{ $s->id }}" @selected(old('supplier_id', $po?->supplier_id)==$s->id)>{{ $s->name }}</option>
@@ -58,7 +58,7 @@
                 @forelse($existingLines as $idx => $line)
                     <tr class="po-line">
                         <td>
-                            <select name="lines[{{ $idx }}][ingredient_id]" class="form-select po-ingredient" required>
+                            <select name="lines[{{ $idx }}][ingredient_id]" class="form-select po-ingredient" required data-relax-choice data-choice-search-placeholder="ابحث عن مكوّن...">
                                 <option value="">— اختر مكون —</option>
                                 @foreach($ingredients as $ing)
                                     <option value="{{ $ing->id }}"
@@ -130,7 +130,7 @@
         'cost' => (float) $i->cost_per_unit,
     ]));
     const unitOpts = @json($units->map(fn($u) => ['id' => $u->id, 'name' => $u->name . ' (' . $u->code . ')']));
-    const currency = @json(config('restaurant.currency_symbol'));
+    const currency = @json(\App\Models\Setting::get('currency_symbol', config('restaurant.currency_symbol')));
 
     let idx = {{ $existingLines->count() }};
 
@@ -154,6 +154,12 @@
             <td><button type="button" class="btn btn-sm btn-outline-danger po-remove" title="حذف البند"><i class="bi bi-x-lg"></i></button></td>
         `;
         tbody.appendChild(row);
+        const ingredientSelect = row.querySelector('.po-ingredient');
+        if (ingredientSelect) {
+            ingredientSelect.setAttribute('data-relax-choice', '');
+            ingredientSelect.setAttribute('data-choice-search-placeholder', 'ابحث عن مكوّن...');
+            window.relaxChoices?.refresh(ingredientSelect);
+        }
         idx++;
         recalc();
     }

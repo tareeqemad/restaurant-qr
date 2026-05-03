@@ -5,14 +5,22 @@ namespace App\Services;
 use App\Helpers\UnitConverter;
 use App\Models\ActivityLog;
 use App\Models\Ingredient;
+use App\Models\IngredientStock;
 use App\Models\InventoryMovement;
 use App\Models\MenuItem;
 use App\Models\Modifier;
 use App\Models\OrderItem;
+use App\Models\StorageLocation;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class InventoryService
 {
+    public function __construct(protected ?BatchInventoryService $batches = null)
+    {
+        $this->batches = $this->batches ?? app(BatchInventoryService::class);
+    }
+
     /**
      * Compute stock deduction lines for a cart item (before committing).
      * Returns array of [ingredient_id, qty_in_base, unit_cost, will_be_negative]
@@ -53,24 +61,114 @@ class InventoryService
     }
 
     /**
-     * Commit the deduction for an OrderItem (inside an outer transaction).
+     * Commit the deduction for an OrderItem.
+     *
+     * Behavior depends on whether the ingredient has any open batches:
+     *   - With batches → consume FIFO (earliest-expiry first), creating one
+     *     `out` movement per batch touched, each linked to its `batch_id`.
+     *     This gives full reverse-traceability (which delivery was sold).
+     *   - Without batches → fall back to a single aggregate movement using
+     *     the ingredient's weighted-average cost. Keeps backward compat for
+     *     ingredients introduced before batch tracking.
      */
     public function deductForOrderItem(OrderItem $orderItem): void
     {
+        $orderItem->loadMissing('order', 'station.storageLocation');
+
         $modifierIds = $orderItem->modifiers()->whereNotNull('modifier_id')->pluck('modifier_id')->toArray();
         $item = $orderItem->menuItem()->with('recipeItems.ingredient')->first();
         $lines = $this->previewDeductionForItem($item, (float) $orderItem->quantity, $modifierIds);
+        $storageLocationId = $orderItem->station?->storage_location_id
+            ?: StorageLocation::default()?->id;
 
         foreach ($lines as $line) {
-            $this->recordMovement(
+            $this->deductWithBatchTrace(
                 ingredient: $line['ingredient'],
-                type: 'out',
-                qtyBase: $line['quantity_in_base'],
-                unitCost: $line['unit_cost'],
-                reference: $orderItem,
-                reason: 'خصم طلب '.$orderItem->order->number,
+                qtyBase:    $line['quantity_in_base'],
+                fallbackUnitCost: $line['unit_cost'],
+                reference:  $orderItem,
+                reason:     'خصم طلب '.$orderItem->order->number,
+                storageLocationId: $storageLocationId,
             );
         }
+    }
+
+    /**
+     * Deduct stock with FIFO batch tracing when batches exist.
+     *
+     * Always returns the list of movements created (one per batch when batched,
+     * one aggregate when not). Callers don't need to know which path was taken.
+     */
+    public function deductWithBatchTrace(
+        Ingredient $ingredient,
+        float $qtyBase,
+        float $fallbackUnitCost = 0,
+        $reference = null,
+        ?string $reason = null,
+        ?int $userId = null,
+        string $type = 'out',
+        ?int $storageLocationId = null,
+    ): array {
+        if ($qtyBase <= 0) return [];
+
+        // Probe whether batches exist for this ingredient. If not, single aggregate movement.
+        $hasBatches = \App\Models\IngredientBatch::where('ingredient_id', $ingredient->id)
+            ->when($storageLocationId, fn ($query) => $query->where('storage_location_id', $storageLocationId))
+            ->where('remaining_qty', '>', 0)
+            ->exists();
+
+        if (! $hasBatches && $storageLocationId) {
+            $hasBatchesInOtherLocation = \App\Models\IngredientBatch::where('ingredient_id', $ingredient->id)
+                ->where('remaining_qty', '>', 0)
+                ->exists();
+
+            if ($hasBatchesInOtherLocation) {
+                throw ValidationException::withMessages([
+                    'stock' => "لا توجد دفعات متاحة للمكوّن {$ingredient->name} في موقع التخزين المختار.",
+                ]);
+            }
+        }
+
+        if (! $hasBatches) {
+            return [
+                $this->recordMovement(
+                    ingredient: $ingredient,
+                    type:       $type,
+                    qtyBase:    $qtyBase,
+                    unitCost:   $fallbackUnitCost,
+                    reference:  $reference,
+                    reason:     $reason,
+                    userId:     $userId,
+                    storageLocationId: $storageLocationId,
+                )
+            ];
+        }
+
+        // FIFO consumption — batch service handles the per-batch decrement
+        // inside its own transaction; we then write one movement per batch
+        // touched, carrying the batch's actual unit_cost (not just average).
+        $taken = $this->batches->deductFifo($ingredient, $qtyBase, $storageLocationId);
+
+        $movements = [];
+        foreach ($taken as $row) {
+            /** @var \App\Models\IngredientBatch $batch */
+            $batch = $row['batch'];
+            $qty   = (float) $row['qty'];
+
+            $movements[] = $this->recordMovement(
+                ingredient: $ingredient,
+                type:       $type,
+                qtyBase:    $qty,
+                unitCost:   (float) $batch->unit_cost,
+                reference:  $reference,
+                reason:     $reason,
+                userId:     $userId,
+                batchId:    $batch->id,
+                storageLocationId: $storageLocationId,
+            );
+        }
+
+        return $movements;
     }
 
     /**
@@ -81,9 +179,14 @@ class InventoryService
         $movements = InventoryMovement::where('reference_type', OrderItem::class)
             ->where('reference_id', $orderItem->id)
             ->where('type', 'out')
+            ->with(['ingredient', 'batch'])
             ->get();
 
         foreach ($movements as $mv) {
+            if ($mv->batch) {
+                $this->batches->returnToBatch($mv->batch, (float) $mv->quantity_in_base);
+            }
+
             $this->recordMovement(
                 ingredient: $mv->ingredient,
                 type: 'return',
@@ -91,6 +194,8 @@ class InventoryService
                 unitCost: (float) $mv->unit_cost,
                 reference: $orderItem,
                 reason: 'إرجاع - إلغاء صنف '.$orderItem->name_snapshot,
+                batchId: $mv->batch_id,
+                storageLocationId: $mv->storage_location_id,
             );
         }
     }
@@ -103,9 +208,15 @@ class InventoryService
         $reference = null,
         ?string $reason = null,
         ?int $userId = null,
+        ?int $batchId = null,
+        ?string $wasteReason = null,
+        ?int $storageLocationId = null,
     ): InventoryMovement {
-        return DB::transaction(function () use ($ingredient, $type, $qtyBase, $unitCost, $reference, $reason, $userId) {
-            $ingredient = $ingredient->lockForUpdate()->find($ingredient->id);
+        [$mv, $crossedLowStock, $freshIngredient] = DB::transaction(function () use ($ingredient, $type, $qtyBase, $unitCost, $reference, $reason, $userId, $batchId, $wasteReason, $storageLocationId) {
+            // Lock the ingredient row for the duration of this transaction.
+            // Concurrent receipts/deductions on the same SKU are now serialized,
+            // preventing weighted-average cost interleaving.
+            $ingredient = Ingredient::whereKey($ingredient->id)->lockForUpdate()->first();
             $stockBefore = (float) $ingredient->current_stock;
 
             $direction = in_array($type, ['out', 'waste']) ? -1 : 1;
@@ -114,10 +225,32 @@ class InventoryService
 
             if ($ingredient->track_stock) {
                 $ingredient->update(['current_stock' => $stockAfter]);
+
+                if ($storageLocationId) {
+                    $locationStock = IngredientStock::where([
+                        'ingredient_id' => $ingredient->id,
+                        'storage_location_id' => $storageLocationId,
+                    ])->lockForUpdate()->first();
+
+                    if (! $locationStock) {
+                        $locationStock = IngredientStock::create([
+                            'ingredient_id' => $ingredient->id,
+                            'storage_location_id' => $storageLocationId,
+                            'quantity' => 0,
+                            'reorder_threshold' => (float) $ingredient->reorder_threshold,
+                        ]);
+                    }
+
+                    $locationStock->update([
+                        'quantity' => (float) $locationStock->quantity + $delta,
+                    ]);
+                }
             }
 
             $mv = InventoryMovement::create([
                 'ingredient_id' => $ingredient->id,
+                'batch_id'      => $batchId,
+                'storage_location_id' => $storageLocationId,
                 'type' => $type,
                 'quantity' => $qtyBase,
                 'unit_id' => $ingredient->base_unit_id,
@@ -129,12 +262,29 @@ class InventoryService
                 'reference_type' => $reference ? get_class($reference) : null,
                 'reference_id' => $reference?->getKey(),
                 'reason' => $reason,
+                'waste_reason' => $type === 'waste' ? $wasteReason : null,
                 'user_id' => $userId ?? auth()->id(),
                 'occurred_at' => now(),
             ]);
 
-            return $mv;
+            // Edge-trigger: notify only when stock CROSSES the threshold,
+            // never on every subsequent deduction that stays below. This
+            // keeps the inbox clean — one alert per "you should reorder"
+            // event, not one per ticket.
+            $threshold = (float) $ingredient->reorder_threshold;
+            $crossed   = $ingredient->track_stock
+                && $threshold > 0
+                && $stockBefore > $threshold
+                && $stockAfter  <= $threshold;
+
+            return [$mv, $crossed, $ingredient->fresh()];
         });
+
+        if ($crossedLowStock && $freshIngredient) {
+            app(NotifyService::class)->lowStock($freshIngredient);
+        }
+
+        return $mv;
     }
 
     public function checkStockForOrderPreview(array $cartItems): array

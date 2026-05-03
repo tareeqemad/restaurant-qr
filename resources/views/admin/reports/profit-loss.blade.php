@@ -6,6 +6,14 @@
     subtitle="الإيرادات مقابل التكاليف = الربح الحقيقي"
     :crumbs="[['label' = />
 
+@php
+    // Surface the per-branch cost toggle ONLY when in branch context.
+    // Owner-level "all branches" view doesn't have a single per-branch cost
+    // to fall back on, so we just hide the toggle there.
+    $branchId      = \App\Support\BranchContext::current();
+    $perBranchCost = $branchId && request()->boolean('per_branch_cost');
+@endphp
+
 <div class="data-panel-filters mb-3" style="background: white; border-radius: 14px; padding: 1rem; border: 1px solid rgba(var(--primary-rgb), .1);">
     <form class="row g-2 align-items-end">
         <div class="col-md-3">
@@ -23,11 +31,41 @@
         </div>
         <div class="col-md-3">
             <div class="btn-group w-100">
-                <a href="?from={{ now()->startOfMonth()->toDateString() }}&to={{ now()->toDateString() }}" class="btn btn-light btn-sm">الشهر</a>
-                <a href="?from={{ now()->subDays(6)->toDateString() }}&to={{ now()->toDateString() }}"    class="btn btn-light btn-sm">7 أيام</a>
-                <a href="?from={{ now()->toDateString() }}&to={{ now()->toDateString() }}"              class="btn btn-light btn-sm">اليوم</a>
+                <a href="?from={{ now()->startOfMonth()->toDateString() }}&to={{ now()->toDateString() }}{{ $perBranchCost ? '&per_branch_cost=1' : '' }}" class="btn btn-light btn-sm">الشهر</a>
+                <a href="?from={{ now()->subDays(6)->toDateString() }}&to={{ now()->toDateString() }}{{ $perBranchCost ? '&per_branch_cost=1' : '' }}"    class="btn btn-light btn-sm">7 أيام</a>
+                <a href="?from={{ now()->toDateString() }}&to={{ now()->toDateString() }}{{ $perBranchCost ? '&per_branch_cost=1' : '' }}"              class="btn btn-light btn-sm">اليوم</a>
             </div>
         </div>
+
+        @if($branchId)
+            {{-- Per-branch cost toggle: re-cost every sold item using the
+                 branch-specific recipe cost (per-branch ingredient avg).
+                 More accurate when branches buy from different suppliers
+                 at different prices, at the cost of a heavier compute. --}}
+            <div class="col-12 mt-2">
+                <label class="d-inline-flex align-items-center gap-2 p-2 rounded"
+                       style="background: rgba(var(--accent-rgb), .08); border: 1px solid rgba(var(--accent-rgb), .25); cursor: pointer;">
+                    <input type="checkbox"
+                           name="per_branch_cost"
+                           value="1"
+                           class="form-check-input m-0"
+                           @checked($perBranchCost)
+                           onchange="this.form.submit()">
+                    <span class="fw-semibold">
+                        <i class="bi bi-building text-accent"></i>
+                        احسب COGS بسعر هذا الفرع
+                    </span>
+                    <small class="text-muted ms-2">
+                        (يستخدم الـ weighted-average للمكوّنات في dieser الفرع بدلاً من السعر العام — أدقّ للـ P&L الفرعي)
+                    </small>
+                </label>
+                @if($perBranchCost)
+                    <span class="badge bg-accent-transparent text-accent ms-2">
+                        <i class="bi bi-check-circle-fill"></i> مفعّل
+                    </span>
+                @endif
+            </div>
+        @endif
     </form>
 </div>
 

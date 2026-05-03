@@ -1,10 +1,16 @@
 @php
-    $siteName = \App\Models\Setting::get('site_name', config('restaurant.name', 'Relax'));
+    $settings = \App\Models\Setting::class;
+    $themeDefaults = config('restaurant.theme', []);
+    $siteName = $settings::get('site_name', config('restaurant.name', 'Relax'));
     // Theme colors — admin can override via /admin/settings
-    $primaryColor = \App\Models\Setting::get('theme_primary', config('restaurant.theme.primary', '#1f4733'));
-    $darkColor    = \App\Models\Setting::get('theme_dark',    config('restaurant.theme.dark',    '#122d1e'));
-    $accentColor  = \App\Models\Setting::get('theme_accent',  config('restaurant.theme.accent',  '#b8872a'));
-    $menuColor    = \App\Models\Setting::get('theme_menu',    config('restaurant.theme.menu',    '#faf5eb'));
+    $normalizeHex = function ($color, string $fallback): string {
+        $hex = ltrim((string) $color, '#');
+        if (strlen($hex) === 3) {
+            $hex = $hex[0].$hex[0].$hex[1].$hex[1].$hex[2].$hex[2];
+        }
+
+        return strlen($hex) === 6 && ctype_xdigit($hex) ? '#'.strtolower($hex) : $fallback;
+    };
 
     $hexToRgb = function (string $color, string $fallback): string {
         $hex = ltrim($color, '#');
@@ -14,20 +20,60 @@
         }
         return $fallback;
     };
-    $primaryRgb = $hexToRgb($primaryColor, '31, 71, 51');
-    $darkRgb    = $hexToRgb($darkColor,    '18, 45, 30');
-    $accentRgb  = $hexToRgb($accentColor,  '184, 135, 42');
+    $darkenHex = function (string $color, float $factor = 0.68): string {
+        $hex = ltrim($color, '#');
+        if (strlen($hex) !== 6 || ! ctype_xdigit($hex)) {
+            return '#805113';
+        }
+
+        $channel = function (string $value) use ($factor): int {
+            return max(0, min(255, (int) round(hexdec($value) * $factor)));
+        };
+
+        return sprintf(
+            '#%02x%02x%02x',
+            $channel(substr($hex, 0, 2)),
+            $channel(substr($hex, 2, 2)),
+            $channel(substr($hex, 4, 2))
+        );
+    };
+
+    $primaryDefault = $themeDefaults['primary'] ?? '#164c37';
+    $darkDefault = $themeDefaults['dark'] ?? '#0f2d22';
+    $headerDefault = $themeDefaults['header'] ?? $primaryDefault;
+    $accentDefault = $themeDefaults['accent'] ?? '#b97818';
+    $menuDefault = $themeDefaults['menu'] ?? '#f7f8f5';
+
+    $primaryColor = $normalizeHex($settings::get('theme_primary', $primaryDefault), $primaryDefault);
+    $darkColor = $normalizeHex($settings::get('theme_dark', $darkDefault), $darkDefault);
+    $headerColor = $normalizeHex($settings::get('theme_header', $headerDefault), $headerDefault);
+    $accentColor = $normalizeHex($settings::get('theme_accent', $accentDefault), $accentDefault);
+    $menuColor = $normalizeHex($settings::get('theme_menu', $menuDefault), $menuDefault);
+
+    $primaryRgb = $hexToRgb($primaryColor, '22, 76, 55');
+    $darkRgb = $hexToRgb($darkColor, '15, 45, 34');
+    $headerRgb = $hexToRgb($headerColor, '22, 76, 55');
+    $accentRgb = $hexToRgb($accentColor, '185, 120, 24');
+    $accentDark = $darkenHex($accentColor);
+
+    $headerStyle = $settings::get('theme_header_style', $themeDefaults['header_style'] ?? 'color');
+    $headerStyle = in_array($headerStyle, ['light', 'dark', 'color'], true) ? $headerStyle : 'color';
+
+    $menuStyle = $settings::get('theme_menu_style', $themeDefaults['menu_style'] ?? 'brand');
+    $menuStyle = in_array($menuStyle, ['brand', 'light', 'dark'], true) ? $menuStyle : 'brand';
+    $dashticMenuStyle = $menuStyle === 'brand' ? 'light' : $menuStyle;
 @endphp
 <!DOCTYPE html>
-{{-- <html> uses Dashtic's attribute schema exactly. The switcher docs in
-     Documentation/switcher-styles.html list these as the canonical set. --}}
+{{-- Admin navigation is intentionally horizontal, matching the desired
+     Dashtic switcher mode while keeping the switcher UI out of the app. --}}
 <html lang="ar" dir="rtl"
       data-nav-layout="horizontal"
       data-theme-mode="light"
-      data-header-styles="light"
-      data-menu-styles="light"
+      data-header-styles="{{ $headerStyle }}"
+      data-menu-styles="{{ $dashticMenuStyle }}"
+      data-relax-menu-style="{{ $menuStyle }}"
       data-toggled="close"
-      data-nav-style="menu-click">
+      data-nav-style="menu-hover">
 
 <head>
     <meta charset="UTF-8">
@@ -37,12 +83,30 @@
     <meta name="user-id" content="{{ auth()->id() }}">
     <title>@yield('title', 'لوحة التحكم') - {{ $siteName }}</title>
 
-    <link rel="icon" href="{{ asset('assets/dashtic/images/brand-logos/favicon.ico') }}" type="image/x-icon">
+    <link rel="icon" href="{{ \App\Helpers\Brand::faviconUrl() }}" type="image/x-icon">
 
     {{-- === Dashtic core assets (order matches Dashtic's index.html exactly) === --}}
 
     <!-- Choices JS (early, as per template) -->
     <script src="{{ asset('assets/dashtic/libs/choices.js/public/assets/scripts/choices.min.js') }}"></script>
+
+    {{-- Dashtic stores switcher choices in localStorage. Since this app has no
+         switcher UI, stale demo values must not override our horizontal menu. --}}
+    <script>
+        try {
+            [
+                'dashticlayout',
+                'dashticnavstyles',
+                'dashticverticalstyles',
+                'dashticmenufixed',
+                'dashticmenuscrollable',
+                'dashticheaderfixed',
+                'dashticheaderscrollable',
+                'dashticboxed',
+                'dashticclassic'
+            ].forEach((key) => localStorage.removeItem(key));
+        } catch (e) {}
+    </script>
 
     <!-- Main Theme Js -->
     <script src="{{ asset('assets/dashtic/js/main.js') }}"></script>
@@ -65,29 +129,56 @@
     <!-- Flatpickr + Choices CSS -->
     <link rel="stylesheet" href="{{ asset('assets/dashtic/libs/flatpickr/flatpickr.min.css') }}">
     <link rel="stylesheet" href="{{ asset('assets/dashtic/libs/choices.js/public/assets/styles/choices.min.css') }}">
-    <link rel="stylesheet" href="{{ asset('assets/dashtic/libs/select2/select2.min.css') }}">
-
-    {{-- === Relax brand CSS variables (override Dashtic's primary-rgb etc.) === --}}
-    <style>
-        :root {
-            --primary:     {{ $primaryColor }};
-            --primary-rgb: {{ $primaryRgb }};
-            --dark:        {{ $darkColor }};
-            --dark-rgb:    {{ $darkRgb }};
-            --accent:      {{ $accentColor }};
-            --accent-rgb:  {{ $accentRgb }};
-            --menu:        {{ $menuColor }};
-        }
-    </style>
 
     {{-- Minimal brand + our custom components. Loaded AFTER Dashtic base
          so our rules win when they touch the same classes. --}}
     <link rel="stylesheet" href="{{ asset('assets/dashtic/css/relax-brand.css') }}?v={{ filemtime(public_path('assets/dashtic/css/relax-brand.css')) }}">
     <link rel="stylesheet" href="{{ asset('assets/dashtic/css/relax-components.css') }}?v={{ filemtime(public_path('assets/dashtic/css/relax-components.css')) }}">
 
+    {{-- Runtime theme override. It is intentionally loaded after Relax CSS so
+         dashboard settings win over the compiled default palette. --}}
+    <style>
+        :root {
+            --primary: {{ $primaryColor }};
+            --primary-rgb: {{ $primaryRgb }};
+            --primary-color: rgb(var(--primary-rgb));
+            --primary-border: rgb(var(--primary-rgb));
+            --primary005: rgba(var(--primary-rgb), 0.05);
+            --primary01: rgba(var(--primary-rgb), 0.1);
+            --primary02: rgba(var(--primary-rgb), 0.2);
+            --primary03: rgba(var(--primary-rgb), 0.3);
+            --primary04: rgba(var(--primary-rgb), 0.4);
+            --primary05: rgba(var(--primary-rgb), 0.5);
+            --primary06: rgba(var(--primary-rgb), 0.6);
+            --primary07: rgba(var(--primary-rgb), 0.7);
+            --primary08: rgba(var(--primary-rgb), 0.8);
+            --primary09: rgba(var(--primary-rgb), 0.9);
+            --dark: {{ $darkColor }};
+            --dark-rgb: {{ $darkRgb }};
+            --accent: {{ $accentColor }};
+            --accent-rgb: {{ $accentRgb }};
+            --accent-dark: {{ $accentDark }};
+            --menu: {{ $menuColor }};
+        }
+
+        [data-relax-menu-style="brand"] {
+            --menu-bg: {{ $menuColor }};
+            --menu-prime-color: rgb(var(--primary-rgb));
+            --menu-border-color: rgba(var(--primary-rgb), 0.12);
+        }
+
+        [data-header-styles="color"] {
+            --header-bg: {{ $headerColor }};
+            --header-bg2: rgba({{ $headerRgb }}, 0.5);
+            --header-prime-color: rgba(255, 255, 255, 0.88);
+            --header-border-color: rgba(255, 255, 255, 0.14);
+        }
+    </style>
+
     {{-- Arabic typography --}}
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&family=Cinzel:wght@600;700&display=swap" rel="stylesheet">
 
+    @stack('head-scripts')
     @vite(['resources/js/app.js'])
     @livewireStyles
     @stack('styles')
@@ -123,6 +214,11 @@
     </div>
     <div id="responsive-overlay"></div>
 
+    {{-- Pill removed with the Reverb/WebSocket pivot. Polling mode has no
+         "connection state" to show — Livewire just re-renders on interval.
+         If you later switch to Reverb, restore this block + the JS in the
+         inline script section below. --}}
+
     {{-- === Dashtic core scripts (order matches their index.html) === --}}
     <script src="{{ asset('assets/dashtic/libs/jquery/jquery.min.js') }}"></script>
     <script src="{{ asset('assets/dashtic/libs/@popperjs/core/umd/popper.min.js') }}"></script>
@@ -140,9 +236,27 @@
     {{-- relax-init.js replaces Dashtic's custom.js (which requires the switcher
          offcanvas DOM we deliberately skip). Provides only what we actually
          use: loader hide, tooltip init, fullscreen helper, scrollToTop. --}}
-    <script src="{{ asset('assets/dashtic/js/relax-init.js') }}"></script>
-    <script src="{{ asset('assets/dashtic/js/general-helpers.js') }}"></script>
+    <script src="{{ asset('assets/dashtic/js/relax-init.js') }}?v={{ filemtime(public_path('assets/dashtic/js/relax-init.js')) }}"></script>
     <script src="{{ asset('assets/dashtic/js/admin-crud.js') }}"></script>
+    <script src="{{ asset('assets/dashtic/js/relax-choices.js') }}?v={{ filemtime(public_path('assets/dashtic/js/relax-choices.js')) }}"></script>
+
+    {{-- Horizontal-nav dropdown bridge: when the user opens one top-level
+         dropdown, close every other one. Dashtic's defaultmenu.min.js
+         leaves `relax-pinned-open` on each parent independently, so without
+         this two dropdowns can sit open at once after a couple of hovers.
+         Scoped to the main-menu top level only — the second-level submenus
+         intentionally stay open while the parent is open. --}}
+    <script>
+    (function () {
+        const close = (li) => li.classList.remove('open', 'relax-pinned-open', 'relax-hover-open');
+        const top   = () => document.querySelectorAll('.app-sidebar .main-menu > .slide.has-sub');
+        document.addEventListener('mouseover', (ev) => {
+            const enteredItem = ev.target.closest('.app-sidebar .main-menu > .slide.has-sub');
+            if (! enteredItem) return;
+            top().forEach(li => { if (li !== enteredItem) close(li); });
+        });
+    })();
+    </script>
 
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
@@ -163,29 +277,12 @@
         };
 
         @php $u = auth()->user(); @endphp
-        @if($u && $u->hasAnyRole(['super_admin','admin','manager','waiter']))
-            document.addEventListener('DOMContentLoaded', function() {
-                const wait = setInterval(() => {
-                    if (window.Echo) {
-                        clearInterval(wait);
-                        window.Echo.channel('waiters')
-                            .listen('.order.created', (e) => {
-                                showNotification('طلب جديد!', `طاولة ${e.table_number} — ${e.number}`, 'info');
-                                if (typeof onNewOrder === 'function') onNewOrder(e);
-                            })
-                            .listen('.order.status_changed', (e) => {
-                                if (typeof onOrderStatus === 'function') onOrderStatus(e);
-                            });
-                        @if($u->hasAnyRole(['super_admin','admin','manager','cashier','waiter']))
-                        window.Echo.channel('cashiers')
-                            .listen('.invoice.paid', (e) => {
-                                showNotification('فاتورة مدفوعة', `${e.number} — طاولة ${e.table_number}`, 'success');
-                            });
-                        @endif
-                    }
-                }, 100);
-            });
-        @endif
+        /* Echo listeners intentionally absent in polling mode. window.Echo
+           exists as a no-op stub (see resources/js/bootstrap.js) so any
+           `.channel(...).listen(...)` calls elsewhere won't throw. If you
+           later switch to Reverb/Pusher, just flip VITE_REVERB_ENABLED=true
+           and BROADCAST_CONNECTION=reverb — the toast/listener wiring can
+           be re-added here without touching any other screen. */
     </script>
 
     @stack('scripts')

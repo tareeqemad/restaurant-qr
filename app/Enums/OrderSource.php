@@ -8,6 +8,7 @@ namespace App\Enums;
 enum OrderSource: string
 {
     case DineIn   = 'dine_in';
+    case Portal   = 'portal';      // customer placed via /portal (own pickup or delivery)
     case Talabat  = 'talabat';
     case Careem   = 'careem';
     case UberEats = 'uber_eats';
@@ -18,6 +19,7 @@ enum OrderSource: string
     {
         return match ($this) {
             self::DineIn   => 'من الطاولة',
+            self::Portal   => 'تطبيق المطعم',
             self::Talabat  => 'طلبات',
             self::Careem   => 'كريم ناو',
             self::UberEats => 'أوبر إيتس',
@@ -33,6 +35,7 @@ enum OrderSource: string
     {
         return match ($this) {
             self::DineIn   => '#1f4733',   // forest green
+            self::Portal   => '#0ea5e9',   // sky blue — our brand channel
             self::Talabat  => '#ff5a00',   // Talabat orange
             self::Careem   => '#49b24c',   // Careem green
             self::UberEats => '#06c167',   // Uber Eats green
@@ -45,6 +48,7 @@ enum OrderSource: string
     {
         return match ($this) {
             self::DineIn   => 'bi-grid-3x3-gap-fill',
+            self::Portal   => 'bi-phone-fill',
             self::Talabat  => 'bi-bag-fill',
             self::Careem   => 'bi-scooter',
             self::UberEats => 'bi-truck',
@@ -55,6 +59,7 @@ enum OrderSource: string
 
     /**
      * Commissions typical for each platform. Used as a DEFAULT, editable per-order.
+     * Portal orders carry zero commission — they're our own channel.
      */
     public function defaultCommission(): float
     {

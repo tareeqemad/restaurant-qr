@@ -26,7 +26,7 @@
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">المورد <span class="req">*</span></label>
-                        <select name="supplier_id" class="form-select form-select-lg" required>
+                        <select name="supplier_id" class="form-select form-select-lg" required data-relax-choice data-choice-search-placeholder="ابحث عن مورد...">
                             <option value="">— اختر —</option>
                             @foreach($suppliers as $s)
                                 <option value="{{ $s->id }}" @selected(old('supplier_id', $po?->supplier_id)==$s->id)>{{ $s->name }}</option>
@@ -35,7 +35,7 @@
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">أمر شراء مرتبط (اختياري)</label>
-                        <select name="purchase_order_id" class="form-select">
+                        <select name="purchase_order_id" class="form-select" data-relax-choice data-choice-search-placeholder="ابحث عن أمر شراء...">
                             <option value="">— غير مرتبط —</option>
                             @foreach($pos as $p)
                                 <option value="{{ $p->id }}" @selected(old('purchase_order_id', $po?->id)==$p->id)>

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,18 +11,20 @@ use Illuminate\Support\Str;
 
 class TableSession extends Model
 {
-    use HasFactory;
+    use BelongsToBranch, HasFactory;
 
     protected $fillable = [
-        'table_id', 'token', 'cover_count', 'status',
+        'table_id', 'customer_id', 'token', 'cover_count', 'status',
         'customer_name', 'customer_phone', 'opened_by_user_id', 'assigned_waiter_id',
         'opened_at', 'closed_at', 'last_activity_at',
+        'bill_requested_at', 'bill_request_note',
     ];
 
     protected $casts = [
         'opened_at' => 'datetime',
         'closed_at' => 'datetime',
         'last_activity_at' => 'datetime',
+        'bill_requested_at' => 'datetime',
     ];
 
     protected static function booted(): void
@@ -42,6 +45,17 @@ class TableSession extends Model
     public function table(): BelongsTo
     {
         return $this->belongsTo(Table::class);
+    }
+
+    /**
+     * The portal Customer this session is linked to, if any. Null for fully
+     * anonymous walk-in sessions; set when either the cashier registered a
+     * walk-in account or the diner scanned the QR while logged into the
+     * portal and accepted the link prompt.
+     */
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
     }
 
     public function openedBy(): BelongsTo

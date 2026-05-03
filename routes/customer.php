@@ -22,4 +22,5 @@ Route::middleware('table.session')->group(function () {
     Route::post('/orders/{order}/cancel', [Customer\OrderStatusController::class, 'cancel'])->name('customer.orders.cancel');
     Route::post('/profile', [Customer\OrderStatusController::class, 'saveProfile'])->name('customer.profile');
     Route::get('/bill', [Customer\BillController::class, 'show'])->name('customer.bill');
+    Route::post('/bill/request', [Customer\BillController::class, 'requestBill'])->name('customer.bill.request');
 });

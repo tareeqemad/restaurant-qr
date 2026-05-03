@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Ingredient;
 use App\Models\IngredientBatch;
+use App\Models\StorageLocation;
 use App\Services\BatchInventoryService;
 use Illuminate\Http\Request;
 
@@ -16,8 +17,9 @@ class IngredientBatchController extends Controller
     {
         $this->authorize('viewAny', Ingredient::class);
 
-        $q = IngredientBatch::with('ingredient.baseUnit')->latest('received_date');
+        $q = IngredientBatch::with(['ingredient.baseUnit', 'storageLocation'])->latest('received_date');
         if ($iid = $request->get('ingredient_id')) $q->where('ingredient_id', $iid);
+        if ($locationId = $request->get('storage_location_id')) $q->where('storage_location_id', $locationId);
         if ($request->filled('expired')) {
             $q->whereNotNull('expiry_date')->whereDate('expiry_date', '<', now()->toDateString());
         }
@@ -50,6 +52,11 @@ class IngredientBatchController extends Controller
             'batches'     => $batches,
             'stats'       => $stats,
             'ingredients' => Ingredient::where('track_stock', true)->orderBy('name')->get(),
+            'storageLocations' => StorageLocation::where('active', true)
+                ->orderByDesc('is_default')
+                ->orderBy('display_order')
+                ->orderBy('name')
+                ->get(),
         ]);
     }
 
@@ -60,6 +67,7 @@ class IngredientBatchController extends Controller
 
         $data = $request->validate([
             'ingredient_id' => ['required', 'exists:ingredients,id'],
+            'storage_location_id' => ['nullable', 'exists:storage_locations,id'],
             'qty'           => ['required', 'numeric', 'min:0.0001'],
             'unit_cost'     => ['nullable', 'numeric', 'min:0'],
             'expiry_date'   => ['nullable', 'date', 'after_or_equal:today'],
@@ -68,6 +76,7 @@ class IngredientBatchController extends Controller
         ]);
 
         $ing = Ingredient::findOrFail($data['ingredient_id']);
+        $storageLocationId = (int) ($data['storage_location_id'] ?? 0) ?: StorageLocation::default()?->id;
         $batch = $this->service->createBatchOnReceipt(
             ingredient:  $ing,
             qtyBase:     (float) $data['qty'],
@@ -76,6 +85,7 @@ class IngredientBatchController extends Controller
             batchNumber: $data['batch_number'] ?? null,
             source:      null,
             notes:       $data['notes'] ?? null,
+            storageLocationId: $storageLocationId,
         );
 
         // Also record inventory movement so stock stays in sync
@@ -87,6 +97,8 @@ class IngredientBatchController extends Controller
             reference:  $batch,
             reason:     'إضافة دفعة يدوية',
             userId:     auth()->id(),
+            batchId:    $batch->id,
+            storageLocationId: $storageLocationId,
         );
 
         return back()->with('success', 'تم إنشاء الدفعة وإضافتها للمخزون.');

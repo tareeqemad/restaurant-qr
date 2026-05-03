@@ -10,7 +10,7 @@
             @foreach($units as $u)<option value="{{ $u->id }}" @selected(old('base_unit_id', $ing?->base_unit_id)==$u->id)>{{ $u->name }} ({{ $u->code }})</option>@endforeach
         </select></div>
     <div class="col-md-4"><label class="form-label">المورد</label>
-        <select name="supplier_id" class="form-select"><option value="">—</option>
+        <select name="supplier_id" class="form-select" data-relax-choice data-choice-search-placeholder="ابحث عن مورد..."><option value="">—</option>
             @foreach($suppliers as $s)<option value="{{ $s->id }}" @selected(old('supplier_id', $ing?->supplier_id)==$s->id)>{{ $s->name }}</option>@endforeach
         </select></div>
     <div class="col-md-4"><label class="form-label">التكلفة/وحدة *</label><input type="number" step="0.0001" name="cost_per_unit" value="{{ old('cost_per_unit', $ing?->cost_per_unit ?? 0) }}" class="form-control" required></div>

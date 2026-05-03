@@ -1,9 +1,17 @@
 @extends('layouts.admin')
 @section('title','المكونات')
 
+@php
+    // When a branch is active, show per-branch numbers (sum of ingredient_stock
+    // across the branch's storage_locations). Owner-level views with no
+    // branch context fall back to the global current_stock.
+    $activeBranchId = \App\Support\BranchContext::current();
+    $activeBranchName = $activeBranchId ? \App\Models\Branch::find($activeBranchId)?->name : null;
+@endphp
+
 @section('content')
 <x-admin.breadcrumb title="المكونات والمخزون" icon="bi-basket2-fill"
-    subtitle="مكونات الوصفات ومخزونها الحالي" />
+    subtitle="{{ $activeBranchName ? 'مخزون فرع «'.$activeBranchName.'»' : 'مخزون شامل لكل الفروع' }}" />
 
 <x-admin.stat-rail :stats="[
     ['label' => 'إجمالي المكونات', 'value' => $stats['total'],     'icon' => 'bi-basket2-fill',     'color' => 'primary'],
@@ -53,17 +61,44 @@
             </thead>
             <tbody>
                 @forelse($ingredients as $ing)
-                    <tr class="{{ $ing->isLowStock() ? 'table-warning' : '' }}">
-                        <td class="fw-bold">{{ $ing->name }} @if($ing->isLowStock())<span class="badge bg-danger ms-1">منخفض</span>@endif</td>
+                    @php
+                        // Per-branch view when a branch is active; global otherwise.
+                        $stock     = $activeBranchId ? $ing->stockAtBranch($activeBranchId)             : (float) $ing->current_stock;
+                        $threshold = $activeBranchId ? $ing->reorderThresholdAtBranch($activeBranchId)  : (float) $ing->reorder_threshold;
+                        $cost      = $activeBranchId ? $ing->costAtBranch($activeBranchId)              : (float) $ing->cost_per_unit;
+                        $low       = $ing->track_stock && $threshold > 0 && $stock <= $threshold;
+                    @endphp
+                    <tr class="{{ $low ? 'table-warning' : '' }}">
+                        <td class="fw-bold">
+                            {{ $ing->name }}
+                            @if($low)<span class="badge bg-danger ms-1">منخفض</span>@endif
+                        </td>
                         <td>{{ $ing->sku }}</td>
-                        <td>{{ number_format((float)$ing->current_stock, 2) }}</td>
-                        <td>{{ number_format((float)$ing->reorder_threshold, 2) }}</td>
+                        <td>{{ number_format($stock, 2) }}</td>
+                        <td>{{ number_format($threshold, 2) }}</td>
                         <td>{{ $ing->baseUnit->code ?? '' }}</td>
-                        <td>{{ number_format((float)$ing->cost_per_unit, 4) }}</td>
+                        <td>
+                            {{ number_format($cost, 4) }}
+                            @if($activeBranchId && abs($cost - (float) $ing->cost_per_unit) > 0.0001)
+                                <small class="text-muted d-block fs-11" title="السعر المتوسط العام">
+                                    عام: {{ number_format((float) $ing->cost_per_unit, 4) }}
+                                </small>
+                            @endif
+                        </td>
                         <td>{{ $ing->track_stock ? 'نعم' : 'لا' }}</td>
                         <td>
-                            <button class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#adjust{{ $ing->id }}"><i class="bi bi-arrow-up-down"></i></button>
-                            <a href="{{ route('admin.ingredients.edit', $ing) }}" class="btn btn-sm btn-light"><i class="bi bi-pencil"></i></a>
+                            {{-- أيقونة `bi-arrow-up-down` غير موجودة في الخط المُجمَّع،
+                                 فكان الزر يظهر أخضر بلا glyph. استبدلتها بـ
+                                 `bi-plus-slash-minus` (يعرض رمز ±) وهو أوضح
+                                 للمعنى: زيادة أو نقصان مخزون. --}}
+                            <button class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#adjust{{ $ing->id }}" title="تسجيل حركة مخزون">
+                                <i class="bi bi-plus-slash-minus"></i>
+                            </button>
+                            <a href="{{ route('admin.vendor-prices.ingredient', $ing) }}"
+                               class="btn btn-sm btn-info" title="تاريخ الأسعار من المورّدين">
+                                <i class="bi bi-graph-up-arrow"></i>
+                            </a>
+                            <a href="{{ route('admin.ingredients.edit', $ing) }}" class="btn btn-sm btn-light" title="تعديل"><i class="bi bi-pencil"></i></a>
                             <form action="{{ route('admin.ingredients.destroy', $ing) }}" method="POST" class="d-inline" onsubmit="return confirm('حذف؟')">
                                 @csrf @method('DELETE')
                                 <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>

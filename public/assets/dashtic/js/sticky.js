@@ -12,8 +12,3 @@
     }
   }
 })();
-
-window.addEventListener('unload', () => {
-  // removing the scroll function
-  window.removeEventListener('scroll', stickyFn);
-})

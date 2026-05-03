@@ -42,7 +42,12 @@ return [
                 'useTLS' => env('REVERB_SCHEME', 'https') === 'https',
             ],
             'client_options' => [
-                // Guzzle client options: https://docs.guzzlephp.org/en/stable/request-options.html
+                // Keep request-path fast when Reverb isn't running. Default Guzzle
+                // connect timeout is effectively ~2s on Windows (TCP stack), which
+                // stacks up on bulk actions like "mark all ready" that fire many
+                // events in one request. 200ms is plenty on localhost.
+                'connect_timeout' => (float) env('REVERB_CONNECT_TIMEOUT', 0.2),
+                'timeout'         => (float) env('REVERB_TIMEOUT', 1.0),
             ],
         ],
 

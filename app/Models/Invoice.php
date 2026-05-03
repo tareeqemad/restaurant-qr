@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,11 +11,11 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Invoice extends Model
 {
-    use HasFactory, SoftDeletes;
+    use BelongsToBranch, HasFactory, SoftDeletes;
 
     protected $fillable = [
-        'number', 'table_session_id', 'issued_by_user_id',
-        'subtotal', 'discount_total', 'tax_total', 'service_total', 'tip',
+        'branch_id', 'number', 'table_session_id', 'order_id', 'customer_id', 'issued_by_user_id',
+        'subtotal', 'discount_total', 'tax_total', 'service_total', 'delivery_fee', 'tip',
         'total', 'paid_total', 'refunded_total', 'balance', 'status',
         'customer_name', 'customer_phone', 'notes',
         'issued_at', 'paid_at', 'cancelled_at',
@@ -25,6 +26,7 @@ class Invoice extends Model
         'discount_total' => 'decimal:2',
         'tax_total' => 'decimal:2',
         'service_total' => 'decimal:2',
+        'delivery_fee' => 'decimal:2',
         'tip' => 'decimal:2',
         'total' => 'decimal:2',
         'paid_total' => 'decimal:2',
@@ -42,6 +44,15 @@ class Invoice extends Model
                 $m->number = self::generateNumber();
             }
         });
+
+        static::saving(function (self $m) {
+            $hasTableSession = ! is_null($m->table_session_id);
+            $hasDirectOrder = ! is_null($m->order_id);
+
+            if ($hasTableSession === $hasDirectOrder) {
+                throw new \InvalidArgumentException('Invoice must belong to exactly one origin: table session or direct order.');
+            }
+        });
     }
 
     public static function generateNumber(): string
@@ -54,6 +65,23 @@ class Invoice extends Model
     public function tableSession(): BelongsTo
     {
         return $this->belongsTo(TableSession::class);
+    }
+
+    public function order(): BelongsTo
+    {
+        return $this->belongsTo(Order::class);
+    }
+
+    /**
+     * Identified portal customer for this invoice. Set if the diner was
+     * logged into the portal at QR-scan time, registered via the cashier
+     * mid-meal, or was matched by phone at checkout. The flat
+     * `customer_name`/`customer_phone` fields stay as a snapshot for
+     * receipt printing even if the FK is later nulled.
+     */
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
     }
 
     public function issuer(): BelongsTo

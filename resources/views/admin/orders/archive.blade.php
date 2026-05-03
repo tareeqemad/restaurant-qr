@@ -1,0 +1,426 @@
+@extends('layouts.admin')
+@section('title', 'أرشيف الطلبات')
+
+@php
+    use App\Helpers\Money;
+    $showBranchCol = (bool) session('view_all_branches');
+    $f = $filters;
+@endphp
+
+@section('content')
+<x-admin.breadcrumb title="أرشيف الطلبات" icon="bi-archive"
+    subtitle="بحث وتصفية شاملة لكل الطلبات — حسب التاريخ، الحالة، المصدر، الطاولة، والمبلغ" />
+
+{{-- ─── Stats ──────────────────────────────────────────────────── --}}
+<x-admin.stat-rail :stats="[
+    ['label' => 'عدد الطلبات',   'value' => number_format($stats['count']),         'icon' => 'bi-receipt-cutoff', 'color' => 'primary'],
+    ['label' => 'إجمالي المبيعات','value' => Money::format($stats['gross']),       'icon' => 'bi-cash-stack',    'color' => 'success'],
+    ['label' => 'متوسط الفاتورة', 'value' => Money::format($stats['avg']),         'icon' => 'bi-graph-up',      'color' => 'accent'],
+    ['label' => 'ملغاة',          'value' => number_format($stats['cancelled']),   'icon' => 'bi-x-octagon',     'color' => 'muted'],
+]" />
+
+{{-- ─── Filter card (collapsible advanced section) ──────────────── --}}
+<div class="archive-filters">
+    <form method="GET" id="archiveFilters">
+        <div class="archive-filters__bar">
+            <div class="archive-filters__search">
+                <i class="bi bi-search"></i>
+                <input type="text" name="search" value="{{ $f['search'] }}"
+                       placeholder="رقم الطلب، الملاحظات، المرجع الخارجي…"
+                       autocomplete="off">
+                @if($f['search'])
+                    <button type="button" class="archive-filters__clear-search"
+                            onclick="this.previousElementSibling.value=''; this.closest('form').submit();">
+                        <i class="bi bi-x-circle-fill"></i>
+                    </button>
+                @endif
+            </div>
+
+            <div class="archive-filters__dates">
+                <label>من
+                    <input type="date" name="from" value="{{ $f['from'] }}">
+                </label>
+                <label>إلى
+                    <input type="date" name="to" value="{{ $f['to'] }}">
+                </label>
+            </div>
+
+            <div class="archive-filters__actions">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-funnel-fill"></i> تطبيق
+                </button>
+                <button type="button" class="btn btn-light"
+                        onclick="document.getElementById('archiveAdvanced').classList.toggle('is-open')">
+                    <i class="bi bi-sliders"></i> فلاتر متقدّمة
+                </button>
+                @if(request()->hasAny(['search', 'status', 'source', 'table_id', 'min_total', 'max_total']))
+                    <a href="{{ route('admin.orders.archive') }}" class="btn btn-outline-danger">
+                        <i class="bi bi-x-circle"></i> مسح
+                    </a>
+                @endif
+            </div>
+        </div>
+
+        {{-- Advanced filters (collapsed by default) --}}
+        <div class="archive-filters__advanced
+                    {{ array_filter([$f['status'], $f['source'], $f['table_id'], $f['min_total'], $f['max_total']]) ? 'is-open' : '' }}"
+             id="archiveAdvanced">
+
+            {{-- Statuses — multi-select chips --}}
+            <div class="archive-filters__group">
+                <label class="archive-filters__label">حالة الطلب</label>
+                <div class="status-chips">
+                    @foreach($statuses as $st)
+                        @php $checked = in_array($st->value, (array) $f['status'], true); @endphp
+                        <label class="status-chip status-chip--{{ $st->color() }} {{ $checked ? 'is-checked' : '' }}">
+                            <input type="checkbox" name="status[]" value="{{ $st->value }}" @checked($checked)>
+                            <span>{{ $st->label() }}</span>
+                        </label>
+                    @endforeach
+                </div>
+            </div>
+
+            <div class="archive-filters__row">
+                {{-- Source --}}
+                <div class="archive-filters__group">
+                    <label class="archive-filters__label">المصدر</label>
+                    <select name="source" class="form-select">
+                        <option value="">— كل المصادر —</option>
+                        @foreach($sources as $sr)
+                            <option value="{{ $sr->value }}" @selected($f['source'] === $sr->value)>{{ $sr->label() }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                {{-- Table --}}
+                <div class="archive-filters__group">
+                    <label class="archive-filters__label">الطاولة</label>
+                    <select name="table_id" class="form-select">
+                        <option value="">— كل الطاولات —</option>
+                        @foreach($tables as $t)
+                            <option value="{{ $t->id }}" @selected((int) $f['table_id'] === (int) $t->id)>طاولة {{ $t->number }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                {{-- Total range --}}
+                <div class="archive-filters__group">
+                    <label class="archive-filters__label">المبلغ</label>
+                    <div class="archive-filters__range">
+                        <input type="number" name="min_total" value="{{ $f['min_total'] }}"
+                               class="form-control" placeholder="من" step="0.01" min="0">
+                        <span>—</span>
+                        <input type="number" name="max_total" value="{{ $f['max_total'] }}"
+                               class="form-control" placeholder="إلى" step="0.01" min="0">
+                    </div>
+                </div>
+
+                {{-- Sort --}}
+                <div class="archive-filters__group">
+                    <label class="archive-filters__label">الترتيب</label>
+                    <div class="archive-filters__sort">
+                        <select name="sort" class="form-select">
+                            <option value="created_at" @selected($f['sort'] === 'created_at')>الوقت</option>
+                            <option value="total"      @selected($f['sort'] === 'total')>المبلغ</option>
+                            <option value="number"     @selected($f['sort'] === 'number')>الرقم</option>
+                        </select>
+                        <select name="dir" class="form-select">
+                            <option value="desc" @selected($f['dir'] === 'desc')>تنازلياً</option>
+                            <option value="asc"  @selected($f['dir'] === 'asc')>تصاعدياً</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+{{-- ─── Results table ──────────────────────────────────────────── --}}
+<x-admin.data-panel title="النتائج" :count="$orders->total()" icon="bi-table">
+    <div class="table-responsive">
+        <table class="table align-middle archive-table">
+            <thead class="bg-light">
+                <tr>
+                    <th>الرقم</th>
+                    @if($showBranchCol)<th>الفرع</th>@endif
+                    <th>التاريخ</th>
+                    <th>المصدر</th>
+                    <th>الطاولة</th>
+                    <th>الأصناف</th>
+                    <th>المبلغ</th>
+                    <th>الحالة</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @forelse($orders as $o)
+                    @php
+                        $st  = \App\Enums\OrderStatus::tryFrom($o->status);
+                        $src = \App\Enums\OrderSource::tryFrom($o->order_source ?? '');
+                    @endphp
+                    <tr>
+                        <td><code class="archive-num">{{ $o->number }}</code></td>
+                        @if($showBranchCol)
+                            <td><x-admin.branch-tag :branch="$o->branch" /></td>
+                        @endif
+                        <td>
+                            <div>{{ $o->created_at->format('Y/m/d') }}</div>
+                            <small class="text-muted">{{ $o->created_at->format('H:i') }}</small>
+                        </td>
+                        <td>
+                            @if($src)
+                                <span class="badge"
+                                      style="background: {{ $src->color() }}20; color: {{ $src->color() }};">
+                                    <i class="bi {{ $src->icon() }}"></i> {{ $src->label() }}
+                                </span>
+                            @else
+                                <span class="text-muted">—</span>
+                            @endif
+                        </td>
+                        <td>{{ $o->table?->number ?? '—' }}</td>
+                        <td>
+                            <span class="badge bg-light text-dark">
+                                {{ $o->items_count ?? $o->items?->count() ?? 0 }}
+                            </span>
+                        </td>
+                        <td class="fw-bold">{{ Money::format($o->total) }}</td>
+                        <td>
+                            @if($st)
+                                <span class="badge bg-{{ $st->color() }}">{{ $st->label() }}</span>
+                            @endif
+                        </td>
+                        <td>
+                            <a href="{{ route('admin.orders.show', $o) }}" class="btn btn-sm btn-light" title="تفاصيل">
+                                <i class="bi bi-eye"></i>
+                            </a>
+                        </td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="{{ $showBranchCol ? 9 : 8 }}">
+                            <x-admin.empty-state icon="bi-archive"
+                                title="لا توجد نتائج"
+                                message="جرّب تعديل الفلاتر أو توسيع نطاق التواريخ." />
+                        </td>
+                    </tr>
+                @endforelse
+            </tbody>
+        </table>
+    </div>
+
+    @if($orders->hasPages())
+        <x-slot:footer>{{ $orders->links() }}</x-slot:footer>
+    @endif
+</x-admin.data-panel>
+
+@push('styles')
+<style>
+    /* ╔══════════════════════════════════════════════════════════════╗
+       ║  Orders archive — filter card + status chips                   ║
+       ╚══════════════════════════════════════════════════════════════╝ */
+    .archive-filters {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        padding: 14px 16px;
+        margin-bottom: 16px;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+    }
+
+    .archive-filters__bar {
+        display: grid;
+        grid-template-columns: 1fr auto auto;
+        gap: 10px;
+        align-items: center;
+    }
+    @media (max-width: 992px) {
+        .archive-filters__bar { grid-template-columns: 1fr; }
+    }
+
+    /* Search input — pill with icon */
+    .archive-filters__search {
+        position: relative;
+    }
+    .archive-filters__search > i.bi-search {
+        position: absolute;
+        inset-inline-start: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #9ca3af;
+        font-size: 1rem;
+        pointer-events: none;
+    }
+    .archive-filters__search input {
+        width: 100%;
+        height: 42px;
+        padding: 0 38px 0 14px;
+        background: #f9fafb;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        font: inherit;
+        font-size: .92rem;
+    }
+    .archive-filters__search input:focus {
+        outline: none;
+        background: #fff;
+        border-color: rgba(var(--primary-rgb), .55);
+        box-shadow: 0 0 0 3px rgba(var(--primary-rgb), .12);
+    }
+    .archive-filters__clear-search {
+        position: absolute;
+        inset-inline-end: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        border: 0; background: transparent;
+        color: #9ca3af;
+        cursor: pointer;
+        padding: 4px;
+        line-height: 1;
+    }
+    .archive-filters__clear-search:hover { color: #ef4444; }
+
+    /* Date range */
+    .archive-filters__dates {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: #f9fafb;
+        padding: 5px 8px;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+    }
+    .archive-filters__dates label {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin: 0;
+        font-size: .82rem;
+        font-weight: 600;
+        color: #4b5563;
+    }
+    .archive-filters__dates input[type="date"] {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 7px;
+        padding: 6px 10px;
+        font: inherit;
+        font-size: .85rem;
+    }
+
+    .archive-filters__actions {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+
+    /* Advanced section — collapses by default, expands when toggled or
+       when any advanced filter is active. */
+    .archive-filters__advanced {
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height .25s ease, padding-top .2s ease;
+        padding-top: 0;
+    }
+    .archive-filters__advanced.is-open {
+        max-height: 600px;
+        padding-top: 14px;
+        margin-top: 12px;
+        border-top: 1px dashed #e5e7eb;
+    }
+
+    .archive-filters__group { margin-bottom: 12px; }
+    .archive-filters__label {
+        display: block;
+        font-size: .78rem;
+        font-weight: 700;
+        color: #4b5563;
+        margin-bottom: 6px;
+    }
+    .archive-filters__row {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+    }
+    @media (max-width: 992px) {
+        .archive-filters__row { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 576px) {
+        .archive-filters__row { grid-template-columns: 1fr; }
+    }
+
+    .archive-filters__range {
+        display: flex; align-items: center; gap: 6px;
+    }
+    .archive-filters__range span { color: #9ca3af; font-weight: 700; }
+
+    .archive-filters__sort {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 6px;
+    }
+
+    /* Status chips — multi-select toggleable pills */
+    .status-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+    .status-chip {
+        --chip-color: #6b7280;
+        display: inline-flex;
+        align-items: center;
+        padding: 6px 12px;
+        background: #fff;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 99px;
+        font-size: .8rem;
+        font-weight: 700;
+        color: #4b5563;
+        cursor: pointer;
+        user-select: none;
+        transition: all .12s ease;
+        margin: 0;
+    }
+    .status-chip input { display: none; }
+    .status-chip:hover { border-color: #d1d5db; background: #f9fafb; }
+    .status-chip.is-checked {
+        background: var(--bs-warning, #fbbf24);
+        border-color: var(--bs-warning, #fbbf24);
+        color: #fff;
+    }
+    .status-chip--success.is-checked  { background: #10b981; border-color: #10b981; color: #fff; }
+    .status-chip--info.is-checked     { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+    .status-chip--primary.is-checked  { background: rgb(var(--primary-rgb)); border-color: rgb(var(--primary-rgb)); color: #fff; }
+    .status-chip--warning.is-checked  { background: #f59e0b; border-color: #f59e0b; color: #fff; }
+    .status-chip--danger.is-checked   { background: #ef4444; border-color: #ef4444; color: #fff; }
+    .status-chip--dark.is-checked     { background: #1f2937; border-color: #1f2937; color: #fff; }
+    .status-chip--secondary.is-checked{ background: #6b7280; border-color: #6b7280; color: #fff; }
+
+    /* Table polish */
+    .archive-num {
+        font-family: ui-monospace, monospace;
+        font-size: .85rem;
+        background: #f3f4f6;
+        padding: 3px 8px;
+        border-radius: 5px;
+        color: #1f2937;
+    }
+</style>
+@endpush
+
+@push('scripts')
+<script>
+/**
+ * Toggle .is-checked on the status chip when the hidden checkbox flips,
+ * and submit the form when the user clicks any chip — feels instant
+ * even though we're using a normal HTML form.
+ */
+document.querySelectorAll('.status-chip input[type="checkbox"]').forEach(cb => {
+    cb.addEventListener('change', (e) => {
+        e.target.closest('.status-chip').classList.toggle('is-checked', e.target.checked);
+    });
+});
+</script>
+@endpush
+@endsection

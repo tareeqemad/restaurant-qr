@@ -40,7 +40,7 @@
                 </select>
             </div>
             <div class="col-md-3">
-                <select name="supplier_id" class="form-select">
+                <select name="supplier_id" class="form-select" data-relax-choice data-choice-search-placeholder="ابحث عن مورد...">
                     <option value="">كل الموردين</option>
                     @foreach($suppliers as $s)
                         <option value="{{ $s->id }}" @selected(request('supplier_id')==$s->id)>{{ $s->name }}</option>

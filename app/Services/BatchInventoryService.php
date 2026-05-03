@@ -16,7 +16,7 @@ use Illuminate\Validation\ValidationException;
  * stock is consumed.
  *
  * Key operations:
- *   createBatchOnReceipt(ing, qty, unitCost, expiryDate?, batchNumber?, source?)
+ *   createBatchOnReceipt(ing, qty, unitCost, expiryDate?, batchNumber?, source?, storageLocationId?)
  *       → Creates a new batch row + returns it. Caller separately records
  *         the inventory movement; this service just manages batches.
  *
@@ -40,6 +40,7 @@ class BatchInventoryService
         ?string    $batchNumber = null,
         $source = null,
         ?string    $notes = null,
+        ?int       $storageLocationId = null,
     ): IngredientBatch {
         if ($qtyBase <= 0) {
             throw ValidationException::withMessages(['qty' => 'كمية الدفعة يجب أن تكون أكبر من صفر.']);
@@ -47,6 +48,7 @@ class BatchInventoryService
 
         return IngredientBatch::create([
             'ingredient_id' => $ingredient->id,
+            'storage_location_id' => $storageLocationId,
             'batch_number'  => $batchNumber,
             'received_date' => now()->toDateString(),
             'expiry_date'   => $expiryDate,
@@ -65,12 +67,16 @@ class BatchInventoryService
      * @return array List of [ 'batch' => IngredientBatch, 'qty' => float ] taken
      * @throws ValidationException if total stock across batches is insufficient
      */
-    public function deductFifo(Ingredient $ingredient, float $qtyBase): array
+    public function deductFifo(Ingredient $ingredient, float $qtyBase, ?int $storageLocationId = null): array
     {
         if ($qtyBase <= 0) return [];
 
-        return DB::transaction(function () use ($ingredient, $qtyBase) {
+        return DB::transaction(function () use ($ingredient, $qtyBase, $storageLocationId) {
+            // Lock all candidate batches up-front. The FIFO scope filters out
+            // depleted ones; the lock holds for the rest of this transaction
+            // so a concurrent deductFifo() can't double-spend the same batch.
             $batches = IngredientBatch::where('ingredient_id', $ingredient->id)
+                ->when($storageLocationId, fn ($query) => $query->where('storage_location_id', $storageLocationId))
                 ->fifo()
                 ->lockForUpdate()
                 ->get();
@@ -84,17 +90,39 @@ class BatchInventoryService
 
             $taken = [];
             $remaining = $qtyBase;
+            $updates = []; // [id => newRemaining] — applied as bulk decrement at the end
 
             foreach ($batches as $batch) {
                 if ($remaining <= 0) break;
 
                 $batchQty = (float) $batch->remaining_qty;
-                $takeNow = min($batchQty, $remaining);
+                $takeNow  = min($batchQty, $remaining);
 
-                $batch->update(['remaining_qty' => $batchQty - $takeNow]);
+                $updates[$batch->id] = $batchQty - $takeNow;
+                // Reflect in-memory so caller sees consistent state without re-query.
+                $batch->remaining_qty = $batchQty - $takeNow;
 
-                $taken[] = ['batch' => $batch, 'qty' => $takeNow];
+                $taken[]   = ['batch' => $batch, 'qty' => $takeNow];
                 $remaining -= $takeNow;
+            }
+
+            // Bulk update — one query for all touched batches (was N queries).
+            // Skipped when there are no updates (defensive).
+            if (! empty($updates)) {
+                $cases = [];
+                $bindings = [];
+                $ids = array_keys($updates);
+                foreach ($updates as $id => $remainingQty) {
+                    $cases[] = "WHEN ? THEN ?";
+                    $bindings[] = $id;
+                    $bindings[] = $remainingQty;
+                }
+                $idsPlaceholder = implode(',', array_fill(0, count($ids), '?'));
+                $sql = "UPDATE ingredient_batches
+                        SET remaining_qty = CASE id " . implode(' ', $cases) . " END,
+                            updated_at = NOW()
+                        WHERE id IN ($idsPlaceholder)";
+                DB::statement($sql, array_merge($bindings, $ids));
             }
 
             return $taken;
@@ -119,7 +147,7 @@ class BatchInventoryService
         return IngredientBatch::where('remaining_qty', '>', 0)
             ->whereNotNull('expiry_date')
             ->whereBetween('expiry_date', [now()->toDateString(), now()->addDays($withinDays)->toDateString()])
-            ->with('ingredient.baseUnit')
+            ->with('ingredient.baseUnit', 'storageLocation')
             ->orderBy('expiry_date')
             ->get();
     }
@@ -132,7 +160,7 @@ class BatchInventoryService
         return IngredientBatch::where('remaining_qty', '>', 0)
             ->whereNotNull('expiry_date')
             ->whereDate('expiry_date', '<', now()->toDateString())
-            ->with('ingredient.baseUnit')
+            ->with('ingredient.baseUnit', 'storageLocation')
             ->orderBy('expiry_date')
             ->get();
     }

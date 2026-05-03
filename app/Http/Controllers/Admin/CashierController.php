@@ -22,7 +22,7 @@ class CashierController extends Controller
             ->orderByDesc('last_activity_at')
             ->get();
 
-        $recentInvoices = Invoice::with('tableSession.table')
+        $recentInvoices = Invoice::with(['tableSession.table', 'order'])
             ->whereDate('created_at', today())
             ->latest()
             ->limit(20)
@@ -68,8 +68,12 @@ class CashierController extends Controller
             'reference' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string'],
         ]);
-        $this->billing->addPayment($invoice, $data['amount'], $data['method'], auth()->id(), $data['reference'] ?? null, $data['notes'] ?? null);
-        return back()->with('success', 'تم تسجيل الدفعة');
+        try {
+            $this->billing->addPayment($invoice, $data['amount'], $data['method'], auth()->id(), $data['reference'] ?? null, $data['notes'] ?? null);
+            return back()->with('success', 'تم تسجيل الدفعة');
+        } catch (\Throwable $e) {
+            return back()->with('error', $e->getMessage());
+        }
     }
 
     public function writeoff(Request $request, Invoice $invoice)
@@ -94,14 +98,14 @@ class CashierController extends Controller
 
     public function pdf(Invoice $invoice)
     {
-        $invoice->load(['tableSession.table', 'tableSession.orders.items.modifiers', 'payments']);
+        $invoice->load(['tableSession.table', 'tableSession.orders.items.modifiers', 'order.items.modifiers', 'payments']);
         $pdf = Pdf::loadView('admin.cashier.invoice-pdf', compact('invoice'));
         return $pdf->download($invoice->number.'.pdf');
     }
 
     public function print(Invoice $invoice)
     {
-        $invoice->load(['tableSession.table', 'tableSession.orders.items.modifiers', 'payments']);
+        $invoice->load(['tableSession.table', 'tableSession.orders.items.modifiers', 'order.items.modifiers', 'payments']);
         return view('admin.cashier.invoice-print', compact('invoice'));
     }
 

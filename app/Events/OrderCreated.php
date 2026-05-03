@@ -5,6 +5,7 @@ namespace App\Events;
 use App\Models\Order;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
+use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
@@ -17,7 +18,10 @@ class OrderCreated implements ShouldBroadcastNow
 
     public function broadcastOn(): array
     {
-        $channels = [new Channel('waiters')];
+        // Staff channels are PRIVATE — the auth closures in routes/channels.php
+        // gate them by role. The customer session channel stays public because
+        // the session token itself is the capability.
+        $channels = [new PrivateChannel('waiters')];
         if ($this->order->tableSession) {
             $channels[] = new Channel('session.'.$this->order->tableSession->token);
         }

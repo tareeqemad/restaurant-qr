@@ -3,14 +3,22 @@
 namespace App\Providers;
 
 use App\Models\ActivityLog;
+use App\Models\Attendance;
+use App\Models\Branch;
+use App\Models\Customer;
+use App\Models\Expense;
 use App\Models\Ingredient;
+use App\Models\Lookup;
 use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\PurchaseOrder;
 use App\Models\RecipeItem;
 use App\Models\Refund;
+use App\Models\Reservation;
+use App\Models\Review;
 use App\Models\Role;
+use App\Models\Station;
 use App\Models\StockCount;
 use App\Models\Supplier;
 use App\Models\SupplierInvoice;
@@ -18,13 +26,21 @@ use App\Models\Table;
 use App\Models\User;
 use App\Observers\IngredientObserver;
 use App\Observers\RecipeItemObserver;
+use App\Observers\StationObserver;
 use App\Policies\ActivityLogPolicy;
+use App\Policies\AttendancePolicy;
+use App\Policies\BranchPolicy;
+use App\Policies\CustomerPolicy;
+use App\Policies\ExpensePolicy;
 use App\Policies\InventoryPolicy;
+use App\Policies\LookupPolicy;
 use App\Policies\MenuPolicy;
 use App\Policies\OrderPolicy;
 use App\Policies\PaymentPolicy;
 use App\Policies\PurchaseOrderPolicy;
 use App\Policies\RefundPolicy;
+use App\Policies\ReservationPolicy;
+use App\Policies\ReviewPolicy;
 use App\Policies\RolePolicy;
 use App\Policies\StockCountPolicy;
 use App\Policies\SupplierInvoicePolicy;
@@ -32,8 +48,10 @@ use App\Policies\SupplierPolicy;
 use App\Policies\TablePolicy;
 use App\Policies\UserPolicy;
 use Illuminate\Pagination\Paginator;
+use Illuminate\Http\Middleware\TrustProxies;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -48,6 +66,14 @@ class AppServiceProvider extends ServiceProvider
         Schema::defaultStringLength(191);
         Paginator::useBootstrapFive();
 
+        if (config('app.force_https')) {
+            URL::forceScheme('https');
+        }
+
+        if ($trustedProxies = config('app.trusted_proxies')) {
+            TrustProxies::at($trustedProxies);
+        }
+
         Gate::policy(User::class, UserPolicy::class);
         Gate::policy(Role::class, RolePolicy::class);
         Gate::policy(MenuItem::class, MenuPolicy::class);
@@ -61,9 +87,19 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(SupplierInvoice::class, SupplierInvoicePolicy::class);
         Gate::policy(StockCount::class, StockCountPolicy::class);
         Gate::policy(ActivityLog::class, ActivityLogPolicy::class);
+        Gate::policy(Branch::class, BranchPolicy::class);
+        Gate::policy(Reservation::class, ReservationPolicy::class);
+        Gate::policy(Review::class, ReviewPolicy::class);
+        Gate::policy(Attendance::class, AttendancePolicy::class);
+        Gate::policy(Expense::class, ExpensePolicy::class);
+        Gate::policy(Lookup::class, LookupPolicy::class);
+        Gate::policy(Customer::class, CustomerPolicy::class);
 
         // Model observers — keep menu-item costs in sync with recipes.
         Ingredient::observe(IngredientObserver::class);
         RecipeItem::observe(RecipeItemObserver::class);
+        // Keep a permission row in sync with each station so role admins can
+        // grant per-station screen access from the normal role-edit page.
+        Station::observe(StationObserver::class);
     }
 }

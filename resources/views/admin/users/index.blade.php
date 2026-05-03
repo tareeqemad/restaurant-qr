@@ -49,6 +49,7 @@
         </form>
     </x-slot:filters>
 
+    @php $showBranchCol = (bool) session('view_all_branches'); @endphp
     <div class="table-responsive">
         <table class="table align-middle">
             <thead class="bg-light">
@@ -56,6 +57,7 @@
                     <th>الاسم</th>
                     <th>المستخدم</th>
                     <th>الدور</th>
+                    @if($showBranchCol)<th>الفروع</th>@endif
                     <th>المحطة</th>
                     <th>الهاتف</th>
                     <th>الحالة</th>
@@ -68,6 +70,15 @@
                         <td class="fw-bold">{{ $u->name }}</td>
                         <td><code>{{ $u->username }}</code></td>
                         <td><span class="badge bg-primary-transparent">{{ $u->role_label }}</span></td>
+                        @if($showBranchCol)
+                            <td>
+                                @forelse($u->branches as $b)
+                                    <x-admin.branch-tag :branch="$b" />
+                                @empty
+                                    <span class="text-muted">—</span>
+                                @endforelse
+                            </td>
+                        @endif
                         <td>{{ $u->station?->name ?? '—' }}</td>
                         <td>{{ $u->phone ?? '—' }}</td>
                         <td>

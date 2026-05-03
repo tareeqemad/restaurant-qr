@@ -4,8 +4,10 @@ namespace App\Services;
 
 use App\Helpers\UnitConverter;
 use App\Models\Ingredient;
+use App\Models\IngredientSupplierPrice;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
+use App\Support\BranchContext;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -115,18 +117,29 @@ class PurchaseOrderService
      *
      * After all lines processed, update PO status to `received` or `partially_received`.
      */
-    public function receive(PurchaseOrder $po, array $receipts, ?int $userId = null): PurchaseOrder
+    public function receive(PurchaseOrder $po, array $receipts, ?int $userId = null, array $meta = []): PurchaseOrder
     {
         if (!$po->isReceivable()) {
             throw ValidationException::withMessages(['status' => 'أمر الشراء ليس في حالة تسمح بالاستلام.']);
         }
 
-        return DB::transaction(function () use ($po, $receipts, $userId) {
+        $previousStatus = $po->status;
+
+        $po = DB::transaction(function () use ($po, $receipts, $userId, $meta) {
             $lines = $po->items()->with('ingredient.baseUnit', 'unit')->lockForUpdate()->get();
 
             foreach ($lines as $line) {
                 $qtyReceived = (float) ($receipts[$line->id] ?? 0);
                 if ($qtyReceived <= 0) continue;
+
+                $lineMeta = $meta[$line->id] ?? [];
+                $storageLocationId = ! empty($lineMeta['storage_location_id'])
+                    ? (int) $lineMeta['storage_location_id']
+                    : null;
+                $batchNumber = trim((string) ($lineMeta['batch_number'] ?? '')) ?: null;
+                $expiryDate = ! empty($lineMeta['expiry_date'])
+                    ? (string) $lineMeta['expiry_date']
+                    : null;
 
                 // Guard: can't receive more than outstanding
                 $outstanding = $line->outstandingQty();
@@ -136,7 +149,13 @@ class PurchaseOrderService
                     ]);
                 }
 
-                $ingredient  = $line->ingredient;
+                // Lock the ingredient row inside the same transaction. Without
+                // this, two POs receiving the same ingredient in parallel can
+                // interleave their cost-update reads and lose one of them.
+                $ingredient  = Ingredient::whereKey($line->ingredient_id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
                 $orderedUnit = $line->unit_id;
                 $baseUnit    = $ingredient->base_unit_id;
 
@@ -151,7 +170,8 @@ class PurchaseOrderService
                     ? (float) $line->unit_price / $oneOrderedUnitInBase
                     : (float) $line->unit_price;
 
-                // Weighted average cost update
+                // Weighted average cost update — read INSIDE the lock so we
+                // never compute against stale numbers.
                 $oldStock = (float) $ingredient->current_stock;
                 $oldCpu   = (float) $ingredient->cost_per_unit;
                 $newStock = $oldStock + $qtyBase;
@@ -159,18 +179,22 @@ class PurchaseOrderService
                     ? (($oldStock * $oldCpu) + ($qtyBase * $baseUnitCost)) / $newStock
                     : $baseUnitCost;
 
-                // Create a batch for FIFO tracking (optional expiry lives on the PO line)
-                // If no expiry date, the batch still exists but is never "near expiry".
-                $this->batches->createBatchOnReceipt(
+                // 1) Create the batch FIRST so we have an id to link to the movement.
+                //    Both calls now share this transaction — a failure in either
+                //    rolls back the batch creation, leaving no orphans.
+                $batch = $this->batches->createBatchOnReceipt(
                     ingredient:  $ingredient,
                     qtyBase:     $qtyBase,
                     unitCost:    $baseUnitCost,
-                    expiryDate:  null,  // extend PurchaseOrderItem with expiry_date later if needed
-                    batchNumber: null,
+                    expiryDate:  $expiryDate,
+                    batchNumber: $batchNumber,
                     source:      $line,
+                    storageLocationId: $storageLocationId,
                 );
 
-                // Record the inventory movement (type='in', linked to PO line)
+                // 2) Record the inventory movement (type='in', linked to PO line + batch).
+                //    The batch_id link is what enables reverse traceability:
+                //    "this 5kg of flour came from this delivery."
                 $this->inventory->recordMovement(
                     ingredient: $ingredient,
                     type:       'in',
@@ -179,12 +203,18 @@ class PurchaseOrderService
                     reference:  $line,
                     reason:     "استلام PO {$po->number}",
                     userId:     $userId,
+                    batchId:    $batch->id,
+                    storageLocationId: $storageLocationId,
                 );
 
-                // Update ingredient price (after stock was adjusted by recordMovement)
-                $ingredient->refresh()->update(['cost_per_unit' => round($newCpu, 4)]);
+                // 3) Update ingredient price (recordMovement re-reads current_stock).
+                Ingredient::whereKey($ingredient->id)->update(['cost_per_unit' => round($newCpu, 4)]);
 
-                // Update the PO line
+                // 4) Vendor price history — append-only audit log of every
+                //    receipt's price. Computes change_pct vs prior observation.
+                $this->recordPriceObservation($po, $line, $ingredient, $baseUnitCost, $userId);
+
+                // 5) Update the PO line
                 $line->quantity_received = (float) $line->quantity_received + $qtyReceived;
                 if ($line->quantity_received + 0.0001 >= (float) $line->quantity_ordered) {
                     $line->fully_received_at = now();
@@ -205,9 +235,68 @@ class PurchaseOrderService
 
             return $po->fresh('items.ingredient');
         });
+
+        // Notify after commit. Only fire when status actually changed (skip
+        // no-op receipts that updated zero lines and left status untouched).
+        if (in_array($po->status, ['received', 'partially_received'], true)
+            && $po->status !== $previousStatus) {
+            app(\App\Services\NotifyService::class)
+                ->purchaseReceived(
+                    $po->load('supplier'),
+                    partial: $po->status === 'partially_received'
+                );
+        }
+
+        return $po;
     }
 
     // ── Internals ─────────────────────────────────────────────────────────
+
+    /**
+     * Append a row to ingredient_supplier_prices for this receipt. Computes
+     * the percentage change vs the prior observation for the same trio
+     * (ingredient × supplier × branch) so the UI can show ↑/↓ deltas
+     * without a window function at read time.
+     *
+     * Owner-level CLI runs without a branch context can pass a null branch;
+     * the row will simply not be filterable by branch.
+     */
+    protected function recordPriceObservation(
+        PurchaseOrder $po,
+        PurchaseOrderItem $line,
+        Ingredient $ingredient,
+        float $unitPriceInBase,
+        ?int $userId,
+    ): void {
+        $branchId = $po->branch_id ?? BranchContext::current();
+        if (! $branchId || ! $po->supplier_id) return;
+
+        $prev = IngredientSupplierPrice::latestFor(
+            $ingredient->id, $po->supplier_id, $branchId
+        );
+
+        $changePct = null;
+        if ($prev && (float) $prev->unit_price_in_base > 0) {
+            $changePct = (((float) $unitPriceInBase - (float) $prev->unit_price_in_base)
+                / (float) $prev->unit_price_in_base) * 100;
+        }
+
+        IngredientSupplierPrice::create([
+            'branch_id'              => $branchId,
+            'ingredient_id'          => $ingredient->id,
+            'supplier_id'            => $po->supplier_id,
+            'unit_id'                => $line->unit_id,
+            'unit_price'             => $line->unit_price,
+            'unit_price_in_base'     => round($unitPriceInBase, 4),
+            'previous_price_in_base' => $prev?->unit_price_in_base,
+            'change_pct'             => $changePct !== null ? round($changePct, 2) : null,
+            'purchase_order_id'      => $po->id,
+            'purchase_order_item_id' => $line->id,
+            'source'                 => 'receipt',
+            'recorded_by_user_id'    => $userId,
+            'observed_at'            => now(),
+        ]);
+    }
 
     /**
      * Insert lines and recompute PO totals.

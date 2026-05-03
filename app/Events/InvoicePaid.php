@@ -5,6 +5,7 @@ namespace App\Events;
 use App\Models\Invoice;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
+use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
@@ -17,7 +18,9 @@ class InvoicePaid implements ShouldBroadcastNow
 
     public function broadcastOn(): array
     {
-        $channels = [new Channel('waiters'), new Channel('cashiers')];
+        // Staff channels are PRIVATE (auth via routes/channels.php).
+        // Customer session channel stays public — token is the capability.
+        $channels = [new PrivateChannel('waiters'), new PrivateChannel('cashiers')];
         if ($this->invoice->tableSession) {
             $channels[] = new Channel('session.'.$this->invoice->tableSession->token);
         }

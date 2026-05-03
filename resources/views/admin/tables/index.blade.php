@@ -3,17 +3,26 @@
 
 @section('content')
 <x-admin.breadcrumb title="الطاولات" icon="bi-grid-3x3-gap"
-    subtitle="إدارة طاولات المطعم وطباعة أكواد QR" />
+    subtitle="إدارة الصالة والطاولات وأكواد QR" />
 
-<x-admin.data-panel title="قائمة الطاولات" icon="bi-grid-3x3-gap">
-    <x-slot:actions>
-        <a href="{{ route('admin.tables.create') }}" class="btn btn-primary">
-            <i class="bi bi-plus-lg"></i> طاولة جديدة
+<section class="tables-page-shell">
+    <div class="tables-page-head">
+        <div class="tables-page-title">
+            <span>
+                <i class="bi bi-grid-3x3-gap-fill"></i>
+                إدارة الصالة
+            </span>
+            <h2>مخطط الطاولات</h2>
+        </div>
+
+        <a href="{{ route('admin.tables.create') }}" class="btn btn-primary tables-page-action">
+            <i class="bi bi-plus-lg"></i>
+            طاولة جديدة
         </a>
-    </x-slot:actions>
+    </div>
 
     <livewire:admin.tables-board />
-</x-admin.data-panel>
+</section>
 
 @push('scripts')
 @livewireScripts

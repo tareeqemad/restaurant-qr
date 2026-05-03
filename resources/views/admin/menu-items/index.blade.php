@@ -30,7 +30,7 @@
                 <input name="search" value="{{ request('search') }}" class="form-control" placeholder="🔍 ابحث بالاسم أو SKU">
             </div>
             <div class="col-md-3">
-                <select name="category_id" class="form-select">
+                <select name="category_id" class="form-select" data-relax-choice data-choice-search-placeholder="ابحث عن قسم...">
                     <option value="">كل الأقسام</option>
                     @foreach($categories as $c)
                         <option value="{{ $c->id }}" @selected(request('category_id')==$c->id)>{{ $c->name }}</option>

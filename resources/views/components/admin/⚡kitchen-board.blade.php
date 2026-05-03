@@ -35,6 +35,8 @@ new class extends Component
 
     public function mount(int $stationId, string $stationCode, string $stationName, ?string $stationColor = null): void
     {
+        abort_unless(auth()->user()?->canAccessStation($stationCode), 403);
+
         $this->stationId   = $stationId;
         $this->stationCode = $stationCode;
         $this->stationName = $stationName;
@@ -138,6 +140,33 @@ new class extends Component
     }
 
     #[Computed]
+    public function loadStats(): array
+    {
+        $cols = $this->ordersByColumn;
+        $cards = $cols['waiting']->merge($cols['cooking'])->merge($cols['ready']);
+        $activeItems = $cards->sum(fn ($card) => $card['items']->count());
+        $oldestAge = (int) ($cards->max('age_min') ?? 0);
+        $redCards = $cards->where('urgency', 'red')->count();
+
+        $level = match (true) {
+            $redCards > 0 || $activeItems >= 18 => 'red',
+            $activeItems >= 12 => 'orange',
+            $activeItems >= 6 => 'amber',
+            default => 'green',
+        };
+
+        return [
+            'level' => $level,
+            'active_items' => $activeItems,
+            'waiting_items' => $cols['waiting']->sum(fn ($card) => $card['items']->count()),
+            'cooking_items' => $cols['cooking']->sum(fn ($card) => $card['items']->count()),
+            'ready_items' => $cols['ready']->sum(fn ($card) => $card['items']->count()),
+            'oldest_age' => $oldestAge,
+            'red_cards' => $redCards,
+        ];
+    }
+
+    #[Computed]
     public function activeTables(): array
     {
         $c = $this->ordersByColumn;
@@ -149,38 +178,44 @@ new class extends Component
 
     public function startItem(int $itemId, OrderService $service): void
     {
-        if ($item = OrderItem::find($itemId)) {
+        if ($item = OrderItem::whereKey($itemId)->where('station_id', $this->stationId)->first()) {
+            $this->ensureStationAccess($item);
             $service->startPreparing($item, auth()->id());
         }
-        unset($this->ordersByColumn, $this->activeTables);
+        unset($this->ordersByColumn, $this->activeTables, $this->loadStats);
     }
 
     public function markReady(int $itemId, OrderService $service): void
     {
-        if ($item = OrderItem::find($itemId)) {
+        if ($item = OrderItem::whereKey($itemId)->where('station_id', $this->stationId)->first()) {
+            $this->ensureStationAccess($item);
             $service->markItemReady($item);
         }
-        unset($this->ordersByColumn, $this->activeTables);
+        unset($this->ordersByColumn, $this->activeTables, $this->loadStats);
     }
 
     public function startAllInOrder(int $orderId, OrderService $service): void
     {
+        $this->ensureStationAccess();
+
         foreach (OrderItem::where('order_id', $orderId)
             ->where('station_id', $this->stationId)
             ->where('status', OrderItemStatus::Approved->value)->get() as $i) {
             $service->startPreparing($i, auth()->id());
         }
-        unset($this->ordersByColumn, $this->activeTables);
+        unset($this->ordersByColumn, $this->activeTables, $this->loadStats);
     }
 
     public function markAllReady(int $orderId, OrderService $service): void
     {
+        $this->ensureStationAccess();
+
         foreach (OrderItem::where('order_id', $orderId)
             ->where('station_id', $this->stationId)
             ->where('status', OrderItemStatus::Preparing->value)->get() as $i) {
             $service->markItemReady($i);
         }
-        unset($this->ordersByColumn, $this->activeTables);
+        unset($this->ordersByColumn, $this->activeTables, $this->loadStats);
     }
 
     public function toggleSound(): void { $this->soundEnabled = !$this->soundEnabled; }
@@ -199,11 +234,18 @@ new class extends Component
 
     public function clearFilter(): void { $this->filterTable = ''; }
 
-    #[On('order.created')]
-    #[On('order.status_changed')]
+    /**
+     * Refresh on broadcast events only — no polling. Subscribes to the PRIVATE
+     * `waiters` channel (auth in routes/channels.php requires a staff role).
+     * When anything changes anywhere, Reverb pushes the event and Livewire
+     * re-renders this component — no refresh, no timer.
+     */
+    #[On('echo-private:waiters,.order.created')]
+    #[On('echo-private:waiters,.order.status_changed')]
+    #[On('echo-private:waiters,.item.status_changed')]
     public function refreshFromBroadcast(): void
     {
-        unset($this->ordersByColumn, $this->activeTables);
+        unset($this->ordersByColumn, $this->activeTables, $this->loadStats);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────
@@ -223,6 +265,15 @@ new class extends Component
         };
     }
 
+    protected function ensureStationAccess(?OrderItem $item = null): void
+    {
+        abort_unless(auth()->user()?->canAccessStation($this->stationCode), 403);
+
+        if ($item) {
+            abort_unless((int) $item->station_id === (int) $this->stationId, 404);
+        }
+    }
+
     protected function urgency(int $ageMin, string $bucket): string
     {
         if ($bucket === 'ready') return 'green';
@@ -240,8 +291,16 @@ new class extends Component
 }
 ?>
 
-<div class="kb-wrap" wire:poll.8s="refreshFromBroadcast"
+{{-- Livewire polling mode (works on shared hosting, no websocket needed).
+     `visible` modifier pauses polling when the tab is backgrounded, so it
+     doesn't hit the server while the chef's screen is minimised. 5s interval
+     matches the urgency — a dish that just landed must appear quickly. --}}
+<div class="kb-wrap"
+     {{-- 8s instead of 5s: broadcast events (echo-private) handle truly
+          urgent updates; polling is the fallback. 5s was wasteful. --}}
+     wire:poll.visible.8s="refreshFromBroadcast"
      style="--station-color: {{ $stationColor }};">
+    @php $load = $this->loadStats; @endphp
     {{-- Header --}}
     <div class="kb-header">
         <div class="kb-header-title">
@@ -283,6 +342,30 @@ new class extends Component
                 <i class="bi bi-{{ $soundEnabled ? 'volume-up-fill' : 'volume-mute-fill' }}"></i>
             </button>
             <span class="kb-live-dot" title="متصل"></span>
+        </div>
+    </div>
+
+    <div class="kb-load-strip kb-load-{{ $load['level'] }}">
+        <div class="kb-load-main">
+            <span>ضغط المحطة</span>
+            <strong>{{ $load['active_items'] }}</strong>
+            <small>صنف نشط</small>
+        </div>
+        <div class="kb-load-pill">
+            <span>بانتظار</span>
+            <strong>{{ $load['waiting_items'] }}</strong>
+        </div>
+        <div class="kb-load-pill">
+            <span>قيد التحضير</span>
+            <strong>{{ $load['cooking_items'] }}</strong>
+        </div>
+        <div class="kb-load-pill">
+            <span>جاهز</span>
+            <strong>{{ $load['ready_items'] }}</strong>
+        </div>
+        <div class="kb-load-pill kb-load-pill--age">
+            <span>أقدم تأخير</span>
+            <strong>{{ $load['oldest_age'] }} د</strong>
         </div>
     </div>
 

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\ActivityLog;
 use App\Models\Ingredient;
+use App\Models\IngredientStock;
 use App\Models\StockCount;
 use App\Models\StockCountItem;
 use Illuminate\Support\Facades\DB;
@@ -35,6 +36,7 @@ class StockCountService
             $count = StockCount::create([
                 'number'     => StockCount::generateNumber(),
                 'count_date' => $opts['count_date'] ?? today()->toDateString(),
+                'storage_location_id' => $opts['storage_location_id'] ?? null,
                 'status'     => 'draft',
                 'notes'      => $opts['notes'] ?? null,
                 'created_by' => $userId,
@@ -46,10 +48,21 @@ class StockCountService
             }
 
             $ingredients = $query->get();
+            $locationStocks = collect();
+            if (! empty($opts['storage_location_id'])) {
+                $locationStocks = IngredientStock::where('storage_location_id', $opts['storage_location_id'])
+                    ->whereIn('ingredient_id', $ingredients->pluck('id'))
+                    ->pluck('quantity', 'ingredient_id');
+            }
+
             foreach ($ingredients as $ing) {
+                $systemQty = ! empty($opts['storage_location_id'])
+                    ? (float) ($locationStocks[$ing->id] ?? 0)
+                    : (float) $ing->current_stock;
+
                 $count->items()->create([
                     'ingredient_id' => $ing->id,
-                    'system_qty'    => (float) $ing->current_stock,
+                    'system_qty'    => $systemQty,
                     'counted_qty'   => null,
                     'variance'      => 0,
                     'variance_cost' => 0,
@@ -134,6 +147,7 @@ class StockCountService
                     reference:  $item,
                     reason:     "جرد {$count->number}",
                     userId:     $userId,
+                    storageLocationId: $count->storage_location_id,
                 );
                 $created++;
             }

@@ -20,8 +20,16 @@
         ])->values()->toArray(),
     ];
     $hasModifiers = $item->modifierGroups->count() > 0;
+    $searchText = trim(collect([
+        $item->name,
+        $item->description,
+        $item->allergens->pluck('name')->join(' '),
+    ])->filter()->join(' '));
 @endphp
 <div class="dish {{ $item->is_available ? '' : 'is-unavailable' }} {{ $hasModifiers ? 'has-mods' : '' }}"
+     x-show="matchesSearch({{ \Illuminate\Support\Js::from($searchText) }})"
+     x-transition.opacity.duration.150ms
+     data-menu-search="{{ $searchText }}"
      @if($item->is_available)
      @click="onCardClick({{ \Illuminate\Support\Js::from($payload) }}, $event)"
      @endif>
@@ -76,8 +84,10 @@
                             title="{{ $hasModifiers ? 'اختر الخيارات' : 'أضف للسلة' }}">
                         @if($hasModifiers)
                             <i class="bi bi-sliders2"></i>
+                            <span>اختيار</span>
                         @else
-                            +
+                            <i class="bi bi-plus-lg"></i>
+                            <span>أضف</span>
                         @endif
                     </button>
                 </template>

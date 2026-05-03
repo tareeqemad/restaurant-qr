@@ -42,6 +42,13 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        // Authenticated diners — separate from staff `web` guard so
+        // sessions, redirects, and middleware never cross domains.
+        'customer' => [
+            'driver' => 'session',
+            'provider' => 'customers',
+        ],
     ],
 
     /*
@@ -67,10 +74,10 @@ return [
             'model' => env('AUTH_MODEL', User::class),
         ],
 
-        // 'users' => [
-        //     'driver' => 'database',
-        //     'table' => 'users',
-        // ],
+        'customers' => [
+            'driver' => 'eloquent',
+            'model'  => \App\Models\Customer::class,
+        ],
     ],
 
     /*

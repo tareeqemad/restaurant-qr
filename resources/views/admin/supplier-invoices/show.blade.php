@@ -16,14 +16,18 @@
         <x-admin.data-panel title="تفاصيل الفاتورة" icon="bi-info-circle">
             <div class="p-3">
                 @php
+                    // Every row has 4 elements so positional destructuring
+                    // in the @foreach below stays valid even when `$mono` is
+                    // the default (false). PHP's array destructuring has no
+                    // per-slot default syntax, so we normalise here.
                     $rows = [
-                        ['رقم الفاتورة',     $invoice->number,                                   'bi-hash',  true],
-                        ['المورد',            $invoice->supplier?->name,                         'bi-truck'],
-                        ['PO مرتبط',          $invoice->purchaseOrder?->number,                  'bi-link-45deg', true],
-                        ['تاريخ الفاتورة',    $invoice->invoice_date?->format('Y-m-d'),          'bi-calendar'],
-                        ['الاستحقاق',         optional($invoice->due_date)->format('Y-m-d'),     'bi-calendar-event'],
-                        ['تاريخ السداد',     $invoice->paid_at?->format('Y-m-d H:i'),            'bi-check2-circle'],
-                        ['أنشئت بواسطة',      $invoice->creator?->name,                          'bi-person'],
+                        ['رقم الفاتورة',     $invoice->number,                                   'bi-hash',         true],
+                        ['المورد',            $invoice->supplier?->name,                         'bi-truck',        false],
+                        ['PO مرتبط',          $invoice->purchaseOrder?->number,                  'bi-link-45deg',   true],
+                        ['تاريخ الفاتورة',    $invoice->invoice_date?->format('Y-m-d'),          'bi-calendar',     false],
+                        ['الاستحقاق',         optional($invoice->due_date)->format('Y-m-d'),     'bi-calendar-event', false],
+                        ['تاريخ السداد',     $invoice->paid_at?->format('Y-m-d H:i'),            'bi-check2-circle', false],
+                        ['أنشئت بواسطة',      $invoice->creator?->name,                          'bi-person',       false],
                     ];
                 @endphp
                 @foreach($rows as [$label, $value, $icon, $mono])
@@ -68,6 +72,21 @@
 
     <div class="col-xl-8">
         <x-admin.data-panel title="الدفعات" :count="$invoice->payments->count()" icon="bi-cash-stack">
+            <x-slot:actions>
+                @can('pay', $invoice)
+                    @if($invoice->balance > 0)
+                        <button type="button" class="btn btn-success"
+                                data-bs-toggle="modal" data-bs-target="#payModal">
+                            <i class="bi bi-cash-coin"></i> تسجيل دفعة
+                        </button>
+                    @else
+                        <span class="badge bg-success-transparent py-2 px-3">
+                            <i class="bi bi-check-circle-fill"></i> الفاتورة مدفوعة بالكامل
+                        </span>
+                    @endif
+                @endcan
+            </x-slot:actions>
+
             <div class="table-responsive">
                 <table class="table align-middle">
                     <thead class="bg-light">

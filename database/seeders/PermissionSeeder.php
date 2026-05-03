@@ -19,11 +19,20 @@ class PermissionSeeder extends Seeder
             'modifiers' => ['viewAny', 'create', 'update', 'delete'],
             'ingredients' => ['viewAny', 'create', 'update', 'delete'],
             'inventory' => ['viewAny', 'manage'],
-            'orders' => ['viewAny', 'view', 'create', 'approve', 'cancel', 'edit', 'delete'],
+            'suppliers' => ['viewAny', 'view', 'create', 'update', 'delete'],
+            'purchase_orders' => ['viewAny', 'view', 'create', 'update', 'send', 'receive', 'cancel', 'delete'],
+            'supplier_invoices' => ['viewAny', 'view', 'create', 'pay', 'cancel', 'delete'],
+            'stock_counts' => ['viewAny', 'view', 'create', 'update', 'finalize', 'cancel', 'delete'],
+            'storage_locations' => ['viewAny', 'create', 'update', 'delete', 'transfer'],
+            'waste' => ['viewAny', 'create'],
+            'orders' => ['viewAny', 'view', 'create', 'approve', 'cancel', 'edit', 'delete', 'archive'],
             'payments' => ['viewAny', 'create', 'refund'],
             'shifts' => ['viewAny', 'open', 'close', 'view_all'],
+            'expenses' => ['viewAny', 'view', 'create', 'update', 'approve', 'reject', 'delete'],
+            'customers' => ['viewAny', 'view', 'update', 'block', 'delete'],
             'reports' => ['viewAny', 'export'],
             'settings' => ['view', 'update'],
+            'lookups' => ['viewAny', 'create', 'update', 'delete'],
             'activity_logs' => ['viewAny'],
         ];
 
@@ -41,6 +50,25 @@ class PermissionSeeder extends Seeder
             }
         }
 
+        foreach ([
+            'kitchen' => 'Kitchen station screen',
+            'bar' => 'Bar station screen',
+            'grill' => 'Grill station screen',
+            'dessert' => 'Dessert station screen',
+            'coffee' => 'Coffee station screen',
+            'cold' => 'Cold station screen',
+        ] as $code => $label) {
+            Permission::updateOrCreate(
+                ['name' => "station.{$code}.view"],
+                [
+                    'label' => $label,
+                    'group' => 'stations_access',
+                    'group_label' => 'Station screens',
+                    'display_order' => 100,
+                ]
+            );
+        }
+
         // Attach permissions to roles
         $admin = Role::where('name', 'admin')->first();
         $manager = Role::where('name', 'manager')->first();
@@ -52,7 +80,9 @@ class PermissionSeeder extends Seeder
         if ($admin) $admin->permissions()->sync(Permission::pluck('id'));
 
         if ($manager) {
-            $managerPerms = Permission::whereNotIn('group', ['roles'])->pluck('id');
+            // Manager doesn't manage roles or system-wide lookups (those are
+            // owner-level configuration; an admin/super-admin handles them).
+            $managerPerms = Permission::whereNotIn('group', ['roles', 'lookups'])->pluck('id');
             $manager->permissions()->sync($managerPerms);
         }
 
@@ -60,7 +90,6 @@ class PermissionSeeder extends Seeder
             $waiter->permissions()->sync(Permission::whereIn('name', [
                 'tables.viewAny',
                 'orders.viewAny', 'orders.view', 'orders.create', 'orders.approve', 'orders.cancel', 'orders.edit',
-                'payments.viewAny', 'payments.create',
                 'menu_items.viewAny', 'menu_items.toggle_availability',
             ])->pluck('id'));
         }
@@ -70,6 +99,7 @@ class PermissionSeeder extends Seeder
                 'orders.viewAny', 'orders.view',
                 'menu_items.viewAny', 'menu_items.toggle_availability',
                 'ingredients.viewAny', 'inventory.viewAny',
+                'station.kitchen.view', 'station.grill.view', 'station.dessert.view', 'station.cold.view',
             ])->pluck('id'));
         }
 
@@ -78,16 +108,21 @@ class PermissionSeeder extends Seeder
                 'orders.viewAny', 'orders.view',
                 'menu_items.viewAny', 'menu_items.toggle_availability',
                 'ingredients.viewAny', 'inventory.viewAny',
+                'station.bar.view', 'station.coffee.view',
             ])->pluck('id'));
         }
 
         if ($cashier) {
             $cashier->permissions()->sync(Permission::whereIn('name', [
-                'orders.viewAny', 'orders.view',
+                'orders.viewAny', 'orders.view', 'orders.create',
                 'payments.viewAny', 'payments.create', 'payments.refund',
                 'tables.viewAny',
                 'shifts.open', 'shifts.close',
                 'reports.viewAny',
+                // Petty cash: cashier may log + view, manager approves.
+                'expenses.viewAny', 'expenses.view', 'expenses.create',
+                // Customer phone-lookup at checkout (read-only).
+                'customers.viewAny', 'customers.view',
             ])->pluck('id'));
         }
     }

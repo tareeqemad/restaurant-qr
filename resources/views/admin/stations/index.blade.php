@@ -18,6 +18,7 @@
                     <th>أيقونة</th>
                     <th>الكود</th>
                     <th>الاسم</th>
+                    <th>موقع المخزون</th>
                     <th>الترتيب</th>
                     <th>الحالة</th>
                     <th></th>
@@ -33,6 +34,15 @@
                         </td>
                         <td><code>{{ $s->code }}</code></td>
                         <td class="fw-bold">{{ $s->name }}</td>
+                        <td>
+                            @if($s->storageLocation)
+                                <span class="badge bg-primary-transparent text-primary">
+                                    <i class="bi bi-geo-alt me-1"></i>{{ $s->storageLocation->name }}
+                                </span>
+                            @else
+                                <span class="badge bg-light text-muted">المخزن الافتراضي</span>
+                            @endif
+                        </td>
                         <td>{{ $s->display_order }}</td>
                         <td>
                             @if($s->active)<span class="badge bg-success">نشطة</span>
@@ -47,7 +57,7 @@
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="6">
+                    <tr><td colspan="7">
                         <x-admin.empty-state
                             icon="bi-diagram-3"
                             title="ما في محطات بعد"

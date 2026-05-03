@@ -50,43 +50,60 @@
 @endphp
 
 <div {{ $attributes->merge(['class' => 'page-header']) }}>
-    @if($title)
-        <h1 class="page-title my-auto">{{ $title }}</h1>
-    @endif
+    <div class="relax-page-main">
+        @if($icon)
+            <span class="relax-page-icon" aria-hidden="true">
+                <i class="bi {{ $icon }}"></i>
+            </span>
+        @endif
 
-    <div class="page-header-bredcrumb d-flex align-items-center gap-3 ms-auto">
-        <ol class="breadcrumb mb-0">
-            @if($home)
-                <li class="breadcrumb-item">
-                    <a href="{{ route('admin.dashboard') }}">
-                        <svg class="svg-icon" xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24">
-                            <path d="M0 0h24v24H0V0z" fill="none"></path>
-                            <path d="M12 3L2 12h3v8h6v-6h2v6h6v-8h3L12 3zm5 15h-2v-6H9v6H7v-7.81l5-4.5 5 4.5V18z"></path>
-                            <path d="M7 10.19V18h2v-6h6v6h2v-7.81l-5-4.5z" opacity=".3"></path>
-                        </svg>
-                        <span class="breadcrumb-icon"> الرئيسية</span>
-                    </a>
-                </li>
-            @endif
-
-            @foreach($trail as $crumb)
-                @if(!empty($crumb['url']))
-                    <li class="breadcrumb-item">
-                        <a href="{{ $crumb['url'] }}">{{ $crumb['label'] }}</a>
-                    </li>
-                @else
-                    <li class="breadcrumb-item">{{ $crumb['label'] }}</li>
-                @endif
-            @endforeach
-
+        <div class="relax-page-copy">
             @if($title)
-                <li class="breadcrumb-item active" aria-current="page">{{ $title }}</li>
+                <h1 class="page-title my-auto">{{ $title }}</h1>
             @endif
-        </ol>
 
-        {{-- Action buttons are rendered in the card-header (.card-options) via
-             <x-admin.data-panel>, not in the breadcrumb. If a page still passes
-             <x-slot:actions> here, Blade collects it silently — we just don't
-             render it. --}}
+            @if($subtitle)
+                <p class="relax-page-subtitle">{{ $subtitle }}</p>
+            @endif
+        </div>
+    </div>
+
+    <div class="relax-page-side">
+        <div class="page-header-bredcrumb d-flex align-items-center gap-3">
+            <ol class="breadcrumb mb-0">
+                @if($home)
+                    <li class="breadcrumb-item">
+                        <a href="{{ route('admin.dashboard') }}">
+                            <svg class="svg-icon" xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24">
+                                <path d="M0 0h24v24H0V0z" fill="none"></path>
+                                <path d="M12 3L2 12h3v8h6v-6h2v6h6v-8h3L12 3zm5 15h-2v-6H9v6H7v-7.81l5-4.5 5 4.5V18z"></path>
+                                <path d="M7 10.19V18h2v-6h6v6h2v-7.81l-5-4.5z" opacity=".3"></path>
+                            </svg>
+                            <span class="breadcrumb-icon"> الرئيسية</span>
+                        </a>
+                    </li>
+                @endif
+
+                @foreach($trail as $crumb)
+                    @if(!empty($crumb['url']))
+                        <li class="breadcrumb-item">
+                            <a href="{{ $crumb['url'] }}">{{ $crumb['label'] }}</a>
+                        </li>
+                    @else
+                        <li class="breadcrumb-item">{{ $crumb['label'] }}</li>
+                    @endif
+                @endforeach
+
+                @if($title)
+                    <li class="breadcrumb-item active" aria-current="page">{{ $title }}</li>
+                @endif
+            </ol>
+        </div>
+
+        @isset($actions)
+            <div class="relax-page-actions">
+                {{ $actions }}
+            </div>
+        @endisset
     </div>
 </div>

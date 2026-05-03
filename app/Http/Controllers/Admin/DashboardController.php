@@ -10,6 +10,7 @@ use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\Table;
 use App\Services\AlertsService;
+use App\Support\BranchContext;
 
 class DashboardController extends Controller
 {
@@ -34,10 +35,18 @@ class DashboardController extends Controller
 
         $recentOrders = Order::with(['table', 'items'])->latest()->limit(8)->get();
 
-        $topItems = \DB::table('order_items')
+        // Top items in the last 7 days. Raw query — bypasses BranchScope —
+        // so we stamp the branch filter manually when one is bound.
+        $topItemsQuery = \DB::table('order_items')
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
             ->whereDate('orders.created_at', '>=', now()->subDays(7))
-            ->where('order_items.status', '!=', 'cancelled')
+            ->where('order_items.status', '!=', 'cancelled');
+
+        if ($branchId = BranchContext::current()) {
+            $topItemsQuery->where('orders.branch_id', $branchId);
+        }
+
+        $topItems = $topItemsQuery
             ->select(
                 'order_items.name_snapshot',
                 \DB::raw('SUM(order_items.quantity) as qty'),

@@ -15,16 +15,34 @@ th { background: #f5f5f5; }
 hr { border: 0; border-top: 1px dashed #333; }
 </style>
 </head><body>
+@php
+    $invoiceOrders = $invoice->tableSession
+        ? $invoice->tableSession->orders
+        : collect([$invoice->order])->filter();
+    $originLabel = $invoice->tableSession
+        ? 'طاولة '.($invoice->tableSession?->table?->number ?? '—')
+        : (($invoice->order?->order_type === 'delivery' ? 'دليفري' : 'استلام/سفري').' - '.($invoice->order?->sourceLabel() ?? 'طلب مباشر'));
+    $siteName = \App\Models\Setting::get('site_name', config('restaurant.name'));
+    $legalName = \App\Models\Setting::get('legal_name');
+    $taxNumber = \App\Models\Setting::get('tax_number');
+    $currencySymbol = \App\Models\Setting::get('currency_symbol', config('restaurant.currency_symbol'));
+    $receiptFooter = \App\Models\Setting::get('receipt_footer', 'شكراً لزيارتكم');
+@endphp
 <div class="center">
-<h1>{{ config('restaurant.name') }}</h1>
+<h1>{{ $siteName }}</h1>
+@if($legalName)<p>{{ $legalName }}</p>@endif
+@if($taxNumber)<p>الرقم الضريبي: <span dir="ltr">{{ $taxNumber }}</span></p>@endif
 <p>فاتورة ضريبية #{{ $invoice->number }} — {{ $invoice->issued_at?->format('Y-m-d H:i') }}</p>
-<p>طاولة {{ $invoice->tableSession?->table?->number ?? '—' }}</p>
+<p>{{ $originLabel }}</p>
+@if($invoice->customer_name || $invoice->customer_phone)
+    <p>{{ $invoice->customer_name }} @if($invoice->customer_phone) - <span dir="ltr">{{ $invoice->customer_phone }}</span>@endif</p>
+@endif
 </div>
 <hr>
 <table>
 <thead><tr><th>الصنف</th><th>كمية</th><th>سعر</th><th>إجمالي</th></tr></thead>
 <tbody>
-@foreach($invoice->tableSession->orders as $order)
+@foreach($invoiceOrders as $order)
     @foreach($order->items as $it)
         @if($it->status !== 'cancelled')
         <tr>
@@ -45,6 +63,10 @@ hr { border: 0; border-top: 1px dashed #333; }
 @if($invoice->discount_total > 0)<tr><td class="lbl">خصم:</td><td class="val">-{{ number_format($invoice->discount_total, 2) }}</td></tr>@endif
 @if($invoice->tax_total > 0)<tr><td class="lbl">الضريبة:</td><td class="val">{{ number_format($invoice->tax_total, 2) }}</td></tr>@endif
 @if($invoice->service_total > 0)<tr><td class="lbl">الخدمة:</td><td class="val">{{ number_format($invoice->service_total, 2) }}</td></tr>@endif
-<tr class="grand"><td class="lbl">الإجمالي:</td><td class="val">{{ number_format($invoice->total, 2) }} {{ config('restaurant.currency_symbol') }}</td></tr>
+@if($invoice->delivery_fee > 0)<tr><td class="lbl">رسوم التوصيل:</td><td class="val">{{ number_format($invoice->delivery_fee, 2) }}</td></tr>@endif
+<tr class="grand"><td class="lbl">الإجمالي:</td><td class="val">{{ number_format($invoice->total, 2) }} {{ $currencySymbol }}</td></tr>
 </table>
+@if($receiptFooter)
+<p class="center" style="margin-top:14px; color:#555;">{{ $receiptFooter }}</p>
+@endif
 </body></html>

@@ -122,12 +122,28 @@ class PurchaseOrderController extends Controller
         $this->authorize('receive', $purchaseOrder);
 
         $data = $request->validate([
-            'receipts'     => ['required', 'array'],
-            'receipts.*'   => ['nullable', 'numeric', 'min:0'],
+            'receipts'            => ['required', 'array'],
+            'receipts.*'          => ['nullable', 'numeric', 'min:0'],
+            'storage_location_id' => ['nullable', 'exists:storage_locations,id'],
+            'batch_numbers'       => ['nullable', 'array'],
+            'batch_numbers.*'     => ['nullable', 'string', 'max:100'],
+            'expiry_dates'        => ['nullable', 'array'],
+            'expiry_dates.*'      => ['nullable', 'date'],
         ]);
 
         try {
-            $this->service->receive($purchaseOrder, $data['receipts'], auth()->id());
+            $meta = [];
+            foreach ($data['receipts'] as $lineId => $qty) {
+                if ((float) $qty <= 0) continue;
+
+                $meta[(int) $lineId] = [
+                    'storage_location_id' => $data['storage_location_id'] ?? null,
+                    'batch_number' => $data['batch_numbers'][$lineId] ?? null,
+                    'expiry_date' => $data['expiry_dates'][$lineId] ?? null,
+                ];
+            }
+
+            $this->service->receive($purchaseOrder, $data['receipts'], auth()->id(), $meta);
             return redirect()
                 ->route('admin.purchase-orders.show', $purchaseOrder)
                 ->with('success', 'تم استلام البضاعة وتحديث المخزون والأسعار.');
@@ -159,8 +175,19 @@ class PurchaseOrderController extends Controller
 
     protected function formData(): array
     {
+        $supQuery = Supplier::where('active', true);
+
+        // Branch-aware: branch users see only suppliers serving their branch.
+        // Owner-level users (Super Admin / Partner) see all.
+        $user = auth()->user();
+        if ($user && ! $user->isOwnerLevel()) {
+            $branchId = \App\Support\BranchContext::current()
+                ?? optional($user->primaryBranch())->id;
+            if ($branchId) $supQuery->servingBranch($branchId);
+        }
+
         return [
-            'suppliers'   => Supplier::where('active', true)->orderBy('name')->get(),
+            'suppliers'   => $supQuery->orderBy('name')->get(),
             'ingredients' => Ingredient::with('baseUnit', 'supplier')->orderBy('name')->get(),
             'units'       => Unit::orderBy('name')->get(),
         ];

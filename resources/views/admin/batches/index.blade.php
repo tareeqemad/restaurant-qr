@@ -23,22 +23,32 @@
 
 <x-admin.data-panel title="الدفعات" :count="$batches->total()" icon="bi-box2">
     <x-slot:actions>
-        @if(request()->hasAny(['ingredient_id', 'expired', 'expiring', 'active']))
+        @if(request()->hasAny(['ingredient_id', 'storage_location_id', 'expired', 'expiring', 'active']))
             <a href="{{ route('admin.batches.index') }}" class="btn btn-light"><i class="bi bi-x-circle"></i> مسح</a>
         @endif
     </x-slot:actions>
 
     <x-slot:filters>
         <form class="row g-2">
-            <div class="col-md-4">
-                <select name="ingredient_id" class="form-select">
+            <div class="col-md-3">
+                <select name="ingredient_id" class="form-select" data-relax-choice data-choice-search-placeholder="ابحث عن مكوّن...">
                     <option value="">كل المكونات</option>
                     @foreach($ingredients as $ing)
                         <option value="{{ $ing->id }}" @selected(request('ingredient_id')==$ing->id)>{{ $ing->name }}</option>
                     @endforeach
                 </select>
             </div>
-            <div class="col-md-6 d-flex gap-3 align-items-center">
+            <div class="col-md-3">
+                <select name="storage_location_id" class="form-select" data-relax-choice data-choice-search-placeholder="ابحث عن موقع...">
+                    <option value="">كل مواقع التخزين</option>
+                    @foreach($storageLocations as $location)
+                        <option value="{{ $location->id }}" @selected(request('storage_location_id')==$location->id)>
+                            {{ $location->name }}{{ $location->code ? ' - '.$location->code : '' }}
+                        </option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="col-md-4 d-flex gap-3 align-items-center">
                 <label><input type="checkbox" name="active"  value="1" @checked(request('active'))>  نشطة فقط</label>
                 <label><input type="checkbox" name="expiring" value="1" @checked(request('expiring'))> تنتهي قريباً</label>
                 <label><input type="checkbox" name="expired"  value="1" @checked(request('expired'))>  منتهية</label>
@@ -51,6 +61,7 @@
         <table class="table align-middle">
             <thead class="bg-light">
                 <tr>
+                    <th>موقع التخزين</th>
                     <th>المكوّن</th>
                     <th>رقم الدفعة</th>
                     <th>تاريخ الاستلام</th>
@@ -68,6 +79,7 @@
                         $rowClass = $b->isExpired() ? 'table-danger' : ($b->isNearExpiry() ? 'table-warning' : '');
                     @endphp
                     <tr class="{{ $rowClass }} {{ $b->isDepleted() ? 'text-muted' : '' }}">
+                        <td>{{ $b->storageLocation?->name ?? '—' }}</td>
                         <td class="fw-bold">{{ $b->ingredient?->name ?? '—' }}</td>
                         <td>{{ $b->batch_number ?: '—' }}</td>
                         <td>{{ $b->received_date->format('Y-m-d') }}</td>
@@ -97,7 +109,7 @@
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="8">
+                    <tr><td colspan="9">
                         <x-admin.empty-state
                             icon="bi-box2"
                             title="ما في دفعات بعد"
@@ -127,10 +139,20 @@
                     </div>
                     <div class="mb-2">
                         <label class="form-label">المكوّن <span class="text-danger">*</span></label>
-                        <select name="ingredient_id" class="form-select" required>
+                        <select name="ingredient_id" class="form-select" required data-relax-choice data-choice-search-placeholder="ابحث عن مكوّن...">
                             <option value="">— اختر —</option>
                             @foreach($ingredients as $ing)
                                 <option value="{{ $ing->id }}">{{ $ing->name }} ({{ $ing->baseUnit?->code }})</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">موقع التخزين</label>
+                        <select name="storage_location_id" class="form-select" data-relax-choice data-choice-search-placeholder="ابحث عن موقع...">
+                            @foreach($storageLocations as $location)
+                                <option value="{{ $location->id }}" @selected($location->is_default)>
+                                    {{ $location->name }}{{ $location->code ? ' - '.$location->code : '' }}
+                                </option>
                             @endforeach
                         </select>
                     </div>

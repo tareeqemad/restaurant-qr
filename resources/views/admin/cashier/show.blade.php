@@ -35,6 +35,12 @@
     </div>
 
     <div class="col-lg-4">
+        {{-- Portal customer link panel — sits ABOVE the invoice summary so
+             the cashier sees identity before money. --}}
+        <div class="card mb-3"><div class="card-body">
+            <livewire:admin.cashier-customer-link :session-id="$session->id" />
+        </div></div>
+
         @if(! $session->invoice)
             <div class="card"><div class="card-body">
                 <h5 class="fw-bold mb-3">ملخص الفاتورة</h5>
@@ -310,4 +316,18 @@
         @endif
     </div>
 </div>
+
+@push('scripts')
+@livewireScripts
+<script>
+    document.addEventListener('livewire:initialized', () => {
+        Livewire.on('flash', (e) => {
+            const payload = Array.isArray(e) ? e[0] : e;
+            const msg  = payload?.message ?? '';
+            const type = payload?.type ?? 'info';
+            if (window.notify) window.notify(msg, type); else alert(msg);
+        });
+    });
+</script>
+@endpush
 @endsection

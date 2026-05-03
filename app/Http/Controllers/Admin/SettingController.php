@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Setting;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class SettingController extends Controller
 {
@@ -22,13 +23,20 @@ class SettingController extends Controller
         abort_unless(auth()->user()->hasAnyRole(['super_admin', 'admin']), 403);
 
         $data = $request->validate([
-            'site_name' => ['required', 'string'],
-            'tax_rate' => ['required', 'numeric', 'min:0'],
+            'site_name' => ['required', 'string', 'max:120'],
+            'legal_name' => ['nullable', 'string', 'max:160'],
+            'tax_number' => ['nullable', 'string', 'max:80'],
+            'receipt_footer' => ['nullable', 'string', 'max:500'],
+            'tax_rate' => ['required', 'numeric', 'min:0', 'max:100'],
             'tax_enabled' => ['sometimes', 'boolean'],
-            'service_rate' => ['required', 'numeric', 'min:0'],
+            'customer_tax_display' => ['required', 'in:exclusive,inclusive'],
+            'service_rate' => ['required', 'numeric', 'min:0', 'max:100'],
             'service_enabled' => ['sometimes', 'boolean'],
-            'currency_symbol' => ['required', 'string'],
-            'auto_approve' => ['sometimes', 'boolean'],
+            'currency_symbol' => ['required', 'string', 'max:10'],
+            'customer_currency_switcher' => ['sometimes', 'boolean'],
+            'customer_cancel_window_seconds' => ['required', 'integer', 'min:0', 'max:900'],
+            'session_ttl_minutes' => ['required', 'integer', 'min:30', 'max:1440'],
+            'strict_stock' => ['sometimes', 'boolean'],
             // Theme color settings
             'theme_primary' => ['nullable', 'regex:/^#[0-9a-fA-F]{6}$/'],
             'theme_dark' => ['nullable', 'regex:/^#[0-9a-fA-F]{6}$/'],
@@ -39,9 +47,42 @@ class SettingController extends Controller
             'theme_menu_style' => ['nullable', 'in:light,dark,brand'],
         ]);
 
+        $meta = [
+            'site_name' => ['general', 'string'],
+            'legal_name' => ['general', 'string'],
+            'tax_number' => ['general', 'string'],
+            'receipt_footer' => ['billing', 'string'],
+            'currency_symbol' => ['billing', 'string'],
+            'tax_rate' => ['billing', 'float'],
+            'tax_enabled' => ['billing', 'bool'],
+            'customer_tax_display' => ['billing', 'string'],
+            'service_rate' => ['billing', 'float'],
+            'service_enabled' => ['billing', 'bool'],
+            'customer_currency_switcher' => ['customer', 'bool'],
+            'customer_cancel_window_seconds' => ['customer', 'int'],
+            'session_ttl_minutes' => ['customer', 'int'],
+            'strict_stock' => ['inventory', 'bool'],
+            'theme_primary' => ['theme', 'string'],
+            'theme_dark' => ['theme', 'string'],
+            'theme_header' => ['theme', 'string'],
+            'theme_accent' => ['theme', 'string'],
+            'theme_menu' => ['theme', 'string'],
+            'theme_header_style' => ['theme', 'string'],
+            'theme_menu_style' => ['theme', 'string'],
+        ];
+
+        $clearable = ['legal_name', 'tax_number', 'receipt_footer'];
+
         foreach ($data as $k => $v) {
-            if ($v === null || $v === '') continue;
-            Setting::put($k, $v);
+            if ($v === null || $v === '') {
+                if (in_array($k, $clearable, true)) {
+                    Setting::where('key', $k)->delete();
+                    \Cache::forget('setting.'.$k);
+                }
+                continue;
+            }
+            [$group, $type] = $meta[$k] ?? ['general', 'string'];
+            Setting::put($k, $v, $group, $type);
         }
 
         return back()->with('success', 'تم الحفظ');
@@ -58,5 +99,78 @@ class SettingController extends Controller
         }
 
         return back()->with('success', 'تم استعادة ألوان الهوية الافتراضية');
+    }
+
+    /**
+     * Upload brand assets: main logo (shown on admin header, login, customer
+     * topbar, invoices) and/or favicon (browser tab). Either can be
+     * uploaded independently. Old files are deleted to keep storage clean.
+     */
+    public function updateBrand(Request $request)
+    {
+        abort_unless(auth()->user()->hasAnyRole(['super_admin', 'admin']), 403);
+
+        $request->validate([
+            'brand_logo'    => ['nullable', 'image', 'mimes:png,jpg,jpeg,webp,svg', 'max:2048'],
+            'brand_favicon' => ['nullable', 'image', 'mimes:png,ico,jpg,webp,svg', 'max:512'],
+        ], [], [
+            'brand_logo'    => 'شعار البرنامج',
+            'brand_favicon' => 'أيقونة التبويب',
+        ]);
+
+        foreach (['brand_logo', 'brand_favicon'] as $field) {
+            if (! $request->hasFile($field)) continue;
+
+            // Delete old uploaded file (if any) so storage doesn't accumulate.
+            $previous = Setting::get($field);
+            if ($previous) {
+                Storage::disk('public')->delete($previous);
+            }
+
+            $path = $request->file($field)->store('brand', 'public');
+            Storage::disk('public')->setVisibility($path, 'public');
+            $this->makePubliclyReadable(Storage::disk('public')->path($path));
+            Setting::put($field, $path, 'brand');
+            clearstatcache();
+        }
+
+        return back()->with('success', 'تم تحديث شعارات البرنامج');
+    }
+
+    /** Delete a single uploaded brand asset and revert to default. */
+    public function deleteBrand(Request $request, string $key)
+    {
+        abort_unless(auth()->user()->hasAnyRole(['super_admin', 'admin']), 403);
+        abort_unless(in_array($key, ['brand_logo', 'brand_favicon']), 404);
+
+        $path = Setting::get($key);
+        if ($path) {
+            Storage::disk('public')->delete($path);
+        }
+        Setting::where('key', $key)->delete();
+        \Cache::forget('setting.'.$key);
+        clearstatcache();
+
+        return back()->with('success', 'تم حذف الشعار وإرجاع الافتراضي');
+    }
+
+    private function makePubliclyReadable(string $path): void
+    {
+        if (! file_exists($path)) {
+            return;
+        }
+
+        @chmod($path, 0644);
+
+        $directory = dirname($path);
+        while ($directory && $directory !== dirname($directory)) {
+            @chmod($directory, 0755);
+
+            if ($directory === storage_path('app/public')) {
+                break;
+            }
+
+            $directory = dirname($directory);
+        }
     }
 }

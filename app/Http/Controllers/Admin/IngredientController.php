@@ -16,17 +16,55 @@ class IngredientController extends Controller
     public function index(Request $request)
     {
         $this->authorize('viewAny', Ingredient::class);
+
+        $branchId = \App\Support\BranchContext::current();
+
         $q = Ingredient::with('baseUnit', 'supplier');
         if ($s = $request->get('search')) $q->where('name', 'like', "%$s%");
-        if ($request->filled('low_stock')) $q->whereColumn('current_stock', '<=', 'reorder_threshold');
+
+        // Branch-aware low-stock filter: when a branch is active, filter by
+        // per-branch stock (sum of ingredient_stock at that branch's locations)
+        // vs per-branch threshold. Falls back to the global comparison when no
+        // branch context (owner-level "all branches" view).
+        if ($request->filled('low_stock')) {
+            if ($branchId) {
+                $lowIds = Ingredient::where('track_stock', true)
+                    ->get()
+                    ->filter(fn ($i) => $i->isLowStockAtBranch($branchId))
+                    ->pluck('id');
+                $q->whereIn('id', $lowIds);
+            } else {
+                $q->whereColumn('current_stock', '<=', 'reorder_threshold');
+            }
+        }
+
         $ingredients = $q->orderBy('name')->paginate(20)->withQueryString();
-        $stats = [
-            'total'     => Ingredient::count(),
-            'low_stock' => Ingredient::whereColumn('current_stock', '<=', 'reorder_threshold')
-                                     ->where('current_stock', '>', 0)->count(),
-            'out_stock' => Ingredient::where('current_stock', '<=', 0)->count(),
-            'healthy'   => Ingredient::whereColumn('current_stock', '>', 'reorder_threshold')->count(),
-        ];
+
+        // Stats are also branch-aware when in branch context.
+        if ($branchId) {
+            $tracked  = Ingredient::where('track_stock', true)->get();
+            $lowCount = $tracked->filter(fn ($i) =>
+                $i->isLowStockAtBranch($branchId)
+                && $i->stockAtBranch($branchId) > 0
+            )->count();
+            $outCount = $tracked->filter(fn ($i) => $i->stockAtBranch($branchId) <= 0)->count();
+            $healthy  = $tracked->count() - $lowCount - $outCount;
+            $stats = [
+                'total'     => Ingredient::count(),
+                'low_stock' => $lowCount,
+                'out_stock' => $outCount,
+                'healthy'   => max(0, $healthy),
+            ];
+        } else {
+            $stats = [
+                'total'     => Ingredient::count(),
+                'low_stock' => Ingredient::whereColumn('current_stock', '<=', 'reorder_threshold')
+                                         ->where('current_stock', '>', 0)->count(),
+                'out_stock' => Ingredient::where('current_stock', '<=', 0)->count(),
+                'healthy'   => Ingredient::whereColumn('current_stock', '>', 'reorder_threshold')->count(),
+            ];
+        }
+
         return view('admin.ingredients.index', compact('ingredients', 'stats'));
     }
 
@@ -86,9 +124,16 @@ class IngredientController extends Controller
 
     protected function formData(): array
     {
+        $supQuery = Supplier::where('active', true);
+        $user = auth()->user();
+        if ($user && ! $user->isOwnerLevel()) {
+            $branchId = \App\Support\BranchContext::current()
+                ?? optional($user->primaryBranch())->id;
+            if ($branchId) $supQuery->servingBranch($branchId);
+        }
         return [
             'units' => Unit::all(),
-            'suppliers' => Supplier::where('active', true)->get(),
+            'suppliers' => $supQuery->orderBy('name')->get(),
         ];
     }
 

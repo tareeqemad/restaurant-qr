@@ -26,7 +26,7 @@
         <form class="row g-2">
             <div class="col-md-3"><input name="search" value="{{ request('search') }}" class="form-control" placeholder="🔍 رقم الفاتورة"></div>
             <div class="col-md-3">
-                <select name="supplier_id" class="form-select">
+                <select name="supplier_id" class="form-select" data-relax-choice data-choice-search-placeholder="ابحث عن مورد...">
                     <option value="">كل الموردين</option>
                     @foreach($suppliers as $s)
                         <option value="{{ $s->id }}" @selected(request('supplier_id')==$s->id)>{{ $s->name }}</option>

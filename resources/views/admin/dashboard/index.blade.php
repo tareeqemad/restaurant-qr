@@ -47,21 +47,14 @@
         </span>
     </x-slot:actions>
 
-    <div class="alerts-grid">
+    <div class="alerts-grid alerts-grid--dashboard">
         @foreach($alerts as $alert)
-            @php
-                $colors = [
-                    'critical' => ['bg' => 'rgba(185,28,28,.06)',  'border' => '#b91c1c', 'text' => '#991b1b', 'chip' => '#b91c1c'],
-                    'warning'  => ['bg' => 'rgba(184,135,42,.08)', 'border' => '#b8872a', 'text' => '#8a6920', 'chip' => '#b8872a'],
-                    'info'     => ['bg' => 'rgba(31,71,51,.06)',   'border' => '#1f4733', 'text' => 'var(--primary)', 'chip' => '#1f4733'],
-                ][$alert['severity']] ?? ['bg' => '#f9fafb', 'border' => '#d1d5db', 'text' => '#57534e', 'chip' => '#6b7280'];
-            @endphp
-            <a href="{{ $alert['route'] }}" class="alert-card" style="background: {{ $colors['bg'] }}; border-right-color: {{ $colors['border'] }};">
-                <div class="alert-card-icon" style="background: {{ $colors['chip'] }}; color: white;">
+            <a href="{{ $alert['route'] }}" class="alert-card alert-card--{{ $alert['severity'] }}">
+                <div class="alert-card-icon">
                     <i class="bi {{ $alert['icon'] }}"></i>
                 </div>
                 <div class="alert-card-body">
-                    <div class="alert-card-title" style="color: {{ $colors['text'] }};">
+                    <div class="alert-card-title">
                         {{ $alert['title'] }}
                         <span class="alert-card-count">{{ $alert['count'] }}</span>
                     </div>

@@ -5,14 +5,17 @@
 <meta name="theme-color" content="#1f4733">
 <meta name="csrf-token" content="{{ csrf_token() }}">
 <title>@yield('title', 'قائمة الطعام') · {{ config('restaurant.name') }}</title>
-<link rel="icon" href="{{ asset('assets/dashtic/images/brand-logos/favicon.ico') }}">
+<link rel="icon" href="{{ \App\Helpers\Brand::faviconUrl() }}">
 <link href="{{ asset('assets/dashtic/libs/bootstrap/css/bootstrap.rtl.min.css') }}" rel="stylesheet">
 <link href="{{ asset('assets/dashtic/icon-fonts/feather/feather.css') }}" rel="stylesheet">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&display=swap" rel="stylesheet">
 @vite(['resources/js/app.js'])
-<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+{{-- Livewire bundles its own Alpine — don't load a second copy from CDN
+     or Alpine will double-init and break reactivity. @livewireStyles goes in
+     <head>, @livewireScripts at end of body. --}}
+@livewireStyles
 <style>
 :root {
     /* Premium forest green + olive gold palette */
@@ -50,7 +53,8 @@ body { padding-bottom: env(safe-area-inset-bottom); min-height: 100vh; }
     border-bottom: 2px solid var(--accent);
 }
 .app-topbar h4 { margin: 0; font-weight: 900; font-size: 1.25rem; display: flex; align-items: center; gap: 10px; letter-spacing: -.02em; }
-.logo-icon { width: 36px; height: 36px; background: var(--accent); color: var(--brand-dark); border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 3px 10px rgba(0,0,0,.15), inset 0 -2px 4px rgba(0,0,0,.1); }
+.logo-icon { width: 40px; height: 40px; background: rgba(255,255,255,.95); color: var(--brand-dark); border-radius: 12px; padding: 4px; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 3px 10px rgba(0,0,0,.15), inset 0 -1px 3px rgba(0,0,0,.06); }
+.logo-icon img { width: 100%; height: 100%; object-fit: contain; display: block; border-radius: 9px; }
 .app-topbar .sub { font-size: .75rem; opacity: .9; }
 .table-big { background: var(--accent); color: var(--brand-dark); padding: 4px 12px; border-radius: 12px; font-weight: 900; font-size: .85rem; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 2px 6px rgba(0,0,0,.15); }
 .chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 99px; background: rgba(255,255,255,.18); color: white; font-size: .75rem; font-weight: 600; text-decoration: none; }
@@ -224,17 +228,24 @@ body { padding-bottom: env(safe-area-inset-bottom); min-height: 100vh; }
 @media (min-width: 576px) { .menu-grid { grid-template-columns: 1fr 1fr 1fr; gap: .75rem; padding: .75rem; } }
 @media (min-width: 992px) { .menu-grid { grid-template-columns: repeat(3, 1fr); } }
 
-/* Horizontal slider per category */
-.menu-slider { position: relative; padding: .3rem .6rem .5rem; }
+/* Horizontal slider per category. Arrows sit in reserved left/right "lanes"
+   so they NEVER visually or click-wise overlap a card's + button. Before
+   this, the left arrow was covering the + button of whichever card was
+   scrolled to the visual-left edge — clicks went to the arrow, not the
+   button, which felt like "the + button doesn't work sometimes". */
+.menu-slider { position: relative; padding: .3rem 3rem .5rem; }
+@media (max-width: 575.98px) {
+    .menu-slider { padding: .3rem 2.25rem .5rem; }
+}
+
 .slider-track {
     display: flex;
     gap: .7rem;
     overflow-x: auto;
     /* `proximity` is gentler than `mandatory` — browser only snaps if the
-       user is already close to an edge. Mandatory was fighting our
-       programmatic scrollTo in the arrow handlers. */
+       user is already close to an edge. */
     scroll-snap-type: x proximity;
-    scroll-padding-inline: .6rem;
+    scroll-padding-inline: .25rem;
     -webkit-overflow-scrolling: touch;
     scroll-behavior: smooth;
     padding: 8px 2px 20px;
@@ -247,51 +258,57 @@ body { padding-bottom: env(safe-area-inset-bottom); min-height: 100vh; }
     scroll-snap-align: start;
 }
 @media (min-width: 576px) { .slider-track > .dish { flex: 0 0 calc(40% - .35rem); } }
-@media (min-width: 992px) { .slider-track > .dish { flex: 0 0 240px; } }
+@media (min-width: 992px) { .slider-track > .dish { flex: 0 0 260px; } }
 
-/* Arrow nav — visible on tablet (576px+) and desktop; swipe-only on phones */
+/* Arrow nav — visible on ALL viewports (previously hidden on phones, so
+   users without a mouse had no signal there was more to scroll). On phones
+   they become smaller but still present for discoverability. */
 .slider-arrow {
-    position: absolute; top: 50%; transform: translateY(-50%);
-    width: 44px; height: 44px;
+    position: absolute; top: 50%;
+    transform: translateY(-50%);
+    width: 42px; height: 42px;
     border-radius: 50%;
-    background: var(--brand);
-    box-shadow: 0 6px 20px rgba(31, 71, 51, .28);
-    border: 2px solid rgba(255, 255, 255, .3);
-    color: white;
-    font-size: 1.4rem;
+    background: #fff;
+    box-shadow: 0 6px 20px rgba(31, 71, 51, .22), 0 0 0 1px rgba(31,71,51,.08);
+    border: 0;
+    color: var(--brand-dark);
+    font-size: 1.5rem;
     font-weight: 900;
-    display: none;
+    display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    z-index: 3;
-    transition: all .18s ease;
+    z-index: 5;
+    transition: background .18s ease, color .18s ease, box-shadow .18s ease, opacity .18s ease;
     line-height: 1;
-    /* Prevent any iOS tap-highlight flash on the round button */
+    padding: 0;
     -webkit-tap-highlight-color: transparent;
+    user-select: none;
 }
 .slider-arrow:hover {
-    background: var(--brand-dark);
-    transform: translateY(-50%) scale(1.1);
+    background: var(--brand);
+    color: #fff;
     box-shadow: 0 8px 26px rgba(31, 71, 51, .4);
 }
-.slider-arrow:active { transform: translateY(-50%) scale(.95); }
-.slider-arrow:disabled { opacity: .3; pointer-events: none; }
+.slider-arrow:active { background: var(--brand-dark); color: #fff; }
+.slider-arrow:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.slider-arrow:disabled { opacity: 0; pointer-events: none; }
 
-/* Position arrows just OUTSIDE the slider edges so they don't overlay cards */
-.slider-arrow-prev { inset-inline-end: -6px; }
-.slider-arrow-next { inset-inline-start: -6px; }
+/* Arrow positions — live in the reserved side padding on .menu-slider.
+   In RTL, inline-start = visual RIGHT: PREV sits on visual RIGHT,
+   NEXT on visual LEFT. */
+.slider-arrow-prev { inset-inline-start: 4px; }
+.slider-arrow-next { inset-inline-end: 4px; }
 
-/* Show arrows from tablet and up (was desktop-only — too restrictive) */
-@media (min-width: 576px) { .slider-arrow { display: flex; } }
-/* Small tablets: slightly smaller arrows so they don't dominate the row */
-@media (min-width: 576px) and (max-width: 991.98px) {
-    .slider-arrow { width: 38px; height: 38px; font-size: 1.2rem; }
-    .slider-arrow-prev { inset-inline-end: 2px; }
-    .slider-arrow-next { inset-inline-start: 2px; }
+/* Small screens: smaller footprint but still present for discoverability */
+@media (max-width: 575.98px) {
+    .slider-arrow {
+        width: 32px; height: 32px; font-size: 1.1rem;
+        box-shadow: 0 3px 10px rgba(31, 71, 51, .18), 0 0 0 1px rgba(31,71,51,.06);
+    }
+    .slider-arrow-prev { inset-inline-start: 2px; }
+    .slider-arrow-next { inset-inline-end: 2px; }
 }
-/* Phones (<576px): swipe-only, arrows hidden */
-@media (max-width: 575.98px) { .slider-arrow { display: none; } }
 
 /* View mode toggle button */
 .view-toggle {
@@ -314,10 +331,14 @@ body { padding-bottom: env(safe-area-inset-bottom); min-height: 100vh; }
 .menu-section.grid-mode .menu-slider { display: none; }
 .menu-section:not(.grid-mode) .menu-grid { display: none; }
 
-/* Dish card — premium warm tone */
-.dish { background: var(--card); border-radius: var(--radius); overflow: hidden; box-shadow: 0 2px 10px rgba(31,71,51,.06), 0 0 0 1px rgba(31,71,51,.04); transition: transform .25s cubic-bezier(.34,1.3,.64,1), box-shadow .25s; display: flex; flex-direction: column; cursor: pointer; position: relative; }
-.dish:active { transform: scale(.97); }
-.dish:hover { box-shadow: 0 14px 32px rgba(31,71,51,.14), 0 0 0 1px rgba(184,135,42,.2); transform: translateY(-4px); }
+/* Dish card — premium warm tone.
+   NOTE: We deliberately DO NOT translate/scale the whole card on hover/active.
+   Previously `.dish:hover { transform: translateY(-4px) }` shifted the card
+   (and its + button) away from the cursor, causing clicks to miss the button
+   and land on empty space. We now animate only the shadow + image, so the
+   click target never moves. */
+.dish { background: var(--card); border-radius: var(--radius); overflow: hidden; box-shadow: 0 2px 10px rgba(31,71,51,.06), 0 0 0 1px rgba(31,71,51,.04); transition: box-shadow .22s ease, border-color .22s ease; display: flex; flex-direction: column; cursor: pointer; position: relative; }
+.dish:hover { box-shadow: 0 10px 28px rgba(31,71,51,.13), 0 0 0 1px rgba(184,135,42,.28); }
 .dish.tap-pulse { animation: tap-pulse .4s ease; }
 @keyframes tap-pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.03); } }
 .dish-img { position: relative; width: 100%; aspect-ratio: 1/1; background: linear-gradient(135deg, #f5ebd0, #e8ddc1); overflow: hidden; }
@@ -328,13 +349,25 @@ body { padding-bottom: env(safe-area-inset-bottom); min-height: 100vh; }
 .badge-prep { position: absolute; bottom: 6px; right: 6px; background: rgba(0,0,0,.65); color: white; padding: 3px 8px; border-radius: 99px; font-size: .65rem; font-weight: 700; backdrop-filter: blur(6px); }
 .badge-unavail { position: absolute; inset: 0; background: rgba(0,0,0,.65); color: white; display: flex; align-items: center; justify-content: center; font-weight: 800; text-align: center; font-size: .85rem; }
 
-.dish-add-fab { background: var(--brand); color: white; border: 0; border-radius: 50%; width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(31,71,51,.35); font-size: 1.25rem; font-weight: 900; transition: all .2s; flex-shrink: 0; }
-.dish-add-fab:active { transform: scale(.85); background: var(--brand-dark); }
-.dish-add-fab:hover { background: var(--brand-dark); transform: scale(1.08); box-shadow: 0 6px 18px rgba(31,71,51,.45); }
+/* + button — generous tap target, stable (no transform on hover so the
+   click target doesn't move under the cursor). Relative positioning +
+   z-index ensures it sits above the card's click surface. */
+.dish-add-fab {
+    background: var(--brand); color: white; border: 0; border-radius: 50%;
+    width: 40px; height: 40px;
+    display: inline-flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 12px rgba(31,71,51,.35);
+    font-size: 1.35rem; font-weight: 900; line-height: 1;
+    transition: background .18s ease, box-shadow .18s ease;
+    flex-shrink: 0; position: relative; z-index: 2;
+    cursor: pointer;
+}
+.dish-add-fab:hover { background: var(--brand-dark); box-shadow: 0 6px 18px rgba(31,71,51,.5); }
+.dish-add-fab:active { background: var(--brand-dark); box-shadow: 0 2px 6px rgba(31,71,51,.35); }
 
 /* Inline stepper on card - replaces + after first add */
-.dish-stepper { background: var(--brand); color: white; border: 0; border-radius: 99px; display: inline-flex; align-items: center; box-shadow: 0 4px 14px rgba(31,71,51,.4); overflow: hidden; animation: pop-in .35s cubic-bezier(.34,1.56,.64,1); flex-shrink: 0; }
-.dish-stepper button { background: transparent; border: 0; color: white; width: 32px; height: 36px; font-weight: 900; font-size: 1.15rem; transition: background .15s; }
+.dish-stepper { background: var(--brand); color: white; border: 0; border-radius: 99px; display: inline-flex; align-items: center; box-shadow: 0 4px 14px rgba(31,71,51,.4); overflow: hidden; animation: pop-in .35s cubic-bezier(.34,1.56,.64,1); flex-shrink: 0; position: relative; z-index: 2; }
+.dish-stepper button { background: transparent; border: 0; color: white; width: 34px; height: 40px; font-weight: 900; font-size: 1.2rem; transition: background .15s; cursor: pointer; }
 .dish-stepper button:hover { background: rgba(255,255,255,.2); }
 .dish-stepper button:active { background: rgba(0,0,0,.2); transform: scale(.9); }
 .dish-stepper .qty { color: white; padding: 0 8px; font-weight: 900; font-size: .95rem; min-width: 22px; text-align: center; }
@@ -372,10 +405,38 @@ body { padding-bottom: env(safe-area-inset-bottom); min-height: 100vh; }
 }
 .fly-ghost { position: fixed; pointer-events: none; border-radius: 50%; z-index: 999; transition: all .7s cubic-bezier(.5,0,.5,1.5); background-size: cover; background-position: center; width: 60px; height: 60px; box-shadow: 0 8px 24px rgba(0,0,0,.25); border: 3px solid white; }
 
-/* FAB Cart */
-.cart-fab { position: fixed; bottom: calc(1rem + env(safe-area-inset-bottom)); left: 1rem; right: 1rem; background: var(--brand-gradient); color: white; border-radius: 16px; padding: 14px 18px; font-weight: 800; box-shadow: 0 12px 32px rgba(31,71,51,.45); display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 2px solid rgba(184,135,42,.7); z-index: 45; transition: all .25s cubic-bezier(.34,1.56,.64,1); font-size: .95rem; }
-.cart-fab:hover { transform: translateY(-3px); box-shadow: 0 16px 40px rgba(31,71,51,.55); border-color: var(--accent); }
-.cart-fab:active { transform: translateY(0); }
+/* FAB Cart.
+   IMPORTANT: this bar is ~60px tall and, when visible, would cover the +
+   button of any dish card that happens to be in the bottom strip of the
+   viewport — the click would land on the FAB instead of the button.
+   We solve this by auto-hiding the FAB while the user is scrolling DOWN
+   (they're browsing the menu, cart is not in the way), showing it again
+   when they scroll up or stop. While hidden the FAB also sets
+   pointer-events:none so clicks fall through to dish cards. Script is in
+   menu.blade.php. */
+.cart-fab {
+    position: fixed; bottom: calc(1rem + env(safe-area-inset-bottom));
+    left: 1rem; right: 1rem;
+    background: var(--brand-gradient); color: white; border-radius: 16px;
+    padding: 14px 18px; font-weight: 800;
+    box-shadow: 0 12px 32px rgba(31,71,51,.45);
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; border: 2px solid rgba(184,135,42,.7);
+    z-index: 45; font-size: .95rem;
+    transition: transform .28s cubic-bezier(.34,1.56,.64,1),
+                box-shadow .28s, opacity .22s ease;
+}
+.cart-fab:hover { box-shadow: 0 16px 40px rgba(31,71,51,.55); border-color: var(--accent); }
+.cart-fab:active { opacity: .95; }
+/* Auto-hide while browsing. Critical: pointer-events:none so that while
+   the FAB is sliding out, the dish + button UNDER IT is immediately
+   clickable. Without this the bar would still swallow clicks during the
+   200 ms transition. */
+.cart-fab.is-hidden {
+    transform: translateY(calc(100% + 2rem));
+    opacity: 0;
+    pointer-events: none;
+}
 .cart-fab-left { display: flex; align-items: center; gap: 10px; }
 .cart-fab .count { background: var(--accent); color: var(--brand-dark); border-radius: 99px; min-width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; font-weight: 900; transition: transform .25s; }
 .cart-fab-right { display: flex; align-items: center; gap: 6px; }
@@ -401,9 +462,25 @@ body { padding-bottom: env(safe-area-inset-bottom); min-height: 100vh; }
 .sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 100; opacity: 0; pointer-events: none; transition: opacity .25s; backdrop-filter: blur(4px); }
 .sheet-overlay.open { opacity: 1; pointer-events: auto; }
 
-/* Mobile: bottom sheet */
-.sheet { position: fixed; left: 0; right: 0; bottom: 0; background: white; border-radius: 22px 22px 0 0; z-index: 110; max-height: 85vh; transform: translateY(100%); transition: transform .35s cubic-bezier(.18,.85,.3,1); display: flex; flex-direction: column; padding-bottom: env(safe-area-inset-bottom); box-shadow: 0 -20px 60px rgba(0,0,0,.25); }
-.sheet.open { transform: translateY(0); }
+/* Mobile: bottom sheet.
+   CRITICAL: pointer-events:none when closed. Without it, on desktop the
+   invisible (opacity:0) centered sheet still intercepts every click in the
+   middle 520×950 px of the viewport — which is exactly where most of the
+   menu's + buttons sit. Cursor shows default, clicks vanish, user thinks
+   the buttons are broken. This single rule is the real fix for "after I
+   scroll a bit the + button stops working". */
+.sheet {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    background: white; border-radius: 22px 22px 0 0;
+    z-index: 110; max-height: 85vh;
+    transform: translateY(100%);
+    transition: transform .35s cubic-bezier(.18,.85,.3,1);
+    display: flex; flex-direction: column;
+    padding-bottom: env(safe-area-inset-bottom);
+    box-shadow: 0 -20px 60px rgba(0,0,0,.25);
+    pointer-events: none;            /* ← blocks the ghost-click bug */
+}
+.sheet.open { transform: translateY(0); pointer-events: auto; }
 
 /* Desktop: centered modal */
 @media (min-width: 640px) {
@@ -416,8 +493,10 @@ body { padding-bottom: env(safe-area-inset-bottom); min-height: 100vh; }
         opacity: 0;
         transition: transform .28s cubic-bezier(.18,.85,.3,1), opacity .22s;
         box-shadow: 0 20px 60px rgba(0,0,0,.4);
+        /* pointer-events:none inherited from the base .sheet rule above —
+           no override needed. The .open state re-enables them. */
     }
-    .sheet.open { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+    .sheet.open { transform: translate(-50%, -50%) scale(1); opacity: 1; pointer-events: auto; }
 }
 
 .sheet-handle { width: 48px; height: 5px; background: #d1d5db; border-radius: 99px; margin: 10px auto 4px; flex-shrink: 0; }
@@ -529,6 +608,7 @@ body { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
     .app-topbar .sub { font-size: .7rem; }
     .logo-icon { width: 28px; height: 28px; }
     .logo-icon svg { width: 16px; height: 16px; }
+    .logo-icon img { border-radius: 7px; }
     .table-big { padding: 2px 8px; font-size: .72rem; border-radius: 8px; }
     .chip { padding: 3px 8px; font-size: .7rem; }
     .chip-orders { padding: 4px 10px; font-size: .7rem; }
@@ -559,8 +639,8 @@ body { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
     .dish-desc { font-size: .66rem; -webkit-line-clamp: 2; }
     .dish-price { font-size: .95rem; }
     .dish-foot { padding-top: 6px; gap: 6px; }
-    .dish-add-fab { width: 32px; height: 32px; font-size: 1.1rem; }
-    .dish-stepper button { width: 28px; height: 32px; font-size: 1rem; }
+    .dish-add-fab { width: 36px; height: 36px; font-size: 1.2rem; }
+    .dish-stepper button { width: 32px; height: 36px; font-size: 1rem; }
     .dish-stepper .qty { padding: 0 6px; font-size: .85rem; min-width: 18px; }
     .badge-today, .badge-prep, .badge-options { font-size: .6rem; padding: 2px 6px; }
 
@@ -631,7 +711,7 @@ body { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 36px; height: 36px;
+    width: 40px; height: 40px;
     border-radius: 50%;
     background: #e7e5e4;
     color: #78716c;
@@ -736,11 +816,14 @@ body { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
     font-size: .85rem;
 }
 </style>
+@include('partials.runtime-theme')
 @stack('styles')
 </head>
 <body>
 
 @php
+    $brandName = \App\Models\Setting::get('site_name', config('restaurant.name'));
+    $brandLogoUrl = \App\Helpers\Brand::logoUrl();
     $activeOrdersCount = 0;
     try {
         $activeOrdersCount = \App\Models\Order::where('table_session_id', $session->id)
@@ -753,11 +836,9 @@ body { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
         <div>
             <h4>
                 <span class="logo-icon">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-                        <path d="M12 2C8 6 6 10 6 14a6 6 0 0 0 5 5.9V22h2v-2.1A6 6 0 0 0 18 14c0-4-2-8-6-12zm0 3.2c2.4 2.9 4 5.9 4 8.8a4 4 0 0 1-8 0c0-2.9 1.6-5.9 4-8.8z"/>
-                    </svg>
+                    <img src="{{ $brandLogoUrl }}" alt="{{ $brandName }}" loading="eager">
                 </span>
-                {{ config('restaurant.name') }}
+                {{ $brandName }}
             </h4>
             <div class="sub mt-1">
                 <span class="table-big"><i class="bi bi-grid-3x3-gap"></i> طاولة {{ $session->table->number ?? '—' }}</span>
@@ -770,7 +851,7 @@ body { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
             {{-- Currency switcher — hidden by default. Enable via config
                  `restaurant.customer.currency_switcher` when you need
                  multi-currency UX. --}}
-            @if(config('restaurant.customer.currency_switcher', false))
+            @if(\App\Models\Setting::get('customer_currency_switcher', config('restaurant.customer.currency_switcher', false)))
                 @php
                     $curSvc = app(\App\Services\CurrencyService::class);
                     $activeCurrencies = $curSvc->active();
@@ -868,6 +949,7 @@ function showToast(text, type = 'info') {
     setTimeout(() => div.remove(), 3500);
 }
 </script>
+@livewireScripts
 @stack('scripts')
 </body>
 </html>

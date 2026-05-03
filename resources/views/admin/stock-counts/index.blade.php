@@ -24,6 +24,7 @@
                 <tr>
                     <th>رقم</th>
                     <th>تاريخ</th>
+                    <th>الموقع</th>
                     <th>عدد المكونات</th>
                     <th>الحالة</th>
                     <th>أنشأه</th>
@@ -40,6 +41,15 @@
                             </a>
                         </td>
                         <td>{{ $c->count_date->format('Y-m-d') }}</td>
+                        <td>
+                            @if($c->storageLocation)
+                                <span class="badge bg-primary-transparent text-primary">
+                                    <i class="bi bi-geo-alt me-1"></i>{{ $c->storageLocation->name }}
+                                </span>
+                            @else
+                                <span class="badge bg-light text-muted">إجمالي الفرع</span>
+                            @endif
+                        </td>
                         <td><span class="badge bg-secondary">{{ $c->items_count }}</span></td>
                         <td><span class="badge bg-{{ $c->statusColor() }}">{{ $c->statusLabel() }}</span></td>
                         <td class="small">{{ $c->creator?->name ?? '—' }}</td>
@@ -57,7 +67,7 @@
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="7">
+                    <tr><td colspan="8">
                         <x-admin.empty-state
                             icon="bi-clipboard-check"
                             title="ما في عمليات جرد بعد"

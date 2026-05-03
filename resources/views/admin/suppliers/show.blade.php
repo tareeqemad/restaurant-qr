@@ -4,6 +4,17 @@
 @section('content')
 <x-admin.breadcrumb title="{{ $supplier- />
 
+<div class="d-flex justify-content-end mb-3 gap-2">
+    <a href="{{ route('admin.vendor-prices.supplier', $supplier) }}" class="btn btn-info">
+        <i class="bi bi-graph-up-arrow me-1"></i>
+        تاريخ الأسعار من هذا المورّد
+    </a>
+    <a href="{{ route('admin.vendor-prices.compare') }}" class="btn btn-outline-info">
+        <i class="bi bi-arrows-collapse me-1"></i>
+        مقارنة المورّدين
+    </a>
+</div>
+
 <x-admin.stat-rail :stats="[
     ['label' => 'عدد المكونات', 'value' => $totals['ingredient_count'], 'icon' => 'bi-boxes',                'color' => 'primary'],
     ['label' => 'مخزون منخفض',   'value' => $totals['low_stock'],        'icon' => 'bi-exclamation-triangle', 'color' => 'danger'],
@@ -17,12 +28,14 @@
         <x-admin.data-panel title="بيانات الاتصال" icon="bi-person-vcard">
             <div class="p-3">
                 @php
+                    // Positional destructure needs every row to have the same
+                    // shape — PHP has no per-slot default. Normalise $ltr to false.
                     $rows = [
-                        ['الشخص المسؤول', $supplier->contact_person, 'bi-person-circle'],
-                        ['الهاتف',         $supplier->phone,          'bi-telephone',  true],
-                        ['البريد',         $supplier->email,          'bi-envelope',   true],
-                        ['العنوان',        $supplier->address,        'bi-geo-alt'],
-                        ['ملاحظات',        $supplier->notes,          'bi-journal-text'],
+                        ['الشخص المسؤول', $supplier->contact_person, 'bi-person-circle', false],
+                        ['الهاتف',         $supplier->phone,          'bi-telephone',    true],
+                        ['البريد',         $supplier->email,          'bi-envelope',     true],
+                        ['العنوان',        $supplier->address,        'bi-geo-alt',      false],
+                        ['ملاحظات',        $supplier->notes,          'bi-journal-text', false],
                     ];
                 @endphp
                 @foreach($rows as [$label, $value, $icon, $ltr])

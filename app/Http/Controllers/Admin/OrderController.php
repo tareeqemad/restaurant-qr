@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Enums\OrderSource;
 use App\Enums\OrderStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\Table;
 use App\Services\OrderService;
 use Illuminate\Http\Request;
 
@@ -16,7 +18,7 @@ class OrderController extends Controller
     public function index(Request $request)
     {
         $this->authorize('viewAny', Order::class);
-        $q = Order::with(['table', 'items', 'tableSession']);
+        $q = Order::with(['table', 'items', 'tableSession', 'branch']);
         if ($s = $request->get('status'))   $q->where('status', $s);
         if ($t = $request->get('table_id')) $q->where('table_id', $t);
         if ($d = $request->get('date'))     $q->whereDate('created_at', $d);
@@ -49,45 +51,105 @@ class OrderController extends Controller
      *   🟢 Ready         — grab + deliver to table
      *   ✓  Finished      — delivered + completed (collapsed by default, last 20)
      */
+    /**
+     * Comprehensive orders archive — searchable + filterable history view.
+     *
+     * Distinct from `index()` (which is the manager's daily-board view) and
+     * `board()` (the live kanban). The archive is the one place where you
+     * find that specific old order: free-text search, date range, status,
+     * channel, table, and total range. BranchScope filters automatically;
+     * Super Admin in "all branches" mode sees everything with the branch
+     * column rendered.
+     */
+    public function archive(Request $request)
+    {
+        $this->authorize('archive', Order::class);
+
+        $from = $request->get('from', now()->subDays(30)->toDateString());
+        $to   = $request->get('to',   now()->toDateString());
+
+        $query = Order::with(['table', 'branch'])
+            ->withCount('items')
+            ->whereBetween('created_at', [$from.' 00:00:00', $to.' 23:59:59']);
+
+        if ($search = trim((string) $request->get('search'))) {
+            $query->where(function ($q) use ($search) {
+                $q->where('number', 'like', "%{$search}%")
+                  ->orWhere('customer_notes', 'like', "%{$search}%")
+                  ->orWhere('external_reference', 'like', "%{$search}%");
+            });
+        }
+
+        // Status — multi-select: ?status[]=approved&status[]=ready
+        $statuses = (array) $request->get('status', []);
+        $statuses = array_filter($statuses, fn ($s) =>
+            in_array($s, array_column(OrderStatus::cases(), 'value'), true)
+        );
+        if ($statuses) {
+            $query->whereIn('status', $statuses);
+        }
+
+        if ($source = $request->get('source')) {
+            $query->where('order_source', $source);
+        }
+
+        if ($tableId = $request->get('table_id')) {
+            $query->where('table_id', (int) $tableId);
+        }
+
+        if (($min = $request->get('min_total')) !== null && $min !== '') {
+            $query->where('total', '>=', (float) $min);
+        }
+        if (($max = $request->get('max_total')) !== null && $max !== '') {
+            $query->where('total', '<=', (float) $max);
+        }
+
+        $sort = $request->get('sort', 'created_at');
+        $dir  = $request->get('dir', 'desc') === 'asc' ? 'asc' : 'desc';
+        if (in_array($sort, ['created_at', 'total', 'number'], true)) {
+            $query->orderBy($sort, $dir);
+        } else {
+            $query->latest();
+        }
+
+        $orders = $query->paginate(25)->withQueryString();
+
+        // Stats — based on the same filtered set so the cards reflect what
+        // the user is actually looking at, not the whole branch's history.
+        $statsBase = clone $query->getQuery();
+        $stats = [
+            'count'       => (int) (clone $statsBase)->count(),
+            'gross'       => (float) (clone $statsBase)->sum('total'),
+            'avg'         => (float) ((clone $statsBase)->avg('total') ?? 0),
+            'cancelled'   => (int) (clone $statsBase)->where('status', OrderStatus::Cancelled->value)->count(),
+        ];
+
+        return view('admin.orders.archive', [
+            'orders'   => $orders,
+            'stats'    => $stats,
+            'filters'  => [
+                'from'      => $from,
+                'to'        => $to,
+                'search'    => $request->get('search'),
+                'status'    => $statuses,
+                'source'    => $request->get('source'),
+                'table_id'  => $request->get('table_id'),
+                'min_total' => $request->get('min_total'),
+                'max_total' => $request->get('max_total'),
+                'sort'      => $sort,
+                'dir'       => $dir,
+            ],
+            'statuses' => OrderStatus::cases(),
+            'sources'  => OrderSource::cases(),
+            'tables'   => Table::orderBy('number')->get(['id', 'number']),
+        ]);
+    }
+
     public function board(Request $request)
     {
         $this->authorize('viewAny', Order::class);
 
-        // Only show recent activity — a 6-hour window captures current service
-        // without dragging in yesterday's data.
-        $since = now()->subHours(6);
-
-        $q = Order::with(['table', 'items', 'tableSession'])
-            ->where(function ($qq) use ($since) {
-                $qq->where('created_at', '>=', $since)
-                   ->orWhereIn('status', ['pending', 'approved', 'preparing', 'ready']);
-            });
-
-        if ($t = $request->get('table_id')) $q->where('table_id', $t);
-        if ($request->filled('urgent'))     $q->where('status', 'pending')->where('created_at', '<=', now()->subMinutes(5));
-
-        $orders = $q->orderBy('created_at')->get();
-
-        $columns = [
-            'pending'    => $orders->where('status', 'pending'),
-            'in_kitchen' => $orders->whereIn('status', ['approved', 'preparing']),
-            'ready'      => $orders->where('status', 'ready'),
-            'finished'   => $orders->whereIn('status', ['delivered', 'completed'])->take(20),
-        ];
-
-        // Urgency — pending > 5 min is concerning, > 10 min is critical
-        $urgentCount = $orders->filter(fn($o) =>
-            $o->status === 'pending' && $o->created_at->lt(now()->subMinutes(5))
-        )->count();
-
-        $stats = [
-            'pending'    => $columns['pending']->count(),
-            'in_kitchen' => $columns['in_kitchen']->count(),
-            'ready'      => $columns['ready']->count(),
-            'urgent'     => $urgentCount,
-        ];
-
-        return view('admin.orders.board', compact('columns', 'stats'));
+        return view('admin.orders.board');
     }
 
     /** Transition order to a later state (ready / delivered / completed) */
@@ -187,7 +249,7 @@ class OrderController extends Controller
 
     public function serveItem(OrderItem $item)
     {
-        $this->authorize('edit', $item->order);
+        $this->authorize('serve', $item->order);
         $this->service->markItemServed($item, auth()->id());
         return back()->with('success', 'تم تسليم الصنف');
     }

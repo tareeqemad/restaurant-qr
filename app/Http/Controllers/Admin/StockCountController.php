@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Ingredient;
 use App\Models\StockCount;
+use App\Models\StorageLocation;
 use App\Services\StockCountService;
 use Illuminate\Http\Request;
 
@@ -16,7 +17,7 @@ class StockCountController extends Controller
     {
         $this->authorize('viewAny', StockCount::class);
 
-        $q = StockCount::query()->with(['creator', 'finalizer'])->withCount('items')->latest('count_date');
+        $q = StockCount::query()->with(['creator', 'finalizer', 'storageLocation'])->withCount('items')->latest('count_date');
         if ($s = $request->get('status')) $q->where('status', $s);
 
         $counts = $q->paginate(20);
@@ -40,7 +41,13 @@ class StockCountController extends Controller
     {
         $this->authorize('create', StockCount::class);
         $ingredientCount = Ingredient::where('track_stock', true)->count();
-        return view('admin.stock-counts.create', compact('ingredientCount'));
+        $storageLocations = StorageLocation::where('active', true)
+            ->orderByDesc('is_default')
+            ->orderBy('display_order')
+            ->orderBy('name')
+            ->get();
+
+        return view('admin.stock-counts.create', compact('ingredientCount', 'storageLocations'));
     }
 
     public function store(Request $request)
@@ -48,6 +55,7 @@ class StockCountController extends Controller
         $this->authorize('create', StockCount::class);
         $data = $request->validate([
             'count_date'      => ['nullable', 'date'],
+            'storage_location_id' => ['nullable', 'exists:storage_locations,id'],
             'notes'           => ['nullable', 'string', 'max:1000'],
             'ingredient_ids'  => ['nullable', 'array'],
             'ingredient_ids.*'=> ['exists:ingredients,id'],
@@ -61,7 +69,7 @@ class StockCountController extends Controller
     public function show(StockCount $stockCount)
     {
         $this->authorize('view', $stockCount);
-        $stockCount->load(['items.ingredient.baseUnit', 'creator', 'finalizer']);
+        $stockCount->load(['items.ingredient.baseUnit', 'creator', 'finalizer', 'storageLocation']);
         return view('admin.stock-counts.show', ['count' => $stockCount]);
     }
 

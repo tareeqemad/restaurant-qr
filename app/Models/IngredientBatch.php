@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,10 +11,10 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class IngredientBatch extends Model
 {
-    use HasFactory, SoftDeletes;
+    use BelongsToBranch, HasFactory, SoftDeletes;
 
     protected $fillable = [
-        'ingredient_id', 'batch_number',
+        'ingredient_id', 'storage_location_id', 'batch_number',
         'received_date', 'expiry_date',
         'initial_qty', 'remaining_qty', 'unit_cost',
         'source_type', 'source_id',
@@ -29,6 +30,7 @@ class IngredientBatch extends Model
     ];
 
     public function ingredient(): BelongsTo { return $this->belongsTo(Ingredient::class); }
+    public function storageLocation(): BelongsTo { return $this->belongsTo(StorageLocation::class); }
     public function source(): MorphTo        { return $this->morphTo(); }
 
     public function isExpired(): bool

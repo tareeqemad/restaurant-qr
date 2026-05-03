@@ -50,4 +50,92 @@ class Ingredient extends Model
     {
         return $this->track_stock && $this->current_stock <= $this->reorder_threshold;
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Multi-branch helpers
+    //
+    // Ingredients are GLOBAL (no branch_id), but stock + cost actually
+    // varies per branch through `ingredient_stock` (per-location pivot)
+    // and `ingredient_batches` (also per-location). These methods give a
+    // BRANCH-LOCAL view by aggregating over the branch's storage_locations.
+    //
+    // Falls back to the global ingredient values when no per-branch data
+    // exists, so dashboards that don't yet pass a branch context keep
+    // working unchanged.
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * Total qty of this ingredient sitting in the given branch's storage
+     * locations. Sum across all of branch's active locations.
+     */
+    public function stockAtBranch(int $branchId): float
+    {
+        return (float) IngredientStock::query()
+            ->join('storage_locations', 'ingredient_stock.storage_location_id', '=', 'storage_locations.id')
+            ->where('ingredient_stock.ingredient_id', $this->id)
+            ->where('storage_locations.branch_id', $branchId)
+            ->sum('ingredient_stock.quantity');
+    }
+
+    /**
+     * Sum of per-location reorder thresholds for this ingredient at the
+     * given branch. Locations without a per-row threshold contribute 0.
+     * If NO location has a threshold set, falls back to the global
+     * ingredient threshold so existing setups keep working.
+     */
+    public function reorderThresholdAtBranch(int $branchId): float
+    {
+        $sum = (float) IngredientStock::query()
+            ->join('storage_locations', 'ingredient_stock.storage_location_id', '=', 'storage_locations.id')
+            ->where('ingredient_stock.ingredient_id', $this->id)
+            ->where('storage_locations.branch_id', $branchId)
+            ->whereNotNull('ingredient_stock.reorder_threshold')
+            ->sum('ingredient_stock.reorder_threshold');
+
+        // No per-location thresholds at this branch → use global ingredient threshold
+        return $sum > 0 ? $sum : (float) $this->reorder_threshold;
+    }
+
+    /**
+     * Weighted-average cost of this ingredient at a specific branch,
+     * computed from the actual remaining batch costs at the branch's
+     * storage locations. This gives a true per-branch COGS basis even
+     * when branches buy from different suppliers at different prices.
+     *
+     * Falls back to the ingredient's global `cost_per_unit` if no batches
+     * exist at the branch (e.g., ingredient was just created or branches
+     * use the legacy non-batched flow).
+     */
+    public function costAtBranch(int $branchId): float
+    {
+        $row = IngredientBatch::query()
+            ->join('storage_locations', 'ingredient_batches.storage_location_id', '=', 'storage_locations.id')
+            ->where('ingredient_batches.ingredient_id', $this->id)
+            ->where('storage_locations.branch_id', $branchId)
+            ->where('ingredient_batches.remaining_qty', '>', 0)
+            ->selectRaw('
+                SUM(ingredient_batches.remaining_qty * ingredient_batches.unit_cost) as total_value,
+                SUM(ingredient_batches.remaining_qty) as total_qty
+            ')
+            ->first();
+
+        $totalQty = (float) ($row?->total_qty ?? 0);
+        if ($totalQty <= 0) {
+            return (float) $this->cost_per_unit; // Fallback to global avg
+        }
+
+        return (float) $row->total_value / $totalQty;
+    }
+
+    /**
+     * True if the branch has stock at-or-below its (per-location) reorder
+     * threshold for this ingredient. Used by per-branch reorder reports.
+     */
+    public function isLowStockAtBranch(int $branchId): bool
+    {
+        if (! $this->track_stock) return false;
+        $threshold = $this->reorderThresholdAtBranch($branchId);
+        if ($threshold <= 0) return false;
+        return $this->stockAtBranch($branchId) <= $threshold;
+    }
 }

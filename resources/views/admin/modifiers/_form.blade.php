@@ -1,6 +1,6 @@
 @csrf
 @php $g = $group ?? null; $mods = optional($g)->allModifiers ?? collect(); @endphp
-<div class="row g-3">
+<div class="row g-3 modifier-group-form">
     <div class="col-md-5"><label class="form-label">اسم المجموعة *</label><input name="name" value="{{ old('name', $g?->name) }}" class="form-control" required></div>
     <div class="col-md-4"><label class="form-label">Name (EN)</label><input name="name_en" value="{{ old('name_en', $g?->name_en) }}" class="form-control"></div>
     <div class="col-md-3"><label class="form-label">الترتيب</label><input type="number" name="display_order" value="{{ old('display_order', $g?->display_order ?? 0) }}" class="form-control"></div>
@@ -9,7 +9,7 @@
     <div class="col-md-3 d-flex align-items-end"><div class="form-check"><input type="hidden" name="required" value="0"><input type="checkbox" name="required" value="1" class="form-check-input" @checked(old('required', $g?->required))><label class="form-check-label">إلزامي</label></div></div>
     <div class="col-md-3 d-flex align-items-end"><div class="form-check"><input type="hidden" name="active" value="0"><input type="checkbox" name="active" value="1" class="form-check-input" @checked(old('active', $g?->active ?? true))><label class="form-check-label">نشطة</label></div></div>
 
-    <div class="col-12"><hr><h6 class="fw-bold">الخيارات داخل المجموعة</h6>
+    <div class="col-12 modifier-options-section"><hr><h6 class="fw-bold">الخيارات داخل المجموعة</h6>
         <div id="mods-wrap">
             @foreach($mods as $i => $m)
                 <div class="row g-2 mb-2 mod-row">

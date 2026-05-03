@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -12,10 +13,10 @@ use Illuminate\Support\Str;
 
 class MenuItem extends Model
 {
-    use HasFactory, SoftDeletes;
+    use BelongsToBranch, HasFactory, SoftDeletes;
 
     protected $fillable = [
-        'category_id', 'station_id', 'sku', 'slug', 'name', 'name_en',
+        'branch_id', 'category_id', 'station_id', 'sku', 'slug', 'name', 'name_en',
         'description', 'description_en', 'price', 'cost', 'image',
         'prep_time_minutes', 'calories', 'is_available', 'is_featured',
         'unavailable_reason', 'display_order',
@@ -80,5 +81,39 @@ class MenuItem extends Model
             return $this->image;
         }
         return asset('storage/'.$this->image);
+    }
+
+    /**
+     * Recipe cost computed using PER-BRANCH ingredient costs (from the
+     * branch's actual remaining batches). This gives a true per-branch
+     * COGS even when branches buy from different suppliers at different
+     * prices — the global `cost` column is a single average that distorts
+     * branch-level P&L.
+     *
+     * Falls back to `cost` (the denormalized global value) when no
+     * batches exist for the branch (e.g., the ingredient is brand-new).
+     *
+     * NOTE: this is computed on-demand and intentionally NOT cached. The
+     * P&L report calls it per row × period, which is fine since each
+     * call is at most a few small queries thanks to per-branch helpers.
+     */
+    public function costAtBranch(int $branchId): float
+    {
+        $this->loadMissing(['recipeItems.ingredient.baseUnit']);
+
+        $total = 0.0;
+        foreach ($this->recipeItems as $r) {
+            $ing = $r->ingredient;
+            if (! $ing) continue;
+
+            $qtyBase = \App\Helpers\UnitConverter::convert(
+                (float) $r->quantity, $r->unit_id, (int) $ing->base_unit_id
+            );
+            $total += $qtyBase * $ing->costAtBranch($branchId);
+        }
+
+        // Defensive fallback: if recipe is empty or returns 0, surface the
+        // denormalized global cost so dashboards never show a misleading 0.
+        return $total > 0 ? $total : (float) $this->cost;
     }
 }

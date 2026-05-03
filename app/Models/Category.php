@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,10 +12,10 @@ use Illuminate\Support\Str;
 
 class Category extends Model
 {
-    use HasFactory, SoftDeletes;
+    use BelongsToBranch, HasFactory, SoftDeletes;
 
     protected $fillable = [
-        'slug', 'name', 'name_en', 'description', 'description_en',
+        'branch_id', 'slug', 'name', 'name_en', 'description', 'description_en',
         'image', 'icon', 'color', 'default_station_id', 'display_order', 'active',
     ];
 

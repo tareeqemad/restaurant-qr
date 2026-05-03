@@ -2,9 +2,11 @@
 
 namespace Database\Seeders;
 
+use App\Models\Branch;
 use App\Models\Category;
 use App\Models\MenuItem;
 use App\Models\Station;
+use App\Support\BranchContext;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 
@@ -15,6 +17,11 @@ use Illuminate\Support\Facades\DB;
  * to match the dish. If the network blocks external images, fall back to the
  * local placeholder via MenuItem::imageUrl().
  *
+ * Branch scope: this menu is the Khan Yunis starter set. Gaza begins empty;
+ * the owner copies this menu over via the "نسخ القائمة لفرع" admin action
+ * once that ships. The whole seed runs inside BranchContext::forBranch so
+ * the BelongsToBranch trait auto-stamps `branch_id` on every row.
+ *
  * IMPORTANT: this seeder REPLACES existing categories + menu-items. Run only
  * on a fresh/demo DB (or when user explicitly wants to reset the menu).
  */
@@ -22,8 +29,15 @@ class RealRestaurantMenuSeeder extends Seeder
 {
     public function run(): void
     {
-        $this->command->info('Seeding real restaurant menu (7 categories × 10+ items)...');
+        $this->command->info('Seeding real restaurant menu (7 categories × 10+ items) for Khan Yunis...');
 
+        $branch = Branch::where('code', 'main-khan-yunis')->firstOrFail();
+
+        BranchContext::forBranch($branch->id, fn () => $this->seedMenu());
+    }
+
+    protected function seedMenu(): void
+    {
         // Resolve stations (kitchen for food, bar for drinks)
         $kitchen = Station::where('code', 'KITCHEN')->first() ?? Station::first();
         $bar     = Station::where('code', 'BAR')->first()     ?? Station::where('name', 'LIKE', '%بار%')->first() ?? $kitchen;

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\AdminMiddleware;
+use App\Http\Middleware\SetActiveBranch;
 use App\Http\Middleware\TableSessionMiddleware;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -20,11 +21,16 @@ return Application::configure(basePath: dirname(__DIR__))
 
             \Illuminate\Support\Facades\Route::middleware('web')
                 ->group(base_path('routes/customer.php'));
+
+            \Illuminate\Support\Facades\Route::middleware('web')
+                ->prefix('portal')
+                ->group(base_path('routes/portal.php'));
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'admin' => AdminMiddleware::class,
+            'branch' => SetActiveBranch::class,
             'table.session' => TableSessionMiddleware::class,
         ]);
     })

@@ -1,4 +1,5 @@
 *.log
+*.zip
 .DS_Store
 # .env is committed per user request (local/demo project — NOT recommended in production)
 # .env

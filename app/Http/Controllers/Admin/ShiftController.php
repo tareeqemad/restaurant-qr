@@ -56,6 +56,12 @@ class ShiftController extends Controller
             'closed_at' => now(),
             'notes' => $data['notes'] ?? null,
         ]);
+
+        // Notify admins/managers — variance escalates severity inside the
+        // notification class (>1 = warning, >50 = danger).
+        app(\App\Services\NotifyService::class)
+            ->shiftClosed($shift->fresh()->load('user'));
+
         return back()->with('success', 'تم إغلاق الشفت');
     }
 }

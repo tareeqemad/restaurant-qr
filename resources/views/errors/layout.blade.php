@@ -21,7 +21,7 @@
     <meta name="theme-color" content="#122d1e">
     <title>@yield('title', 'خطأ') — {{ config('restaurant.name', 'Relax') }}</title>
 
-    <link rel="icon" href="{{ asset('assets/dashtic/images/brand-logos/favicon.ico') }}" type="image/x-icon">
+    <link rel="icon" href="{{ \App\Helpers\Brand::faviconUrl() }}" type="image/x-icon">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -252,6 +252,7 @@
             .btn { width: 100%; justify-content: center; }
         }
     </style>
+    @include('partials.runtime-theme')
 </head>
 <body>
     <div class="error-card">
@@ -266,9 +267,12 @@
         </div>
     </div>
 
+    @php
+        $brandName = \App\Models\Setting::get('site_name', config('restaurant.name', 'Relax'));
+    @endphp
     <div class="error-footer">
-        <img src="{{ asset('assets/brand/relax-monogram.svg') }}" alt="Relax">
-        <span class="brand-name">RELAX</span>
+        <img src="{{ \App\Helpers\Brand::logoUrl() }}" alt="{{ $brandName }}">
+        <span class="brand-name">{{ $brandName }}</span>
         <span class="brand-tag">نظام إدارة المطعم</span>
     </div>
 </body>

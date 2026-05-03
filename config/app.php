@@ -56,6 +56,21 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Force HTTPS URLs
+    |--------------------------------------------------------------------------
+    |
+    | Staging / production are usually served behind Nginx, Cloudflare, or a
+    | load balancer. Enabling this keeps generated URLs, assets, and QR codes
+    | on HTTPS even when PHP receives the internal upstream request as HTTP.
+    |
+    */
+
+    'force_https' => env('APP_FORCE_HTTPS', false),
+
+    'trusted_proxies' => env('TRUSTED_PROXIES'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |
@@ -65,7 +80,7 @@ return [
     |
     */
 
-    'timezone' => 'UTC',
+    'timezone' => env('APP_TIMEZONE', 'Asia/Hebron'),
 
     /*
     |--------------------------------------------------------------------------

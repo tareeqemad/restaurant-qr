@@ -3,24 +3,29 @@
 namespace App\Models;
 
 use App\Enums\OrderStatus;
+use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Order extends Model
 {
-    use HasFactory, SoftDeletes;
+    use BelongsToBranch, HasFactory, SoftDeletes;
 
     protected $fillable = [
-        'number', 'table_id', 'table_session_id', 'order_type', 'status',
+        'number', 'table_id', 'table_session_id', 'customer_id', 'customer_name', 'customer_phone',
+        'customer_address_id', 'order_type', 'status',
         'order_source', 'external_reference', 'platform_commission_pct',
         'created_by_user_id', 'approved_by_user_id', 'cancelled_by_user_id',
-        'customer_notes', 'internal_notes', 'cancelled_reason',
-        'subtotal', 'discount_total', 'tax_total', 'service_total', 'tip', 'total',
+        'customer_notes', 'delivery_address', 'internal_notes', 'cancelled_reason',
+        'subtotal', 'discount_total', 'tax_total', 'service_total', 'delivery_fee', 'tip', 'total',
         'tax_rate', 'service_rate',
-        'submitted_at', 'approved_at', 'ready_at', 'delivered_at', 'completed_at', 'cancelled_at',
+        'submitted_at', 'scheduled_for',
+        'estimated_prep_minutes', 'estimated_ready_at', 'estimated_delivered_at',
+        'approved_at', 'ready_at', 'delivered_at', 'completed_at', 'cancelled_at',
     ];
 
     protected $casts = [
@@ -28,12 +33,17 @@ class Order extends Model
         'discount_total' => 'decimal:2',
         'tax_total' => 'decimal:2',
         'service_total' => 'decimal:2',
+        'delivery_fee' => 'decimal:2',
         'tip' => 'decimal:2',
         'total' => 'decimal:2',
         'tax_rate' => 'decimal:2',
         'service_rate' => 'decimal:2',
         'platform_commission_pct' => 'decimal:2',
+        'estimated_prep_minutes' => 'integer',
         'submitted_at' => 'datetime',
+        'scheduled_for' => 'datetime',
+        'estimated_ready_at' => 'datetime',
+        'estimated_delivered_at' => 'datetime',
         'approved_at' => 'datetime',
         'ready_at' => 'datetime',
         'delivered_at' => 'datetime',
@@ -46,6 +56,15 @@ class Order extends Model
         static::creating(function (self $m) {
             if (empty($m->number)) {
                 $m->number = self::generateNumber();
+            }
+            // Inherit the linked customer from the parent table session, so
+            // an order placed AFTER the cashier links a session to a customer
+            // automatically carries the FK without every caller remembering
+            // to set it.
+            if (empty($m->customer_id) && ! empty($m->table_session_id)) {
+                $m->customer_id = TableSession::query()
+                    ->whereKey($m->table_session_id)
+                    ->value('customer_id');
             }
         });
     }
@@ -65,6 +84,32 @@ class Order extends Model
     public function tableSession(): BelongsTo
     {
         return $this->belongsTo(TableSession::class);
+    }
+
+    /**
+     * Identified portal customer for this order, if any. Anonymous walk-ins
+     * leave this null. Inherited from the parent TableSession when the
+     * cashier links a session to a customer mid-meal — see CartController
+     * for how the inheritance is stamped on order creation.
+     */
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
+    }
+
+    public function invoice(): HasOne
+    {
+        return $this->hasOne(Invoice::class)->latestOfMany();
+    }
+
+    public function customerAddress(): BelongsTo
+    {
+        return $this->belongsTo(CustomerAddress::class);
+    }
+
+    public function deliveryAssignment(): HasOne
+    {
+        return $this->hasOne(DeliveryAssignment::class);
     }
 
     public function items(): HasMany

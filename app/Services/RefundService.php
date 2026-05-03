@@ -47,7 +47,7 @@ class RefundService
             throw ValidationException::withMessages(['amount' => 'قيمة الاسترداد يجب أن تكون أكبر من صفر.']);
         }
 
-        return DB::transaction(function () use ($invoice, $amount, $method, $reason, $userId, $opts) {
+        $refund = DB::transaction(function () use ($invoice, $amount, $method, $reason, $userId, $opts) {
             // Lock the invoice row so two cashiers can't refund the same balance simultaneously
             $invoice = Invoice::lockForUpdate()->findOrFail($invoice->id);
 
@@ -98,6 +98,12 @@ class RefundService
 
             return $refund->fresh(['invoice', 'payment', 'processor']);
         });
+
+        // Notify cashier/manager outside the transaction so a notify failure
+        // can never roll back a successful refund.
+        app(NotifyService::class)->refundIssued($refund);
+
+        return $refund;
     }
 
     /**

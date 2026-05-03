@@ -2,8 +2,8 @@
 
 return [
     'name' => env('RESTAURANT_NAME', 'مطعم QR'),
-    'currency' => env('RESTAURANT_CURRENCY', 'JOD'),
-    'currency_symbol' => env('RESTAURANT_CURRENCY_SYMBOL', 'د.أ'),
+    'currency' => env('RESTAURANT_CURRENCY', 'ILS'),
+    'currency_symbol' => env('RESTAURANT_CURRENCY_SYMBOL', '₪'),
 
     // Customer-facing feature flags
     'customer' => [
@@ -25,11 +25,11 @@ return [
     ],
 
     'theme' => [
-        'primary' => '#2d5a3d',         // warm clear green (less blue-teal)
-        'dark' => '#1a3a26',            // deep warm forest
-        'header' => '#2d5a3d',
-        'accent' => '#b8872a',          // olive gold
-        'menu' => '#faf5eb',            // cream sidebar (for menu_style=light)
+        'primary' => '#164c37',
+        'dark' => '#0f2d22',
+        'header' => '#164c37',
+        'accent' => '#b97818',
+        'menu' => '#f7f8f5',
         'menu_style' => 'brand',
         'header_style' => 'color',
     ],

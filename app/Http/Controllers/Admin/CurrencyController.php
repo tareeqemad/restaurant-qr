@@ -13,13 +13,13 @@ class CurrencyController extends Controller
     {
         // Currencies UI has moved into /admin/settings (Currencies tab).
         // Any old bookmark to /admin/currencies now lands on the right tab.
-        return redirect()->route('admin.settings.index', [], 302)
-            ->withFragment('tab-currencies');
+        return redirect(route('admin.settings.index').'#tab-currencies', 302);
     }
 
     public function store(Request $request)
     {
-        $this->authorize('viewAny', \App\Models\Role::class);
+        abort_unless(auth()->user()->hasAnyRole(['super_admin', 'admin']), 403);
+
         $data = $request->validate([
             'code'          => ['required', 'string', 'size:3', 'unique:currencies,code'],
             'name'          => ['required', 'string', 'max:60'],
@@ -36,7 +36,8 @@ class CurrencyController extends Controller
 
     public function updateRates(Request $request)
     {
-        $this->authorize('viewAny', \App\Models\Role::class);
+        abort_unless(auth()->user()->hasAnyRole(['super_admin', 'admin']), 403);
+
         $data = $request->validate([
             'rates'       => ['required', 'array'],
             'rates.*'     => ['nullable', 'numeric', 'min:0.000001'],
@@ -63,7 +64,8 @@ class CurrencyController extends Controller
 
     public function destroy(Currency $currency)
     {
-        $this->authorize('viewAny', \App\Models\Role::class);
+        abort_unless(auth()->user()->hasAnyRole(['super_admin', 'admin']), 403);
+
         if ($currency->is_base) {
             return back()->with('error', 'لا يمكن حذف العملة الأساسية.');
         }

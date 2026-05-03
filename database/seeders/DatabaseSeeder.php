@@ -4,31 +4,35 @@ namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
 
+/**
+ * Default seed: full install (system + demo).
+ *
+ * Two-tier seeding:
+ *   - SystemSeeder  → roles, permissions, units, allergens. ALWAYS safe.
+ *   - DemoSeeder    → branches, staff, menu, tables. DEV/STAGING ONLY.
+ *
+ * Production install workflow:
+ *   php artisan migrate
+ *   php artisan db:seed --class=SystemSeeder
+ *   php artisan app:install                # creates first super admin
+ *
+ * Or use the all-in-one wrapper:
+ *   php artisan app:install                # interactive: migrate + system seed + super admin
+ *
+ * Demo / dev workflow (full reset):
+ *   php artisan migrate:fresh --seed       # drops + system + demo
+ *
+ * Wipe demo data on a live system without losing the install:
+ *   - UI: Super Admin → "إدارة النظام" → "إعادة تعيين البيانات التجريبية"
+ *   - Code path: App\Services\DemoResetService::reset()
+ */
 class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
         $this->call([
-            // 1. Auth / RBAC
-            RoleSeeder::class,
-            PermissionSeeder::class,
-
-            // 2. Setup reference data
-            StationSeeder::class,          // kitchen, bar, dessert…
-            UnitSeeder::class,             // g, ml, pcs, kg…
-            AllergenSeeder::class,         // gluten, dairy, nuts…
-
-            // 3. People + Tables
-            UserSeeder::class,             // admin + waiters/cashiers/chefs
-            TableSeeder::class,            // 12 tables (indoor + outdoor)
-
-            // 4. Menu structure (categories + modifier groups + sample items)
-            MenuSeeder::class,
-
-            // 5. Real restaurant menu — replaces sample items with 7 categories
-            //    × 10-12 real dishes + localized Unsplash imagery.
-            //    Must run last (it truncates menu_items then inserts).
-            RealRestaurantMenuSeeder::class,
+            SystemSeeder::class,
+            DemoSeeder::class,
         ]);
     }
 }
