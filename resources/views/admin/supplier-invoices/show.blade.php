@@ -2,32 +2,54 @@
 @section('title', $invoice->number)
 
 @section('content')
-<x-admin.breadcrumb title="{{ $invoice- />
+<x-admin.breadcrumb
+    title="فاتورة مورد {{ $invoice->number }}"
+    icon="bi-file-earmark-text-fill"
+    subtitle="{{ $invoice->supplier?->name ?? 'بدون مورد' }}">
+    <x-slot:actions>
+        <div class="d-flex flex-wrap gap-2">
+            @if($invoice->attachment_path)
+                <a href="{{ asset('storage/'.$invoice->attachment_path) }}" target="_blank" class="btn btn-light">
+                    <i class="bi bi-paperclip"></i> المرفق
+                </a>
+            @endif
+            @can('pay', $invoice)
+                @if($invoice->balance > 0)
+                    <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#payModal">
+                        <i class="bi bi-cash-coin"></i> تسجيل دفعة
+                    </button>
+                @endif
+            @endcan
+            @can('cancel', $invoice)
+                <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#cancelModal">
+                    <i class="bi bi-x-circle"></i> إلغاء
+                </button>
+            @endcan
+        </div>
+    </x-slot:actions>
+</x-admin.breadcrumb>
 
 <x-admin.stat-rail :stats="[
-    ['label' => 'الحالة',       'value' => $invoice->statusLabel(),                 'icon' => 'bi-info-circle', 'color' => match($invoice->statusColor()) { 'success' => 'success', 'danger' => 'danger', 'warning' => 'accent', default => 'muted' }],
-    ['label' => 'إجمالي الفاتورة','value' => \App\Helpers\Money::format($invoice->total),     'icon' => 'bi-receipt',     'color' => 'primary'],
-    ['label' => 'مدفوع',          'value' => \App\Helpers\Money::format($invoice->paid_total),'icon' => 'bi-check-circle-fill','color' => 'success'],
-    ['label' => 'متبقي',          'value' => \App\Helpers\Money::format($invoice->balance),   'icon' => 'bi-alarm',       'color' => $invoice->balance > 0 ? 'danger' : 'muted'],
+    ['label' => 'الحالة', 'value' => $invoice->statusLabel(), 'icon' => 'bi-info-circle', 'color' => match($invoice->statusColor()) { 'success' => 'success', 'danger' => 'danger', 'warning' => 'accent', default => 'muted' }],
+    ['label' => 'إجمالي الفاتورة', 'value' => \App\Helpers\Money::format($invoice->total), 'icon' => 'bi-receipt', 'color' => 'primary'],
+    ['label' => 'مدفوع', 'value' => \App\Helpers\Money::format($invoice->paid_total), 'icon' => 'bi-check-circle-fill', 'color' => 'success'],
+    ['label' => 'متبقي', 'value' => \App\Helpers\Money::format($invoice->balance), 'icon' => 'bi-alarm', 'color' => $invoice->balance > 0 ? 'danger' : 'muted'],
+    ['label' => 'بنود', 'value' => $invoice->items->count(), 'icon' => 'bi-list-ul', 'color' => 'accent'],
 ]" />
 
-<div class="row g-3">
+<div class="row g-3 mb-3">
     <div class="col-xl-4">
         <x-admin.data-panel title="تفاصيل الفاتورة" icon="bi-info-circle">
             <div class="p-3">
                 @php
-                    // Every row has 4 elements so positional destructuring
-                    // in the @foreach below stays valid even when `$mono` is
-                    // the default (false). PHP's array destructuring has no
-                    // per-slot default syntax, so we normalise here.
                     $rows = [
-                        ['رقم الفاتورة',     $invoice->number,                                   'bi-hash',         true],
-                        ['المورد',            $invoice->supplier?->name,                         'bi-truck',        false],
-                        ['PO مرتبط',          $invoice->purchaseOrder?->number,                  'bi-link-45deg',   true],
-                        ['تاريخ الفاتورة',    $invoice->invoice_date?->format('Y-m-d'),          'bi-calendar',     false],
-                        ['الاستحقاق',         optional($invoice->due_date)->format('Y-m-d'),     'bi-calendar-event', false],
-                        ['تاريخ السداد',     $invoice->paid_at?->format('Y-m-d H:i'),            'bi-check2-circle', false],
-                        ['أنشئت بواسطة',      $invoice->creator?->name,                          'bi-person',       false],
+                        ['رقم الفاتورة', $invoice->number, 'bi-hash', true],
+                        ['المورد', $invoice->supplier?->name, 'bi-truck', false],
+                        ['PO مرتبط', $invoice->purchaseOrder?->number, 'bi-link-45deg', true],
+                        ['تاريخ الفاتورة', $invoice->invoice_date?->format('Y-m-d'), 'bi-calendar', false],
+                        ['الاستحقاق', optional($invoice->due_date)->format('Y-m-d'), 'bi-calendar-event', false],
+                        ['تاريخ السداد', $invoice->paid_at?->format('Y-m-d H:i'), 'bi-check2-circle', false],
+                        ['أنشئت بواسطة', $invoice->creator?->name, 'bi-person', false],
                     ];
                 @endphp
                 @foreach($rows as [$label, $value, $icon, $mono])
@@ -38,7 +60,7 @@
                             </div>
                             <div class="flex-grow-1">
                                 <div class="text-muted small fw-bold">{{ $label }}</div>
-                                <div class="fw-bold" style="{{ ($mono ?? false) ? 'font-family: \'Courier New\', monospace;' : '' }}">{{ $value }}</div>
+                                <div class="fw-bold" style="{{ $mono ? 'font-family: \'Courier New\', monospace;' : '' }}">{{ $value }}</div>
                             </div>
                         </div>
                     @endif
@@ -62,7 +84,7 @@
 
                 @if($invoice->notes)
                     <div class="mt-3 p-2 rounded" style="background:rgba(var(--accent-rgb),.05); border-right:3px solid var(--accent);">
-                        <div class="small fw-bold text-muted mb-1">ملاحظات:</div>
+                        <div class="small fw-bold text-muted mb-1">ملاحظات</div>
                         <div style="white-space:pre-wrap;">{{ $invoice->notes }}</div>
                     </div>
                 @endif
@@ -71,64 +93,92 @@
     </div>
 
     <div class="col-xl-8">
-        <x-admin.data-panel title="الدفعات" :count="$invoice->payments->count()" icon="bi-cash-stack">
-            <x-slot:actions>
-                @can('pay', $invoice)
-                    @if($invoice->balance > 0)
-                        <button type="button" class="btn btn-success"
-                                data-bs-toggle="modal" data-bs-target="#payModal">
-                            <i class="bi bi-cash-coin"></i> تسجيل دفعة
-                        </button>
-                    @else
-                        <span class="badge bg-success-transparent py-2 px-3">
-                            <i class="bi bi-check-circle-fill"></i> الفاتورة مدفوعة بالكامل
-                        </span>
-                    @endif
-                @endcan
-            </x-slot:actions>
-
-            <div class="table-responsive">
-                <table class="table align-middle">
-                    <thead class="bg-light">
-                        <tr>
-                            <th>التاريخ</th>
-                            <th>القيمة</th>
-                            <th>الطريقة</th>
-                            <th>المرجع</th>
-                            <th>بواسطة</th>
-                            <th>ملاحظات</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @forelse($invoice->payments as $pay)
+        <x-admin.data-panel title="بنود الفاتورة ومطابقة الاستلام" icon="bi-list-check" :count="$invoice->items->count()">
+            @if($invoice->items->isEmpty())
+                <x-admin.empty-state icon="bi-list-ul" title="لا توجد بنود مفصلة" message="هذه فاتورة مسجلة بإجمالي فقط." />
+            @else
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead class="bg-light">
                             <tr>
-                                <td>{{ $pay->paid_on->format('Y-m-d') }}</td>
-                                <td class="fw-bold" style="color:var(--primary);">{{ \App\Helpers\Money::format($pay->amount) }}</td>
-                                <td><span class="badge bg-secondary">{{ $pay->methodLabel() }}</span></td>
-                                <td class="text-muted small">{{ $pay->reference ?? '—' }}</td>
-                                <td class="small">{{ $pay->payer?->name ?? '—' }}</td>
-                                <td class="small text-muted">{{ Str::limit($pay->notes, 40) ?? '' }}</td>
+                                <th>البند</th>
+                                <th>كمية الفاتورة</th>
+                                <th>كمية الاستلام</th>
+                                <th>الإجمالي</th>
+                                <th>فرق كمية</th>
+                                <th>فرق قيمة</th>
                             </tr>
-                        @empty
-                            <tr><td colspan="6">
-                                <x-admin.empty-state icon="bi-cash-stack" message="لا دفعات بعد" compact />
-                            </td></tr>
-                        @endforelse
-                    </tbody>
-                    <tfoot>
-                        <tr class="table-light">
-                            <td class="text-end fw-bold">مجموع المدفوع</td>
-                            <td class="fw-bold" style="color: var(--primary);">{{ \App\Helpers\Money::format($invoice->paid_total) }}</td>
-                            <td colspan="4"></td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
+                        </thead>
+                        <tbody>
+                            @foreach($invoice->items as $item)
+                                @php
+                                    $qtyVariance = (float) ($item->variance_qty ?? 0);
+                                    $totalVariance = (float) ($item->variance_total ?? 0);
+                                @endphp
+                                <tr class="{{ abs($qtyVariance) > 0.0001 || abs($totalVariance) > 0.01 ? 'table-warning' : '' }}">
+                                    <td>
+                                        <div class="fw-bold">{{ $item->description }}</div>
+                                        <small class="text-muted">{{ $item->unit?->code ?? $item->ingredient?->baseUnit?->code }}</small>
+                                    </td>
+                                    <td>{{ number_format((float) $item->quantity, 4) }}</td>
+                                    <td>{{ $item->received_qty !== null ? number_format((float) $item->received_qty, 4) : '—' }}</td>
+                                    <td class="fw-bold" style="color: var(--primary);">{{ \App\Helpers\Money::format($item->total) }}</td>
+                                    <td class="{{ abs($qtyVariance) > 0.0001 ? 'text-danger fw-bold' : 'text-muted' }}">
+                                        {{ $item->variance_qty !== null ? number_format($qtyVariance, 4) : '—' }}
+                                    </td>
+                                    <td class="{{ abs($totalVariance) > 0.01 ? 'text-danger fw-bold' : 'text-muted' }}">
+                                        {{ $item->variance_total !== null ? \App\Helpers\Money::format($totalVariance) : '—' }}
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endif
         </x-admin.data-panel>
     </div>
 </div>
 
-{{-- Pay modal --}}
+<x-admin.data-panel title="الدفعات" :count="$invoice->payments->count()" icon="bi-cash-stack">
+    <div class="table-responsive">
+        <table class="table align-middle mb-0">
+            <thead class="bg-light">
+                <tr>
+                    <th>التاريخ</th>
+                    <th>القيمة</th>
+                    <th>الطريقة</th>
+                    <th>المرجع</th>
+                    <th>بواسطة</th>
+                    <th>ملاحظات</th>
+                </tr>
+            </thead>
+            <tbody>
+                @forelse($invoice->payments as $pay)
+                    <tr>
+                        <td>{{ $pay->paid_on->format('Y-m-d') }}</td>
+                        <td class="fw-bold" style="color:var(--primary);">{{ \App\Helpers\Money::format($pay->amount) }}</td>
+                        <td><span class="badge bg-secondary">{{ $pay->methodLabel() }}</span></td>
+                        <td class="text-muted small">{{ $pay->reference ?? '—' }}</td>
+                        <td class="small">{{ $pay->payer?->name ?? '—' }}</td>
+                        <td class="small text-muted">{{ \Illuminate\Support\Str::limit($pay->notes, 40) ?? '' }}</td>
+                    </tr>
+                @empty
+                    <tr><td colspan="6">
+                        <x-admin.empty-state icon="bi-cash-stack" title="لا دفعات بعد" message="لم يتم تسجيل أي دفعة على هذه الفاتورة." />
+                    </td></tr>
+                @endforelse
+            </tbody>
+            <tfoot>
+                <tr class="table-light">
+                    <td class="text-end fw-bold">مجموع المدفوع</td>
+                    <td class="fw-bold" style="color: var(--primary);">{{ \App\Helpers\Money::format($invoice->paid_total) }}</td>
+                    <td colspan="4"></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</x-admin.data-panel>
+
 @can('pay', $invoice)
 <div class="modal fade" id="payModal" tabindex="-1">
     <div class="modal-dialog">
@@ -182,7 +232,6 @@
 </div>
 @endcan
 
-{{-- Cancel modal --}}
 @can('cancel', $invoice)
 <div class="modal fade" id="cancelModal" tabindex="-1">
     <div class="modal-dialog">
@@ -194,10 +243,8 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label">السبب <span class="text-danger">*</span></label>
-                        <textarea name="reason" class="form-control" rows="3" required></textarea>
-                    </div>
+                    <label class="form-label">السبب <span class="text-danger">*</span></label>
+                    <textarea name="reason" class="form-control" rows="3" required></textarea>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-light" data-bs-dismiss="modal">تراجع</button>

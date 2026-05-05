@@ -303,6 +303,111 @@
     .step-circle { width: 50px; height: 50px; font-size: 1.15rem; }
     .stepper-bg, .stepper-fill { top: 24px; }
 }
+
+/* Loyalty signup banner — shown above the order tracker for guests who
+   left a phone but haven't accepted an account yet. The post-order wait
+   is the calmest, lowest-friction moment to ask. */
+.track-signup {
+    display: flex;
+    gap: .9rem;
+    align-items: flex-start;
+    padding: 1rem 1.1rem;
+    margin-bottom: 1rem;
+    background: linear-gradient(135deg, rgba(184, 135, 42, .14), rgba(255, 251, 235, .96));
+    border: 1px solid rgba(184, 135, 42, .35);
+    border-inline-start: 4px solid var(--accent);
+    border-radius: 18px;
+    box-shadow: 0 6px 20px rgba(184, 135, 42, .14);
+}
+.track-signup--success {
+    background: linear-gradient(135deg, rgba(34, 197, 94, .14), rgba(240, 253, 244, .96));
+    border-color: rgba(34, 197, 94, .4);
+    border-inline-start-color: #166534;
+    box-shadow: 0 6px 20px rgba(22, 101, 52, .14);
+}
+.track-signup-icon {
+    flex-shrink: 0;
+    width: 48px; height: 48px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+    color: #fff;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 1.4rem;
+    box-shadow: 0 4px 12px rgba(184, 135, 42, .3);
+}
+.track-signup--success .track-signup-icon {
+    background: linear-gradient(135deg, #16a34a, #166534);
+    box-shadow: 0 4px 12px rgba(22, 101, 52, .3);
+}
+.track-signup-body { flex: 1; min-width: 0; }
+.track-signup-body strong {
+    display: block;
+    font-size: 1rem;
+    color: var(--brand-dark);
+    margin-bottom: .35rem;
+    font-weight: 950;
+    line-height: 1.3;
+}
+.track-signup-body p {
+    margin: 0 0 .65rem;
+    font-size: .85rem;
+    color: var(--muted);
+    font-weight: 600;
+    line-height: 1.5;
+}
+.track-signup-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .55rem;
+    align-items: center;
+}
+.track-signup-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    padding: .55rem 1.1rem;
+    border: 0;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--brand), var(--brand-dark));
+    color: #fff;
+    font-weight: 900;
+    font-size: .9rem;
+    cursor: pointer;
+    transition: transform .15s ease, box-shadow .15s ease;
+    box-shadow: 0 4px 12px rgba(31, 71, 51, .25);
+}
+.track-signup-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(31, 71, 51, .35); }
+.track-signup-skip {
+    background: transparent;
+    border: 0;
+    color: var(--muted);
+    font-size: .8rem;
+    font-weight: 700;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: .5rem .25rem;
+}
+.track-signup-skip:hover { color: var(--brand-dark); }
+.track-signup-pin {
+    display: inline-block;
+    margin: .35rem 0;
+    padding: .4rem 1rem;
+    background: #166534;
+    color: #f0fdf4;
+    border-radius: 10px;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-weight: 950;
+    font-size: 1.4rem;
+    letter-spacing: 4px;
+    user-select: all;
+}
+.track-signup-body small {
+    display: block;
+    margin-top: .35rem;
+    color: var(--muted);
+    font-size: .75rem;
+    line-height: 1.5;
+}
 </style>
 @endpush
 
@@ -313,6 +418,55 @@
      the @push('styles') block above. Zero custom JS polling, zero
      /track/status fetcher — everything goes through Livewire now. --}}
 <div class="track-wrap">
+    @php
+        $signupPin = session('signup_pin');
+        $alreadyDismissed = session('signup_dismissed_session_'.$session->id);
+        $eligibleForSignup = ! $session->customer_id
+            && ! empty($session->customer_phone)
+            && ! $alreadyDismissed
+            && ! $signupPin;
+    @endphp
+
+    @if($signupPin)
+        {{-- One-shot reveal of the PIN we just generated. The diner needs it
+             to log into the portal later — gone after this view. --}}
+        <div class="track-signup track-signup--success">
+            <div class="track-signup-icon"><i class="bi bi-check-circle-fill"></i></div>
+            <div class="track-signup-body">
+                <strong>تمام يا {{ $signupPin['name'] }}! حسابك جاهز 🎉</strong>
+                <p>رمز الدخول للزيارات القادمة:</p>
+                <code class="track-signup-pin">{{ $signupPin['pin'] }}</code>
+                <small>اكتب الرمز عندك. تقدر تدخل بوابة العملاء برقم جوالك ({{ $signupPin['phone'] }}) + هذا الرمز.</small>
+            </div>
+        </div>
+    @elseif($eligibleForSignup)
+        {{-- Banner shown only when:
+              1. No customer_id linked to this session.
+              2. The diner left a phone in the cart (we have something to use).
+              3. They haven't already waved this off in this session.
+             Cleanest moment to ask for signup — the order is in, food is on
+             its way, they have nothing to do but stare at their phone. --}}
+        <div class="track-signup">
+            <div class="track-signup-icon"><i class="bi bi-stars"></i></div>
+            <div class="track-signup-body">
+                <strong>سجّل لتجمع نقاط ولاء على زياراتك القادمة</strong>
+                <p>عندنا رقمك ({{ $session->customer_phone }}) — ضغطة وحدة وحسابك جاهز. مش حنطلب منك ولا حقل ثاني.</p>
+                <div class="track-signup-actions">
+                    <form method="POST" action="{{ route('customer.track.signup') }}" class="d-inline">
+                        @csrf
+                        <button type="submit" class="track-signup-btn">
+                            <i class="bi bi-person-plus-fill"></i> أنشئ لي حساب
+                        </button>
+                    </form>
+                    <form method="POST" action="{{ route('customer.track.signup.dismiss') }}" class="d-inline">
+                        @csrf
+                        <button type="submit" class="track-signup-skip">شكراً، مش الآن</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    @endif
+
     <livewire:customer.order-tracker :session-id="$session->id" />
 </div>
 @endsection

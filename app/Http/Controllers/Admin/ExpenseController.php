@@ -62,6 +62,15 @@ class ExpenseController extends Controller
             });
         }
 
+        $filteredQuery = clone $query;
+
+        $filteredStats = [
+            'count'    => (clone $filteredQuery)->count(),
+            'total'    => (float) (clone $filteredQuery)->sum('amount'),
+            'pending'  => (clone $filteredQuery)->where('status', 'pending_approval')->count(),
+            'approved' => (clone $filteredQuery)->where('status', 'approved')->count(),
+        ];
+
         $expenses = $query->paginate(25)->withQueryString();
 
         // ─── KPIs (computed on the same branch-scoped baseline) ────
@@ -90,11 +99,22 @@ class ExpenseController extends Controller
         if ($categoryId = $request->get('category_id')) {
             $catQuery->where('expenses.expense_category_id', (int) $categoryId);
         }
+        if ($method = $request->get('payment_method')) {
+            $catQuery->where('expenses.payment_method', $method);
+        }
         if ($from = $request->get('from')) {
             $catQuery->whereDate('expenses.expense_date', '>=', $from);
         }
         if ($to = $request->get('to')) {
             $catQuery->whereDate('expenses.expense_date', '<=', $to);
+        }
+        if ($search = trim((string) $request->get('search'))) {
+            $catQuery->where(function ($q) use ($search) {
+                $q->where('expenses.description', 'like', "%{$search}%")
+                  ->orWhere('expenses.expense_number', 'like', "%{$search}%")
+                  ->orWhere('expenses.vendor_name', 'like', "%{$search}%")
+                  ->orWhere('expenses.payment_reference', 'like', "%{$search}%");
+            });
         }
 
         $byCategory = $catQuery
@@ -113,8 +133,10 @@ class ExpenseController extends Controller
         return view('admin.expenses.index', [
             'expenses'   => $expenses,
             'stats'      => $stats,
+            'filteredStats' => $filteredStats,
             'byCategory' => $byCategory,
             'categories' => Lookup::for('expense_categories'),
+            'paymentMethods' => Expense::PAYMENT_METHODS,
         ]);
     }
 
@@ -126,6 +148,7 @@ class ExpenseController extends Controller
             'expense'    => new Expense(['expense_date' => now()->toDateString(), 'payment_method' => 'cash']),
             'suppliers'  => Supplier::orderBy('name')->get(['id', 'name']),
             'categories' => Lookup::for('expense_categories'),
+            'paymentMethods' => Expense::PAYMENT_METHODS,
             'openShift'  => $this->openShiftForCurrentBranch(),
         ]);
     }
@@ -168,6 +191,7 @@ class ExpenseController extends Controller
             'expense'    => $expense,
             'suppliers'  => Supplier::orderBy('name')->get(['id', 'name']),
             'categories' => Lookup::for('expense_categories'),
+            'paymentMethods' => Expense::PAYMENT_METHODS,
             'openShift'  => $this->openShiftForCurrentBranch(),
         ]);
     }

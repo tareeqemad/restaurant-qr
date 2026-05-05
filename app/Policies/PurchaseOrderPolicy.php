@@ -34,8 +34,15 @@ class PurchaseOrderPolicy extends BasePolicy
 
     public function send(User $user, PurchaseOrder $po): bool
     {
-        return $po->status === 'draft'
+        return $po->isSendable()
             && ($user->hasAnyRole(['admin', 'manager']) || $user->hasPermission('purchase_orders.send'))
+            && $this->inUserBranch($user, $po);
+    }
+
+    public function approve(User $user, PurchaseOrder $po): bool
+    {
+        return $po->isApprovable()
+            && ($user->hasAnyRole(['admin', 'manager']) || $user->hasPermission('purchase_orders.approve'))
             && $this->inUserBranch($user, $po);
     }
 
@@ -55,7 +62,7 @@ class PurchaseOrderPolicy extends BasePolicy
 
     public function delete(User $user, PurchaseOrder $po): bool
     {
-        return $po->status === 'draft'
+        return $po->isEditable()
             && ($user->isAdmin() || $user->hasPermission('purchase_orders.delete'))
             && $this->inUserBranch($user, $po);
     }

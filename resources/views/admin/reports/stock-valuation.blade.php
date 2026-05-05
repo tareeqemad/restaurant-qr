@@ -15,7 +15,8 @@
 <x-admin.breadcrumb
     title="تقييم المخزون"
     icon="bi-cash-stack"
-    subtitle="قيمة كل صنف = كميته × تكلفته. يدعم نقطة زمنية في الماضي لإقفال الشهور المحاسبية." />
+    subtitle="قيمة كل صنف = كميته × تكلفته. يدعم نقطة زمنية في الماضي لإقفال الشهور المحاسبية."
+    :crumbs="[['label' => 'التقارير', 'url' => route('admin.reports.index')]]" />
 
 <x-admin.stat-rail :stats="[
     ['label' => 'إجمالي قيمة المخزون', 'value' => number_format($totalValue, 2).' ₪',                                'icon' => 'bi-cash-stack',           'color' => 'primary'],
@@ -48,12 +49,8 @@
                 <label class="form-label fs-12 mb-1">تقييم بتاريخ <small class="text-muted">(اتركه فارغاً للمخزون الحالي)</small></label>
                 <input type="date" name="as_of" value="{{ $asOf }}" class="form-control form-control-sm">
             </div>
-            <div class="col-md-2">
-                <button class="btn btn-primary btn-sm w-100"><i class="bi bi-search"></i> طبّق</button>
-            </div>
-
             {{-- ABC summary mini-bar --}}
-            <div class="col-md-6">
+            <div class="col-md-8">
                 <div class="d-flex gap-2 align-items-center justify-content-end">
                     @foreach($abcMeta as $k => $m)
                         <span class="badge bg-{{ $m['color'] }}-transparent text-{{ $m['color'] }} fs-12">
@@ -63,6 +60,9 @@
                         </span>
                     @endforeach
                 </div>
+            </div>
+            <div class="col-12 text-center mt-2">
+                <button class="btn btn-primary btn-sm px-5"><i class="bi bi-search"></i> استعلام</button>
             </div>
         </form>
     </x-slot:filters>

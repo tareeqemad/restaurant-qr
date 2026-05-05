@@ -1,6 +1,10 @@
 @extends('layouts.admin')
 @section('title', 'اقتراحات الشراء')
 
+@push('head-scripts')
+<script src="{{ asset('assets/dashtic/js/relax-reorder-bulk-builder.js') }}?v={{ filemtime(public_path('assets/dashtic/js/relax-reorder-bulk-builder.js')) }}"></script>
+@endpush
+
 @section('content')
 <x-admin.breadcrumb title="اقتراحات الشراء" icon="bi-cart-plus-fill"
     subtitle="ماذا تشتري من من بكم — مع تقدير أيام النفاد وإلحاح كل بند." />

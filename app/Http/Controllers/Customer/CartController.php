@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
+use App\Models\Customer;
 use App\Models\MenuItem;
 use App\Models\Modifier;
 use App\Services\InventoryService;
@@ -137,15 +138,34 @@ class CartController extends Controller
 
         $data = $request->validate([
             'customer_name' => ['nullable', 'string', 'max:100'],
+            'customer_phone' => ['nullable', 'string', 'max:32'],
             'cover_count' => ['nullable', 'integer', 'min:1', 'max:50'],
             'notes' => ['nullable', 'string', 'max:1000'],
         ]);
 
+        // Auto-link a returning customer by phone — Customer::findForLogin
+        // matches against both `phone` and `email`, normalising digits, so a
+        // diner who typed 0599-123-456 still resolves to a record stored as
+        // 0599123456. We only set customer_id if the session is currently
+        // anonymous; an authenticated portal session already has a link from
+        // MenuController::open() and we don't want to overwrite it.
+        $linkedCustomer = null;
+        if (! empty($data['customer_phone']) && empty($session->customer_id)) {
+            $linkedCustomer = Customer::findForLogin($data['customer_phone']);
+        }
+
         $update = array_filter([
-            'customer_name' => $data['customer_name'] ?? null,
-            'cover_count' => $data['cover_count'] ?? null,
+            'customer_name'  => $data['customer_name']  ?? null,
+            'customer_phone' => $data['customer_phone'] ?? null,
+            'cover_count'    => $data['cover_count']    ?? null,
+            'customer_id'    => $linkedCustomer?->id,
         ], fn($v) => $v !== null && $v !== '');
         if (! empty($update)) $session->update($update);
+
+        // Resolve who this session ultimately belongs to: portal-authenticated
+        // > phone-matched at submit > already-linked at session open.
+        $customerForCookie = $linkedCustomer
+            ?? $session->fresh('customer')->customer;
 
         $issues = $this->inventory->checkStockForOrderPreview($cart);
         if (! empty($issues)) {
@@ -157,7 +177,28 @@ class CartController extends Controller
 
         session()->forget('cart.'.$session->token);
 
-        return redirect()->route('customer.track')->with('success', "تم إرسال طلبك #{$order->number} — الجرسون سيعتمده قريباً");
+        $response = redirect()->route('customer.track')
+            ->with('success', "تم إرسال طلبك #{$order->number} — الجرسون سيعتمده قريباً");
+
+        // Remember WHO this device belongs to so next QR scan recognises
+        // them silently. Cookie is encrypted by Laravel (EncryptCookies
+        // middleware) and good for a year. MenuController::open reads it on
+        // a fresh session and pre-links — diner sees "أهلاً يا أحمد" the
+        // moment they open the menu, with zero clicks. Lost device cleanup
+        // is the standard portal password reset flow.
+        if ($customerForCookie) {
+            $response->cookie(cookie(
+                name: 'qr_customer_id',
+                value: (string) $customerForCookie->id,
+                minutes: 60 * 24 * 365,    // 1 year
+                path: '/',
+                secure: $request->secure(),
+                httpOnly: true,
+                sameSite: 'lax',
+            ));
+        }
+
+        return $response;
     }
 
     protected function hasIssuedInvoice($session): bool

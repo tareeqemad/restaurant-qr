@@ -68,6 +68,154 @@ class ReportController extends Controller
         );
     }
 
+    public function index(Request $request)
+    {
+        $from = $request->get('from', now()->startOfMonth()->toDateString());
+        $to   = $request->get('to', now()->toDateString());
+        [$start, $end] = [$from.' 00:00:00', $to.' 23:59:59'];
+
+        $invoiceQuery = Invoice::whereBetween('issued_at', [$start, $end])
+            ->whereIn('status', ['paid', 'partially_paid']);
+
+        $revenue = (float) (clone $invoiceQuery)->sum('paid_total');
+        $invoiceCount = (int) (clone $invoiceQuery)->count();
+
+        $ordersQuery = \App\Models\Order::whereBetween('created_at', [$start, $end])
+            ->whereNotIn('status', ['cancelled']);
+        $ordersCount = (int) (clone $ordersQuery)->count();
+
+        $cogs = (float) ($this->soldItemsQuery($start, $end)
+            ->selectRaw('SUM(order_items.quantity * menu_items.cost) as cogs')
+            ->value('cogs') ?? 0);
+
+        $wasteCost = (float) InventoryMovement::whereBetween('occurred_at', [$start, $end])
+            ->where('type', 'waste')
+            ->sum('total_cost');
+
+        $commissionPaid = (float) ($this->scopeRaw(
+            DB::table('orders')
+                ->whereBetween('created_at', [$start, $end])
+                ->whereNotIn('status', ['cancelled']),
+            'orders.branch_id'
+        )
+            ->selectRaw('SUM(total * platform_commission_pct / 100) as commission_paid')
+            ->value('commission_paid') ?? 0);
+
+        $unpaidBalance = (float) Invoice::whereBetween('issued_at', [$start, $end])
+            ->whereIn('status', ['issued', 'partially_paid'])
+            ->sum('balance');
+
+        $grossProfit = $revenue - $cogs;
+        $marginPct = $revenue > 0 ? ($grossProfit / $revenue) * 100 : 0;
+        $averageTicket = $invoiceCount > 0 ? $revenue / $invoiceCount : 0;
+        $daysCount = \Carbon\Carbon::parse($from)->diffInDays(\Carbon\Carbon::parse($to)) + 1;
+        $dailyAverage = $daysCount > 0 ? $revenue / $daysCount : 0;
+
+        $revenueByDay = (clone $invoiceQuery)
+            ->selectRaw('DATE(issued_at) as day, SUM(paid_total) as revenue, COUNT(*) as invoices_count')
+            ->groupBy('day')
+            ->orderBy('day')
+            ->get()
+            ->keyBy('day');
+
+        $trend = collect();
+        for ($i = 0; $i < $daysCount; $i++) {
+            $day = \Carbon\Carbon::parse($from)->addDays($i)->toDateString();
+            $row = $revenueByDay->get($day);
+            $trend->push((object) [
+                'day' => $day,
+                'label' => \Carbon\Carbon::parse($day)->format('d/m'),
+                'revenue' => (float) ($row->revenue ?? 0),
+                'invoices_count' => (int) ($row->invoices_count ?? 0),
+            ]);
+        }
+
+        $topItems = $this->soldItemsQuery($start, $end)
+            ->selectRaw('
+                menu_items.name,
+                SUM(order_items.quantity) as qty,
+                SUM(order_items.subtotal) as revenue,
+                SUM(order_items.subtotal - (order_items.quantity * menu_items.cost)) as profit
+            ')
+            ->groupBy('menu_items.id', 'menu_items.name')
+            ->orderByDesc('profit')
+            ->limit(6)
+            ->get();
+
+        $sourceMix = $this->scopeRaw(
+            DB::table('orders')
+                ->whereBetween('created_at', [$start, $end])
+                ->whereNotIn('status', ['cancelled']),
+            'orders.branch_id'
+        )
+            ->selectRaw('order_source, COUNT(*) as orders_count, SUM(total) as revenue')
+            ->groupBy('order_source')
+            ->orderByDesc('revenue')
+            ->limit(5)
+            ->get()
+            ->map(function ($row) {
+                $enum = \App\Enums\OrderSource::tryFrom($row->order_source);
+                $row->label = $enum?->label() ?? ($row->order_source ?: 'غير محدد');
+                $row->icon = $enum?->icon() ?? 'bi-box';
+                $row->color = $enum?->color() ?? '#6b7280';
+                return $row;
+            });
+
+        $alerts = collect();
+        if ($revenue > 0 && $marginPct < 30) {
+            $alerts->push([
+                'tone' => 'danger',
+                'icon' => 'bi-exclamation-triangle-fill',
+                'title' => 'هامش الربح منخفض',
+                'body' => 'الهامش الحالي '.number_format($marginPct, 1).'%؛ راجع تكلفة الوصفات والأسعار في تقرير الأرباح والخسائر.',
+                'link' => route('admin.reports.profit-loss', compact('from', 'to')),
+            ]);
+        }
+        if ($cogs > 0 && $wasteCost > ($cogs * 0.05)) {
+            $alerts->push([
+                'tone' => 'warning',
+                'icon' => 'bi-trash3-fill',
+                'title' => 'الهدر أعلى من الطبيعي',
+                'body' => 'قيمة الهدر تمثل '.number_format(($wasteCost / $cogs) * 100, 1).'% من تكلفة المبيعات.',
+                'link' => route('admin.reports.inventory', compact('from', 'to')),
+            ]);
+        }
+        if ($revenue > 0 && $commissionPaid > ($revenue * 0.08)) {
+            $alerts->push([
+                'tone' => 'warning',
+                'icon' => 'bi-percent',
+                'title' => 'عمولات المنصات مؤثرة',
+                'body' => 'العمولات المدفوعة تساوي '.number_format(($commissionPaid / $revenue) * 100, 1).'% من الإيراد المحصل.',
+                'link' => route('admin.reports.sales-by-platform', compact('from', 'to')),
+            ]);
+        }
+        if ($unpaidBalance > 0) {
+            $alerts->push([
+                'tone' => 'info',
+                'icon' => 'bi-wallet2',
+                'title' => 'رصيد غير محصل',
+                'body' => 'يوجد رصيد فواتير غير محصل بقيمة '.\App\Helpers\Money::format($unpaidBalance).'.',
+                'link' => null,
+            ]);
+        }
+        if ($alerts->isEmpty()) {
+            $alerts->push([
+                'tone' => 'success',
+                'icon' => 'bi-check-circle-fill',
+                'title' => 'المؤشرات مستقرة',
+                'body' => 'لا توجد إشارات حرجة ضمن الفترة المختارة. استخدم البطاقات أدناه للتعمق.',
+                'link' => null,
+            ]);
+        }
+
+        return view('admin.reports.index', compact(
+            'from', 'to', 'revenue', 'invoiceCount', 'ordersCount', 'cogs',
+            'grossProfit', 'marginPct', 'averageTicket', 'dailyAverage',
+            'wasteCost', 'commissionPaid', 'unpaidBalance', 'trend',
+            'topItems', 'sourceMix', 'alerts'
+        ));
+    }
+
     public function sales(Request $request)
     {
         [$from, $to, $start, $end] = $this->dateRange($request);
@@ -86,7 +234,27 @@ class ReportController extends Controller
             ->orderBy('day', 'desc')
             ->get();
 
-        return view('admin.reports.sales', compact('rows', 'from', 'to'));
+        $totals = [
+            'invoices_count' => (int) $rows->sum('invoices_count'),
+            'subtotal'       => (float) $rows->sum('subtotal'),
+            'tax'            => (float) $rows->sum('tax'),
+            'service'        => (float) $rows->sum('service'),
+            'total'          => (float) $rows->sum('total'),
+            'paid'           => (float) $rows->sum('paid'),
+        ];
+
+        $daysCount = \Carbon\Carbon::parse($from)->diffInDays(\Carbon\Carbon::parse($to)) + 1;
+        $averageDaily = $daysCount > 0 ? $totals['paid'] / $daysCount : 0;
+        $averageInvoice = $totals['invoices_count'] > 0 ? $totals['paid'] / $totals['invoices_count'] : 0;
+        $collectionGap = max(0, $totals['total'] - $totals['paid']);
+        $collectionRate = $totals['total'] > 0 ? ($totals['paid'] / $totals['total']) * 100 : 0;
+        $bestDay = $rows->sortByDesc('paid')->first();
+        $quietDay = $rows->where('paid', '>', 0)->sortBy('paid')->first();
+
+        return view('admin.reports.sales', compact(
+            'rows', 'from', 'to', 'totals', 'averageDaily', 'averageInvoice',
+            'collectionGap', 'collectionRate', 'bestDay', 'quietDay'
+        ));
     }
 
     public function items(Request $request)
@@ -108,7 +276,8 @@ class ReportController extends Controller
             )
             ->groupBy('order_items.name_snapshot')
             ->orderByDesc('qty')
-            ->paginate(50);
+            ->paginate(50)
+            ->withQueryString();
 
         return view('admin.reports.items', compact('rows', 'from', 'to'));
     }
@@ -132,8 +301,19 @@ class ReportController extends Controller
 
     public function shifts(Request $request)
     {
-        $shifts = Shift::with('user')->latest('opened_at')->paginate(30);
-        return view('admin.reports.shifts', compact('shifts'));
+        $shifts = Shift::with('user')
+            ->latest('opened_at')
+            ->paginate(30)
+            ->withQueryString();
+        $monthStart = now()->startOfMonth();
+        $shiftStats = [
+            'open' => Shift::whereNull('closed_at')->count(),
+            'today' => Shift::whereDate('opened_at', now()->toDateString())->count(),
+            'month_sales' => (float) Shift::whereBetween('opened_at', [$monthStart, now()])->sum('total_sales'),
+            'cash_variance' => (float) Shift::whereBetween('opened_at', [$monthStart, now()])->sum('cash_variance'),
+        ];
+
+        return view('admin.reports.shifts', compact('shifts', 'shiftStats'));
     }
 
     /**

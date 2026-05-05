@@ -138,8 +138,8 @@
                     @endforeach
                 </select>
             </div>
-            <div class="col-md-2">
-                <button class="btn btn-primary btn-sm w-100"><i class="bi bi-search"></i> فلترة</button>
+            <div class="col-12 text-center mt-2">
+                <button class="btn btn-primary btn-sm px-5"><i class="bi bi-search"></i> استعلام</button>
             </div>
         </form>
     </x-slot:filters>

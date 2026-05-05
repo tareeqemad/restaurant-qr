@@ -21,10 +21,10 @@
 <x-admin.data-panel title="قائمة العملاء" :count="$customers->total()" icon="bi-person-hearts">
     <x-slot:filters>
         <form class="row g-2 align-items-end">
-            <div class="col-md-6">
+            <div class="col-md-4">
                 <label class="form-label small text-muted mb-1">بحث</label>
                 <input type="text" name="search" value="{{ request('search') }}"
-                       class="form-control" placeholder="اسم / هاتف / إيميل…">
+                       class="form-control" placeholder="اسم / هاتف / إيميل / سبب حظر…">
             </div>
             <div class="col-md-3">
                 <label class="form-label small text-muted mb-1">الحالة</label>
@@ -34,9 +34,18 @@
                     <option value="blocked" @selected(request('status')==='blocked')>محظور</option>
                 </select>
             </div>
-            <div class="col-md-3 d-flex gap-2">
-                <button class="btn btn-primary flex-grow-1"><i class="bi bi-funnel"></i> تطبيق</button>
-                @if(request()->hasAny(['search','status','new_today']))
+            <div class="col-md-5">
+                <label class="form-label small text-muted mb-1">فلاتر سريعة</label>
+                <div class="cust-filter-checks">
+                    <label><input type="checkbox" name="new_today" value="1" @checked(request('new_today'))> جدد اليوم</label>
+                    <label><input type="checkbox" name="active_30d" value="1" @checked(request('active_30d'))> نشطون ٣٠ يوم</label>
+                    <label><input type="checkbox" name="never_logged_in" value="1" @checked(request('never_logged_in'))> لم يدخلوا</label>
+                    <label><input type="checkbox" name="phone_verified" value="1" @checked(request('phone_verified'))> هاتف موثق</label>
+                </div>
+            </div>
+            <div class="col-12 text-center mt-2">
+                <button class="btn btn-primary px-5"><i class="bi bi-funnel"></i> استعلام</button>
+                @if(request()->hasAny(['search','status','new_today','active_30d','never_logged_in','phone_verified']))
                     <a href="{{ route('admin.customers.index') }}" class="btn btn-light" title="مسح">
                         <i class="bi bi-x-lg"></i>
                     </a>
@@ -51,6 +60,25 @@
         </form>
     </x-slot:filters>
 
+    <div class="cust-filter-summary mb-3">
+        <div>
+            <span class="cust-filter-summary__label">نتائج الاستعلام</span>
+            <strong>{{ number_format($filteredStats['count']) }}</strong>
+        </div>
+        <div>
+            <span class="cust-filter-summary__label">نشطون</span>
+            <strong class="text-success">{{ number_format($filteredStats['active']) }}</strong>
+        </div>
+        <div>
+            <span class="cust-filter-summary__label">محظورون</span>
+            <strong class="text-danger">{{ number_format($filteredStats['blocked']) }}</strong>
+        </div>
+        <div>
+            <span class="cust-filter-summary__label">لم يدخلوا</span>
+            <strong class="text-muted">{{ number_format($filteredStats['never_logged_in']) }}</strong>
+        </div>
+    </div>
+
     <div class="table-responsive">
         <table class="table align-middle cust-table">
             <thead class="bg-light">
@@ -58,7 +86,7 @@
                     <th>العميل</th>
                     <th>التواصل</th>
                     <th>الفرع المفضّل</th>
-                    <th class="text-center">الحجوزات</th>
+                    <th class="text-center">النشاط</th>
                     <th>التسجيل</th>
                     <th>آخر دخول</th>
                     <th>الحالة</th>
@@ -91,6 +119,9 @@
                             <div class="cust-contact">
                                 <i class="bi bi-telephone-fill"></i>
                                 <a href="tel:{{ $c->phone }}" dir="ltr">{{ $c->phone }}</a>
+                                @if($c->phone_verified_at)
+                                    <span class="badge bg-success-transparent" title="الهاتف موثق"><i class="bi bi-check2-circle"></i></span>
+                                @endif
                             </div>
                             @if($c->email)
                                 <div class="cust-contact text-muted">
@@ -107,7 +138,11 @@
                             @endif
                         </td>
                         <td class="text-center">
-                            <span class="badge bg-info-transparent">{{ $c->reservations_count }}</span>
+                            <div class="cust-activity-pills">
+                                <span title="الحجوزات"><i class="bi bi-calendar2-check"></i> {{ $c->reservations_count }}</span>
+                                <span title="الطلبات"><i class="bi bi-receipt"></i> {{ $c->orders_count }}</span>
+                                <span title="الفواتير"><i class="bi bi-cash-stack"></i> {{ $c->invoices_count }}</span>
+                            </div>
                         </td>
                         <td>
                             <small>{{ $c->created_at->format('Y/m/d') }}</small>
@@ -125,6 +160,11 @@
                                 <span class="badge bg-danger" title="{{ $c->blocked_reason }}">
                                     <i class="bi bi-slash-circle"></i> محظور
                                 </span>
+                                @if($c->blocked_reason)
+                                    <small class="text-danger d-block mt-1" title="{{ $c->blocked_reason }}">
+                                        {{ \Illuminate\Support\Str::limit($c->blocked_reason, 32) }}
+                                    </small>
+                                @endif
                             @else
                                 <span class="badge bg-success">نشط</span>
                             @endif
@@ -216,6 +256,68 @@
     .cust-contact a:hover { color: rgb(var(--primary-rgb)); }
     .cust-contact i { color: #9ca3af; font-size: .78rem; }
     .cust-row--blocked { background: rgba(239, 68, 68, .03); }
+    .cust-filter-checks {
+        min-height: 38px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 14px;
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 7px 10px;
+    }
+    .cust-filter-checks label {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        margin: 0;
+        font-size: .82rem;
+        color: #374151;
+        font-weight: 600;
+    }
+    .cust-filter-summary {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+    }
+    .cust-filter-summary > div {
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        background: #fff;
+        padding: 10px 12px;
+        min-width: 0;
+    }
+    .cust-filter-summary__label {
+        display: block;
+        color: #6b7280;
+        font-size: .76rem;
+        margin-bottom: 3px;
+    }
+    .cust-filter-summary strong {
+        font-family: ui-monospace, monospace;
+        font-weight: 800;
+    }
+    .cust-activity-pills {
+        display: inline-flex;
+        gap: 4px;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    .cust-activity-pills span {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: #f3f4f6;
+        color: #374151;
+        border-radius: 99px;
+        padding: 2px 7px;
+        font-size: .74rem;
+        font-weight: 700;
+    }
+    @media (max-width: 767.98px) {
+        .cust-filter-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
 </style>
 @endpush
 

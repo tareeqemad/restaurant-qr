@@ -25,11 +25,11 @@
     </x-slot:actions>
 
     <x-slot:filters>
-        <form class="row g-2">
-            <div class="col-md-3">
+        <form class="row g-2 align-items-end">
+            <div class="col-md-2">
                 <input name="search" value="{{ request('search') }}" class="form-control" placeholder="🔍 رقم PO">
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <select name="status" class="form-select">
                     <option value="">كل الحالات</option>
                     <option value="draft"              @selected(request('status')==='draft')>مسودة</option>
@@ -47,8 +47,14 @@
                     @endforeach
                 </select>
             </div>
-            <div class="col-md-3">
-                <button class="btn btn-primary w-100"><i class="bi bi-funnel"></i> تطبيق</button>
+            <div class="col-md-2">
+                <input type="date" name="from" value="{{ request('from') }}" class="form-control" title="من تاريخ">
+            </div>
+            <div class="col-md-2">
+                <input type="date" name="to" value="{{ request('to') }}" class="form-control" title="إلى تاريخ">
+            </div>
+            <div class="col-12 text-center mt-2">
+                <button class="btn btn-primary px-5"><i class="bi bi-search"></i> استعلام</button>
             </div>
         </form>
     </x-slot:filters>

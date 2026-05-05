@@ -33,7 +33,7 @@ class CustomerController extends Controller
 
         $query = Customer::query()
             ->with('defaultBranch')
-            ->withCount(['reservations'])
+            ->withCount(['reservations', 'orders', 'invoices'])
             ->orderBy('created_at', 'desc');
 
         if ($branchId) {
@@ -53,7 +53,8 @@ class CustomerController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
                   ->orWhere('phone', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%");
+                  ->orWhere('email', 'like', "%{$search}%")
+                  ->orWhere('blocked_reason', 'like', "%{$search}%");
             });
         }
         if ($status = $request->get('status')) {
@@ -62,6 +63,25 @@ class CustomerController extends Controller
         if ($request->get('new_today')) {
             $query->whereDate('created_at', today());
         }
+        if ($request->get('active_30d')) {
+            $query->whereHas('reservations', fn ($q) =>
+                $q->where('reserved_for', '>=', now()->subDays(30))
+            );
+        }
+        if ($request->get('never_logged_in')) {
+            $query->whereNull('last_login_at');
+        }
+        if ($request->get('phone_verified')) {
+            $query->whereNotNull('phone_verified_at');
+        }
+
+        $filteredQuery = clone $query;
+        $filteredStats = [
+            'count'          => (clone $filteredQuery)->count(),
+            'active'         => (clone $filteredQuery)->where('status', 'active')->count(),
+            'blocked'        => (clone $filteredQuery)->where('status', 'blocked')->count(),
+            'never_logged_in'=> (clone $filteredQuery)->whereNull('last_login_at')->count(),
+        ];
 
         $customers = $query->paginate(25)->withQueryString();
 
@@ -84,6 +104,7 @@ class CustomerController extends Controller
         return view('admin.customers.index', [
             'customers'   => $customers,
             'stats'       => $stats,
+            'filteredStats' => $filteredStats,
             'activeBranch'=> $branchId ? Branch::find($branchId) : null,
         ]);
     }

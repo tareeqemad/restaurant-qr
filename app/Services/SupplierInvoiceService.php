@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\ActivityLog;
+use App\Models\PurchaseOrderItem;
 use App\Models\Shift;
 use App\Models\SupplierInvoice;
 use App\Models\SupplierPayment;
@@ -21,23 +22,79 @@ class SupplierInvoiceService
     public function create(array $data, ?int $userId = null): SupplierInvoice
     {
         return DB::transaction(function () use ($data, $userId) {
-            $total = (float) ($data['total'] ?? (($data['subtotal'] ?? 0) + ($data['tax_total'] ?? 0)));
+            $lines = collect($data['lines'] ?? [])
+                ->filter(fn ($line) => trim((string) ($line['description'] ?? '')) !== '');
+
+            $linesSubtotal = $lines->sum(fn ($line) =>
+                (float) ($line['quantity'] ?? 0) * (float) ($line['unit_price'] ?? 0)
+            );
+            $linesTax = $lines->sum(fn ($line) => (float) ($line['tax_total'] ?? 0));
+
+            $subtotal = $lines->isNotEmpty() ? $linesSubtotal : (float) ($data['subtotal'] ?? 0);
+            $taxTotal = $lines->isNotEmpty() ? $linesTax : (float) ($data['tax_total'] ?? 0);
+            $total = (float) ($data['total'] ?? ($subtotal + $taxTotal));
+            $invoiceDate = $data['invoice_date'] ?? now()->toDateString();
+            $dueDate = $data['due_date'] ?? null;
+            if (! $dueDate && ! empty($data['supplier_id'])) {
+                $terms = \App\Models\Supplier::whereKey($data['supplier_id'])->value('payment_terms_days');
+                if ($terms !== null) {
+                    $dueDate = \Carbon\Carbon::parse($invoiceDate)->addDays((int) $terms)->toDateString();
+                }
+            }
 
             $invoice = SupplierInvoice::create([
                 'number'            => $data['number'],
                 'supplier_id'       => $data['supplier_id'],
                 'purchase_order_id' => $data['purchase_order_id'] ?? null,
-                'subtotal'          => $data['subtotal'] ?? 0,
-                'tax_total'         => $data['tax_total'] ?? 0,
+                'subtotal'          => $subtotal,
+                'tax_total'         => $taxTotal,
                 'total'             => $total,
                 'balance'           => $total,
                 'status'            => 'unpaid',
-                'invoice_date'      => $data['invoice_date'] ?? now()->toDateString(),
-                'due_date'          => $data['due_date'] ?? null,
+                'invoice_date'      => $invoiceDate,
+                'due_date'          => $dueDate,
                 'notes'             => $data['notes'] ?? null,
                 'attachment_path'   => $data['attachment_path'] ?? null,
                 'created_by'        => $userId,
             ]);
+
+            if ($lines->isNotEmpty()) {
+                $poItemIds = $lines->pluck('purchase_order_item_id')->filter()->map(fn ($id) => (int) $id)->all();
+                $poItems = $poItemIds
+                    ? PurchaseOrderItem::with('ingredient', 'unit')->whereIn('id', $poItemIds)->get()->keyBy('id')
+                    : collect();
+
+                foreach ($lines as $line) {
+                    $poItem = ! empty($line['purchase_order_item_id'])
+                        ? $poItems->get((int) $line['purchase_order_item_id'])
+                        : null;
+
+                    $qty = (float) ($line['quantity'] ?? 0);
+                    $unitPrice = (float) ($line['unit_price'] ?? 0);
+                    $lineSubtotal = round($qty * $unitPrice, 4);
+                    $lineTax = (float) ($line['tax_total'] ?? 0);
+                    $lineTotal = $lineSubtotal + $lineTax;
+                    $receivedQty = $poItem ? (float) $poItem->quantity_received : null;
+                    $receivedTotal = $poItem ? $receivedQty * (float) $poItem->unit_price : null;
+
+                    $invoice->items()->create([
+                        'purchase_order_item_id' => $poItem?->id,
+                        'ingredient_id' => $poItem?->ingredient_id ?: ($line['ingredient_id'] ?? null),
+                        'unit_id' => $poItem?->unit_id ?: ($line['unit_id'] ?? null),
+                        'description' => $line['description'],
+                        'quantity' => $qty,
+                        'unit_price' => $unitPrice,
+                        'subtotal' => $lineSubtotal,
+                        'tax_total' => $lineTax,
+                        'total' => $lineTotal,
+                        'received_qty' => $receivedQty,
+                        'received_total' => $receivedTotal,
+                        'variance_qty' => $receivedQty !== null ? $qty - $receivedQty : null,
+                        'variance_total' => $receivedTotal !== null ? $lineTotal - $receivedTotal : null,
+                        'notes' => $line['notes'] ?? null,
+                    ]);
+                }
+            }
 
             ActivityLog::log(
                 'supplier_invoice.created',
@@ -45,7 +102,7 @@ class SupplierInvoiceService
                 $invoice
             );
 
-            return $invoice->fresh('supplier');
+            return $invoice->fresh('supplier', 'items');
         });
     }
 

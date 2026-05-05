@@ -334,6 +334,7 @@
                         <i class="fe fe-chevron-right side-menu__angle"></i>
                     </a>
                     <ul class="slide-menu child1">
+                        <li class="slide"><a href="{{ route('admin.inventory.dashboard') }}" class="side-menu__item {{ $isActive('admin.inventory.dashboard') }}"><i class="bi bi-speedometer2 submenu-icon"></i>لوحة المخزون</a></li>
                         <li class="slide"><a href="{{ route('admin.ingredients.index') }}" class="side-menu__item {{ $isActive('admin.ingredients.*') }}"><i class="bi bi-basket-fill submenu-icon"></i>المكونات</a></li>
                         <li class="slide"><a href="{{ route('admin.inventory.index') }}" class="side-menu__item {{ $isActive('admin.inventory.*') }}"><i class="bi bi-arrow-left-right submenu-icon"></i>حركات المخزن</a></li>
                         <li class="slide"><a href="{{ route('admin.waste.index') }}" class="side-menu__item {{ $isActive('admin.waste.*') }}"><i class="bi bi-trash3-fill submenu-icon"></i>الهدر</a></li>
@@ -359,6 +360,7 @@
                         <i class="fe fe-chevron-right side-menu__angle"></i>
                     </a>
                     <ul class="slide-menu child1">
+                        <li class="slide"><a href="{{ route('admin.reports.index') }}" class="side-menu__item {{ $isActive('admin.reports.index') }}"><i class="bi bi-speedometer2 submenu-icon"></i>لوحة التقارير</a></li>
                         <li class="slide"><a href="{{ route('admin.reports.end-of-day') }}" class="side-menu__item {{ $isActive('admin.reports.end-of-day') }}"><i class="bi bi-calendar-check-fill submenu-icon"></i>نهاية اليوم</a></li>
                         <li class="slide"><a href="{{ route('admin.reports.profit-loss') }}" class="side-menu__item {{ $isActive('admin.reports.profit-loss') }}"><i class="bi bi-graph-up-arrow submenu-icon"></i>الأرباح والخسائر</a></li>
                         <li class="slide"><a href="{{ route('admin.reports.menu-engineering') }}" class="side-menu__item {{ $isActive('admin.reports.menu-engineering') }}"><i class="bi bi-diagram-3-fill submenu-icon"></i>هندسة المنيو</a></li>

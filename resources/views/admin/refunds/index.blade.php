@@ -14,15 +14,19 @@
 
 <x-admin.data-panel title="سجل الاستردادات" :count="$refunds->total()" icon="bi-arrow-counterclockwise">
     <x-slot:actions>
-        @if(request()->hasAny(['search', 'status', 'from', 'to']))
+        @if(request()->hasAny(['search', 'status', 'method', 'from', 'to']))
             <a href="{{ route('admin.refunds.index') }}" class="btn btn-light"><i class="bi bi-x-circle"></i> مسح</a>
         @endif
     </x-slot:actions>
 
     <x-slot:filters>
-        <form class="row g-2">
-            <div class="col-md-3"><input name="search" value="{{ request('search') }}" class="form-control" placeholder="🔍 رقم الاسترداد/الفاتورة"></div>
+        <form class="row g-2 align-items-end">
             <div class="col-md-3">
+                <label class="form-label small text-muted mb-1">بحث</label>
+                <input name="search" value="{{ request('search') }}" class="form-control" placeholder="رقم الاسترداد / الفاتورة / المرجع">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small text-muted mb-1">الحالة</label>
                 <select name="status" class="form-select">
                     <option value="">كل الحالات</option>
                     <option value="completed" @selected(request('status')==='completed')>مكتمل</option>
@@ -30,17 +34,54 @@
                     <option value="cancelled" @selected(request('status')==='cancelled')>ملغي</option>
                 </select>
             </div>
-            <div class="col-md-2"><input type="date" name="from" value="{{ request('from') }}" class="form-control" placeholder="من"></div>
-            <div class="col-md-2"><input type="date" name="to"   value="{{ request('to')   }}" class="form-control" placeholder="إلى"></div>
-            <div class="col-md-2"><button class="btn btn-primary w-100"><i class="bi bi-funnel"></i> تطبيق</button></div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-1">الطريقة</label>
+                <select name="method" class="form-select">
+                    <option value="">كل الطرق</option>
+                    @foreach($methods as $key => $label)
+                        <option value="{{ $key }}" @selected(request('method') === $key)>{{ $label }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-1">من تاريخ</label>
+                <input type="date" name="from" value="{{ request('from') }}" class="form-control">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-1">إلى تاريخ</label>
+                <input type="date" name="to" value="{{ request('to') }}" class="form-control">
+            </div>
+            <div class="col-12 text-center mt-2">
+                <button class="btn btn-primary px-5"><i class="bi bi-funnel"></i> استعلام</button>
+            </div>
         </form>
     </x-slot:filters>
 
+    <div class="ref-filter-summary mb-3">
+        <div>
+            <span class="ref-filter-summary__label">نتائج الاستعلام</span>
+            <strong>{{ number_format($filteredStats['count']) }}</strong>
+        </div>
+        <div>
+            <span class="ref-filter-summary__label">إجمالي المبالغ</span>
+            <strong class="text-danger">{{ \App\Helpers\Money::format($filteredStats['amount']) }}</strong>
+        </div>
+        <div>
+            <span class="ref-filter-summary__label">معلّقة</span>
+            <strong class="text-warning">{{ number_format($filteredStats['pending']) }}</strong>
+        </div>
+        <div>
+            <span class="ref-filter-summary__label">مكتملة</span>
+            <strong class="text-success">{{ number_format($filteredStats['completed']) }}</strong>
+        </div>
+    </div>
+
     <div class="table-responsive">
-        <table class="table align-middle">
+        <table class="table align-middle ref-table">
             <thead class="bg-light">
                 <tr>
                     <th>رقم الاسترداد</th>
+                    @if($showBranchCol)<th>الفرع</th>@endif
                     <th>الفاتورة</th>
                     <th>الطاولة</th>
                     <th>القيمة</th>
@@ -54,17 +95,37 @@
             </thead>
             <tbody>
                 @forelse($refunds as $r)
-                    <tr>
-                        <td><code>{{ $r->number }}</code></td>
-                        <td><code>{{ $r->invoice?->number ?? '—' }}</code></td>
+                    <tr class="ref-row ref-row--{{ $r->status }}">
+                        <td>
+                            <code class="ref-num">{{ $r->number }}</code>
+                            @if($r->reference)
+                                <small class="text-muted d-block">مرجع: {{ $r->reference }}</small>
+                            @endif
+                        </td>
+                        @if($showBranchCol)
+                            <td><x-admin.branch-tag :branch="$r->invoice?->branch" /></td>
+                        @endif
+                        <td>
+                            <code>{{ $r->invoice?->number ?? '—' }}</code>
+                            @if($r->invoice?->customer_name || $r->invoice?->customer_phone)
+                                <small class="text-muted d-block">
+                                    {{ $r->invoice?->customer_name ?? $r->invoice?->customer_phone }}
+                                </small>
+                            @endif
+                        </td>
                         <td>{{ $r->invoice?->tableSession?->table?->number ?? '—' }}</td>
-                        <td class="fw-bold" style="color: #b91c1c;">{{ \App\Helpers\Money::format($r->amount) }}</td>
+                        <td class="ref-amount">{{ \App\Helpers\Money::format($r->amount) }}</td>
                         <td><span class="badge bg-secondary">{{ $r->methodLabel() }}</span></td>
                         <td><span class="badge bg-{{ $r->statusColor() }}">{{ $r->statusLabel() }}</span></td>
-                        <td class="small text-muted" style="max-width:220px;">{{ Str::limit($r->reason, 60) }}</td>
+                        <td class="small text-muted ref-reason" title="{{ $r->reason }}">{{ \Illuminate\Support\Str::limit($r->reason, 60) }}</td>
                         <td>{{ $r->processor?->name ?? '—' }}</td>
-                        <td class="text-muted small">{{ $r->refunded_at->diffForHumans() }}</td>
                         <td>
+                            <span class="ref-date">{{ optional($r->refunded_at)->format('Y/m/d H:i') ?? '—' }}</span>
+                            @if($r->refunded_at)
+                                <small class="text-muted d-block">{{ $r->refunded_at->diffForHumans() }}</small>
+                            @endif
+                        </td>
+                        <td class="text-end">
                             @if($r->status === 'pending')
                                 @can('complete', $r)
                                 <form method="POST" action="{{ route('admin.refunds.complete', $r) }}" class="d-inline"
@@ -74,35 +135,19 @@
                                 </form>
                                 @endcan
                                 @can('cancel', $r)
-                                <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#cancelRef{{ $r->id }}">
+                                <button class="btn btn-sm btn-outline-danger"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#cancelRefundModal"
+                                        data-ref-id="{{ $r->id }}"
+                                        data-ref-num="{{ $r->number }}">
                                     <i class="bi bi-x"></i>
                                 </button>
-                                <div class="modal fade" id="cancelRef{{ $r->id }}" tabindex="-1">
-                                    <div class="modal-dialog">
-                                        <div class="modal-content">
-                                            <form method="POST" action="{{ route('admin.refunds.cancel', $r) }}">
-                                                @csrf
-                                                <div class="modal-header"><h5>إلغاء الاسترداد {{ $r->number }}</h5>
-                                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                                </div>
-                                                <div class="modal-body">
-                                                    <div class="mb-3"><label class="form-label">سبب الإلغاء <span class="text-danger">*</span></label>
-                                                    <textarea name="reason" class="form-control" rows="3" required></textarea></div>
-                                                </div>
-                                                <div class="modal-footer">
-                                                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">تراجع</button>
-                                                    <button class="btn btn-danger">تأكيد</button>
-                                                </div>
-                                            </form>
-                                        </div>
-                                    </div>
-                                </div>
                                 @endcan
                             @endif
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="10">
+                    <tr><td colspan="{{ $showBranchCol ? 11 : 10 }}">
                         <x-admin.empty-state
                             icon="bi-arrow-counterclockwise"
                             title="ما في استردادات بعد"
@@ -115,4 +160,98 @@
 
     <x-slot:footer>{{ $refunds->links() }}</x-slot:footer>
 </x-admin.data-panel>
+
+<div class="modal fade" id="cancelRefundModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <form method="POST" id="cancelRefundForm" class="modal-content">
+            @csrf
+            <div class="modal-header bg-danger-transparent">
+                <h6 class="modal-title">
+                    <i class="bi bi-x-octagon"></i>
+                    إلغاء الاسترداد <code id="cancelRefundNumber"></code>
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label">سبب الإلغاء <span class="text-danger">*</span></label>
+                <textarea name="reason" class="form-control" rows="3" required maxlength="500"
+                          placeholder="مثلاً: رفض بوابة الدفع العملية"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">تراجع</button>
+                <button class="btn btn-danger"><i class="bi bi-x-lg"></i> تأكيد الإلغاء</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@push('styles')
+<style>
+    .ref-filter-summary {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+    }
+    .ref-filter-summary > div {
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        background: #fff;
+        padding: 10px 12px;
+        min-width: 0;
+    }
+    .ref-filter-summary__label {
+        display: block;
+        color: #6b7280;
+        font-size: .76rem;
+        margin-bottom: 3px;
+    }
+    .ref-filter-summary strong,
+    .ref-num,
+    .ref-date,
+    .ref-amount {
+        font-family: ui-monospace, monospace;
+    }
+    .ref-num {
+        background: #f9fafb;
+        padding: 2px 7px;
+        border-radius: 5px;
+        color: #1f2937;
+        font-weight: 700;
+        font-size: .76rem;
+    }
+    .ref-amount {
+        color: #b91c1c;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+    .ref-reason {
+        max-width: 240px;
+        min-width: 180px;
+    }
+    .ref-row--pending { background: rgba(251, 191, 36, .04); }
+    .ref-row--cancelled { opacity: .72; }
+    @media (max-width: 767.98px) {
+        .ref-filter-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+</style>
+@endpush
+
+@push('scripts')
+<script>
+(function () {
+    const baseUrl = "{{ url('admin/refunds') }}";
+    const modal = document.getElementById('cancelRefundModal');
+    if (!modal) return;
+
+    modal.addEventListener('show.bs.modal', (event) => {
+        const trigger = event.relatedTarget;
+        if (!trigger) return;
+
+        document.getElementById('cancelRefundForm').action = `${baseUrl}/${trigger.dataset.refId}/cancel`;
+        document.getElementById('cancelRefundNumber').textContent = trigger.dataset.refNum || '';
+        document.getElementById('cancelRefundForm').querySelector('[name="reason"]').value = '';
+    });
+})();
+</script>
+@endpush
 @endsection

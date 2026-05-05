@@ -13,10 +13,15 @@ class Supplier extends Model
 {
     use HasFactory, SoftDeletes;
 
-    protected $fillable = ['name', 'phone', 'email', 'contact_person', 'address', 'notes', 'active'];
+    protected $fillable = [
+        'name', 'phone', 'email', 'contact_person', 'address', 'notes', 'active',
+        'lead_time_days', 'payment_terms_days', 'minimum_order_amount', 'delivery_days',
+    ];
 
     protected $casts = [
         'active' => 'boolean',
+        'minimum_order_amount' => 'decimal:4',
+        'delivery_days' => 'array',
     ];
 
     public function ingredients(): HasMany

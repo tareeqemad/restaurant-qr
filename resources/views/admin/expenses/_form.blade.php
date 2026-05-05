@@ -32,7 +32,7 @@
         <label class="form-label">
             التصنيف <span class="text-danger">*</span>
             @can('viewAny', \App\Models\Lookup::class)
-                <a href="{{ route('admin.lookups.index') }}#expense_categories" target="_blank"
+                <a href="{{ route('admin.lookups.index', ['group' => 'expense_categories']) }}" target="_blank"
                    class="ms-1 small text-muted" title="إدارة التصنيفات">
                     <i class="bi bi-gear-fill"></i>
                 </a>
@@ -52,7 +52,7 @@
     <div class="col-md-4">
         <label class="form-label">طريقة الدفع <span class="text-danger">*</span></label>
         <select name="payment_method" id="exp_payment_method" class="form-select" required>
-            @foreach(\App\Models\Expense::PAYMENT_METHODS as $key => $label)
+            @foreach($paymentMethods as $key => $label)
                 <option value="{{ $key }}" @selected(old('payment_method', $expense->payment_method)===$key)>{{ $label }}</option>
             @endforeach
         </select>
@@ -130,4 +130,15 @@
         <textarea name="notes" class="form-control" rows="3" maxlength="1000"
                   placeholder="تفاصيل إضافية…">{{ old('notes', $expense->notes) }}</textarea>
     </div>
+
+    @if($categories->isEmpty())
+        <div class="col-12">
+            <div class="alert alert-warning mb-0">
+                <i class="bi bi-exclamation-triangle-fill"></i>
+                لا توجد تصنيفات مصروفات مفعّلة. أضف تصنيفاً من
+                <a href="{{ route('admin.lookups.index', ['group' => 'expense_categories']) }}" class="alert-link">إدارة الثوابت</a>
+                قبل حفظ المصروف.
+            </div>
+        </div>
+    @endif
 </div>

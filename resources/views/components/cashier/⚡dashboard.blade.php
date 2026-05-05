@@ -38,6 +38,11 @@ new class extends Component
     public ?int $selectedSessionId = null;
     public ?int $selectedRemoteOrderId = null;
 
+    /** Sticky banner showing the just-created customer's PIN. Lives across
+     *  Livewire renders (unlike session flash which Livewire eats on the
+     *  first morph). Cleared when the cashier dismisses it. */
+    public ?array $pinAlert = null;
+
     // Staff-entered no-table order state
     public string $itemSearch = '';
     public string $selectedCategoryId = '';
@@ -82,6 +87,7 @@ new class extends Component
     public function sessions()
     {
         $query = TableSession::with(['table', 'orders', 'invoice', 'customer'])
+            ->with(['customer' => fn ($q) => $q->withCount('tableSessions')->with('loyaltyCustomer')])
             ->where('status', 'active')
             ->orderByDesc('bill_requested_at')
             ->orderByDesc('last_activity_at');
@@ -135,10 +141,20 @@ new class extends Component
     public function selectedSession(): ?TableSession
     {
         if (!$this->selectedSessionId) return null;
-        return TableSession::with([
-            'table', 'customer', 'orders.items.modifiers',
+
+        $session = TableSession::with([
+            'table',
+            'customer.loyaltyCustomer',
+            'orders.items.modifiers',
             'invoice.payments', 'invoice.refunds.processor',
         ])->find($this->selectedSessionId);
+
+        // Count the linked customer's lifetime visits — one extra query, only
+        // when a session is opened in the detail panel, so the cashier sees
+        // "this is their 7th visit" without a perf hit on the list view.
+        $session?->customer?->loadCount('tableSessions');
+
+        return $session;
     }
 
     #[Computed]
@@ -879,7 +895,108 @@ new class extends Component
     #[On('echo-private:waiters,.table.status_changed')]
     public function refreshFromBroadcast(): void
     {
-        unset($this->sessions, $this->selectedSession);
+        unset($this->sessions, $this->selectedSession, $this->billStats);
+    }
+
+    /**
+     * One-click "create account" for a guest session that already has a
+     * phone number on file. The cashier sees the green guest banner with
+     * the unrecognised phone, taps "إنشاء حساب", and we:
+     *
+     *   1. Create a Customer record with a random 6-digit PIN
+     *   2. Link the open session to it (so future orders accumulate)
+     *   3. Flash the PIN so the cashier can hand it to the diner
+     *
+     * If somehow the phone now matches an existing customer (e.g. another
+     * cashier created one a moment ago on a different table), we just link
+     * to the existing record — never duplicate.
+     */
+    public function createCustomerForSession(int $sessionId): void
+    {
+        $this->authorize('create', Payment::class);
+
+        $session = TableSession::with('table.branch')->findOrFail($sessionId);
+
+        if ($session->customer_id) {
+            $this->dispatch('toast', type: 'warning', message: 'هذه الجلسة مرتبطة بحساب أصلاً.');
+            return;
+        }
+        if (empty($session->customer_phone)) {
+            $this->dispatch('toast', type: 'error', message: 'لا يوجد رقم جوال محفوظ لهذه الجلسة.');
+            return;
+        }
+
+        try {
+            $existing = Customer::findForLogin($session->customer_phone);
+            if ($existing) {
+                $session->update(['customer_id' => $existing->id]);
+                $this->dispatch('toast', type: 'success', message: "ربط الجلسة بحساب موجود: {$existing->name}");
+            } else {
+                [$customer, $pin] = Customer::createFromCashier(
+                    name: $session->customer_name ?: 'زبون',
+                    phone: $session->customer_phone,
+                    defaultBranchId: $session->table?->branch_id,
+                );
+                $session->update(['customer_id' => $customer->id]);
+                // PIN is the ONLY chance the cashier has to give the diner
+                // their first password — keep it on a public property so it
+                // survives Livewire morphs. Cleared via dismissPinAlert().
+                $this->pinAlert = [
+                    'name' => $customer->name,
+                    'phone' => $customer->phone,
+                    'pin' => $pin,
+                ];
+                $this->dispatch('toast', type: 'success', message: "أُنشئ حساب لـ{$customer->name} — رمز الدخول: {$pin}");
+            }
+
+            $this->refreshFromBroadcast();
+        } catch (Throwable $e) {
+            $this->dispatch('toast', type: 'error', message: 'تعذّر إنشاء الحساب: '.$e->getMessage());
+        }
+    }
+
+    public function dismissPinAlert(): void
+    {
+        $this->pinAlert = null;
+    }
+
+    /**
+     * Tally bill requests by how long they've been waiting. The cashier
+     * sound + visual alarms hang off these counts: a number going up is
+     * the trigger to chime / beep / pulse.
+     *
+     * Thresholds match the kitchen ready strip (3/8 min) so the whole
+     * restaurant escalates on the same clock — no surprise where one screen
+     * is calm while another is on fire.
+     */
+    #[Computed]
+    public function billStats(): array
+    {
+        $green = $amber = $red = 0;
+        $remoteUnpaid = 0;
+
+        foreach ($this->sessions as $s) {
+            if (! $s->bill_requested_at || $s->invoice) continue;
+            $waitMin = (int) $s->bill_requested_at->diffInMinutes(now());
+            if     ($waitMin >= 8) $red++;
+            elseif ($waitMin >= 3) $amber++;
+            else                   $green++;
+        }
+
+        // Remote orders waiting for collection — phone/delivery orders that
+        // arrived but haven't been billed/paid yet. Treated as a separate
+        // signal so the sound can use a distinct tone.
+        $remoteUnpaid = $this->remoteOrders
+            ->filter(fn($o) => ! $o->invoice || ($o->invoice->balance ?? 0) > 0)
+            ->count();
+
+        return [
+            'requests_total' => $green + $amber + $red,
+            'green' => $green,
+            'amber' => $amber,
+            'red'   => $red,
+            'remote_unpaid' => $remoteUnpaid,
+        ];
     }
 }
 ?>
@@ -887,7 +1004,55 @@ new class extends Component
 {{-- Livewire polling mode (works on shared hosting). 10s is a good balance:
      cashier needs to see new sessions/paid invoices, but sessions aren't
      as time-critical as a hot dish. `visible` saves resources on background tabs. --}}
-<div class="cashier-dashboard" wire:poll.visible.10s="refreshFromBroadcast">
+@php $billStats = $this->billStats; @endphp
+<div class="cashier-dashboard"
+     wire:poll.visible.10s="refreshFromBroadcast"
+     x-data="cashierSound()"
+     data-bill-total="{{ $billStats['requests_total'] }}"
+     data-bill-amber="{{ $billStats['amber'] }}"
+     data-bill-red="{{ $billStats['red'] }}"
+     data-remote-unpaid="{{ $billStats['remote_unpaid'] }}">
+    {{-- Bill-request alarm strip — only renders when something needs the
+         cashier's attention. Compact bar with red/amber chips and the sound
+         toggle. Hidden when there's nothing pending so a quiet shift looks
+         quiet. --}}
+    @if($billStats['requests_total'] > 0 || $billStats['remote_unpaid'] > 0)
+        <div class="cx-alarm-strip {{ $billStats['red'] > 0 ? 'is-red' : ($billStats['amber'] > 0 ? 'is-amber' : '') }}">
+            <div class="cx-alarm-content">
+                <i class="bi bi-receipt-cutoff"></i>
+                <strong>
+                    {{ $billStats['requests_total'] }} طلب فاتورة
+                    @if($billStats['red'] > 0)
+                        · <span class="cx-alarm-chip cx-alarm-chip--red">{{ $billStats['red'] }} متأخر</span>
+                    @endif
+                    @if($billStats['amber'] > 0)
+                        · <span class="cx-alarm-chip cx-alarm-chip--amber">{{ $billStats['amber'] }} ينتظر</span>
+                    @endif
+                </strong>
+            </div>
+            <button type="button" @click="toggleSound()"
+                    class="cx-sound-btn"
+                    :class="enabled ? 'is-on' : 'is-off'"
+                    title="تنبيه صوتي عند طلب فاتورة جديد أو تأخر">
+                <i class="bi" :class="enabled ? 'bi-volume-up-fill' : 'bi-volume-mute-fill'"></i>
+                <span x-text="enabled ? 'الصوت يعمل' : 'تفعيل الصوت'"></span>
+            </button>
+        </div>
+    @else
+        {{-- Render the toggle even when calm so the cashier can pre-arm it
+             at shift start. Tucked top-right where it doesn't compete with
+             the KPIs. --}}
+        <div class="cx-sound-rail">
+            <button type="button" @click="toggleSound()"
+                    class="cx-sound-btn"
+                    :class="enabled ? 'is-on' : 'is-off'"
+                    title="تنبيه صوتي عند طلب فاتورة جديد">
+                <i class="bi" :class="enabled ? 'bi-volume-up-fill' : 'bi-volume-mute-fill'"></i>
+                <span x-text="enabled ? 'الصوت يعمل' : 'تفعيل الصوت'"></span>
+            </button>
+        </div>
+    @endif
+
     {{-- ═════════════════ Today KPI rail ═════════════════ --}}
     <div class="row g-2 mb-3">
         <div class="col-md-3">
@@ -1388,12 +1553,17 @@ new class extends Component
                     @php
                         $invoice = $s->invoice;
                         $billRequested = $s->bill_requested_at && ! $invoice;
+                        $waitMin = $billRequested ? (int) $s->bill_requested_at->diffInMinutes(now()) : 0;
+                        // Same 3/8 thresholds the kitchen uses on its ready
+                        // strip — keeps the whole restaurant on one clock.
+                        $billUrgency = ! $billRequested ? null
+                            : ($waitMin >= 8 ? 'red' : ($waitMin >= 3 ? 'amber' : 'green'));
                         $ordersTotal = $s->orders->sum('total');
                         $openMin = (int) $s->opened_at->diffInMinutes(now());
                     @endphp
                     <button type="button"
                         wire:click="selectSession({{ $s->id }})"
-                        class="cx-session-card {{ $selectedSessionId === $s->id ? 'is-active' : '' }} {{ $invoice ? 'has-invoice' : '' }} {{ $billRequested ? 'has-bill-request' : '' }}">
+                        class="cx-session-card {{ $selectedSessionId === $s->id ? 'is-active' : '' }} {{ $invoice ? 'has-invoice' : '' }} {{ $billRequested ? 'has-bill-request' : '' }} {{ $billUrgency ? 'cx-urg-'.$billUrgency : '' }}">
                         <div class="cx-session-head">
                             <div class="cx-table-num">
                                 <i class="bi bi-grid-3x3-gap-fill"></i>
@@ -1410,8 +1580,15 @@ new class extends Component
                                     </span>
                                 @endif
                             @elseif($billRequested)
-                                <span class="cx-status-pill cx-status-bill">
-                                    <i class="bi bi-receipt-cutoff"></i> طلب الفاتورة
+                                <span class="cx-status-pill cx-status-bill cx-status-bill--{{ $billUrgency }}">
+                                    <i class="bi {{ $billUrgency === 'red' ? 'bi-fire' : 'bi-receipt-cutoff' }}"></i>
+                                    @if($billUrgency === 'red')
+                                        ينتظر {{ $waitMin }} د!
+                                    @elseif($billUrgency === 'amber')
+                                        فاتورة · {{ $waitMin }} د
+                                    @else
+                                        طلب الفاتورة
+                                    @endif
                                 </span>
                             @else
                                 <span class="cx-status-pill cx-status-open">مفتوحة</span>
@@ -1423,6 +1600,12 @@ new class extends Component
                                 <i class="bi bi-people"></i> {{ $s->cover_count ?? 1 }}
                             </span>
                             <span><i class="bi bi-clock"></i> {{ $openMin }} د</span>
+                            @if($s->customer)
+                                <span class="cx-loyalty-chip" title="زبون دائم — {{ $s->customer->name }}">
+                                    <i class="bi bi-star-fill"></i>
+                                    دائم
+                                </span>
+                            @endif
                         </div>
                         <div class="cx-session-total">
                             {{ \App\Helpers\Money::format($ordersTotal) }}
@@ -1640,7 +1823,7 @@ new class extends Component
                         </div>
                         <div class="text-muted small">
                             {{ $session->cover_count ?? 1 }} أشخاص · منذ {{ $session->opened_at->diffForHumans() }}
-                            @if($session->customer_name)
+                            @if($session->customer_name && ! $session->customer)
                                 · <strong>{{ $session->customer_name }}</strong>
                             @endif
                         </div>
@@ -1649,6 +1832,92 @@ new class extends Component
                         <i class="bi bi-x-lg"></i>
                     </button>
                 </div>
+
+                {{-- Just-created customer alert. Sticks around (manual dismiss)
+                     until the cashier closes it — they need to read the PIN
+                     out loud to the diner so they can log in to the portal
+                     later. Once dismissed (page action / refresh / move on),
+                     the PIN is gone for good — the standard reset flow is
+                     the only way to recover it. --}}
+                @if($pinAlert)
+                    <div class="cx-pin-alert">
+                        <div class="cx-pin-alert-icon"><i class="bi bi-key-fill"></i></div>
+                        <div class="cx-pin-alert-body">
+                            <strong>أُنشئ حساب لـ{{ $pinAlert['name'] }}</strong>
+                            <div class="cx-pin-alert-meta">
+                                <span><i class="bi bi-telephone"></i> {{ $pinAlert['phone'] }}</span>
+                                <span class="cx-pin-code">رمز الدخول · <code>{{ $pinAlert['pin'] }}</code></span>
+                            </div>
+                            <small>اكتب الرمز للزبون أو اقرأه له. لا يمكن استرجاعه — الزبون يستخدمه أول مرة لتسجيل الدخول للبوابة.</small>
+                        </div>
+                        <button type="button" wire:click="dismissPinAlert" class="cx-pin-alert-close" title="إغلاق">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+                @endif
+
+                {{-- Returning customer panel — only when the session was matched
+                     to an existing Customer record, either via portal login
+                     or via phone-number lookup at submit time. Shows the real
+                     name + phone + visit history + loyalty points so the
+                     cashier instantly knows they're dealing with a regular. --}}
+                @if($session->customer)
+                    @php
+                        $cust = $session->customer;
+                        $visits = $cust->table_sessions_count ?? null;
+                        $points = $cust->loyaltyCustomer?->points ?? 0;
+                    @endphp
+                    <div class="cx-loyalty-banner">
+                        <div class="cx-loyalty-avatar">
+                            <i class="bi bi-star-fill"></i>
+                        </div>
+                        <div class="cx-loyalty-body">
+                            <div class="cx-loyalty-head">
+                                <strong>{{ $cust->name }}</strong>
+                                <span class="cx-loyalty-badge">زبون دائم</span>
+                            </div>
+                            <div class="cx-loyalty-meta">
+                                @if($cust->phone)
+                                    <span><i class="bi bi-telephone-fill"></i> {{ $cust->phone }}</span>
+                                @endif
+                                @if($visits !== null)
+                                    <span><i class="bi bi-clock-history"></i> {{ $visits }} زيارة</span>
+                                @endif
+                                @if($points > 0)
+                                    <span><i class="bi bi-coin"></i> {{ number_format($points) }} نقطة</span>
+                                @endif
+                            </div>
+                        </div>
+                    </div>
+                @elseif($session->customer_phone)
+                    {{-- Phone provided but no Customer record matched. Surface
+                         the number so the cashier can offer to create an
+                         account on the spot — the easiest moment to sign
+                         someone up is when they're already paying. --}}
+                    <div class="cx-loyalty-banner cx-loyalty-banner--guest">
+                        <div class="cx-loyalty-avatar">
+                            <i class="bi bi-telephone-fill"></i>
+                        </div>
+                        <div class="cx-loyalty-body">
+                            <div class="cx-loyalty-head">
+                                <strong>{{ $session->customer_name ?: 'ضيف' }}</strong>
+                                <span class="cx-loyalty-badge cx-loyalty-badge--guest">{{ $session->customer_phone }}</span>
+                            </div>
+                            <div class="cx-loyalty-meta">
+                                <span><i class="bi bi-info-circle"></i> رقم جديد — أنشئ حساب الآن ليكسب نقاط ولاء.</span>
+                            </div>
+                        </div>
+                        <button type="button"
+                                wire:click="createCustomerForSession({{ $session->id }})"
+                                wire:loading.attr="disabled"
+                                wire:target="createCustomerForSession"
+                                class="cx-loyalty-create-btn"
+                                title="إنشاء حساب وربطه بهذه الجلسة">
+                            <span wire:loading.remove wire:target="createCustomerForSession"><i class="bi bi-person-plus-fill"></i> إنشاء حساب</span>
+                            <span wire:loading wire:target="createCustomerForSession"><span class="spinner-border spinner-border-sm"></span> جاري...</span>
+                        </button>
+                    </div>
+                @endif
 
                 @if($session->bill_requested_at && ! $invoice)
                     <div class="cx-bill-request-alert">
@@ -1962,6 +2231,97 @@ new class extends Component
         <i class="bi" :class="type === 'success' ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill'"></i>
         <span x-text="msg"></span>
     </div>
+
+    <script>
+    /* Cashier sound system. Same architecture as the kitchen + waiter screens
+     * (Web Audio synthesis, state on `window` to survive Livewire morphs).
+     * Differentiated tones so a multi-screen station can tell at a glance
+     * which surface needs attention without looking up.
+     *   - new bill request          → C5→G5 ascending two-tone
+     *   - new remote/phone order    → soft single chime
+     *   - bill request escalates    → low pulse warning (food + customer waiting)
+     */
+    function cashierSound() {
+        return {
+            // Reactive Alpine property (so :class="enabled ? ..." updates).
+            // Mirror to window so the value survives Livewire morphs that
+            // re-init this component, and so the kitchen/waiter screens
+            // can read it too if they share the same browser tab.
+            enabled: window.__cxSoundEnabled === true,
+            init() {
+                if (typeof window.__cxPrev !== 'object') {
+                    window.__cxPrev = this.snapshot();
+                }
+                document.addEventListener('livewire:morph.updated', () => {
+                    // Re-sync enabled from window in case another component
+                    // changed it (or our own state was reset by morph).
+                    this.enabled = window.__cxSoundEnabled === true;
+                    this.checkChanges();
+                });
+            },
+            snapshot() {
+                const r = this.$root;
+                return {
+                    total:  parseInt(r.dataset.billTotal    || '0', 10),
+                    amber:  parseInt(r.dataset.billAmber    || '0', 10),
+                    red:    parseInt(r.dataset.billRed      || '0', 10),
+                    remote: parseInt(r.dataset.remoteUnpaid || '0', 10),
+                };
+            },
+            toggleSound() {
+                this.enabled = !this.enabled;
+                window.__cxSoundEnabled = this.enabled;
+                if (this.enabled) this.unlockAudio();
+            },
+            unlockAudio() {
+                try {
+                    if (!window.__kbAudioCtx) {
+                        const Ctx = window.AudioContext || window.webkitAudioContext;
+                        window.__kbAudioCtx = new Ctx();
+                    }
+                    const ctx = window.__kbAudioCtx;
+                    if (ctx.state === 'suspended') ctx.resume();
+                    const buf = ctx.createBuffer(1, 1, 22050);
+                    const src = ctx.createBufferSource();
+                    src.buffer = buf; src.connect(ctx.destination); src.start(0);
+                } catch (e) { /* noop */ }
+            },
+            checkChanges() {
+                const cur = this.snapshot();
+                const prev = window.__cxPrev || cur;
+                if (this.enabled) {
+                    // Red bumped → a bill request just crossed 8 min, food/customer waiting.
+                    if (cur.red > prev.red)            this.playWarning();
+                    // New bill request arrived (total bumped, no escalation).
+                    else if (cur.total > prev.total)   this.playBillRequest();
+                    // Bill request crossed 3 min → soft nudge.
+                    else if (cur.amber > prev.amber)   this.playNudge();
+                    // New phone/delivery order needing collection.
+                    else if (cur.remote > prev.remote) this.playRemoteOrder();
+                }
+                window.__cxPrev = cur;
+            },
+            beep(frequency, duration, type = 'sine', volume = 0.25) {
+                const ctx = window.__kbAudioCtx;
+                if (!ctx) return;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(frequency, ctx.currentTime);
+                gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(volume, ctx.currentTime + 0.01);
+                gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+                osc.connect(gain).connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + duration);
+            },
+            playBillRequest() { this.beep(523, 0.18, 'sine', 0.32); setTimeout(() => this.beep(784, 0.22, 'sine', 0.32), 200); },
+            playRemoteOrder() { this.beep(659, 0.18, 'sine', 0.26); },
+            playWarning()     { this.beep(330, 0.20, 'square', 0.30); setTimeout(() => this.beep(330, 0.20, 'square', 0.30), 280); setTimeout(() => this.beep(330, 0.24, 'square', 0.34), 580); },
+            playNudge()       { this.beep(700, 0.12, 'sine', 0.20); },
+        };
+    }
+    </script>
 </div>
 
 {{--

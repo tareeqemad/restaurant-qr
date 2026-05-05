@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Ingredient;
+use App\Models\IngredientSupplierPrice;
 use App\Models\PurchaseOrder;
 use App\Models\Supplier;
 use App\Models\Unit;
@@ -66,7 +67,20 @@ class PurchaseOrderController extends Controller
     public function show(PurchaseOrder $purchaseOrder)
     {
         $this->authorize('view', $purchaseOrder);
-        $purchaseOrder->load(['supplier', 'items.ingredient.baseUnit', 'items.unit', 'creator', 'receiver']);
+        $purchaseOrder->load([
+            'supplier',
+            'items.ingredient.baseUnit',
+            'items.unit',
+            'items.receiptItems',
+            'items.supplierInvoiceItems',
+            'creator',
+            'approver',
+            'receiver',
+            'receipts.items.ingredient.baseUnit',
+            'receipts.items.unit',
+            'receipts.receiver',
+            'supplierInvoices.items.ingredient.baseUnit',
+        ]);
         return view('admin.purchase-orders.show', ['po' => $purchaseOrder]);
     }
 
@@ -97,6 +111,17 @@ class PurchaseOrderController extends Controller
     }
 
     /** Transition draft → sent */
+    public function approve(PurchaseOrder $purchaseOrder)
+    {
+        $this->authorize('approve', $purchaseOrder);
+        try {
+            $this->service->approve($purchaseOrder, auth()->id());
+            return back()->with('success', "تم اعتماد أمر الشراء {$purchaseOrder->number}");
+        } catch (\Throwable $e) {
+            return back()->with('error', $e->getMessage());
+        }
+    }
+
     public function send(PurchaseOrder $purchaseOrder)
     {
         $this->authorize('send', $purchaseOrder);
@@ -186,10 +211,34 @@ class PurchaseOrderController extends Controller
             if ($branchId) $supQuery->servingBranch($branchId);
         }
 
+        $latestPriceIds = IngredientSupplierPrice::query()
+            ->selectRaw('MAX(id) as id')
+            ->groupBy('ingredient_id', 'supplier_id')
+            ->pluck('id');
+
+        $priceInsights = $latestPriceIds->isEmpty()
+            ? collect()
+            : IngredientSupplierPrice::with('supplier', 'unit')
+                ->whereIn('id', $latestPriceIds)
+                ->get()
+                ->map(fn ($row) => [
+                    'ingredient_id'       => (int) $row->ingredient_id,
+                    'supplier_id'         => (int) $row->supplier_id,
+                    'supplier_name'       => $row->supplier?->name ?? '—',
+                    'unit_id'             => (int) $row->unit_id,
+                    'unit_name'           => $row->unit?->code ?? '',
+                    'unit_price'          => (float) $row->unit_price,
+                    'unit_price_in_base'  => (float) $row->unit_price_in_base,
+                    'change_pct'          => $row->change_pct !== null ? (float) $row->change_pct : null,
+                    'observed_at'         => $row->observed_at?->toDateString(),
+                ])
+                ->values();
+
         return [
             'suppliers'   => $supQuery->orderBy('name')->get(),
             'ingredients' => Ingredient::with('baseUnit', 'supplier')->orderBy('name')->get(),
             'units'       => Unit::orderBy('name')->get(),
+            'priceInsights' => $priceInsights,
         ];
     }
 

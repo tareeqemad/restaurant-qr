@@ -26,7 +26,7 @@
             <div class="archive-filters__search">
                 <i class="bi bi-search"></i>
                 <input type="text" name="search" value="{{ $f['search'] }}"
-                       placeholder="رقم الطلب، الملاحظات، المرجع الخارجي…"
+                       placeholder="رقم الطلب، العميل، الهاتف، الملاحظات، المرجع الخارجي…"
                        autocomplete="off">
                 @if($f['search'])
                     <button type="button" class="archive-filters__clear-search"
@@ -45,20 +45,21 @@
                 </label>
             </div>
 
-            <div class="archive-filters__actions">
-                <button type="submit" class="btn btn-primary">
-                    <i class="bi bi-funnel-fill"></i> تطبيق
-                </button>
-                <button type="button" class="btn btn-light"
-                        onclick="document.getElementById('archiveAdvanced').classList.toggle('is-open')">
-                    <i class="bi bi-sliders"></i> فلاتر متقدّمة
-                </button>
-                @if(request()->hasAny(['search', 'status', 'source', 'table_id', 'min_total', 'max_total']))
-                    <a href="{{ route('admin.orders.archive') }}" class="btn btn-outline-danger">
-                        <i class="bi bi-x-circle"></i> مسح
-                    </a>
-                @endif
-            </div>
+        </div>
+
+        <div class="archive-filters__actions justify-content-center mt-3">
+            <button type="submit" class="btn btn-primary px-5">
+                <i class="bi bi-funnel-fill"></i> استعلام
+            </button>
+            <button type="button" class="btn btn-light"
+                    onclick="document.getElementById('archiveAdvanced').classList.toggle('is-open')">
+                <i class="bi bi-sliders"></i> فلاتر متقدّمة
+            </button>
+            @if(request()->hasAny(['search', 'status', 'source', 'order_type', 'table_id', 'min_total', 'max_total', 'sort', 'dir', 'from', 'to']))
+                <a href="{{ route('admin.orders.archive') }}" class="btn btn-outline-danger">
+                    <i class="bi bi-x-circle"></i> مسح
+                </a>
+            @endif
         </div>
 
         {{-- Advanced filters (collapsed by default) --}}
@@ -93,6 +94,16 @@
                 </div>
 
                 {{-- Table --}}
+                <div class="archive-filters__group">
+                    <label class="archive-filters__label">نوع الطلب</label>
+                    <select name="order_type" class="form-select">
+                        <option value="">— كل الأنواع —</option>
+                        @foreach($orderTypes as $key => $label)
+                            <option value="{{ $key }}" @selected($f['order_type'] === $key)>{{ $label }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
                 <div class="archive-filters__group">
                     <label class="archive-filters__label">الطاولة</label>
                     <select name="table_id" class="form-select">
@@ -135,6 +146,41 @@
     </form>
 </div>
 
+<div class="archive-summary mb-3">
+    <div>
+        <span class="archive-summary__label">مكتملة</span>
+        <strong class="text-success">{{ number_format($filteredStats['completed']) }}</strong>
+    </div>
+    <div>
+        <span class="archive-summary__label">طلبات خارجية</span>
+        <strong>{{ number_format($filteredStats['external']) }}</strong>
+    </div>
+    <div>
+        <span class="archive-summary__label">عمولات منصات</span>
+        <strong class="text-danger">{{ Money::format($filteredStats['commission']) }}</strong>
+    </div>
+    <div>
+        <span class="archive-summary__label">صافي بعد العمولة</span>
+        <strong class="text-primary">{{ Money::format($filteredStats['net']) }}</strong>
+    </div>
+</div>
+
+@if($sourceBreakdown->isNotEmpty())
+    <div class="archive-source-rail mb-3">
+        @foreach($sourceBreakdown as $row)
+            @php $src = \App\Enums\OrderSource::tryFrom($row->order_source ?? ''); @endphp
+            <a href="{{ route('admin.orders.archive', array_merge(request()->query(), ['source' => $row->order_source])) }}"
+               class="archive-source-chip text-decoration-none"
+               style="{{ $src ? 'border-color:'.$src->color().'40;color:'.$src->color().';background:'.$src->color().'12;' : '' }}">
+                @if($src)<i class="bi {{ $src->icon() }}"></i>@endif
+                <span>{{ $src?->label() ?? ($row->order_source ?: 'غير محدد') }}</span>
+                <strong>{{ Money::format($row->total) }}</strong>
+                <em>{{ number_format($row->count) }}</em>
+            </a>
+        @endforeach
+    </div>
+@endif
+
 {{-- ─── Results table ──────────────────────────────────────────── --}}
 <x-admin.data-panel title="النتائج" :count="$orders->total()" icon="bi-table">
     <div class="table-responsive">
@@ -144,10 +190,13 @@
                     <th>الرقم</th>
                     @if($showBranchCol)<th>الفرع</th>@endif
                     <th>التاريخ</th>
+                    <th>العميل</th>
                     <th>المصدر</th>
+                    <th>النوع</th>
                     <th>الطاولة</th>
                     <th>الأصناف</th>
                     <th>المبلغ</th>
+                    <th>الصافي</th>
                     <th>الحالة</th>
                     <th></th>
                 </tr>
@@ -168,15 +217,27 @@
                             <small class="text-muted">{{ $o->created_at->format('H:i') }}</small>
                         </td>
                         <td>
+                            <div class="fw-semibold">{{ $o->customer_name ?: '—' }}</div>
+                            @if($o->customer_phone)
+                                <small class="text-muted">{{ $o->customer_phone }}</small>
+                            @elseif($o->external_reference)
+                                <small class="text-muted">مرجع: {{ $o->external_reference }}</small>
+                            @endif
+                        </td>
+                        <td>
                             @if($src)
                                 <span class="badge"
                                       style="background: {{ $src->color() }}20; color: {{ $src->color() }};">
                                     <i class="bi {{ $src->icon() }}"></i> {{ $src->label() }}
                                 </span>
+                                @if($o->external_reference)
+                                    <small class="text-muted d-block">{{ $o->external_reference }}</small>
+                                @endif
                             @else
                                 <span class="text-muted">—</span>
                             @endif
                         </td>
+                        <td>{{ $orderTypes[$o->order_type] ?? $o->order_type }}</td>
                         <td>{{ $o->table?->number ?? '—' }}</td>
                         <td>
                             <span class="badge bg-light text-dark">
@@ -184,6 +245,12 @@
                             </span>
                         </td>
                         <td class="fw-bold">{{ Money::format($o->total) }}</td>
+                        <td>
+                            <span class="archive-net">{{ Money::format($o->netRevenue()) }}</span>
+                            @if((float) $o->platform_commission_pct > 0)
+                                <small class="text-danger d-block">{{ number_format((float) $o->platform_commission_pct, 1) }}%</small>
+                            @endif
+                        </td>
                         <td>
                             @if($st)
                                 <span class="badge bg-{{ $st->color() }}">{{ $st->label() }}</span>
@@ -197,7 +264,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="{{ $showBranchCol ? 9 : 8 }}">
+                        <td colspan="{{ $showBranchCol ? 12 : 11 }}">
                             <x-admin.empty-state icon="bi-archive"
                                 title="لا توجد نتائج"
                                 message="جرّب تعديل الفلاتر أو توسيع نطاق التواريخ." />
@@ -339,7 +406,7 @@
     }
     .archive-filters__row {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(5, 1fr);
         gap: 12px;
     }
     @media (max-width: 992px) {
@@ -398,6 +465,57 @@
     .status-chip--secondary.is-checked{ background: #6b7280; border-color: #6b7280; color: #fff; }
 
     /* Table polish */
+    .archive-summary {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+    }
+    .archive-summary > div {
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        background: #fff;
+        padding: 10px 12px;
+        min-width: 0;
+    }
+    .archive-summary__label {
+        display: block;
+        color: #6b7280;
+        font-size: .76rem;
+        margin-bottom: 3px;
+    }
+    .archive-summary strong,
+    .archive-net {
+        font-family: ui-monospace, monospace;
+        font-weight: 800;
+    }
+    .archive-source-rail {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    .archive-source-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        background: #fff;
+        color: #374151;
+        padding: 7px 11px;
+        font-size: .82rem;
+        font-weight: 700;
+    }
+    .archive-source-chip strong {
+        font-family: ui-monospace, monospace;
+    }
+    .archive-source-chip em {
+        background: rgba(255,255,255,.7);
+        border-radius: 99px;
+        color: #6b7280;
+        font-style: normal;
+        padding: 1px 7px;
+        font-size: .72rem;
+    }
     .archive-num {
         font-family: ui-monospace, monospace;
         font-size: .85rem;
@@ -405,6 +523,9 @@
         padding: 3px 8px;
         border-radius: 5px;
         color: #1f2937;
+    }
+    @media (max-width: 767.98px) {
+        .archive-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
 </style>
 @endpush

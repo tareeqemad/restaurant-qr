@@ -37,6 +37,51 @@
             <label class="form-label">العنوان</label>
             <textarea name="address" class="form-control" rows="2" placeholder="العنوان الكامل (اختياري)">{{ old('address', $supplier->address ?? '') }}</textarea>
         </div>
+        <div class="col-md-4">
+            <label class="form-label">مهلة التوريد بالأيام</label>
+            <input type="number" min="0" max="365" name="lead_time_days"
+                   value="{{ old('lead_time_days', $supplier->lead_time_days ?? '') }}"
+                   class="form-control" placeholder="مثلاً 2">
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">شروط الدفع بالأيام</label>
+            <input type="number" min="0" max="365" name="payment_terms_days"
+                   value="{{ old('payment_terms_days', $supplier->payment_terms_days ?? '') }}"
+                   class="form-control" placeholder="مثلاً 30">
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">أقل قيمة طلب</label>
+            <input type="number" step="0.01" min="0" name="minimum_order_amount"
+                   value="{{ old('minimum_order_amount', $supplier->minimum_order_amount ?? '') }}"
+                   class="form-control">
+        </div>
+        <div class="col-12">
+            @php
+                $deliveryDays = old('delivery_days', $supplier->delivery_days ?? []);
+                $weekDays = [
+                    0 => 'الأحد',
+                    1 => 'الإثنين',
+                    2 => 'الثلاثاء',
+                    3 => 'الأربعاء',
+                    4 => 'الخميس',
+                    5 => 'الجمعة',
+                    6 => 'السبت',
+                ];
+            @endphp
+            <label class="form-label">أيام التوصيل</label>
+            <div class="d-flex flex-wrap gap-2">
+                @foreach($weekDays as $dayNo => $dayName)
+                    <label class="d-inline-flex align-items-center gap-2 px-3 py-2 border rounded">
+                        <input type="checkbox"
+                               name="delivery_days[]"
+                               value="{{ $dayNo }}"
+                               class="form-check-input"
+                               @checked(in_array($dayNo, array_map('intval', $deliveryDays ?? [])))>
+                        <span>{{ $dayName }}</span>
+                    </label>
+                @endforeach
+            </div>
+        </div>
         <div class="col-12">
             <label class="form-label">ملاحظات</label>
             <textarea name="notes" class="form-control" rows="2" placeholder="شروط الدفع، أوقات التوصيل، إلخ...">{{ old('notes', $supplier->notes ?? '') }}</textarea>

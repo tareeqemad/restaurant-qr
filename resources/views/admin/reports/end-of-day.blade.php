@@ -3,38 +3,34 @@
 @section('content')
 <x-admin.breadcrumb title="تقرير نهاية اليوم — {{ $date }}" icon="bi-calendar-check"
     subtitle="ملخص شامل للمبيعات والنقدية والخصومات"
-    :crumbs="[['label' => 'التقارير']]">
+    :crumbs="[['label' => 'التقارير', 'url' => route('admin.reports.index')]]">
     <x-slot:actions>
-        <form class="d-flex gap-2">
-            <input type="date" name="date" value="{{ $date }}" class="form-control">
-            <button class="btn btn-primary">عرض</button>
-            <button type="button" class="btn btn-light" onclick="window.print()">
-                <i class="bi bi-printer"></i> طباعة
-            </button>
-        </form>
+        <button type="button" class="btn btn-light" onclick="window.print()">
+            <i class="bi bi-printer"></i> طباعة
+        </button>
     </x-slot:actions>
 </x-admin.breadcrumb>
 
-<div class="row g-3 mb-3">
-    <div class="col-md-3"><div class="card main-content-card"><div class="card-body">
-        <span class="text-muted d-block">إجمالي المقبوض</span>
-        <h3 class="fw-bold text-success">{{ \App\Helpers\Money::format($summary['total_collected']) }}</h3>
-    </div></div></div>
-    <div class="col-md-3"><div class="card main-content-card"><div class="card-body">
-        <span class="text-muted d-block">إجمالي الفواتير</span>
-        <h3 class="fw-bold text-primary">{{ \App\Helpers\Money::format($summary['total_billed']) }}</h3>
-        <small class="text-muted">{{ $summary['invoices_count'] }} فاتورة</small>
-    </div></div></div>
-    <div class="col-md-3"><div class="card main-content-card"><div class="card-body">
-        <span class="text-muted d-block">المبيعات (بدون ضريبة)</span>
-        <h3 class="fw-bold">{{ \App\Helpers\Money::format($summary['gross_sales']) }}</h3>
-    </div></div></div>
-    <div class="col-md-3"><div class="card main-content-card"><div class="card-body">
-        <span class="text-muted d-block">عدد الطلبات</span>
-        <h3 class="fw-bold">{{ $summary['orders_count'] }}</h3>
-        @if($summary['orders_cancelled']>0)<small class="text-danger">{{ $summary['orders_cancelled'] }} ملغى</small>@endif
-    </div></div></div>
+<div class="data-panel-filters mb-3" style="background: white; border-radius: 14px; padding: 1rem; border: 1px solid rgba(var(--primary-rgb), .1);">
+    <form class="row g-2 align-items-end">
+        <div class="col-md-4 mx-auto">
+            <label class="form-label small text-muted fw-bold">تاريخ الإقفال</label>
+            <input type="date" name="date" value="{{ $date }}" class="form-control">
+        </div>
+        <div class="col-12 text-center mt-2">
+            <button class="btn btn-primary px-5"><i class="bi bi-search"></i> استعلام</button>
+        </div>
+    </form>
 </div>
+
+<x-admin.stat-rail :stats="[
+    ['label' => 'إجمالي المقبوض', 'value' => \App\Helpers\Money::format($summary['total_collected']), 'icon' => 'bi-wallet2', 'color' => 'success'],
+    ['label' => 'إجمالي الفواتير', 'value' => \App\Helpers\Money::format($summary['total_billed']), 'icon' => 'bi-receipt', 'color' => 'primary'],
+    ['label' => 'المبيعات بدون ضريبة', 'value' => \App\Helpers\Money::format($summary['gross_sales']), 'icon' => 'bi-cash-stack', 'color' => 'accent'],
+    ['label' => 'عدد الطلبات', 'value' => $summary['orders_count'], 'icon' => 'bi-bag-check', 'color' => $summary['orders_cancelled'] > 0 ? 'warning' : 'info'],
+    ['label' => 'الفواتير المدفوعة', 'value' => $summary['invoices_paid'].' / '.$summary['invoices_count'], 'icon' => 'bi-check-circle', 'color' => 'success'],
+    ['label' => 'الخصومات', 'value' => \App\Helpers\Money::format($summary['discount_total']), 'icon' => 'bi-tag', 'color' => $summary['discount_total'] > 0 ? 'warning' : 'muted'],
+]" />
 
 <div class="row g-3">
     <div class="col-lg-5">

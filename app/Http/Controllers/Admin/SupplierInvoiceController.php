@@ -22,6 +22,8 @@ class SupplierInvoiceController extends Controller
         if ($s = $request->get('status'))   $q->where('status', $s);
         if ($s = $request->get('search'))   $q->where('number', 'like', "%$s%");
         if ($sid = $request->get('supplier_id')) $q->where('supplier_id', $sid);
+        if ($d = $request->get('from'))     $q->whereDate('invoice_date', '>=', $d);
+        if ($d = $request->get('to'))       $q->whereDate('invoice_date', '<=', $d);
         if ($request->filled('overdue'))    $q->where('status', '!=', 'paid')
                                               ->where('status', '!=', 'cancelled')
                                               ->whereDate('due_date', '<', now());
@@ -52,9 +54,11 @@ class SupplierInvoiceController extends Controller
     {
         $this->authorize('create', SupplierInvoice::class);
         $po = $request->filled('po') ? PurchaseOrder::find($request->get('po')) : null;
+        $po?->load('supplier', 'items.ingredient.baseUnit', 'items.unit');
         return view('admin.supplier-invoices.create', [
             'suppliers' => Supplier::where('active', true)->orderBy('name')->get(),
-            'pos'       => PurchaseOrder::whereIn('status', ['received', 'partially_received'])
+            'pos'       => PurchaseOrder::with('supplier')
+                                         ->whereIn('status', ['received', 'partially_received'])
                                          ->latest()->limit(50)->get(),
             'po'        => $po,
         ]);
@@ -75,6 +79,15 @@ class SupplierInvoiceController extends Controller
             'due_date'          => ['nullable', 'date', 'after_or_equal:invoice_date'],
             'notes'             => ['nullable', 'string', 'max:2000'],
             'attachment'        => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:5120'],
+            'lines'                         => ['nullable', 'array'],
+            'lines.*.purchase_order_item_id'=> ['nullable', 'exists:purchase_order_items,id'],
+            'lines.*.ingredient_id'         => ['nullable', 'exists:ingredients,id'],
+            'lines.*.unit_id'               => ['nullable', 'exists:units,id'],
+            'lines.*.description'           => ['required_with:lines', 'string', 'max:255'],
+            'lines.*.quantity'              => ['required_with:lines', 'numeric', 'min:0'],
+            'lines.*.unit_price'            => ['required_with:lines', 'numeric', 'min:0'],
+            'lines.*.tax_total'             => ['nullable', 'numeric', 'min:0'],
+            'lines.*.notes'                 => ['nullable', 'string', 'max:500'],
         ]);
 
         if ($request->hasFile('attachment')) {
@@ -95,7 +108,15 @@ class SupplierInvoiceController extends Controller
     public function show(SupplierInvoice $supplierInvoice)
     {
         $this->authorize('view', $supplierInvoice);
-        $supplierInvoice->load(['supplier', 'purchaseOrder', 'payments.payer', 'creator']);
+        $supplierInvoice->load([
+            'supplier',
+            'purchaseOrder',
+            'items.ingredient.baseUnit',
+            'items.unit',
+            'items.purchaseOrderItem.ingredient.baseUnit',
+            'payments.payer',
+            'creator',
+        ]);
         return view('admin.supplier-invoices.show', ['invoice' => $supplierInvoice]);
     }
 

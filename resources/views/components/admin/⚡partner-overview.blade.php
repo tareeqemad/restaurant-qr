@@ -1,8 +1,18 @@
 <?php
 
+use App\Enums\OrderStatus;
+use App\Enums\ReservationStatus;
 use App\Models\Branch;
+use App\Models\Expense;
+use App\Models\IngredientBatch;
+use App\Models\InventoryMovement;
 use App\Models\Invoice;
 use App\Models\Order;
+use App\Models\PurchaseOrder;
+use App\Models\PurchaseReceipt;
+use App\Models\Reservation;
+use App\Models\Review;
+use App\Models\SupplierInvoice;
 use App\Models\Table;
 use App\Support\BranchContext;
 use Illuminate\Support\Facades\DB;
@@ -10,220 +20,592 @@ use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
 use Livewire\Component;
 
-/**
- * Partner Overview — multi-branch live KPI dashboard.
- *
- * One card per active branch, each showing today's hard numbers + a green/red
- * pulse if anything needs attention. Designed for the owner's daily question:
- * "kif dayfir aljaw fil furu' alyom?" — answer it without forcing them to
- * switch branches one by one.
- *
- * Refresh strategy: event-driven via Reverb (order created, status changed,
- * invoice paid) + a slow 60s safety poll for branches that aren't generating
- * events (closed branch, etc.). Polling is `.visible.` so a backgrounded tab
- * doesn't hammer the DB.
- *
- * Implementation note: every cross-branch query bypasses the BranchScope
- * with `withoutGlobalScopes()` and groups by `branch_id`. Doing per-branch
- * `BranchContext::forBranch(...)` loops would N+1 the dashboard for owners
- * with many branches; one aggregate query is fine for any chain size.
- */
 new class extends Component
 {
-    /** Cards refresh on any of these broadcasts. */
     #[On('echo-private:waiters,.order.created')]
     #[On('echo-private:waiters,.order.status_changed')]
     #[On('echo-private:waiters,.invoice.paid')]
     #[On('echo-private:waiters,.table.status_changed')]
     public function refreshFromBroadcast(): void
     {
-        unset($this->summaries);
+        unset($this->summaries, $this->totals, $this->trend, $this->actionCenter);
     }
 
-    /**
-     * Per-branch today snapshot — sales, orders, table occupancy, attention
-     * count. Computed in two aggregate queries (one for invoice/sales, one for
-     * orders) + one for tables; all unscoped so the owner sees every branch
-     * without their session's BranchContext interfering.
-     *
-     * @return array<int,array{branch:Branch, sales:float, paid_invoices:int, today_orders:int, active_orders:int, occupied:int, total_tables:int, avg_ticket:float, needs_attention:bool, attention_count:int}>
-     */
     #[Computed]
     public function summaries(): array
     {
-        $today = now()->toDateString();
-        $start = $today.' 00:00:00';
-        $end   = $today.' 23:59:59';
+        return BranchContext::unscoped(function () {
+            $today = now()->toDateString();
+            $start = $today.' 00:00:00';
+            $end = $today.' 23:59:59';
 
-        $branches = Branch::active()->orderBy('display_order')->get();
+            $branches = Branch::active()
+                ->orderBy('display_order')
+                ->orderBy('name')
+                ->get();
 
-        // ── Sales + paid invoice count (today) ──
-        $sales = Invoice::query()->withoutGlobalScopes()
-            ->whereBetween('issued_at', [$start, $end])
-            ->whereIn('status', ['paid', 'partially_paid'])
-            ->selectRaw('branch_id, SUM(paid_total) as total, COUNT(*) as cnt')
-            ->groupBy('branch_id')
-            ->get()->keyBy('branch_id');
+            $sales = Invoice::whereBetween('issued_at', [$start, $end])
+                ->whereIn('status', ['paid', 'partially_paid'])
+                ->selectRaw('branch_id, SUM(paid_total) as sales, COUNT(*) as invoices, AVG(paid_total) as avg_ticket')
+                ->groupBy('branch_id')
+                ->get()
+                ->keyBy('branch_id');
 
-        // ── Orders today + active in flight ──
-        $orders = Order::query()->withoutGlobalScopes()
-            ->whereBetween('created_at', [$start, $end])
-            ->selectRaw('branch_id, COUNT(*) as today_cnt, '
-                . 'SUM(CASE WHEN status IN ("approved","preparing","ready") THEN 1 ELSE 0 END) as active_cnt')
-            ->groupBy('branch_id')
-            ->get()->keyBy('branch_id');
+            $todayOrders = Order::whereBetween('created_at', [$start, $end])
+                ->selectRaw('branch_id, COUNT(*) as orders')
+                ->groupBy('branch_id')
+                ->get()
+                ->keyBy('branch_id');
 
-        // ── Table occupancy ──
-        $tables = Table::query()->withoutGlobalScopes()
-            ->where('active', true)
-            ->selectRaw('branch_id, COUNT(*) as total, '
-                . 'SUM(CASE WHEN status = "occupied" THEN 1 ELSE 0 END) as occupied')
-            ->groupBy('branch_id')
-            ->get()->keyBy('branch_id');
+            $activeOrders = Order::whereIn('status', OrderStatus::active())
+                ->selectRaw('branch_id, COUNT(*) as active_orders')
+                ->groupBy('branch_id')
+                ->get()
+                ->keyBy('branch_id');
 
-        return $branches->map(function (Branch $b) use ($sales, $orders, $tables) {
-            $s   = $sales->get($b->id);
-            $o   = $orders->get($b->id);
-            $t   = $tables->get($b->id);
+            $delayedOrders = Order::whereIn('status', [
+                    OrderStatus::Approved->value,
+                    OrderStatus::Preparing->value,
+                ])
+                ->whereNotNull('estimated_ready_at')
+                ->where('estimated_ready_at', '<', now())
+                ->selectRaw('branch_id, COUNT(*) as delayed_orders')
+                ->groupBy('branch_id')
+                ->get()
+                ->keyBy('branch_id');
 
-            $totalSales    = (float) ($s->total ?? 0);
-            $paidInvoices  = (int)   ($s->cnt   ?? 0);
-            $todayOrders   = (int)   ($o->today_cnt  ?? 0);
-            $activeOrders  = (int)   ($o->active_cnt ?? 0);
-            $occupied      = (int)   ($t->occupied   ?? 0);
-            $totalTables   = (int)   ($t->total      ?? 0);
+            $pendingOrders = Order::where('status', OrderStatus::Pending->value)
+                ->selectRaw('branch_id, COUNT(*) as pending_orders')
+                ->groupBy('branch_id')
+                ->get()
+                ->keyBy('branch_id');
 
-            return [
-                'branch'          => $b,
-                'sales'           => $totalSales,
-                'paid_invoices'   => $paidInvoices,
-                'today_orders'    => $todayOrders,
-                'active_orders'   => $activeOrders,
-                'occupied'        => $occupied,
-                'total_tables'    => $totalTables,
-                'avg_ticket'      => $paidInvoices > 0 ? $totalSales / $paidInvoices : 0,
-                // "Needs attention" = active orders > active capacity, i.e. the
-                // line is busier than the floor can keep up with. Per-branch
-                // low-stock isn't available (ingredients are a global pool).
-                'needs_attention' => $totalTables > 0 && $activeOrders > $occupied,
-            ];
-        })->values()->all();
+            $tables = Table::where('active', true)
+                ->selectRaw('branch_id, COUNT(*) as total_tables, SUM(CASE WHEN status = "occupied" THEN 1 ELSE 0 END) as occupied_tables')
+                ->groupBy('branch_id')
+                ->get()
+                ->keyBy('branch_id');
+
+            $expenses = Expense::approved()
+                ->whereDate('expense_date', $today)
+                ->selectRaw('branch_id, SUM(amount) as expenses, COUNT(*) as expense_count')
+                ->groupBy('branch_id')
+                ->get()
+                ->keyBy('branch_id');
+
+            $refunds = DB::table('refunds')
+                ->join('invoices', 'refunds.invoice_id', '=', 'invoices.id')
+                ->whereNull('refunds.deleted_at')
+                ->whereNull('invoices.deleted_at')
+                ->where('refunds.status', 'completed')
+                ->whereDate('refunds.refunded_at', $today)
+                ->selectRaw('invoices.branch_id, SUM(refunds.amount) as refunds, COUNT(*) as refund_count')
+                ->groupBy('invoices.branch_id')
+                ->get()
+                ->keyBy('branch_id');
+
+            $reservations = Reservation::whereDate('reserved_for', $today)
+                ->selectRaw('branch_id, COUNT(*) as reservations_today, SUM(CASE WHEN status = "pending" THEN 1 ELSE 0 END) as pending_reservations')
+                ->groupBy('branch_id')
+                ->get()
+                ->keyBy('branch_id');
+
+            $reviews = Review::published()
+                ->whereDate('created_at', '>=', now()->subDays(14)->toDateString())
+                ->selectRaw('branch_id, AVG(rating) as avg_rating, SUM(CASE WHEN rating <= 2 THEN 1 ELSE 0 END) as low_reviews, COUNT(*) as review_count')
+                ->groupBy('branch_id')
+                ->get()
+                ->keyBy('branch_id');
+
+            $ap = SupplierInvoice::whereNotIn('status', ['paid', 'cancelled'])
+                ->selectRaw('branch_id, SUM(balance) as ap_due, SUM(CASE WHEN due_date < CURDATE() THEN balance ELSE 0 END) as overdue_ap, SUM(CASE WHEN due_date < CURDATE() THEN 1 ELSE 0 END) as overdue_ap_count')
+                ->groupBy('branch_id')
+                ->get()
+                ->keyBy('branch_id');
+
+            $po = PurchaseOrder::selectRaw('
+                    branch_id,
+                    SUM(CASE WHEN status = "draft" AND approved_at IS NULL THEN 1 ELSE 0 END) as po_needs_approval,
+                    SUM(CASE WHEN status IN ("sent","partially_received") AND expected_at IS NOT NULL AND expected_at < CURDATE() THEN 1 ELSE 0 END) as overdue_pos,
+                    SUM(CASE WHEN status IN ("draft","sent","partially_received") THEN 1 ELSE 0 END) as open_pos
+                ')
+                ->groupBy('branch_id')
+                ->get()
+                ->keyBy('branch_id');
+
+            $receipts = PurchaseReceipt::where('received_at', '>=', now()->subDays(7))
+                ->selectRaw('branch_id, COUNT(*) as receipts_7d')
+                ->groupBy('branch_id')
+                ->get()
+                ->keyBy('branch_id');
+
+            $invoiceVariances = DB::table('supplier_invoice_items')
+                ->join('supplier_invoices', 'supplier_invoice_items.supplier_invoice_id', '=', 'supplier_invoices.id')
+                ->whereNull('supplier_invoices.deleted_at')
+                ->where(function ($query) {
+                    $query->whereRaw('ABS(COALESCE(supplier_invoice_items.variance_qty, 0)) > 0.0001')
+                        ->orWhereRaw('ABS(COALESCE(supplier_invoice_items.variance_total, 0)) > 0.01');
+                })
+                ->selectRaw('supplier_invoices.branch_id, COUNT(*) as invoice_variances')
+                ->groupBy('supplier_invoices.branch_id')
+                ->get()
+                ->keyBy('branch_id');
+
+            $waste = InventoryMovement::where('type', 'waste')
+                ->where('occurred_at', '>=', now()->subDays(7))
+                ->selectRaw('branch_id, SUM(total_cost) as waste_7d')
+                ->groupBy('branch_id')
+                ->get()
+                ->keyBy('branch_id');
+
+            $lowStock = DB::table('ingredient_stock')
+                ->join('storage_locations', 'ingredient_stock.storage_location_id', '=', 'storage_locations.id')
+                ->join('ingredients', 'ingredient_stock.ingredient_id', '=', 'ingredients.id')
+                ->whereNull('storage_locations.deleted_at')
+                ->whereNull('ingredients.deleted_at')
+                ->where('storage_locations.active', true)
+                ->where('ingredients.active', true)
+                ->where('ingredients.track_stock', true)
+                ->whereRaw('ingredient_stock.quantity <= COALESCE(ingredient_stock.reorder_threshold, ingredients.reorder_threshold)')
+                ->selectRaw('storage_locations.branch_id, COUNT(*) as low_stock, SUM(CASE WHEN ingredient_stock.quantity <= 0 THEN 1 ELSE 0 END) as out_stock')
+                ->groupBy('storage_locations.branch_id')
+                ->get()
+                ->keyBy('branch_id');
+
+            $expiringBatches = IngredientBatch::where('remaining_qty', '>', 0)
+                ->whereNotNull('expiry_date')
+                ->whereDate('expiry_date', '<=', now()->addDays(7)->toDateString())
+                ->selectRaw('branch_id, COUNT(*) as expiring_batches')
+                ->groupBy('branch_id')
+                ->get()
+                ->keyBy('branch_id');
+
+            return $branches->map(function (Branch $branch) use (
+                $sales,
+                $todayOrders,
+                $activeOrders,
+                $delayedOrders,
+                $pendingOrders,
+                $tables,
+                $expenses,
+                $refunds,
+                $reservations,
+                $reviews,
+                $ap,
+                $po,
+                $receipts,
+                $invoiceVariances,
+                $waste,
+                $lowStock,
+                $expiringBatches
+            ) {
+                $branchSales = (float) ($sales[$branch->id]->sales ?? 0);
+                $branchExpenses = (float) ($expenses[$branch->id]->expenses ?? 0);
+                $branchRefunds = (float) ($refunds[$branch->id]->refunds ?? 0);
+                $occupied = (int) ($tables[$branch->id]->occupied_tables ?? 0);
+                $totalTables = (int) ($tables[$branch->id]->total_tables ?? 0);
+
+                $attentionCount =
+                    (int) ($delayedOrders[$branch->id]->delayed_orders ?? 0)
+                    + (int) ($pendingOrders[$branch->id]->pending_orders ?? 0)
+                    + (int) ($reservations[$branch->id]->pending_reservations ?? 0)
+                    + (int) ($reviews[$branch->id]->low_reviews ?? 0)
+                    + (int) ($ap[$branch->id]->overdue_ap_count ?? 0)
+                    + (int) ($po[$branch->id]->po_needs_approval ?? 0)
+                    + (int) ($po[$branch->id]->overdue_pos ?? 0)
+                    + (int) ($lowStock[$branch->id]->low_stock ?? 0)
+                    + (int) ($expiringBatches[$branch->id]->expiring_batches ?? 0)
+                    + (int) ($invoiceVariances[$branch->id]->invoice_variances ?? 0);
+
+                return [
+                    'branch' => $branch,
+                    'sales' => $branchSales,
+                    'expenses' => $branchExpenses,
+                    'refunds' => $branchRefunds,
+                    'net' => $branchSales - $branchRefunds - $branchExpenses,
+                    'paid_invoices' => (int) ($sales[$branch->id]->invoices ?? 0),
+                    'avg_ticket' => (float) ($sales[$branch->id]->avg_ticket ?? 0),
+                    'today_orders' => (int) ($todayOrders[$branch->id]->orders ?? 0),
+                    'active_orders' => (int) ($activeOrders[$branch->id]->active_orders ?? 0),
+                    'delayed_orders' => (int) ($delayedOrders[$branch->id]->delayed_orders ?? 0),
+                    'pending_orders' => (int) ($pendingOrders[$branch->id]->pending_orders ?? 0),
+                    'occupied' => $occupied,
+                    'total_tables' => $totalTables,
+                    'occupancy' => $totalTables > 0 ? round(($occupied / $totalTables) * 100) : 0,
+                    'reservations_today' => (int) ($reservations[$branch->id]->reservations_today ?? 0),
+                    'pending_reservations' => (int) ($reservations[$branch->id]->pending_reservations ?? 0),
+                    'avg_rating' => round((float) ($reviews[$branch->id]->avg_rating ?? 0), 1),
+                    'low_reviews' => (int) ($reviews[$branch->id]->low_reviews ?? 0),
+                    'review_count' => (int) ($reviews[$branch->id]->review_count ?? 0),
+                    'ap_due' => (float) ($ap[$branch->id]->ap_due ?? 0),
+                    'overdue_ap' => (float) ($ap[$branch->id]->overdue_ap ?? 0),
+                    'overdue_ap_count' => (int) ($ap[$branch->id]->overdue_ap_count ?? 0),
+                    'po_needs_approval' => (int) ($po[$branch->id]->po_needs_approval ?? 0),
+                    'overdue_pos' => (int) ($po[$branch->id]->overdue_pos ?? 0),
+                    'open_pos' => (int) ($po[$branch->id]->open_pos ?? 0),
+                    'receipts_7d' => (int) ($receipts[$branch->id]->receipts_7d ?? 0),
+                    'invoice_variances' => (int) ($invoiceVariances[$branch->id]->invoice_variances ?? 0),
+                    'waste_7d' => (float) ($waste[$branch->id]->waste_7d ?? 0),
+                    'low_stock' => (int) ($lowStock[$branch->id]->low_stock ?? 0),
+                    'out_stock' => (int) ($lowStock[$branch->id]->out_stock ?? 0),
+                    'expiring_batches' => (int) ($expiringBatches[$branch->id]->expiring_batches ?? 0),
+                    'attention_count' => $attentionCount,
+                    'needs_attention' => $attentionCount > 0,
+                ];
+            })->values()->all();
+        });
     }
 
-    /** Sum line — totals across every branch for the header strip. */
     #[Computed]
     public function totals(): array
     {
-        $cards = $this->summaries;
-
-        // Global low stock (ingredients are shared across branches, so this is
-        // a company-wide number, not per-branch).
-        $lowStock = (int) DB::table('ingredients')
-            ->where('track_stock', true)
-            ->whereColumn('current_stock', '<=', 'reorder_threshold')
-            ->count();
+        $cards = collect($this->summaries);
 
         return [
-            'sales'        => array_sum(array_column($cards, 'sales')),
-            'orders'       => array_sum(array_column($cards, 'today_orders')),
-            'active'       => array_sum(array_column($cards, 'active_orders')),
-            'invoices'     => array_sum(array_column($cards, 'paid_invoices')),
-            'occupied'     => array_sum(array_column($cards, 'occupied')),
-            'total_tables' => array_sum(array_column($cards, 'total_tables')),
-            'low_stock'    => $lowStock,
-            'branches'     => count($cards),
+            'branches' => $cards->count(),
+            'sales' => (float) $cards->sum('sales'),
+            'refunds' => (float) $cards->sum('refunds'),
+            'expenses' => (float) $cards->sum('expenses'),
+            'net' => (float) $cards->sum('net'),
+            'orders' => (int) $cards->sum('today_orders'),
+            'active' => (int) $cards->sum('active_orders'),
+            'delayed' => (int) $cards->sum('delayed_orders'),
+            'invoices' => (int) $cards->sum('paid_invoices'),
+            'occupied' => (int) $cards->sum('occupied'),
+            'total_tables' => (int) $cards->sum('total_tables'),
+            'occupancy' => $cards->sum('total_tables') > 0
+                ? round(($cards->sum('occupied') / $cards->sum('total_tables')) * 100)
+                : 0,
+            'attention' => (int) $cards->sum('attention_count'),
+            'critical_branches' => (int) $cards->where('needs_attention', true)->count(),
+            'ap_due' => (float) $cards->sum('ap_due'),
+            'overdue_ap' => (float) $cards->sum('overdue_ap'),
+            'low_stock' => (int) $cards->sum('low_stock'),
+            'out_stock' => (int) $cards->sum('out_stock'),
+            'pending_reservations' => (int) $cards->sum('pending_reservations'),
+            'low_reviews' => (int) $cards->sum('low_reviews'),
+            'invoice_variances' => (int) $cards->sum('invoice_variances'),
+            'waste_7d' => (float) $cards->sum('waste_7d'),
         ];
     }
-}
+
+    #[Computed]
+    public function trend(): array
+    {
+        return BranchContext::unscoped(function () {
+            $salesByDay = Invoice::whereIn('status', ['paid', 'partially_paid'])
+                ->whereDate('issued_at', '>=', now()->subDays(6)->toDateString())
+                ->selectRaw('DATE(issued_at) as day, SUM(paid_total) as total')
+                ->groupBy('day')
+                ->pluck('total', 'day');
+
+            $rows = [];
+            for ($i = 6; $i >= 0; $i--) {
+                $date = now()->subDays($i);
+                $key = $date->toDateString();
+                $rows[] = [
+                    'label' => $date->locale('ar')->isoFormat('ddd'),
+                    'value' => (float) ($salesByDay[$key] ?? 0),
+                ];
+            }
+
+            return $rows;
+        });
+    }
+
+    #[Computed]
+    public function actionCenter(): array
+    {
+        $totals = $this->totals;
+
+        return collect([
+            [
+                'label' => 'طلبات متأخرة',
+                'value' => $totals['delayed'],
+                'route' => route('admin.orders.index'),
+                'icon' => 'bi-lightning-charge-fill',
+                'tone' => 'danger',
+            ],
+            [
+                'label' => 'مخزون منخفض',
+                'value' => $totals['low_stock'],
+                'route' => route('admin.inventory.dashboard'),
+                'icon' => 'bi-exclamation-triangle-fill',
+                'tone' => $totals['out_stock'] > 0 ? 'danger' : 'warning',
+            ],
+            [
+                'label' => 'فواتير موردين متأخرة',
+                'value' => $totals['overdue_ap'],
+                'display' => \App\Helpers\Money::format($totals['overdue_ap']),
+                'route' => route('admin.supplier-invoices.index', ['overdue' => 1]),
+                'icon' => 'bi-cash-coin',
+                'tone' => 'danger',
+            ],
+            [
+                'label' => 'حجوزات معلقة',
+                'value' => $totals['pending_reservations'],
+                'route' => route('admin.reservations.index', ['status' => ReservationStatus::Pending->value]),
+                'icon' => 'bi-calendar-event-fill',
+                'tone' => 'warning',
+            ],
+            [
+                'label' => 'تقييمات منخفضة',
+                'value' => $totals['low_reviews'],
+                'route' => route('admin.reviews.index', ['rating' => 2]),
+                'icon' => 'bi-star-half',
+                'tone' => 'danger',
+            ],
+            [
+                'label' => 'فروقات فاتورة/استلام',
+                'value' => $totals['invoice_variances'],
+                'route' => route('admin.inventory.dashboard'),
+                'icon' => 'bi-slash-circle-fill',
+                'tone' => 'warning',
+            ],
+        ])->filter(fn ($item) => (float) $item['value'] > 0)->values()->all();
+    }
+};
 ?>
 
-<div class="po-wrap" wire:poll.visible.60s="refreshFromBroadcast">
-    {{-- Header strip: totals across every branch --}}
-    <div class="po-totals">
-        <div class="po-total">
-            <div class="po-total__label">إجمالي مبيعات اليوم</div>
-            <div class="po-total__value">{{ number_format($this->totals['sales'], 2) }} <span class="po-currency">ر.ع</span></div>
-            <div class="po-total__meta">{{ $this->totals['invoices'] }} فاتورة · {{ $this->totals['branches'] }} فرع نشط</div>
+@php
+    $totals = $this->totals;
+    $summaries = collect($this->summaries);
+    $topBranches = $summaries->sortByDesc('sales')->take(5)->values();
+    $trend = collect($this->trend);
+    $maxTrend = max($trend->pluck('value')->all() ?: [0]) ?: 1;
+@endphp
+
+<div class="owner-overview" wire:poll.visible.60s="refreshFromBroadcast">
+    <section class="owner-hero">
+        <div class="owner-hero-main">
+            <span class="owner-kicker">نظرة المالك اليوم</span>
+            <h2>{{ \App\Helpers\Money::format($totals['net']) }}</h2>
+            <p>صافي اليوم بعد الاستردادات والمصروفات عبر {{ $totals['branches'] }} فرع نشط.</p>
         </div>
-        <div class="po-total">
-            <div class="po-total__label">طلبات اليوم</div>
-            <div class="po-total__value">{{ $this->totals['orders'] }}</div>
-            <div class="po-total__meta">منها {{ $this->totals['active'] }} قيد التنفيذ</div>
+        <div class="owner-hero-grid">
+            <a href="{{ route('admin.reports.sales') }}" class="owner-hero-stat">
+                <span>المبيعات</span>
+                <strong>{{ \App\Helpers\Money::format($totals['sales']) }}</strong>
+            </a>
+            <a href="{{ route('admin.orders.index') }}" class="owner-hero-stat">
+                <span>طلبات اليوم</span>
+                <strong>{{ $totals['orders'] }}</strong>
+            </a>
+            <a href="{{ route('admin.tables.index') }}" class="owner-hero-stat">
+                <span>إشغال الطاولات</span>
+                <strong>{{ $totals['occupancy'] }}%</strong>
+            </a>
+            <a href="{{ route('admin.inventory.dashboard') }}" class="owner-hero-stat {{ $totals['attention'] > 0 ? 'is-hot' : '' }}">
+                <span>نقاط تحتاج قرار</span>
+                <strong>{{ $totals['attention'] }}</strong>
+            </a>
         </div>
-        <div class="po-total">
-            <div class="po-total__label">طاولات مشغولة</div>
-            <div class="po-total__value">{{ $this->totals['occupied'] }} <span class="po-of">/ {{ $this->totals['total_tables'] }}</span></div>
-            <div class="po-total__meta">@if($this->totals['total_tables'] > 0) {{ round(($this->totals['occupied']/$this->totals['total_tables'])*100) }}% إشغال @else لا توجد طاولات @endif</div>
-        </div>
-        <div class="po-total {{ $this->totals['low_stock'] > 0 ? 'po-total--warn' : '' }}">
-            <div class="po-total__label">تنبيهات المخزون</div>
-            <div class="po-total__value">{{ $this->totals['low_stock'] }}</div>
-            <div class="po-total__meta">صنف وصل حدّ إعادة الطلب</div>
-        </div>
+    </section>
+
+    <div class="owner-action-grid">
+        @forelse($this->actionCenter as $action)
+            <a href="{{ $action['route'] }}" class="owner-action owner-action--{{ $action['tone'] }}">
+                <span class="owner-action-icon"><i class="bi {{ $action['icon'] }}"></i></span>
+                <span class="owner-action-body">
+                    <span>{{ $action['label'] }}</span>
+                    <strong>{{ $action['display'] ?? $action['value'] }}</strong>
+                </span>
+                <i class="bi bi-arrow-left"></i>
+            </a>
+        @empty
+            <div class="owner-action owner-action--ok">
+                <span class="owner-action-icon"><i class="bi bi-check2-circle"></i></span>
+                <span class="owner-action-body">
+                    <span>لا توجد إجراءات حرجة</span>
+                    <strong>كل الفروع هادئة</strong>
+                </span>
+            </div>
+        @endforelse
     </div>
 
-    {{-- Per-branch cards --}}
-    <div class="po-grid">
-        @foreach($this->summaries as $card)
-            @php $b = $card['branch']; $hue = ($b->id * 47) % 360; @endphp
-            <article class="po-card {{ $card['needs_attention'] ? 'is-warn' : '' }}" style="--hue: {{ $hue }};">
-                <header class="po-card__head">
-                    <span class="po-card__avatar">{{ mb_substr($b->name, 0, 1, 'UTF-8') }}</span>
-                    <div class="po-card__title">
-                        <h3>{{ $b->name }}</h3>
-                        @if($b->city)
-                            <span class="po-card__city"><i class="bi bi-geo-alt"></i> {{ $b->city }}</span>
-                        @endif
-                    </div>
-                    <span class="po-card__pulse" title="مباشر"></span>
-                </header>
+    <div class="owner-layout">
+        <section class="owner-panel owner-panel--wide">
+            <div class="owner-panel-head">
+                <div>
+                    <span class="owner-kicker">مقارنة الفروع</span>
+                    <h3>الأداء التشغيلي والمالي</h3>
+                </div>
+                <a href="{{ route('admin.reports.branch-comparison') }}" class="btn btn-light btn-sm">
+                    <i class="bi bi-arrows-collapse"></i> تقرير المقارنة
+                </a>
+            </div>
 
-                <div class="po-card__metrics">
-                    <div class="po-metric">
-                        <div class="po-metric__value">{{ number_format($card['sales'], 0) }}</div>
-                        <div class="po-metric__label">مبيعات اليوم (ر.ع)</div>
-                    </div>
-                    <div class="po-metric">
-                        <div class="po-metric__value">{{ $card['today_orders'] }}</div>
-                        <div class="po-metric__label">طلبات اليوم</div>
-                    </div>
-                    <div class="po-metric">
-                        <div class="po-metric__value">{{ $card['active_orders'] }}</div>
-                        <div class="po-metric__label">قيد التنفيذ</div>
-                    </div>
-                    <div class="po-metric">
-                        <div class="po-metric__value">
-                            {{ $card['occupied'] }}<span class="po-metric__of">/{{ $card['total_tables'] }}</span>
-                        </div>
-                        <div class="po-metric__label">طاولات مشغولة</div>
-                    </div>
-                    <div class="po-metric po-metric--span2">
-                        <div class="po-metric__value">{{ number_format($card['avg_ticket'], 2) }} <span class="po-currency">ر.ع</span></div>
-                        <div class="po-metric__label">متوسط الفاتورة</div>
+            <div class="table-responsive">
+                <table class="table align-middle mb-0 owner-table">
+                    <thead>
+                        <tr>
+                            <th>الفرع</th>
+                            <th class="text-end">صافي اليوم</th>
+                            <th class="text-end">المبيعات</th>
+                            <th class="text-center">طلبات</th>
+                            <th class="text-center">نشطة</th>
+                            <th class="text-center">إشغال</th>
+                            <th class="text-center">تقييم</th>
+                            <th class="text-center">تنبيهات</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($summaries as $row)
+                            @php $branch = $row['branch']; @endphp
+                            <tr>
+                                <td>
+                                    <div class="owner-branch-name">{{ $branch->name }}</div>
+                                    <div class="text-muted small">{{ $branch->city ?: 'بدون مدينة' }}</div>
+                                </td>
+                                <td class="text-end fw-bold {{ $row['net'] < 0 ? 'text-danger' : 'text-success' }}">
+                                    {{ \App\Helpers\Money::format($row['net']) }}
+                                </td>
+                                <td class="text-end">{{ \App\Helpers\Money::format($row['sales']) }}</td>
+                                <td class="text-center">{{ $row['today_orders'] }}</td>
+                                <td class="text-center">
+                                    <span class="badge bg-primary-transparent">{{ $row['active_orders'] }}</span>
+                                    @if($row['delayed_orders'] > 0)
+                                        <span class="badge bg-danger ms-1">{{ $row['delayed_orders'] }} متأخر</span>
+                                    @endif
+                                </td>
+                                <td class="text-center">{{ $row['occupancy'] }}%</td>
+                                <td class="text-center">
+                                    @if($row['review_count'] > 0)
+                                        <span class="{{ $row['low_reviews'] > 0 ? 'text-danger fw-bold' : 'text-warning fw-bold' }}">
+                                            {{ $row['avg_rating'] }}
+                                        </span>
+                                    @else
+                                        <span class="text-muted">—</span>
+                                    @endif
+                                </td>
+                                <td class="text-center">
+                                    <span class="owner-attention {{ $row['attention_count'] > 0 ? 'is-hot' : '' }}">
+                                        {{ $row['attention_count'] }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <form action="{{ route('admin.branches.switch', $branch) }}" method="POST" class="m-0">
+                                        @csrf
+                                        <button type="submit" class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-box-arrow-in-right"></i>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <aside class="owner-side">
+            <section class="owner-panel">
+                <div class="owner-panel-head">
+                    <div>
+                        <span class="owner-kicker">آخر 7 أيام</span>
+                        <h3>اتجاه المبيعات</h3>
                     </div>
                 </div>
+                <div class="owner-bars">
+                    @foreach($trend as $day)
+                        <div class="owner-bar">
+                            <span class="owner-bar-fill" style="height: {{ max(8, round(($day['value'] / $maxTrend) * 100)) }}%"></span>
+                            <small>{{ $day['label'] }}</small>
+                        </div>
+                    @endforeach
+                </div>
+            </section>
 
-                @if($card['needs_attention'])
-                    <div class="po-card__alert">
-                        <i class="bi bi-lightning-charge-fill"></i>
-                        ضغط في المطبخ — {{ $card['active_orders'] }} طلب قيد التنفيذ
+            <section class="owner-panel">
+                <div class="owner-panel-head">
+                    <div>
+                        <span class="owner-kicker">الأعلى مبيعاً</span>
+                        <h3>أفضل الفروع اليوم</h3>
                     </div>
-                @else
-                    <div class="po-card__alert po-card__alert--ok">
-                        <i class="bi bi-check-circle-fill"></i>
-                        التشغيل سلس
-                    </div>
-                @endif
+                </div>
+                <div class="owner-rank-list">
+                    @forelse($topBranches as $idx => $row)
+                        <form action="{{ route('admin.branches.switch', $row['branch']) }}" method="POST" class="owner-rank">
+                            @csrf
+                            <button type="submit">
+                                <span class="owner-rank-no">{{ $idx + 1 }}</span>
+                                <span class="owner-rank-name">{{ $row['branch']->name }}</span>
+                                <strong>{{ \App\Helpers\Money::format($row['sales']) }}</strong>
+                            </button>
+                        </form>
+                    @empty
+                        <div class="text-muted small">لا توجد فروع نشطة.</div>
+                    @endforelse
+                </div>
+            </section>
 
-                <footer class="po-card__foot">
-                    <form action="{{ route('admin.branches.switch', $b) }}" method="POST" class="po-card__switch">
-                        @csrf
-                        <button type="submit" class="btn btn-sm btn-outline-primary w-100">
-                            <i class="bi bi-box-arrow-in-right"></i>
-                            دخول الفرع
-                        </button>
-                    </form>
-                </footer>
+            <section class="owner-panel">
+                <div class="owner-panel-head">
+                    <div>
+                        <span class="owner-kicker">الذمم والمخزون</span>
+                        <h3>مخاطر مختصرة</h3>
+                    </div>
+                </div>
+                <div class="owner-risk-list">
+                    <a href="{{ route('admin.supplier-invoices.index') }}">
+                        <span>ذمم موردين</span>
+                        <strong>{{ \App\Helpers\Money::format($totals['ap_due']) }}</strong>
+                    </a>
+                    <a href="{{ route('admin.supplier-invoices.index', ['overdue' => 1]) }}">
+                        <span>متأخر منها</span>
+                        <strong class="text-danger">{{ \App\Helpers\Money::format($totals['overdue_ap']) }}</strong>
+                    </a>
+                    <a href="{{ route('admin.inventory.dashboard') }}">
+                        <span>مخزون منخفض / نافد</span>
+                        <strong>{{ $totals['low_stock'] }} / {{ $totals['out_stock'] }}</strong>
+                    </a>
+                    <a href="{{ route('admin.waste.index') }}">
+                        <span>هدر آخر 7 أيام</span>
+                        <strong>{{ \App\Helpers\Money::format($totals['waste_7d']) }}</strong>
+                    </a>
+                </div>
+            </section>
+        </aside>
+    </div>
+
+    <div class="owner-card-grid">
+        @foreach($summaries as $row)
+            @php $branch = $row['branch']; $hue = ($branch->id * 47) % 360; @endphp
+            <article class="owner-card {{ $row['needs_attention'] ? 'is-warn' : '' }}" style="--hue: {{ $hue }};">
+                <header class="owner-card-head">
+                    <span class="owner-card-avatar">{{ mb_substr($branch->name, 0, 1, 'UTF-8') }}</span>
+                    <div>
+                        <h3>{{ $branch->name }}</h3>
+                        <span>{{ $branch->city ?: 'فرع نشط' }}</span>
+                    </div>
+                    <span class="owner-live-dot" title="مباشر"></span>
+                </header>
+
+                <div class="owner-card-metrics">
+                    <div><span>صافي</span><strong>{{ \App\Helpers\Money::format($row['net']) }}</strong></div>
+                    <div><span>متوسط فاتورة</span><strong>{{ \App\Helpers\Money::format($row['avg_ticket']) }}</strong></div>
+                    <div><span>طلبات نشطة</span><strong>{{ $row['active_orders'] }}</strong></div>
+                    <div><span>حجوزات اليوم</span><strong>{{ $row['reservations_today'] }}</strong></div>
+                    <div><span>أوامر شراء</span><strong>{{ $row['open_pos'] }}</strong></div>
+                    <div><span>استلامات 7 أيام</span><strong>{{ $row['receipts_7d'] }}</strong></div>
+                </div>
+
+                <div class="owner-card-alert {{ $row['attention_count'] > 0 ? 'is-hot' : '' }}">
+                    <i class="bi {{ $row['attention_count'] > 0 ? 'bi-exclamation-triangle-fill' : 'bi-check-circle-fill' }}"></i>
+                    @if($row['attention_count'] > 0)
+                        {{ $row['attention_count'] }} نقطة تحتاج متابعة
+                    @else
+                        التشغيل مستقر
+                    @endif
+                </div>
+
+                <form action="{{ route('admin.branches.switch', $branch) }}" method="POST">
+                    @csrf
+                    <button type="submit" class="btn btn-outline-primary w-100">
+                        <i class="bi bi-box-arrow-in-right"></i> دخول الفرع
+                    </button>
+                </form>
             </article>
         @endforeach
     </div>
@@ -231,157 +613,427 @@ new class extends Component
 
 @once
 <style>
-    .po-wrap { display: flex; flex-direction: column; gap: 24px; }
-
-    /* Totals strip */
-    .po-totals {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 16px;
-    }
-    .po-total {
-        background: #fff;
-        border: 1px solid #e5e7eb;
-        border-radius: 14px;
-        padding: 18px 20px;
-        box-shadow: 0 1px 2px rgba(15,23,42,.04);
-        position: relative;
-        overflow: hidden;
-    }
-    .po-total::before {
-        content: '';
-        position: absolute; inset: 0 0 auto 0;
-        height: 3px;
-        background: linear-gradient(90deg, rgb(var(--primary-rgb)), rgb(var(--accent-rgb)));
-    }
-    .po-total--warn::before { background: linear-gradient(90deg, #f59e0b, #ef4444); }
-    .po-total__label { font-size: .78rem; font-weight: 600; color: #6b7280; margin-bottom: 6px; }
-    .po-total__value {
-        font-size: 1.85rem; font-weight: 800; color: #111827; line-height: 1.1;
-    }
-    .po-total__value .po-currency,
-    .po-total__value .po-of {
-        font-size: .9rem; font-weight: 600; color: #9ca3af;
-    }
-    .po-total__meta { margin-top: 6px; font-size: .76rem; color: #9ca3af; }
-
-    /* Branch cards grid */
-    .po-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    .owner-overview {
+        display: flex;
+        flex-direction: column;
         gap: 18px;
     }
 
-    .po-card {
+    .owner-hero,
+    .owner-panel,
+    .owner-card,
+    .owner-action,
+    .owner-hero-stat {
         background: #fff;
-        border: 1px solid #e5e7eb;
-        border-radius: 16px;
-        padding: 18px;
+        border: 1px solid rgba(15, 45, 34, .1);
+        border-radius: 8px;
+        box-shadow: 0 10px 24px rgba(15, 45, 34, .05);
+    }
+
+    .owner-hero {
+        display: grid;
+        grid-template-columns: minmax(260px, .9fr) 1.4fr;
+        gap: 1rem;
+        padding: 1.25rem;
+        align-items: stretch;
+    }
+
+    .owner-kicker {
+        color: var(--accent-dark);
+        font-size: .78rem;
+        font-weight: 900;
+    }
+
+    .owner-hero-main h2 {
+        margin: .25rem 0;
+        color: var(--primary);
+        font-size: 2.2rem;
+        font-weight: 900;
+        letter-spacing: 0;
+    }
+
+    .owner-hero-main p {
+        color: #6b7280;
+        margin: 0;
+        max-width: 520px;
+    }
+
+    .owner-hero-grid,
+    .owner-action-grid,
+    .owner-card-grid {
+        display: grid;
+        gap: .75rem;
+    }
+
+    .owner-hero-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .owner-hero-stat {
+        padding: .9rem;
+        color: #1f2937;
+        min-height: 94px;
+    }
+
+    .owner-hero-stat:hover {
+        color: var(--primary);
+        border-color: rgba(var(--primary-rgb), .25);
+    }
+
+    .owner-hero-stat span,
+    .owner-action-body span,
+    .owner-card-metrics span,
+    .owner-risk-list span {
+        display: block;
+        color: #6b7280;
+        font-size: .78rem;
+        font-weight: 800;
+    }
+
+    .owner-hero-stat strong {
+        display: block;
+        margin-top: .35rem;
+        color: var(--primary);
+        font-size: 1.25rem;
+        font-weight: 900;
+        letter-spacing: 0;
+    }
+
+    .owner-hero-stat.is-hot strong {
+        color: #dc2626;
+    }
+
+    .owner-action-grid {
+        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    }
+
+    .owner-action {
+        display: flex;
+        align-items: center;
+        gap: .75rem;
+        padding: .85rem;
+        color: #1f2937;
+        min-height: 78px;
+    }
+
+    .owner-action:hover {
+        color: var(--primary);
+        border-color: rgba(var(--primary-rgb), .25);
+    }
+
+    .owner-action-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        flex: 0 0 40px;
+        border-radius: 8px;
+        background: rgba(var(--primary-rgb), .08);
+        color: var(--primary);
+        font-size: 1.05rem;
+    }
+
+    .owner-action-body {
+        min-width: 0;
+        flex: 1;
+    }
+
+    .owner-action-body strong {
+        display: block;
+        color: #111827;
+        font-size: 1.05rem;
+        font-weight: 900;
+        letter-spacing: 0;
+    }
+
+    .owner-action--danger .owner-action-icon,
+    .owner-action--danger .owner-action-body strong {
+        color: #dc2626;
+        background: rgba(220, 38, 38, .08);
+    }
+
+    .owner-action--warning .owner-action-icon,
+    .owner-action--warning .owner-action-body strong {
+        color: #b45309;
+        background: rgba(180, 83, 9, .1);
+    }
+
+    .owner-action--ok .owner-action-icon,
+    .owner-action--ok .owner-action-body strong {
+        color: #16a34a;
+        background: rgba(22, 163, 74, .1);
+    }
+
+    .owner-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.8fr) minmax(300px, .8fr);
+        gap: 1rem;
+        align-items: start;
+    }
+
+    .owner-panel {
+        padding: 1rem;
+    }
+
+    .owner-panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: .85rem;
+    }
+
+    .owner-panel-head h3 {
+        margin: .1rem 0 0;
+        color: #111827;
+        font-size: 1rem;
+        font-weight: 900;
+    }
+
+    .owner-table thead th {
+        color: #6b7280;
+        font-size: .78rem;
+        font-weight: 900;
+    }
+
+    .owner-branch-name {
+        color: #111827;
+        font-weight: 900;
+    }
+
+    .owner-attention {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        color: #16a34a;
+        background: rgba(22, 163, 74, .1);
+        font-weight: 900;
+    }
+
+    .owner-attention.is-hot {
+        color: #dc2626;
+        background: rgba(220, 38, 38, .1);
+    }
+
+    .owner-side {
+        display: grid;
+        gap: 1rem;
+    }
+
+    .owner-bars {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: .5rem;
+        height: 190px;
+        align-items: end;
+    }
+
+    .owner-bar {
+        height: 160px;
         display: flex;
         flex-direction: column;
-        gap: 14px;
-        box-shadow: 0 1px 3px rgba(15,23,42,.05);
-        transition: transform .15s, box-shadow .15s;
+        align-items: center;
+        justify-content: flex-end;
+        gap: .4rem;
+    }
+
+    .owner-bar-fill {
+        display: block;
+        width: 100%;
+        max-width: 30px;
+        min-height: 8px;
+        border-radius: 8px 8px 3px 3px;
+        background: linear-gradient(180deg, var(--accent), var(--primary));
+    }
+
+    .owner-bar small {
+        color: #6b7280;
+        font-weight: 800;
+    }
+
+    .owner-rank-list,
+    .owner-risk-list {
+        display: grid;
+        gap: .55rem;
+    }
+
+    .owner-rank {
+        margin: 0;
+    }
+
+    .owner-rank button,
+    .owner-risk-list a {
+        width: 100%;
+        border: 1px solid rgba(15, 45, 34, .08);
+        border-radius: 8px;
+        background: rgba(248, 250, 252, .8);
+        padding: .65rem;
+        display: flex;
+        align-items: center;
+        gap: .6rem;
+        color: #1f2937;
+        text-align: start;
+    }
+
+    .owner-rank button:hover,
+    .owner-risk-list a:hover {
+        color: var(--primary);
+        border-color: rgba(var(--primary-rgb), .25);
+    }
+
+    .owner-rank-no {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: rgba(var(--accent-rgb), .15);
+        color: var(--accent-dark);
+        font-weight: 900;
+    }
+
+    .owner-rank-name {
+        flex: 1;
+        min-width: 0;
+        font-weight: 900;
+    }
+
+    .owner-risk-list a {
+        justify-content: space-between;
+    }
+
+    .owner-risk-list strong {
+        color: var(--primary);
+        font-weight: 900;
+        letter-spacing: 0;
+    }
+
+    .owner-card-grid {
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    }
+
+    .owner-card {
+        padding: 1rem;
         position: relative;
         overflow: hidden;
     }
-    .po-card::before {
+
+    .owner-card::before {
         content: '';
-        position: absolute; inset: 0 0 auto 0;
+        position: absolute;
+        inset: 0 0 auto 0;
         height: 3px;
-        background: linear-gradient(135deg, hsl(var(--hue) 55% 45%), hsl(var(--hue) 60% 35%));
+        background: linear-gradient(90deg, hsl(var(--hue) 55% 45%), hsl(var(--hue) 60% 35%));
     }
-    .po-card:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 6px 16px -4px rgba(15,23,42,.12);
-    }
-    .po-card.is-warn::before {
+
+    .owner-card.is-warn::before {
         background: linear-gradient(90deg, #f59e0b, #ef4444);
     }
 
-    .po-card__head {
-        display: flex; align-items: center; gap: 12px;
-    }
-    .po-card__avatar {
-        width: 40px; height: 40px;
-        border-radius: 50%;
-        flex-shrink: 0;
-        display: inline-flex;
-        align-items: center; justify-content: center;
-        background: linear-gradient(135deg, hsl(var(--hue) 50% 52%), hsl(var(--hue) 55% 38%));
-        color: #fff;
-        font-size: 1.05rem;
-        font-weight: 800;
-    }
-    .po-card__title { flex: 1; min-width: 0; }
-    .po-card__title h3 {
-        font-size: 1rem; font-weight: 800; color: #111827; margin: 0;
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .po-card__city {
-        font-size: .72rem; color: #6b7280;
-    }
-    .po-card__pulse {
-        width: 8px; height: 8px; border-radius: 50%;
-        background: #22c55e;
-        box-shadow: 0 0 0 4px rgba(34,197,94,.18);
-        animation: po-pulse 2s ease-in-out infinite;
-    }
-    @keyframes po-pulse {
-        0%, 100% { box-shadow: 0 0 0 4px rgba(34,197,94,.18); }
-        50%      { box-shadow: 0 0 0 7px rgba(34,197,94,.06); }
+    .owner-card-head {
+        display: flex;
+        align-items: center;
+        gap: .75rem;
+        margin-bottom: .85rem;
     }
 
-    .po-card__metrics {
+    .owner-card-avatar {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        color: #fff;
+        background: linear-gradient(135deg, hsl(var(--hue) 50% 52%), hsl(var(--hue) 55% 38%));
+        font-weight: 900;
+    }
+
+    .owner-card-head h3 {
+        margin: 0;
+        color: #111827;
+        font-size: 1rem;
+        font-weight: 900;
+    }
+
+    .owner-card-head span:not(.owner-card-avatar):not(.owner-live-dot) {
+        color: #6b7280;
+        font-size: .75rem;
+    }
+
+    .owner-live-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #22c55e;
+        box-shadow: 0 0 0 4px rgba(34, 197, 94, .16);
+        margin-inline-start: auto;
+    }
+
+    .owner-card-metrics {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 10px;
-    }
-    .po-metric {
-        background: #f9fafb;
-        border: 1px solid #f3f4f6;
-        border-radius: 10px;
-        padding: 10px 12px;
-    }
-    .po-metric--span2 { grid-column: span 2; }
-    .po-metric__value {
-        font-size: 1.25rem; font-weight: 800; color: #111827; line-height: 1.1;
-    }
-    .po-metric__value .po-metric__of,
-    .po-metric__value .po-currency {
-        font-size: .78rem; font-weight: 600; color: #9ca3af;
-    }
-    .po-metric__label {
-        font-size: .7rem; color: #6b7280; margin-top: 4px;
+        gap: .55rem;
     }
 
-    .po-card__alert {
-        display: flex; align-items: center; gap: 6px;
-        padding: 8px 12px;
-        background: #fff7ed;
-        color: #b45309;
-        border: 1px solid #fed7aa;
+    .owner-card-metrics div {
+        padding: .65rem;
         border-radius: 8px;
-        font-size: .82rem;
-        font-weight: 600;
+        background: rgba(248, 250, 252, .9);
+        border: 1px solid rgba(15, 45, 34, .06);
     }
-    .po-card__alert--ok {
-        background: #f0fdf4;
+
+    .owner-card-metrics strong {
+        display: block;
+        margin-top: .2rem;
+        color: var(--primary);
+        font-weight: 900;
+        letter-spacing: 0;
+    }
+
+    .owner-card-alert {
+        margin: .85rem 0;
+        padding: .65rem;
+        border-radius: 8px;
         color: #166534;
-        border-color: #bbf7d0;
+        background: #f0fdf4;
+        border: 1px solid #bbf7d0;
+        font-weight: 900;
     }
 
-    .po-card__foot {
-        margin-top: auto;
+    .owner-card-alert.is-hot {
+        color: #b45309;
+        background: #fff7ed;
+        border-color: #fed7aa;
     }
-    .po-card__switch { margin: 0; }
-    .po-card__switch button { font-weight: 700; }
 
-    /* Mobile */
-    @media (max-width: 640px) {
-        .po-grid { grid-template-columns: 1fr; }
-        .po-totals { grid-template-columns: 1fr 1fr; }
-        .po-total__value { font-size: 1.5rem; }
+    @media (max-width: 1199.98px) {
+        .owner-hero,
+        .owner-layout {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media (max-width: 767.98px) {
+        .owner-hero-grid {
+            grid-template-columns: 1fr 1fr;
+        }
+
+        .owner-hero-main h2 {
+            font-size: 1.7rem;
+        }
+    }
+
+    @media (max-width: 575.98px) {
+        .owner-hero-grid,
+        .owner-card-grid {
+            grid-template-columns: 1fr;
+        }
     }
 </style>
 @endonce

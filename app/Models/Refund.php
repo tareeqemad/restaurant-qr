@@ -65,16 +65,17 @@ class Refund extends Model
 
     public function methodLabel(): string
     {
-        return match ($this->method) {
-            'cash'     => 'نقدي',
-            'card'     => 'بطاقة',
-            'transfer' => 'تحويل',
-            'app'      => 'محفظة',
-            'credit'   => 'آجل',
-            'other'    => 'أخرى',
-            default    => $this->method,
-        };
+        return self::METHODS[$this->method] ?? $this->method;
     }
+
+    public const METHODS = [
+        'cash'     => 'نقدي',
+        'card'     => 'بطاقة',
+        'transfer' => 'تحويل',
+        'app'      => 'محفظة',
+        'credit'   => 'آجل',
+        'other'    => 'أخرى',
+    ];
 
     public static function generateNumber(): string
     {

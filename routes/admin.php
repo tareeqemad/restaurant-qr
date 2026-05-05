@@ -126,6 +126,7 @@ Route::middleware(['auth', 'admin', 'branch'])->group(function () {
 
     // Purchase Orders
     Route::resource('purchase-orders', Admin\PurchaseOrderController::class);
+    Route::post('purchase-orders/{purchase_order}/approve', [Admin\PurchaseOrderController::class, 'approve'])->name('purchase-orders.approve');
     Route::post('purchase-orders/{purchase_order}/send',    [Admin\PurchaseOrderController::class, 'send'])->name('purchase-orders.send');
     Route::post('purchase-orders/{purchase_order}/cancel',  [Admin\PurchaseOrderController::class, 'cancel'])->name('purchase-orders.cancel');
     Route::get ('purchase-orders/{purchase_order}/receive', [Admin\PurchaseOrderController::class, 'receiveForm'])->name('purchase-orders.receive-form');
@@ -170,7 +171,8 @@ Route::middleware(['auth', 'admin', 'branch'])->group(function () {
     Route::post('storage-locations/transfer', [Admin\StorageLocationController::class, 'transferStore'])->name('storage-locations.transfer-store');
     Route::resource('storage-locations', Admin\StorageLocationController::class);
 
-    // Inventory movements
+    // Inventory command center + movements
+    Route::get('inventory-dashboard', [Admin\InventoryController::class, 'dashboard'])->name('inventory.dashboard');
     Route::get('inventory', [Admin\InventoryController::class, 'index'])->name('inventory.index');
 
     // Waste — dedicated logging surface (forces a reason + optional batch link)
@@ -242,6 +244,7 @@ Route::middleware(['auth', 'admin', 'branch'])->group(function () {
 
     // Reports
     Route::prefix('reports')->name('reports.')->group(function () {
+        Route::get('/',            [Admin\ReportController::class, 'index'])->name('index');
         Route::get('sales',        [Admin\ReportController::class, 'sales'])->name('sales');
         Route::get('items',        [Admin\ReportController::class, 'items'])->name('items');
         Route::get('inventory',    [Admin\ReportController::class, 'inventory'])->name('inventory');

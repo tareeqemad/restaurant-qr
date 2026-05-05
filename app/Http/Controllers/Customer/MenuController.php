@@ -6,6 +6,7 @@ use App\Events\TableStatusChanged;
 use App\Helpers\SafeBroadcast;
 use App\Http\Controllers\Controller;
 use App\Models\Category;
+use App\Models\Customer;
 use App\Models\MenuItem;
 use App\Models\Setting;
 use App\Models\Table;
@@ -49,16 +50,33 @@ class MenuController extends Controller
         }
 
         if (! $session) {
-            // If the diner is signed in to the customer portal on this device,
-            // link the new session to their account up-front. They get a hello
-            // banner on the menu screen instead of being asked to register
-            // again — and every order placed gets attached for loyalty +
-            // history without the cashier doing anything.
+            // Recognise the diner before we even render the menu. Two signals,
+            // in priority order:
+            //   1. Portal auth on this browser → straightforward.
+            //   2. `qr_customer_id` cookie set on a previous QR submit → the
+            //      "soft remember-me" path: someone who scanned, gave their
+            //      phone last time, and is now back from the same device.
+            // Neither requires the diner to lift a finger — they get greeted
+            // by name and the cashier sees "زبون دائم" automatically.
             $portalCustomerId = Auth::guard('customer')->id();
+            $rememberedCustomerId = null;
+            $rememberedCustomer = null;
+
+            if (! $portalCustomerId && $cookieId = (int) $request->cookie('qr_customer_id')) {
+                $rememberedCustomer = Customer::where('status', 'active')->find($cookieId);
+                $rememberedCustomerId = $rememberedCustomer?->id;
+            }
+
+            $resolvedCustomerId = $portalCustomerId ?? $rememberedCustomerId;
 
             $session = TableSession::create([
                 'table_id'    => $table->id,
-                'customer_id' => $portalCustomerId,   // null for anonymous walk-ins
+                'customer_id' => $resolvedCustomerId,   // null for true walk-ins
+                // Stamp the diner's name on the session so the menu hero,
+                // waiter board, and cashier all show the right greeting
+                // without an extra round-trip.
+                'customer_name'  => $rememberedCustomer?->name,
+                'customer_phone' => $rememberedCustomer?->phone,
                 'cover_count' => 1,
                 'status'      => 'active',
                 'opened_at'   => now(),

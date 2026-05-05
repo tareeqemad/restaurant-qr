@@ -35,6 +35,7 @@ class SupplierInvoice extends Model
     public function supplier(): BelongsTo { return $this->belongsTo(Supplier::class); }
     public function purchaseOrder(): BelongsTo { return $this->belongsTo(PurchaseOrder::class); }
     public function payments(): HasMany { return $this->hasMany(SupplierPayment::class); }
+    public function items(): HasMany { return $this->hasMany(SupplierInvoiceItem::class); }
     public function creator(): BelongsTo { return $this->belongsTo(User::class, 'created_by'); }
 
     public function statusLabel(): string

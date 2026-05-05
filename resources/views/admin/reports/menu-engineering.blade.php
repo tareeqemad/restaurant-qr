@@ -4,7 +4,7 @@
 @section('content')
 <x-admin.breadcrumb title="هندسة المنيو" icon="bi-bezier2"
     subtitle="تصنيف الأصناف حسب الربحية × الشعبية لاتخاذ قرارات التسعير"
-    :crumbs="[['label' = />
+    :crumbs="[['label' => 'التقارير', 'url' => route('admin.reports.index')]]" />
 
 <div class="data-panel-filters mb-3" style="background: white; border-radius: 14px; padding: 1rem; border: 1px solid rgba(var(--primary-rgb),.1);">
     <form class="row g-2 align-items-end">
@@ -16,15 +16,16 @@
             <label class="form-label small text-muted fw-bold">إلى تاريخ</label>
             <input type="date" name="to" value="{{ $to }}" class="form-control">
         </div>
-        <div class="col-md-3">
-            <button class="btn btn-primary w-100"><i class="bi bi-funnel"></i> تحديث</button>
-        </div>
-        <div class="col-md-3">
+        <div class="col-md-6">
+            <label class="form-label small text-muted fw-bold">اختصارات</label>
             <div class="btn-group w-100">
                 <a href="?from={{ now()->subDays(30)->toDateString() }}&to={{ now()->toDateString() }}" class="btn btn-light btn-sm">30 يوم</a>
                 <a href="?from={{ now()->startOfMonth()->toDateString() }}&to={{ now()->toDateString() }}" class="btn btn-light btn-sm">الشهر</a>
                 <a href="?from={{ now()->subDays(7)->toDateString() }}&to={{ now()->toDateString() }}"  class="btn btn-light btn-sm">7 أيام</a>
             </div>
+        </div>
+        <div class="col-12 text-center mt-2">
+            <button class="btn btn-primary px-5"><i class="bi bi-search"></i> استعلام</button>
         </div>
     </form>
 </div>
@@ -37,10 +38,10 @@
 @else
 
 <x-admin.stat-rail :stats="[
-    ['label' => '⭐ Stars',      'value' => $buckets['star'],      'icon' => 'bi-star-fill',          'color' => 'success'],
-    ['label' => '🐎 Plowhorses', 'value' => $buckets['plowhorse'], 'icon' => 'bi-speedometer2',       'color' => 'accent'],
-    ['label' => '🧩 Puzzles',    'value' => $buckets['puzzle'],    'icon' => 'bi-puzzle-fill',        'color' => 'primary'],
-    ['label' => '🐕 Dogs',        'value' => $buckets['dog'],       'icon' => 'bi-x-octagon-fill',    'color' => 'danger'],
+    ['label' => 'نجوم',          'value' => $buckets['star'],      'icon' => 'bi-star-fill',          'color' => 'success'],
+    ['label' => 'رائجة بهامش ضعيف', 'value' => $buckets['plowhorse'], 'icon' => 'bi-speedometer2',       'color' => 'accent'],
+    ['label' => 'مربحة قليلة الطلب', 'value' => $buckets['puzzle'],    'icon' => 'bi-puzzle-fill',        'color' => 'primary'],
+    ['label' => 'ضعيفة الأداء',   'value' => $buckets['dog'],       'icon' => 'bi-x-octagon-fill',    'color' => 'danger'],
 ]" />
 
 {{-- Matrix visualization --}}
@@ -51,25 +52,25 @@
                 @php
                     $classes = [
                         'star' => [
-                            'label' => '⭐ نجوم',
+                            'label' => 'نجوم',
                             'desc'  => 'ربحية عالية + مبيعات عالية — أبقها بارزة في المنيو',
                             'color' => '#1f4733',
                             'bg'    => 'rgba(31,71,51,.08)',
                         ],
                         'puzzle' => [
-                            'label' => '🧩 ألغاز',
+                            'label' => 'مربحة قليلة الطلب',
                             'desc'  => 'ربحية عالية + مبيعات منخفضة — روّج لها، حسّن الوصف، ضعها في أماكن بارزة',
                             'color' => '#3d6b47',
                             'bg'    => 'rgba(61,107,71,.08)',
                         ],
                         'plowhorse' => [
-                            'label' => '🐎 محراث',
+                            'label' => 'رائجة بهامش ضعيف',
                             'desc'  => 'مبيعات عالية + ربحية منخفضة — ارفع السعر تدريجياً أو قلّل التكلفة',
                             'color' => '#b8872a',
                             'bg'    => 'rgba(184,135,42,.08)',
                         ],
                         'dog' => [
-                            'label' => '🐕 كلاب',
+                            'label' => 'ضعيفة الأداء',
                             'desc'  => 'مبيعات وربحية منخفضة — فكّر بحذفها أو إعادة تصميمها',
                             'color' => '#b91c1c',
                             'bg'    => 'rgba(185,28,28,.08)',
@@ -177,8 +178,8 @@
                 <div class="mt-3 p-3 rounded" style="background: rgba(var(--accent-rgb),.05); border: 1px dashed rgba(var(--accent-rgb),.3);">
                     <strong style="color: var(--accent-dark);">💡 تفسير</strong>
                     <ul class="mb-0 mt-2 small" style="padding-inline-start: 1.25rem;">
-                        <li>الأصناف فوق الوسيطين = نجوم (⭐)</li>
-                        <li>الأصناف تحت الوسيطين = كلاب (🐕)</li>
+                        <li>الأصناف فوق الوسيطين = نجوم</li>
+                        <li>الأصناف تحت الوسيطين = ضعيفة الأداء</li>
                         <li>بين الاثنين = أَحد طرفي المصفوفة</li>
                     </ul>
                 </div>

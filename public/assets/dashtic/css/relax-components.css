@@ -581,6 +581,176 @@ body {
 @media (max-width: 991.98px) { .kb-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 767.98px) { .kb-grid { grid-template-columns: 1fr; } }
 
+/* Ticket grid v3 — auto-fit cards. Each ticket stays put; items inside
+   transition through approved → preparing → ready. Designed for big screens:
+   minmax(340px) gives 4 cols at 1920px, 3 cols at 1440px, 2 at 1024px, 1 at
+   phone. Gap is generous so cards breathe on a wall display. */
+.kb-tickets {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 1rem;
+    align-items: start;
+}
+
+.kb-empty--big {
+    grid-column: 1 / -1;
+    min-height: 220px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: .35rem;
+    padding: 2rem;
+    border: 2px dashed rgba(var(--primary-rgb), .15);
+    border-radius: 16px;
+    color: var(--relax-muted, #78716c);
+    background: rgba(255, 255, 255, .6);
+}
+.kb-empty--big i { font-size: 3rem; color: rgba(var(--primary-rgb), .3); }
+.kb-empty--big span { font-size: 1.1rem; font-weight: 800; }
+.kb-empty--big small { font-size: .85rem; }
+
+/* Compact header — single horizontal row, slim profile so the ticket grid
+   gets the lion's share of vertical space on big screens. The level color
+   tints the left border so chef sees overload at a glance. */
+.kb-header--compact {
+    padding: .65rem .9rem !important;
+    min-height: unset !important;
+    border-inline-start: 4px solid var(--station-color, #1f4733);
+}
+.kb-header--compact.kb-load-amber  { border-inline-start-color: #d97706; }
+.kb-header--compact.kb-load-orange { border-inline-start-color: #ea580c; }
+.kb-header--compact.kb-load-red    { border-inline-start-color: #dc2626; animation: kb-pulse-border 2s infinite; }
+
+@keyframes kb-pulse-border {
+    0%, 100% { box-shadow: inset 4px 0 0 #dc2626; }
+    50%      { box-shadow: inset 4px 0 0 #dc2626, 0 0 0 3px rgba(220, 38, 38, .15); }
+}
+
+.kb-header--compact .kb-icon { font-size: 1.6rem !important; }
+.kb-header--compact .kb-station-name { font-size: 1.05rem !important; line-height: 1.2; }
+.kb-header--compact .kb-meta { font-size: .8rem; gap: .35rem; }
+.kb-meta-active strong { font-size: 1rem; color: var(--station-color, #1f4733); margin-inline-end: 2px; }
+.kb-meta-age { color: #ea580c; font-weight: 800; }
+.kb-meta-sep { opacity: .4; }
+
+/* Sound button is the most critical affordance — it's wider with a label so
+   the chef knows what it does. Off state pulses gently to invite the tap. */
+.kb-sound-btn {
+    width: auto !important;
+    padding: 0 .7rem !important;
+    gap: .35rem;
+}
+.kb-sound-btn.is-off {
+    background: rgba(220, 38, 38, .18) !important;
+    color: #fef2f2 !important;
+    animation: kb-pulse-sound 2.5s infinite;
+}
+.kb-sound-btn.is-on {
+    background: rgba(34, 197, 94, .25) !important;
+    color: #f0fdf4 !important;
+}
+.kb-sound-label { font-size: .78rem; font-weight: 800; }
+@keyframes kb-pulse-sound {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, .55); }
+    50%      { box-shadow: 0 0 0 8px rgba(220, 38, 38, 0); }
+}
+
+/* Ready strip — bottom shelf for finished tickets pending pickup.
+   Less prominent than the active grid but still glanceable from across the
+   kitchen. Horizontal scroll if many. */
+.kb-ready-strip {
+    margin-top: 1.2rem;
+    padding: .75rem .9rem;
+    background: linear-gradient(135deg, rgba(34, 197, 94, .08), rgba(34, 197, 94, .03));
+    border: 1px solid rgba(34, 197, 94, .25);
+    border-radius: 14px;
+}
+.kb-ready-strip > header {
+    display: flex; align-items: center; gap: .5rem;
+    color: #166534; font-weight: 950;
+    margin-bottom: .55rem;
+}
+.kb-ready-strip > header i { font-size: 1.1rem; }
+.kb-ready-strip > header h4 { margin: 0; font-size: 1rem; }
+.kb-ready-count {
+    margin-inline-start: auto;
+    background: #166534; color: #fff;
+    padding: .15rem .55rem; border-radius: 999px;
+    font-size: .85rem;
+}
+.kb-ready-list {
+    display: flex; gap: .6rem;
+    overflow-x: auto;
+    padding-bottom: .25rem;
+    scrollbar-width: thin;
+}
+.kb-ready-card {
+    flex: 0 0 auto;
+    min-width: 220px; max-width: 280px;
+    padding: .55rem .7rem;
+    background: #fff;
+    border: 1px solid rgba(34, 197, 94, .35);
+    border-radius: 10px;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: .5rem .65rem;
+    align-items: center;
+}
+.kb-ready-table {
+    text-align: center;
+    padding: .25rem .5rem;
+    background: rgba(34, 197, 94, .12);
+    border-radius: 8px;
+    grid-row: span 2;
+}
+.kb-ready-table small { display: block; font-size: .65rem; color: #166534; }
+.kb-ready-table strong { display: block; font-size: 1.4rem; color: #166534; line-height: 1; font-weight: 950; }
+.kb-ready-items {
+    display: flex; flex-wrap: wrap; gap: .25rem .5rem;
+    font-size: .82rem; color: #1c1917; font-weight: 700;
+}
+.kb-ready-meta {
+    display: flex; justify-content: space-between;
+    font-size: .72rem; color: #78716c;
+    grid-column: 2;
+}
+.kb-ready-num { font-family: monospace; }
+
+/* Ready-strip escalation. The food is already cooked → every minute on the
+   pass is heat lost. Tighter thresholds (3/8 min) than the active grid: the
+   inner table-card tints amber→red and the age stamp burns to alert from
+   across the kitchen. The outer .kb-urg-* glow + pulse already kick in. */
+.kb-ready-card.kb-urg-amber .kb-ready-table {
+    background: rgba(245, 158, 11, .15);
+}
+.kb-ready-card.kb-urg-amber .kb-ready-table small,
+.kb-ready-card.kb-urg-amber .kb-ready-table strong {
+    color: #92400e;
+}
+.kb-ready-card.kb-urg-amber .kb-ready-age {
+    color: #92400e; font-weight: 950;
+}
+
+.kb-ready-card.kb-urg-red .kb-ready-table {
+    background: rgba(239, 68, 68, .18);
+}
+.kb-ready-card.kb-urg-red .kb-ready-table small,
+.kb-ready-card.kb-urg-red .kb-ready-table strong {
+    color: #991b1b;
+}
+.kb-ready-card.kb-urg-red .kb-ready-age {
+    color: #991b1b; font-weight: 950;
+}
+.kb-ready-card.kb-urg-red .kb-ready-age::before {
+    content: '🔥 ';
+}
+
+@media (max-width: 575.98px) {
+    .kb-tickets { gap: .65rem; }
+    .kb-sound-label { display: none; }
+}
+
 @media (max-width: 991.98px) {
     .kb-load-strip {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1328,6 +1498,312 @@ body {
 .cx-session-card.has-bill-request {
     border-inline-start: 4px solid var(--accent);
     background: linear-gradient(135deg, rgba(var(--accent-rgb), .11), #ffffff 58%);
+}
+
+/* Bill-request escalation. Cashier sees instantly which guest has been
+   waiting longest — green just-arrived, amber 3-8 min, red 8+ min with
+   pulse to catch attention even when the cashier is processing another
+   payment. Same clock as the kitchen ready strip. */
+.cx-session-card.cx-urg-amber {
+    border-inline-start-color: #f59e0b;
+    background: linear-gradient(135deg, rgba(245, 158, 11, .15), #fffbeb 58%);
+}
+.cx-session-card.cx-urg-red {
+    border-inline-start: 4px solid #dc2626;
+    background: linear-gradient(135deg, rgba(239, 68, 68, .16), #fef2f2 58%);
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, .2);
+    animation: cx-pulse-red 1.4s ease-in-out infinite;
+}
+@keyframes cx-pulse-red {
+    0%, 100% { box-shadow: 0 0 0 2px rgba(239, 68, 68, .2); }
+    50%      { box-shadow: 0 0 0 6px rgba(239, 68, 68, .08); }
+}
+
+/* Returning-customer chip on the session card list — small star pill so
+   the cashier sees at a glance which tables are regulars before clicking
+   in. No animation here — just a steady gold marker. */
+.cx-loyalty-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: .68rem;
+    font-weight: 950;
+    color: #92400e;
+    background: linear-gradient(135deg, rgba(245, 158, 11, .25), rgba(217, 119, 6, .15));
+    border: 1px solid rgba(245, 158, 11, .35);
+}
+.cx-loyalty-chip i { font-size: .65rem; color: #d97706; }
+
+/* Big banner inside the right detail panel showing the returning
+   customer's name, phone, visit count, and loyalty points. Cashier sees
+   this the moment they click into a regular's session — no need to
+   remember "is this person a regular?". */
+.cx-loyalty-banner {
+    display: flex;
+    align-items: center;
+    gap: .85rem;
+    margin: .85rem 0;
+    padding: .75rem .9rem;
+    border-radius: 12px;
+    background: linear-gradient(135deg, rgba(245, 158, 11, .14), rgba(255, 251, 235, .9));
+    border: 1px solid rgba(245, 158, 11, .35);
+    border-inline-start: 4px solid #d97706;
+}
+.cx-loyalty-banner--guest {
+    background: linear-gradient(135deg, rgba(31, 71, 51, .08), rgba(255, 255, 255, .9));
+    border-color: rgba(31, 71, 51, .2);
+    border-inline-start-color: rgb(var(--primary-rgb));
+}
+.cx-loyalty-avatar {
+    flex-shrink: 0;
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #d97706, #b45309);
+    color: #fffbeb;
+    font-size: 1.2rem;
+}
+.cx-loyalty-banner--guest .cx-loyalty-avatar {
+    background: linear-gradient(135deg, rgb(var(--primary-rgb)), #122d1e);
+    color: #fff;
+}
+.cx-loyalty-body { flex: 1; min-width: 0; }
+.cx-loyalty-head {
+    display: flex; align-items: center; gap: .5rem;
+    margin-bottom: 4px;
+}
+.cx-loyalty-head strong {
+    font-size: 1.05rem;
+    color: rgb(var(--primary-rgb));
+    font-weight: 950;
+}
+.cx-loyalty-badge {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: #d97706;
+    color: #fffbeb;
+    font-size: .7rem;
+    font-weight: 950;
+}
+.cx-loyalty-badge--guest {
+    background: rgba(31, 71, 51, .12);
+    color: rgb(var(--primary-rgb));
+    font-family: monospace;
+    font-weight: 800;
+}
+.cx-loyalty-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .65rem;
+    font-size: .82rem;
+    color: #78716c;
+    font-weight: 700;
+}
+.cx-loyalty-meta span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.cx-loyalty-meta i { color: #d97706; }
+.cx-loyalty-banner--guest .cx-loyalty-meta i { color: rgb(var(--primary-rgb)); }
+
+/* "Create account" CTA on the guest variant. Big enough to be tappable but
+   subordinate to the payment buttons below — the cashier should handle the
+   bill first, then sign up the diner while they're punching in their card. */
+.cx-loyalty-create-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    padding: .5rem .85rem;
+    border-radius: 8px;
+    border: 0;
+    background: linear-gradient(135deg, rgb(var(--primary-rgb)), #122d1e);
+    color: #fff;
+    font-weight: 900;
+    font-size: .85rem;
+    cursor: pointer;
+    transition: all .15s ease;
+    box-shadow: 0 4px 12px rgba(31, 71, 51, .25);
+}
+.cx-loyalty-create-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(31, 71, 51, .35);
+}
+.cx-loyalty-create-btn:disabled {
+    opacity: .65;
+    cursor: wait;
+    transform: none;
+}
+
+/* PIN reveal — shown for one render after the cashier creates a new
+   customer. Sticky, distinctive, and the PIN itself is in a monospaced
+   pill so the cashier can read it out loud or type it into a printer. */
+.cx-pin-alert {
+    display: flex;
+    align-items: center;
+    gap: .85rem;
+    margin: .85rem 0;
+    padding: .85rem 1rem;
+    border-radius: 12px;
+    background: linear-gradient(135deg, rgba(34, 197, 94, .14), rgba(240, 253, 244, .92));
+    border: 1px solid rgba(34, 197, 94, .35);
+    border-inline-start: 4px solid #166534;
+    box-shadow: 0 4px 14px rgba(22, 101, 52, .12);
+}
+.cx-pin-alert-icon {
+    flex-shrink: 0;
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #16a34a, #166534);
+    color: #f0fdf4;
+    font-size: 1.2rem;
+}
+.cx-pin-alert-body { flex: 1; min-width: 0; }
+.cx-pin-alert-body strong {
+    display: block;
+    font-size: 1rem;
+    color: #166534;
+    margin-bottom: 4px;
+    font-weight: 950;
+}
+.cx-pin-alert-meta {
+    display: flex; flex-wrap: wrap; gap: .65rem;
+    margin-bottom: 4px;
+    font-size: .85rem;
+    color: #166534;
+    font-weight: 800;
+}
+.cx-pin-alert-meta i { color: #16a34a; }
+.cx-pin-code code {
+    display: inline-block;
+    margin-inline-start: 4px;
+    padding: 2px 10px;
+    background: #166534;
+    color: #f0fdf4;
+    border-radius: 6px;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-weight: 950;
+    font-size: 1rem;
+    letter-spacing: 2px;
+    user-select: all;
+}
+.cx-pin-alert-body small {
+    display: block;
+    color: #166534;
+    opacity: .75;
+    font-size: .75rem;
+    line-height: 1.4;
+}
+.cx-pin-alert-close {
+    flex-shrink: 0;
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    border: 0;
+    background: transparent;
+    color: #166534;
+    cursor: pointer;
+    transition: background .12s ease;
+}
+.cx-pin-alert-close:hover { background: rgba(22, 101, 52, .12); }
+
+.cx-status-bill--amber {
+    background: rgba(245, 158, 11, .2) !important;
+    color: #92400e !important;
+}
+.cx-status-bill--red {
+    background: rgba(239, 68, 68, .22) !important;
+    color: #991b1b !important;
+    font-weight: 950 !important;
+}
+
+/* Top-of-page alarm strip — only renders when bill requests exist. Goes
+   above the KPI rail so it's the first thing in the cashier's eyeline. */
+.cx-alarm-strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .85rem;
+    margin-bottom: .85rem;
+    padding: .55rem .9rem;
+    border-radius: 10px;
+    background: linear-gradient(135deg, rgba(184, 135, 42, .14), #fffbeb 60%);
+    border: 1px solid rgba(184, 135, 42, .28);
+    border-inline-start: 4px solid var(--accent);
+}
+.cx-alarm-strip.is-amber {
+    background: linear-gradient(135deg, rgba(245, 158, 11, .15), #fffbeb 60%);
+    border-color: rgba(245, 158, 11, .35);
+    border-inline-start-color: #f59e0b;
+}
+.cx-alarm-strip.is-red {
+    background: linear-gradient(135deg, rgba(239, 68, 68, .15), #fef2f2 60%);
+    border-color: rgba(239, 68, 68, .4);
+    border-inline-start-color: #dc2626;
+    animation: cx-pulse-red 1.6s ease-in-out infinite;
+}
+.cx-alarm-content {
+    display: inline-flex;
+    align-items: center;
+    gap: .55rem;
+    color: #78350f;
+    font-weight: 800;
+    font-size: .95rem;
+}
+.cx-alarm-content i { font-size: 1.2rem; color: var(--accent); }
+.cx-alarm-strip.is-red .cx-alarm-content { color: #991b1b; }
+.cx-alarm-strip.is-red .cx-alarm-content i { color: #dc2626; }
+.cx-alarm-chip {
+    display: inline-block;
+    padding: .15rem .55rem;
+    border-radius: 999px;
+    font-weight: 950;
+    font-size: .78rem;
+}
+.cx-alarm-chip--amber { background: rgba(245, 158, 11, .25); color: #92400e; }
+.cx-alarm-chip--red   { background: rgba(239, 68, 68, .25); color: #991b1b; }
+
+/* Sound rail — when no bill requests, just shows the toggle in the corner
+   so the cashier can pre-arm the audio at start of shift. */
+.cx-sound-rail {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: .6rem;
+}
+
+.cx-sound-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    padding: .35rem .8rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    font-weight: 800;
+    font-size: .82rem;
+    cursor: pointer;
+    transition: all .15s ease;
+    background: rgba(220, 38, 38, .14);
+    color: #b91c1c;
+    border-color: rgba(220, 38, 38, .35);
+}
+.cx-sound-btn.is-off { animation: cx-sound-pulse 2.5s infinite; }
+.cx-sound-btn.is-on {
+    background: rgba(34, 197, 94, .14);
+    color: #166534;
+    border-color: rgba(34, 197, 94, .35);
+    animation: none;
+}
+@keyframes cx-sound-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, .55); }
+    50%      { box-shadow: 0 0 0 7px rgba(220, 38, 38, 0); }
 }
 
 .cx-session-head {
@@ -6020,6 +6496,51 @@ body {
     color: #fff;
 }
 
+/* Compact hero — single horizontal row: title + production chip + filter
+   tabs + show-lanes toggle. Fits the action-feed-as-default layout where
+   the four-column board is hidden until the waiter explicitly asks for it. */
+.waiter-hero--compact {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: .85rem;
+    padding: .75rem 1rem;
+}
+
+.waiter-hero--compact .waiter-hero-copy {
+    flex-direction: row;
+    align-items: center;
+    gap: .65rem;
+    flex-wrap: wrap;
+}
+
+.waiter-hero--compact h2 {
+    margin: 0;
+    font-size: clamp(1.05rem, 1.3vw, 1.3rem);
+}
+
+.waiter-production-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    padding: .3rem .65rem;
+    border-radius: 999px;
+    background: rgba(184, 95, 26, .12);
+    color: #8a4a16;
+    border: 1px solid rgba(184, 95, 26, .22);
+    font-size: .78rem;
+    font-weight: 800;
+}
+
+@media (max-width: 768px) {
+    .waiter-hero--compact {
+        grid-template-columns: 1fr;
+    }
+    .waiter-hero--compact .waiter-focus-tabs {
+        overflow-x: auto;
+        max-width: 100%;
+    }
+}
+
 .waiter-metrics {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -6148,6 +6669,63 @@ body {
 .waiter-peak-task--pending { box-shadow: inset -3px 0 0 var(--accent); }
 .waiter-peak-task--ready { box-shadow: inset -3px 0 0 rgb(var(--success-rgb)); }
 .waiter-peak-task--billing { box-shadow: inset -3px 0 0 #9b6414; }
+
+/* Ready task that's been on the pass 3-8 min — amber nudge so the waiter
+   sees the food is starting to wait but the kitchen hasn't escalated yet. */
+.waiter-peak-task.is-warm {
+    border-color: rgba(245, 158, 11, .45);
+    box-shadow: inset -3px 0 0 #f59e0b;
+    background: #fffbeb;
+}
+
+/* Cold ready task (8+ min) — full red alarm. Pulses to catch the waiter's
+   eye even when they're across the room. The task title also says "يبرد!"
+   from the controller side, so screen reader + sighted users get the same. */
+.waiter-peak-task.waiter-peak-task--ready.is-hot {
+    border-color: rgba(239, 68, 68, .65);
+    background: #fef2f2;
+    box-shadow: inset -3px 0 0 #dc2626, 0 0 0 2px rgba(239, 68, 68, .22);
+    animation: waiter-pulse-hot 1.4s ease-in-out infinite;
+}
+@keyframes waiter-pulse-hot {
+    0%, 100% { box-shadow: inset -3px 0 0 #dc2626, 0 0 0 2px rgba(239, 68, 68, .22); }
+    50%      { box-shadow: inset -3px 0 0 #dc2626, 0 0 0 5px rgba(239, 68, 68, .12); }
+}
+
+.waiter-age.is-warm { color: #92400e; font-weight: 950; background: rgba(245, 158, 11, .12); }
+.waiter-age.is-warm::before { content: '⏱ '; }
+
+/* Sound toggle in the hero. Same affordance as the kitchen screen so a
+   waiter who works the kitchen pass sees a familiar control. Pulses red
+   when off to invite the tap that unlocks Web Audio. */
+.waiter-sound-btn {
+    margin-inline-start: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    padding: .35rem .7rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    font-weight: 800;
+    font-size: .8rem;
+    cursor: pointer;
+    transition: all .15s ease;
+}
+.waiter-sound-btn.is-off {
+    background: rgba(220, 38, 38, .14);
+    color: #b91c1c;
+    border-color: rgba(220, 38, 38, .35);
+    animation: waiter-sound-pulse 2.5s infinite;
+}
+.waiter-sound-btn.is-on {
+    background: rgba(34, 197, 94, .14);
+    color: #166534;
+    border-color: rgba(34, 197, 94, .35);
+}
+@keyframes waiter-sound-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, .55); }
+    50%      { box-shadow: 0 0 0 8px rgba(220, 38, 38, 0); }
+}
 
 .waiter-peak-task-main {
     min-width: 0;

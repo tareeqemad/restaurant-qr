@@ -4,7 +4,7 @@
 @section('content')
 <x-admin.breadcrumb title="المبيعات حسب المنصة" icon="bi-truck"
     subtitle="توزيع الإيرادات على قنوات البيع (طاولة، Talabat، Careem، ...)"
-    :crumbs="[['label' => 'التقارير']]" />
+    :crumbs="[['label' => 'التقارير', 'url' => route('admin.reports.index')]]" />
 
 <div class="data-panel-filters mb-3" style="background: white; border-radius: 14px; padding: 1rem; border: 1px solid rgba(var(--primary-rgb),.1);">
     <form class="row g-2 align-items-end">
@@ -16,13 +16,16 @@
             <label class="form-label small text-muted fw-bold">إلى</label>
             <input type="date" name="to" value="{{ $to }}" class="form-control">
         </div>
-        <div class="col-md-3"><button class="btn btn-primary w-100"><i class="bi bi-funnel"></i> تحديث</button></div>
-        <div class="col-md-3">
+        <div class="col-md-6">
+            <label class="form-label small text-muted fw-bold">اختصارات</label>
             <div class="btn-group w-100">
                 <a href="?from={{ now()->startOfMonth()->toDateString() }}&to={{ now()->toDateString() }}" class="btn btn-light btn-sm">الشهر</a>
                 <a href="?from={{ now()->subDays(7)->toDateString() }}&to={{ now()->toDateString() }}"  class="btn btn-light btn-sm">7 أيام</a>
                 <a href="?from={{ now()->toDateString() }}&to={{ now()->toDateString() }}"             class="btn btn-light btn-sm">اليوم</a>
             </div>
+        </div>
+        <div class="col-12 text-center mt-2">
+            <button class="btn btn-primary px-5"><i class="bi bi-search"></i> استعلام</button>
         </div>
     </form>
 </div>

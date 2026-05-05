@@ -25,7 +25,10 @@ new class extends Component
     public string $stationName;
     public string $stationColor = '#1f4733';
 
-    public bool $soundEnabled = true;
+    /** Sound starts off because browsers block autoplay until the user
+     *  interacts with the page. Chef hits "تفعيل الصوت" once at shift start
+     *  and the AudioContext gets unlocked. */
+    public bool $soundEnabled = false;
 
     #[Url(as: 'sort', except: 'time')]
     public string $sortBy = 'time';     // 'time' | 'urgency' | 'table'
@@ -53,7 +56,6 @@ new class extends Component
             'kitchen' => '🍳',
             'bar'     => '🍹',
             'dessert' => '🍰',
-            'coffee'  => '☕',
             'grill'   => '🔥',
             default   => '🍽️',
         };
@@ -61,12 +63,13 @@ new class extends Component
 
     /**
      * Urgency thresholds depend on station type:
-     *  - Drinks (bar/coffee) prep in 2-5 min → tighter thresholds
+     *  - Drinks (bar) prep in 2-5 min → tighter thresholds (coffee is made
+     *    at the bar in this restaurant, so it falls under the same bucket)
      *  - Food prep is 5-15 min → looser thresholds
      */
     protected function ageThresholds(): array
     {
-        return in_array($this->stationCode, ['bar', 'coffee'], true)
+        return $this->stationCode === 'bar'
             ? ['amber' => 2, 'orange' => 5, 'red' => 10]   // drinks
             : ['amber' => 3, 'orange' => 8, 'red' => 15];  // food
     }
@@ -105,7 +108,18 @@ new class extends Component
             $bucket = $statuses->contains(OrderItemStatus::Approved->value) ? 'waiting'
                     : ($statuses->contains(OrderItemStatus::Preparing->value) ? 'cooking' : 'ready');
 
-            $ageMin = (int) $first->approved_at?->diffInMinutes(now());
+            // For ready tickets, age is "how long has this been sitting on the
+            // pass uncollected" — use ready_at, not approved_at. Otherwise the
+            // ready strip stays green forever and the kitchen never sees that
+            // food is going cold while the waiter is slow.
+            if ($bucket === 'ready') {
+                $oldestReadyAt = $items->pluck('ready_at')->filter()->min();
+                $ageMin = $oldestReadyAt ? (int) $oldestReadyAt->diffInMinutes(now())
+                                         : (int) $first->approved_at?->diffInMinutes(now());
+            } else {
+                $ageMin = (int) $first->approved_at?->diffInMinutes(now());
+            }
+
             $urgency = $this->urgency($ageMin, $bucket);
 
             $card = [
@@ -276,7 +290,15 @@ new class extends Component
 
     protected function urgency(int $ageMin, string $bucket): string
     {
-        if ($bucket === 'ready') return 'green';
+        // Ready tickets escalate on a tighter clock: the food is already cooked
+        // — every minute uncollected is heat lost. 3/8 mins matches how fast
+        // hot food actually cools on a pass shelf.
+        if ($bucket === 'ready') {
+            if ($ageMin >= 8) return 'red';
+            if ($ageMin >= 3) return 'amber';
+            return 'green';
+        }
+
         $t = $this->ageThresholds();
         if ($ageMin >= $t['red'])    return 'red';
         if ($ageMin >= $t['orange']) return 'orange';
@@ -291,18 +313,34 @@ new class extends Component
 }
 ?>
 
-{{-- Livewire polling mode (works on shared hosting, no websocket needed).
-     `visible` modifier pauses polling when the tab is backgrounded, so it
-     doesn't hit the server while the chef's screen is minimised. 5s interval
-     matches the urgency — a dish that just landed must appear quickly. --}}
+{{-- Kitchen/Bar Display v3 — ticket-grid layout.
+     Each order ticket stays put; items inside transition through approved →
+     preparing → ready. When the whole ticket is ready it slides into the
+     bottom strip so the chef knows what to call out. Big-screen-friendly:
+     compact header so 90% of pixels are tickets.
+
+     wire:poll.visible.8s — broadcasts (echo-private) handle urgent updates,
+     polling is the fallback. Pauses when tab is backgrounded. --}}
 <div class="kb-wrap"
-     {{-- 8s instead of 5s: broadcast events (echo-private) handle truly
-          urgent updates; polling is the fallback. 5s was wasteful. --}}
      wire:poll.visible.8s="refreshFromBroadcast"
-     style="--station-color: {{ $stationColor }};">
-    @php $load = $this->loadStats; @endphp
-    {{-- Header --}}
-    <div class="kb-header">
+     style="--station-color: {{ $stationColor }};"
+     x-data="kitchenSound()"
+     data-active-count="{{ $this->totalActive }}"
+     data-red-count="{{ $this->loadStats['red_cards'] ?? 0 }}"
+     x-init="init()"
+     wire:key="kb-{{ $stationCode }}-{{ $this->totalActive }}-{{ $this->loadStats['red_cards'] ?? 0 }}">
+    @php
+        $load = $this->loadStats;
+        $tickets = $this->ordersByColumn;
+        $active = $tickets['waiting']->merge($tickets['cooking']);
+        $ready = $tickets['ready'];
+    @endphp
+
+    {{-- Compact header — single row.
+         Sound toggle is the most important affordance: chef taps it once at
+         start of shift to unlock the AudioContext. After that, every new
+         order chimes and every late item beeps. --}}
+    <div class="kb-header kb-header--compact kb-load-{{ $load['level'] }}">
         <div class="kb-header-title">
             <span class="kb-icon">{{ $this->stationEmoji() }}</span>
             <div>
@@ -312,10 +350,14 @@ new class extends Component
                         const tick = () => { $el.textContent = new Date().toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit', second:'2-digit'}); };
                         tick(); setInterval(tick, 1000);
                     ">00:00:00</span>
-                    <span>·</span>
-                    <span>{{ $this->totalActive }} طلب نشط</span>
+                    <span class="kb-meta-sep">·</span>
+                    <span class="kb-meta-active"><strong>{{ $load['active_items'] }}</strong> صنف نشط</span>
+                    @if($load['oldest_age'] > 0)
+                        <span class="kb-meta-sep">·</span>
+                        <span class="kb-meta-age">⏱ {{ $load['oldest_age'] }}د</span>
+                    @endif
                     @if($filterTable)
-                        <span>·</span>
+                        <span class="kb-meta-sep">·</span>
                         <span class="kb-filter-tag">
                             <i class="bi bi-filter"></i>
                             طاولة {{ $filterTable }}
@@ -325,9 +367,9 @@ new class extends Component
                 </div>
             </div>
         </div>
+
         <div class="kb-header-tools">
             <div class="kb-sort-group">
-                <span class="kb-sort-label">ترتيب:</span>
                 <button wire:click="setSort('time')"    type="button" class="kb-sort-btn {{ $sortBy === 'time'    ? 'is-active' : '' }}" title="الأقدم أولاً">
                     <i class="bi bi-clock"></i>
                 </button>
@@ -338,39 +380,19 @@ new class extends Component
                     <i class="bi bi-grid-3x3-gap-fill"></i>
                 </button>
             </div>
-            <button wire:click="toggleSound" type="button" class="kb-tool {{ $soundEnabled ? 'is-on' : '' }}" title="التنبيه الصوتي">
-                <i class="bi bi-{{ $soundEnabled ? 'volume-up-fill' : 'volume-mute-fill' }}"></i>
+            <button @click="toggleSound()" type="button"
+                    class="kb-tool kb-sound-btn"
+                    :class="enabled ? 'is-on' : 'is-off'"
+                    title="التنبيه الصوتي">
+                <i class="bi" :class="enabled ? 'bi-volume-up-fill' : 'bi-volume-mute-fill'"></i>
+                <span class="kb-sound-label" x-text="enabled ? 'الصوت يعمل' : 'تفعيل الصوت'"></span>
             </button>
             <span class="kb-live-dot" title="متصل"></span>
         </div>
     </div>
 
-    <div class="kb-load-strip kb-load-{{ $load['level'] }}">
-        <div class="kb-load-main">
-            <span>ضغط المحطة</span>
-            <strong>{{ $load['active_items'] }}</strong>
-            <small>صنف نشط</small>
-        </div>
-        <div class="kb-load-pill">
-            <span>بانتظار</span>
-            <strong>{{ $load['waiting_items'] }}</strong>
-        </div>
-        <div class="kb-load-pill">
-            <span>قيد التحضير</span>
-            <strong>{{ $load['cooking_items'] }}</strong>
-        </div>
-        <div class="kb-load-pill">
-            <span>جاهز</span>
-            <strong>{{ $load['ready_items'] }}</strong>
-        </div>
-        <div class="kb-load-pill kb-load-pill--age">
-            <span>أقدم تأخير</span>
-            <strong>{{ $load['oldest_age'] }} د</strong>
-        </div>
-    </div>
-
-    {{-- Active tables quick filter --}}
-    @if(count($this->activeTables) > 0)
+    {{-- Active tables quick filter — only show when many tables, otherwise it's noise. --}}
+    @if(count($this->activeTables) > 1)
         <div class="kb-table-filter">
             <span class="kb-filter-label"><i class="bi bi-grid-3x3-gap-fill"></i> طاولات نشطة:</span>
             @foreach($this->activeTables as $tableNum)
@@ -382,53 +404,140 @@ new class extends Component
         </div>
     @endif
 
-    @php $cols = $this->ordersByColumn; @endphp
-
-    {{-- 3-column board --}}
-    <div class="kb-grid">
-        <section class="kb-col kb-col-waiting">
-            <header>
-                <span class="kb-col-dot"></span>
-                <h3>بانتظار البدء</h3>
-                <span class="kb-col-count">{{ $cols['waiting']->count() }}</span>
-            </header>
-            <div class="kb-col-body">
-                @forelse($cols['waiting'] as $card)
-                    @include('components.admin._kitchen-card', $card + ['column' => 'waiting'])
-                @empty
-                    <div class="kb-empty"><i class="bi bi-hourglass"></i>لا طلبات جديدة</div>
-                @endforelse
+    {{-- Main ticket grid — auto-fit so we get 1/2/3/4 columns based on screen
+         width. Tickets stay put; only their internal items change state.
+         Sorted by urgency-then-age so red ones bubble up. --}}
+    <div class="kb-tickets">
+        @forelse($active as $card)
+            @include('components.admin._kitchen-card', $card + ['column' => $card['items']->contains(fn($i) => $i->status === 'preparing') ? 'cooking' : 'waiting'])
+        @empty
+            <div class="kb-empty kb-empty--big">
+                <i class="bi bi-cup-hot"></i>
+                <span>لا طلبات نشطة الآن</span>
+                <small>التذكرة الجديدة ستظهر هنا تلقائياً مع صوت تنبيه</small>
             </div>
-        </section>
-
-        <section class="kb-col kb-col-cooking">
-            <header>
-                <span class="kb-col-dot"></span>
-                <h3>قيد التحضير</h3>
-                <span class="kb-col-count">{{ $cols['cooking']->count() }}</span>
-            </header>
-            <div class="kb-col-body">
-                @forelse($cols['cooking'] as $card)
-                    @include('components.admin._kitchen-card', $card + ['column' => 'cooking'])
-                @empty
-                    <div class="kb-empty"><i class="bi bi-fire"></i>لا شي في الطبخ</div>
-                @endforelse
-            </div>
-        </section>
-
-        <section class="kb-col kb-col-ready">
-            <header>
-                <span class="kb-col-dot"></span>
-                <h3>جاهز للتسليم</h3>
-                <span class="kb-col-count">{{ $cols['ready']->count() }}</span>
-            </header>
-            <div class="kb-col-body">
-                @forelse($cols['ready'] as $card)
-                    @include('components.admin._kitchen-card', $card + ['column' => 'ready'])
-                @empty
-                    <div class="kb-empty"><i class="bi bi-check-circle"></i>لا شي جاهز</div>
-                @endforelse
-            </div>
-        </section>
+        @endforelse
     </div>
+
+    {{-- Ready strip — pickup queue. Smaller, less prominent. Chef knows
+         "these are done, call the waiter to pick up". --}}
+    @if($ready->count() > 0)
+        <aside class="kb-ready-strip">
+            <header>
+                <i class="bi bi-bell-fill"></i>
+                <h4>جاهز للتسليم</h4>
+                <span class="kb-ready-count">{{ $ready->count() }}</span>
+            </header>
+            <div class="kb-ready-list">
+                @foreach($ready as $card)
+                    <div class="kb-ready-card kb-urg-{{ $card['urgency'] }}">
+                        <div class="kb-ready-table">
+                            @if($card['order']->table)
+                                <small>طاولة</small>
+                                <strong>{{ $card['order']->table->number }}</strong>
+                            @else
+                                <small>{{ $card['order']->sourceLabel() }}</small>
+                                <strong>{{ $card['order']->order_type === 'delivery' ? 'DLV' : 'TOGO' }}</strong>
+                            @endif
+                        </div>
+                        <div class="kb-ready-items">
+                            @foreach($card['items'] as $it)
+                                <span>×{{ (int) $it->quantity }} {{ $it->name_snapshot }}</span>
+                            @endforeach
+                        </div>
+                        <div class="kb-ready-meta">
+                            <span class="kb-ready-num">#{{ $card['order']->number }}</span>
+                            <span class="kb-ready-age">{{ $card['age_min'] }}د</span>
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        </aside>
+    @endif
+
+    <script>
+    /* Kitchen sound system.
+     * Chef taps "تفعيل الصوت" → AudioContext unlocks (browser autoplay policy).
+     * After that:
+     *   - new order arrives (active count goes up)  → bright two-tone chime
+     *   - item turns red (urgency escalates)        → low warning beep
+     * No audio files — Web Audio API synthesizes tones, so no assets needed.
+     *
+     * AudioContext + previous counts live on `window` (singleton) so they
+     * survive Livewire morphs. Without this, ctx would get recreated on
+     * every server roundtrip and the chef would have to re-tap sound after
+     * every order. The ENABLED state and prev counts also live on window
+     * so they don't reset across renders. Persists across page navigation
+     * within the same tab — chef enables once at shift start. */
+    function kitchenSound() {
+        return {
+            // Reactive Alpine prop (so :class re-renders); window is the
+            // cross-component source of truth that survives morphs.
+            enabled: window.__kbSoundEnabled === true,
+            init() {
+                if (typeof window.__kbPrevActive !== 'number') {
+                    window.__kbPrevActive = this.readActive();
+                    window.__kbPrevRed    = this.readRed();
+                }
+                document.addEventListener('livewire:morph.updated', () => {
+                    this.enabled = window.__kbSoundEnabled === true;
+                    this.checkChanges();
+                });
+            },
+            readActive() { return parseInt(this.$root.dataset.activeCount || '0', 10); },
+            readRed()    { return parseInt(this.$root.dataset.redCount    || '0', 10); },
+            toggleSound() {
+                this.enabled = !this.enabled;
+                window.__kbSoundEnabled = this.enabled;
+                if (this.enabled) this.unlockAudio();
+            },
+            unlockAudio() {
+                try {
+                    if (!window.__kbAudioCtx) {
+                        const Ctx = window.AudioContext || window.webkitAudioContext;
+                        window.__kbAudioCtx = new Ctx();
+                    }
+                    const ctx = window.__kbAudioCtx;
+                    if (ctx.state === 'suspended') ctx.resume();
+                    // Play a tiny silent buffer to fully unlock on iOS Safari.
+                    const buf = ctx.createBuffer(1, 1, 22050);
+                    const src = ctx.createBufferSource();
+                    src.buffer = buf; src.connect(ctx.destination); src.start(0);
+                } catch (e) { /* AudioContext unavailable — fail quietly */ }
+            },
+            checkChanges() {
+                const active = this.readActive();
+                const red = this.readRed();
+                if (this.enabled) {
+                    if (active > window.__kbPrevActive) this.playNewOrder();
+                    else if (red > window.__kbPrevRed)  this.playWarning();
+                }
+                window.__kbPrevActive = active;
+                window.__kbPrevRed = red;
+            },
+            beep(frequency, duration, type = 'sine', volume = 0.25) {
+                const ctx = window.__kbAudioCtx;
+                if (!ctx) return;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(frequency, ctx.currentTime);
+                gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(volume, ctx.currentTime + 0.01);
+                gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+                osc.connect(gain).connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + duration);
+            },
+            playNewOrder() {
+                this.beep(880,  0.18, 'sine', 0.35);
+                setTimeout(() => this.beep(1175, 0.22, 'sine', 0.35), 180);
+            },
+            playWarning() {
+                this.beep(440, 0.18, 'square', 0.22);
+                setTimeout(() => this.beep(440, 0.18, 'square', 0.22), 280);
+            },
+        };
+    }
+    </script>
 </div>

@@ -4,7 +4,7 @@
 @section('content')
 <x-admin.breadcrumb title="تقرير الأرباح والخسائر (P&L)" icon="bi-graph-up-arrow"
     subtitle="الإيرادات مقابل التكاليف = الربح الحقيقي"
-    :crumbs="[['label' = />
+    :crumbs="[['label' => 'التقارير', 'url' => route('admin.reports.index')]]" />
 
 @php
     // Surface the per-branch cost toggle ONLY when in branch context.
@@ -24,17 +24,18 @@
             <label class="form-label small text-muted fw-bold">إلى تاريخ</label>
             <input type="date" name="to" value="{{ $to }}" class="form-control">
         </div>
-        <div class="col-md-3">
-            <button class="btn btn-primary w-100">
-                <i class="bi bi-funnel"></i> تحديث
-            </button>
-        </div>
-        <div class="col-md-3">
+        <div class="col-md-6">
+            <label class="form-label small text-muted fw-bold">اختصارات</label>
             <div class="btn-group w-100">
                 <a href="?from={{ now()->startOfMonth()->toDateString() }}&to={{ now()->toDateString() }}{{ $perBranchCost ? '&per_branch_cost=1' : '' }}" class="btn btn-light btn-sm">الشهر</a>
                 <a href="?from={{ now()->subDays(6)->toDateString() }}&to={{ now()->toDateString() }}{{ $perBranchCost ? '&per_branch_cost=1' : '' }}"    class="btn btn-light btn-sm">7 أيام</a>
                 <a href="?from={{ now()->toDateString() }}&to={{ now()->toDateString() }}{{ $perBranchCost ? '&per_branch_cost=1' : '' }}"              class="btn btn-light btn-sm">اليوم</a>
             </div>
+        </div>
+        <div class="col-12 text-center mt-2">
+            <button class="btn btn-primary px-5">
+                <i class="bi bi-search"></i> استعلام
+            </button>
         </div>
 
         @if($branchId)

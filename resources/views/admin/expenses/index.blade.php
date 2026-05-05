@@ -42,6 +42,11 @@
 
 <x-admin.data-panel title="سجل المصروفات" :count="$expenses->total()" icon="bi-cash-coin">
     <x-slot:actions>
+        @can('viewAny', \App\Models\Lookup::class)
+            <a href="{{ route('admin.lookups.index', ['group' => 'expense_categories']) }}" class="btn btn-light">
+                <i class="bi bi-tags"></i> تصنيفات المصروفات
+            </a>
+        @endcan
         @can('create', \App\Models\Expense::class)
             <a href="{{ route('admin.expenses.create') }}" class="btn btn-primary">
                 <i class="bi bi-plus-lg"></i> مصروف جديد
@@ -82,9 +87,18 @@
                     <option value="rejected"         @selected(request('status')==='rejected')>مرفوض</option>
                 </select>
             </div>
-            <div class="col-md-1">
-                <button class="btn btn-primary w-100" title="تطبيق">
-                    <i class="bi bi-funnel"></i>
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-1">طريقة الدفع</label>
+                <select name="payment_method" class="form-select">
+                    <option value="">الكل</option>
+                    @foreach($paymentMethods as $key => $label)
+                        <option value="{{ $key }}" @selected(request('payment_method') === $key)>{{ $label }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="col-12 text-center mt-2">
+                <button class="btn btn-primary px-5" title="استعلام">
+                    <i class="bi bi-funnel"></i> استعلام
                 </button>
             </div>
             @if(request()->hasAny(['search','from','to','category_id','status','payment_method']))
@@ -96,6 +110,36 @@
             @endif
         </form>
     </x-slot:filters>
+
+    <div class="exp-filter-summary mb-3">
+        <div>
+            <span class="exp-filter-summary__label">نتائج الاستعلام</span>
+            <strong>{{ number_format($filteredStats['count']) }}</strong>
+        </div>
+        <div>
+            <span class="exp-filter-summary__label">إجمالي النتائج</span>
+            <strong class="text-primary">{{ $money($filteredStats['total']) }}</strong>
+        </div>
+        <div>
+            <span class="exp-filter-summary__label">بانتظار الاعتماد</span>
+            <strong class="text-warning">{{ number_format($filteredStats['pending']) }}</strong>
+        </div>
+        <div>
+            <span class="exp-filter-summary__label">معتمدة</span>
+            <strong class="text-success">{{ number_format($filteredStats['approved']) }}</strong>
+        </div>
+    </div>
+
+    @if($categories->isEmpty())
+        <div class="alert alert-warning d-flex align-items-start gap-2">
+            <i class="bi bi-exclamation-triangle-fill fs-18"></i>
+            <div>
+                لا توجد تصنيفات مصروفات مفعّلة. أضف تصنيفاً من
+                <a href="{{ route('admin.lookups.index', ['group' => 'expense_categories']) }}" class="alert-link">إدارة الثوابت</a>
+                حتى يستطيع الفريق تسجيل المصروفات بشكل مرتب.
+            </div>
+        </div>
+    @endif
 
     <div class="table-responsive">
         <table class="table align-middle exp-table">
@@ -304,6 +348,31 @@
     .exp-cat-chip__count {
         background: #f3f4f6; color: #6b7280; padding: 1px 7px;
         border-radius: 99px; font-size: .7rem; font-weight: 700;
+    }
+    .exp-filter-summary {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+    }
+    .exp-filter-summary > div {
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        background: #fff;
+        padding: 10px 12px;
+        min-width: 0;
+    }
+    .exp-filter-summary__label {
+        display: block;
+        color: #6b7280;
+        font-size: .76rem;
+        margin-bottom: 3px;
+    }
+    .exp-filter-summary strong {
+        font-size: .98rem;
+        font-family: ui-monospace, monospace;
+    }
+    @media (max-width: 767.98px) {
+        .exp-filter-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
 
     /* Table row tints by status */

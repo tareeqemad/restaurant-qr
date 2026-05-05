@@ -17,7 +17,8 @@
 <x-admin.breadcrumb
     title="مقارنة الفروع"
     icon="bi-arrows-collapse"
-    subtitle="نظرة جنباً إلى جنب على KPIs لكل فرع — الأخضر هو الأفضل، الأحمر يحتاج انتباه." />
+    subtitle="نظرة جنباً إلى جنب على KPIs لكل فرع — الأخضر هو الأفضل، الأحمر يحتاج انتباه."
+    :crumbs="[['label' => 'التقارير', 'url' => route('admin.reports.index')]]" />
 
 <x-admin.data-panel title="مصفوفة الـ KPIs" icon="bi-grid-3x3-gap-fill" :count="$rows->count()">
     <x-slot:actions>
@@ -39,12 +40,12 @@
                 <label class="form-label fs-12 mb-1">إلى</label>
                 <input type="date" name="to" value="{{ $to }}" class="form-control form-control-sm">
             </div>
-            <div class="col-md-2">
-                <button class="btn btn-primary btn-sm w-100"><i class="bi bi-search"></i> طبّق</button>
-            </div>
-            <div class="col-md-4 text-md-end">
+            <div class="col-md-6 text-md-end">
                 <span class="badge bg-success-transparent text-success">أخضر = الأفضل</span>
                 <span class="badge bg-danger-transparent text-danger">أحمر = الأسوأ</span>
+            </div>
+            <div class="col-12 text-center mt-2">
+                <button class="btn btn-primary btn-sm px-5"><i class="bi bi-search"></i> استعلام</button>
             </div>
         </form>
     </x-slot:filters>

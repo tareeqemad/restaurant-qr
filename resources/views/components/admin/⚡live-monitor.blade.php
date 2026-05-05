@@ -287,3 +287,4 @@ new class extends Component
 </div>
 
 {{-- Alpine for the live clock; bundled by @livewireScripts in v3+. --}}
+

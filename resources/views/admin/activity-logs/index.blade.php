@@ -18,7 +18,9 @@
                 <input name="event" value="{{ request('event') }}" class="form-control" placeholder="🔍 نوع الحدث (مثلاً: order.approved)">
             </div>
             <div class="col-md-3"><input type="date" name="date" value="{{ request('date') }}" class="form-control"></div>
-            <div class="col-md-3"><button class="btn btn-primary w-100"><i class="bi bi-funnel"></i> تطبيق</button></div>
+            <div class="col-12 text-center mt-2">
+                <button class="btn btn-primary px-5"><i class="bi bi-funnel"></i> استعلام</button>
+            </div>
         </form>
     </x-slot:filters>
 

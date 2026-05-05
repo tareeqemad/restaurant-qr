@@ -19,6 +19,8 @@ Route::middleware('table.session')->group(function () {
     Route::post('/cart/submit', [Customer\CartController::class, 'submit'])->name('customer.cart.submit');
     Route::get('/orders', [Customer\OrderStatusController::class, 'index'])->name('customer.orders');
     Route::get('/track', [Customer\OrderStatusController::class, 'track'])->name('customer.track');
+    Route::post('/track/signup', [Customer\OrderStatusController::class, 'signup'])->name('customer.track.signup');
+    Route::post('/track/signup/dismiss', [Customer\OrderStatusController::class, 'dismissSignup'])->name('customer.track.signup.dismiss');
     Route::post('/orders/{order}/cancel', [Customer\OrderStatusController::class, 'cancel'])->name('customer.orders.cancel');
     Route::post('/profile', [Customer\OrderStatusController::class, 'saveProfile'])->name('customer.profile');
     Route::get('/bill', [Customer\BillController::class, 'show'])->name('customer.bill');

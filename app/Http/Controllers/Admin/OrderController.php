@@ -10,6 +10,7 @@ use App\Models\OrderItem;
 use App\Models\Table;
 use App\Services\OrderService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class OrderController extends Controller
 {
@@ -72,13 +73,16 @@ class OrderController extends Controller
             ->withCount('items')
             ->whereBetween('created_at', [$from.' 00:00:00', $to.' 23:59:59']);
 
-        if ($search = trim((string) $request->get('search'))) {
-            $query->where(function ($q) use ($search) {
-                $q->where('number', 'like', "%{$search}%")
-                  ->orWhere('customer_notes', 'like', "%{$search}%")
-                  ->orWhere('external_reference', 'like', "%{$search}%");
-            });
-        }
+          if ($search = trim((string) $request->get('search'))) {
+              $query->where(function ($q) use ($search) {
+                  $q->where('number', 'like', "%{$search}%")
+                    ->orWhere('customer_notes', 'like', "%{$search}%")
+                    ->orWhere('external_reference', 'like', "%{$search}%")
+                    ->orWhere('customer_name', 'like', "%{$search}%")
+                    ->orWhere('customer_phone', 'like', "%{$search}%")
+                    ->orWhere('delivery_address', 'like', "%{$search}%");
+              });
+          }
 
         // Status — multi-select: ?status[]=approved&status[]=ready
         $statuses = (array) $request->get('status', []);
@@ -89,9 +93,14 @@ class OrderController extends Controller
             $query->whereIn('status', $statuses);
         }
 
-        if ($source = $request->get('source')) {
-            $query->where('order_source', $source);
-        }
+          if ($source = $request->get('source')) {
+              $query->where('order_source', $source);
+          }
+
+          $orderType = $request->get('order_type');
+          if (in_array($orderType, ['dine_in', 'takeaway', 'delivery'], true)) {
+              $query->where('order_type', $orderType);
+          }
 
         if ($tableId = $request->get('table_id')) {
             $query->where('table_id', (int) $tableId);
@@ -112,17 +121,31 @@ class OrderController extends Controller
             $query->latest();
         }
 
-        $orders = $query->paginate(25)->withQueryString();
+          // Stats — based on the same filtered set so the cards reflect what
+          // the user is actually looking at, not the whole branch's history.
+          $statsQuery = (clone $query)->reorder();
+          $statsBase = clone $statsQuery->getQuery();
+          $stats = [
+              'count'       => (int) (clone $statsBase)->count(),
+              'gross'       => (float) (clone $statsBase)->sum('total'),
+              'avg'         => (float) ((clone $statsBase)->avg('total') ?? 0),
+              'cancelled'   => (int) (clone $statsBase)->where('status', OrderStatus::Cancelled->value)->count(),
+          ];
 
-        // Stats — based on the same filtered set so the cards reflect what
-        // the user is actually looking at, not the whole branch's history.
-        $statsBase = clone $query->getQuery();
-        $stats = [
-            'count'       => (int) (clone $statsBase)->count(),
-            'gross'       => (float) (clone $statsBase)->sum('total'),
-            'avg'         => (float) ((clone $statsBase)->avg('total') ?? 0),
-            'cancelled'   => (int) (clone $statsBase)->where('status', OrderStatus::Cancelled->value)->count(),
-        ];
+          $filteredStats = [
+              'completed'   => (int) (clone $statsBase)->where('status', OrderStatus::Completed->value)->count(),
+              'external'    => (int) (clone $statsBase)->whereNotIn('order_source', ['dine_in', 'portal'])->count(),
+              'commission'  => (float) (clone $statsBase)->sum(DB::raw('total * platform_commission_pct / 100')),
+              'net'         => (float) (clone $statsBase)->sum(DB::raw('total * (1 - platform_commission_pct / 100)')),
+          ];
+
+          $sourceBreakdown = (clone $statsBase)
+              ->select('order_source', DB::raw('COUNT(*) as count'), DB::raw('SUM(total) as total'))
+              ->groupBy('order_source')
+              ->orderByDesc('total')
+              ->get();
+
+          $orders = $query->paginate(25)->withQueryString();
 
         return view('admin.orders.archive', [
             'orders'   => $orders,
@@ -132,18 +155,26 @@ class OrderController extends Controller
                 'to'        => $to,
                 'search'    => $request->get('search'),
                 'status'    => $statuses,
-                'source'    => $request->get('source'),
-                'table_id'  => $request->get('table_id'),
+                  'source'    => $request->get('source'),
+                  'order_type'=> $orderType,
+                  'table_id'  => $request->get('table_id'),
                 'min_total' => $request->get('min_total'),
                 'max_total' => $request->get('max_total'),
                 'sort'      => $sort,
                 'dir'       => $dir,
-            ],
-            'statuses' => OrderStatus::cases(),
-            'sources'  => OrderSource::cases(),
-            'tables'   => Table::orderBy('number')->get(['id', 'number']),
-        ]);
-    }
+              ],
+              'statuses' => OrderStatus::cases(),
+              'sources'  => OrderSource::cases(),
+              'orderTypes' => [
+                  'dine_in'  => 'داخل المطعم',
+                  'takeaway' => 'استلام خارجي',
+                  'delivery' => 'توصيل',
+              ],
+              'tables'   => Table::orderBy('number')->get(['id', 'number']),
+              'filteredStats' => $filteredStats,
+              'sourceBreakdown' => $sourceBreakdown,
+          ]);
+      }
 
     public function board(Request $request)
     {

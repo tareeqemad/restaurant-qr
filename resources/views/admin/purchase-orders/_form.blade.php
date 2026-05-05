@@ -12,7 +12,7 @@
     <div class="row g-3">
         <div class="col-md-5">
             <label class="form-label">المورد <span class="req">*</span></label>
-            <select name="supplier_id" class="form-select form-select-lg" required data-relax-choice data-choice-search-placeholder="ابحث عن مورد...">
+            <select name="supplier_id" id="po-supplier-select" class="form-select form-select-lg" required data-relax-choice data-choice-search-placeholder="ابحث عن مورد...">
                 <option value="">— اختر مورد —</option>
                 @foreach($suppliers as $s)
                     <option value="{{ $s->id }}" @selected(old('supplier_id', $po?->supplier_id)==$s->id)>{{ $s->name }}</option>
@@ -79,8 +79,11 @@
                                 @endforeach
                             </select>
                         </td>
-                        <td><input type="number" step="0.0001" min="0" name="lines[{{ $idx }}][unit_price]"
-                            value="{{ $line->unit_price }}" class="form-control po-price" required></td>
+                        <td>
+                            <input type="number" step="0.0001" min="0" name="lines[{{ $idx }}][unit_price]"
+                                value="{{ $line->unit_price }}" class="form-control po-price" required>
+                            <div class="po-price-hint small text-muted mt-1"></div>
+                        </td>
                         <td><span class="po-subtotal fw-bold" style="color:var(--primary);">
                             {{ \App\Helpers\Money::format($line->subtotal) }}
                         </span></td>
@@ -130,9 +133,79 @@
         'cost' => (float) $i->cost_per_unit,
     ]));
     const unitOpts = @json($units->map(fn($u) => ['id' => $u->id, 'name' => $u->name . ' (' . $u->code . ')']));
+    const priceInsights = @json($priceInsights ?? []);
     const currency = @json(\App\Models\Setting::get('currency_symbol', config('restaurant.currency_symbol')));
+    const supplierSelect = document.getElementById('po-supplier-select');
 
     let idx = {{ $existingLines->count() }};
+
+    function money(value) {
+        const n = parseFloat(value) || 0;
+        return n.toFixed(4) + ' ' + currency;
+    }
+
+    function supplierPricesFor(ingredientId) {
+        return priceInsights
+            .filter(row => String(row.ingredient_id) === String(ingredientId))
+            .sort((a, b) => parseFloat(a.unit_price_in_base) - parseFloat(b.unit_price_in_base));
+    }
+
+    function updatePriceHint(row, allowFill = false) {
+        const ingredientSelect = row.querySelector('.po-ingredient');
+        const unitSelect = row.querySelector('.po-unit');
+        const priceInput = row.querySelector('.po-price');
+        const hint = row.querySelector('.po-price-hint');
+        const ingredientId = ingredientSelect?.value;
+        const supplierId = supplierSelect?.value;
+
+        if (!hint || !ingredientId) {
+            if (hint) hint.textContent = '';
+            return;
+        }
+
+        const rows = supplierPricesFor(ingredientId);
+        const sameSupplier = rows.find(price => String(price.supplier_id) === String(supplierId));
+        const best = rows[0] || null;
+        const messages = [];
+        let warning = false;
+
+        if (sameSupplier) {
+            messages.push('آخر سعر من هذا المورد: ' + money(sameSupplier.unit_price_in_base) + ' / وحدة أساس');
+
+            if (allowFill && unitSelect && String(sameSupplier.unit_id) === String(unitSelect.value) && !parseFloat(priceInput.value || '0')) {
+                priceInput.value = parseFloat(sameSupplier.unit_price).toFixed(4);
+                recalc();
+            }
+
+            if (sameSupplier.change_pct !== null && Math.abs(parseFloat(sameSupplier.change_pct)) >= 0.01) {
+                const sign = parseFloat(sameSupplier.change_pct) > 0 ? '+' : '';
+                messages.push('تغير السعر: ' + sign + parseFloat(sameSupplier.change_pct).toFixed(1) + '%');
+                warning = parseFloat(sameSupplier.change_pct) > 5;
+            }
+        } else if (supplierId) {
+            messages.push('لا يوجد سجل سعر سابق لهذا المورد مع هذا المكون');
+        }
+
+        if (best) {
+            messages.push('الأرخص حالياً: ' + best.supplier_name + ' ' + money(best.unit_price_in_base));
+            if (sameSupplier && String(best.supplier_id) !== String(sameSupplier.supplier_id) && parseFloat(best.unit_price_in_base) > 0) {
+                const gap = ((parseFloat(sameSupplier.unit_price_in_base) - parseFloat(best.unit_price_in_base)) / parseFloat(best.unit_price_in_base)) * 100;
+                if (gap > 0.5) {
+                    messages.push('فرق عن الأرخص: +' + gap.toFixed(1) + '%');
+                    warning = warning || gap > 10;
+                }
+            }
+        }
+
+        hint.textContent = messages.join(' · ');
+        hint.classList.toggle('text-danger', warning);
+        hint.classList.toggle('fw-bold', warning);
+        hint.classList.toggle('text-muted', !warning);
+    }
+
+    function updateAllPriceHints() {
+        tbody.querySelectorAll('.po-line').forEach(row => updatePriceHint(row));
+    }
 
     function addLine(prefill = {}) {
         const ingOptsHtml  = ingOpts.map(o => `<option value="${o.id}" data-base-unit="${o.base_unit_id}" data-cost="${o.cost}" ${prefill.ingredient_id == o.id ? 'selected' : ''}>${o.name}</option>`).join('');
@@ -149,7 +222,10 @@
             </td>
             <td><input type="number" step="0.0001" min="0.0001" name="lines[${idx}][quantity_ordered]" value="${prefill.qty ?? 1}" class="form-control po-qty" required></td>
             <td><select name="lines[${idx}][unit_id]" class="form-select po-unit" required>${unitOptsHtml}</select></td>
-            <td><input type="number" step="0.0001" min="0" name="lines[${idx}][unit_price]" value="${prefill.price ?? 0}" class="form-control po-price" required></td>
+            <td>
+                <input type="number" step="0.0001" min="0" name="lines[${idx}][unit_price]" value="${prefill.price ?? 0}" class="form-control po-price" required>
+                <div class="po-price-hint small text-muted mt-1"></div>
+            </td>
             <td><span class="po-subtotal fw-bold" style="color:var(--primary);">0.00</span></td>
             <td><button type="button" class="btn btn-sm btn-outline-danger po-remove" title="حذف البند"><i class="bi bi-x-lg"></i></button></td>
         `;
@@ -191,9 +267,19 @@
                 const unitSel = row.querySelector('.po-unit');
                 if (unitSel && baseUnit) unitSel.value = baseUnit;
                 const priceInput = row.querySelector('.po-price');
-                if (priceInput && !parseFloat(priceInput.value)) priceInput.value = lastCost;
+                if (priceInput && !parseFloat(priceInput.value)) {
+                    const supplierPrice = supplierPricesFor(e.target.value)
+                        .find(price => String(price.supplier_id) === String(supplierSelect?.value));
+                    priceInput.value = supplierPrice && unitSel && String(supplierPrice.unit_id) === String(unitSel.value)
+                        ? parseFloat(supplierPrice.unit_price).toFixed(4)
+                        : lastCost;
+                }
             }
+            updatePriceHint(row);
             recalc();
+        }
+        if (e.target.matches('.po-unit')) {
+            updatePriceHint(e.target.closest('.po-line'), true);
         }
     });
     tbody.addEventListener('click', (e) => {
@@ -203,10 +289,12 @@
         }
     });
     addBtn.addEventListener('click', () => addLine());
+    supplierSelect?.addEventListener('change', updateAllPriceHints);
 
     // Start with one blank line on create forms
     if (tbody.children.length === 0) addLine();
     recalc();
+    updateAllPriceHints();
 })();
 </script>
 @endpush

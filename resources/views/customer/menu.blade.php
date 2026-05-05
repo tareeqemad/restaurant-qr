@@ -7,7 +7,11 @@
     $restaurantLogoUrl = \App\Helpers\Brand::logoUrl();
     $tableNumber = $session->table->number ?? '—';
     $branchName = $session->table?->branch?->name;
-    $dinerName = $portalCustomer?->name ?: $session->customer_name;
+    // Recognised diner: portal session > cookie-linked customer > stamped name.
+    // If one of the first two is set, the customer is a known account — we
+    // skip the name+phone fields in the cart drawer entirely.
+    $linkedCustomer = $portalCustomer ?: $session->customer;
+    $dinerName = $linkedCustomer?->name ?: $session->customer_name;
     $sectionsCount = $categories->count() + ($featured->count() ? 1 : 0);
     $itemsCount = $categories->sum(fn ($category) => $category->menuItems->count());
     $defaultCustomerName = $session->customer_name ?: ($portalCustomer?->name ?? '');
@@ -28,16 +32,8 @@
 
     <section class="menu-hero">
         <div class="menu-hero-copy">
-            <div class="menu-brand-row">
-                <span class="menu-brand-logo">
-                    <img src="{{ $restaurantLogoUrl }}" alt="{{ $restaurantName }}" loading="eager">
-                </span>
-                <strong>{{ $restaurantName }}</strong>
-            </div>
-
             <div class="menu-eyebrow">
                 <span><i class="bi bi-qr-code-scan"></i> طلب من الطاولة</span>
-                <span><i class="bi bi-grid-3x3-gap"></i> طاولة {{ $tableNumber }}</span>
                 @if($branchName)
                     <span><i class="bi bi-shop"></i> {{ $branchName }}</span>
                 @endif
@@ -50,10 +46,10 @@
                     <span x-show="cartCount === 0">السلة فارغة</span>
                     <span x-show="cartCount > 0"><span x-text="cartCount"></span> صنف في السلة</span>
                 </button>
-                @if($portalCustomer)
+                @if($linkedCustomer)
                     <span class="client-pill is-linked">
                         <i class="bi bi-person-check-fill"></i>
-                        {{ $portalCustomer->name }}
+                        {{ $linkedCustomer->name }}
                     </span>
                 @else
                     <span class="client-pill">
@@ -65,10 +61,6 @@
         </div>
 
         <div class="menu-hero-panel">
-            <div class="hero-table-card">
-                <span>طاولة</span>
-                <strong>{{ $tableNumber }}</strong>
-            </div>
             <div class="hero-stat-grid">
                 <div>
                     <span>الأقسام</span>
@@ -91,8 +83,11 @@
             </button>
         </label>
 
-        <div class="cat-tabs" aria-label="أقسام القائمة">
-            <div class="cat-tabs-scroll" id="catScroll">
+        <div class="cat-tabs" aria-label="أقسام القائمة"
+             x-data="tabsSlider()" x-init="$nextTick(() => init())">
+            <button type="button" class="slider-arrow slider-arrow-prev tabs-arrow"
+                    x-show="canPrev" x-cloak @click="slide(-1)" aria-label="السابق">›</button>
+            <div class="cat-tabs-scroll" id="catScroll" x-ref="scroll" @scroll.passive="update()">
                 @if($featured->count())
                     <a href="#cat-featured" class="cat-tab" :class="activeCat === 'featured' ? 'active' : ''"
                        @click.prevent="scrollTo('featured')">
@@ -108,6 +103,8 @@
                     </a>
                 @endforeach
             </div>
+            <button type="button" class="slider-arrow slider-arrow-next tabs-arrow"
+                    x-show="canNext" x-cloak @click="slide(1)" aria-label="التالي">‹</button>
         </div>
     </section>
 
@@ -183,11 +180,6 @@
                         </div>
                         <button type="button" class="slider-arrow slider-arrow-next" @click="slide(1)" aria-label="التالي">‹</button>
                     </div>
-                    <div class="menu-grid">
-                        @foreach($featured as $item)
-                            @include('customer.partials.dish', ['item' => $item])
-                        @endforeach
-                    </div>
                 </div>
             @endif
 
@@ -217,11 +209,6 @@
                             @endforeach
                         </div>
                         <button type="button" class="slider-arrow slider-arrow-next" @click="slide(1)" aria-label="التالي">‹</button>
-                    </div>
-                    <div class="menu-grid">
-                        @foreach($cat->menuItems as $item)
-                            @include('customer.partials.dish', ['item' => $item])
-                        @endforeach
                     </div>
                 </div>
             @endforeach
@@ -425,13 +412,29 @@
 
                 <div x-show="cart.length > 0" class="cart-checkout-panel">
                     <form action="{{ route('customer.cart.submit') }}" method="POST" id="submitForm">@csrf
-                        @if($portalCustomer)
-                            <input type="hidden" name="customer_name" value="{{ $portalCustomer->name }}">
+                        @if($linkedCustomer)
+                            {{-- Portal-authenticated OR cookie-remembered. The
+                                 cashier-side link is already implicit via the
+                                 session — we don't need to re-send the name
+                                 unless we want it on this specific session
+                                 row. Send phone as a hint so submit() can
+                                 re-confirm the link if the cookie+session
+                                 ever drift apart. --}}
+                            <input type="hidden" name="customer_name" value="{{ $linkedCustomer->name }}">
+                            @if($linkedCustomer->phone)
+                                <input type="hidden" name="customer_phone" value="{{ $linkedCustomer->phone }}">
+                            @endif
                             <div class="cart-customer-card is-linked">
-                                <span class="cart-customer-avatar">{{ $portalCustomer->initial }}</span>
+                                <span class="cart-customer-avatar">{{ mb_substr($linkedCustomer->name, 0, 1, 'UTF-8') }}</span>
                                 <div>
-                                    <strong>{{ $portalCustomer->name }}</strong>
-                                    <small>الزيارة والطلبات راح تنحفظ على حسابك{{ $portalCustomer->phone ? ' - '.$portalCustomer->phone : '' }}.</small>
+                                    <strong>أهلاً يا {{ $linkedCustomer->name }} 👋</strong>
+                                    <small>
+                                        @if($portalCustomer)
+                                            بحسابك المسجّل{{ $portalCustomer->phone ? ' · '.$portalCustomer->phone : '' }} · الطلب رح ينحفظ في سجلك.
+                                        @else
+                                            تعرّفنا عليك من زيارتك السابقة · الطلب رح ينحفظ في سجلك.
+                                        @endif
+                                    </small>
                                 </div>
                             </div>
                         @else
@@ -450,6 +453,21 @@
                             <div class="mb-2">
                                 <label class="form-label fw-bold"><i class="bi bi-person-fill"></i> اسم على الطاولة (اختياري)</label>
                                 <input name="customer_name" value="{{ $defaultCustomerName }}" class="form-control form-control-lg" placeholder="مثلاً: أحمد">
+                            </div>
+
+                            <div class="mb-2">
+                                <label class="form-label fw-bold">
+                                    <i class="bi bi-telephone-fill"></i> رقم الجوال (اختياري)
+                                </label>
+                                <input name="customer_phone" type="tel" inputmode="tel"
+                                       value="{{ $session->customer_phone ?? '' }}"
+                                       class="form-control form-control-lg"
+                                       placeholder="مثلاً: 0599123456"
+                                       autocomplete="tel">
+                                <small class="text-muted d-block mt-1">
+                                    <i class="bi bi-stars text-warning"></i>
+                                    لو عندك حساب عنا، رح نتعرّف عليك تلقائياً ونحفظ الزيارة في سجلك.
+                                </small>
                             </div>
                         @endif
 
@@ -780,6 +798,7 @@ body > main {
     top: calc(var(--topbar-h, 72px) + .45rem);
     z-index: 38;
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: .5rem;
     margin: .75rem 0;
     padding: .5rem;
@@ -831,10 +850,10 @@ body > main {
 }
 
 .menu-command-bar .cat-tabs {
-    position: static;
+    position: relative;
     top: auto;
     display: block;
-    padding: 0;
+    padding: 0 2.25rem;
     border: 0;
     box-shadow: none;
     background: transparent;
@@ -843,6 +862,16 @@ body > main {
 .menu-command-bar .cat-tabs-scroll {
     padding: 0;
 }
+
+.menu-command-bar .tabs-arrow {
+    width: 30px;
+    height: 30px;
+    font-size: 1.05rem;
+    box-shadow: 0 3px 10px rgba(31, 71, 51, .18), 0 0 0 1px rgba(31,71,51,.06);
+}
+
+.menu-command-bar .tabs-arrow.slider-arrow-prev { inset-inline-start: 0; }
+.menu-command-bar .tabs-arrow.slider-arrow-next { inset-inline-end: 0; }
 
 .menu-command-bar .cat-tab {
     display: inline-flex;
@@ -2137,6 +2166,36 @@ document.addEventListener('alpine:initialized', () => {
     window.addEventListener('scroll', onScroll, { passive: true });
 })();
 
+// Horizontal scroll for the category tabs strip — shows prev/next arrows
+// only when the strip can scroll, and scrolls by ~70% of the visible width
+// per click. Uses scrollLeft sign-agnostic math so it works in RTL too.
+function tabsSlider() {
+    return {
+        canPrev: false,
+        canNext: false,
+        init() {
+            this.update();
+            window.addEventListener('resize', () => this.update(), { passive: true });
+        },
+        update() {
+            const t = this.$refs.scroll;
+            if (! t) return;
+            const sl = Math.abs(t.scrollLeft);
+            const maxScroll = t.scrollWidth - t.clientWidth;
+            this.canPrev = sl > 4;
+            this.canNext = sl < maxScroll - 4;
+        },
+        slide(direction) {
+            const t = this.$refs.scroll;
+            if (! t) return;
+            const isRtl = getComputedStyle(t).direction === 'rtl';
+            const delta = t.clientWidth * 0.7 * (isRtl ? -direction : direction);
+            t.scrollBy({ left: delta, behavior: 'smooth' });
+            setTimeout(() => this.update(), 350);
+        },
+    };
+}
+
 // Per-category slider Alpine component.
 //
 // Scrolls the TRACK ELEMENT ONLY. We deliberately do NOT use scrollIntoView
@@ -2149,7 +2208,7 @@ document.addEventListener('alpine:initialized', () => {
 // expects regardless of LTR/RTL.
 function sliderSection() {
     return {
-        mode: window.matchMedia('(min-width: 992px)').matches ? 'grid' : 'slider',
+        mode: 'slider',
         // IMPORTANT: use `this.$root` (stable component root), NOT `this.$el`.
         // Alpine's `$el` is the element currently evaluating the directive —
         // so inside a method called by @click on the arrow BUTTON, `$el` is
@@ -2220,11 +2279,6 @@ function sliderSection() {
             this.updateArrows();
             track.addEventListener('scroll', () => this.updateArrows(), { passive: true });
             window.addEventListener('resize', () => {
-                const shouldGrid = window.matchMedia('(min-width: 992px)').matches;
-                if (shouldGrid && this.mode === 'slider') {
-                    this.mode = 'grid';
-                    this.$root.classList.add('grid-mode');
-                }
                 this.updateArrows();
             });
         },

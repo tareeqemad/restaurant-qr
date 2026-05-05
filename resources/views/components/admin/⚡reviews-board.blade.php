@@ -30,7 +30,10 @@ new class extends Component
     public string $statusFilter = ''; // '', 'published', 'hidden'
 
     #[Url(as: 'rating', except: '')]
-    public string $ratingFilter = ''; // '', '1'..'5'
+    public string $ratingFilter = ''; // '', '1'..'5', 'low'
+
+    #[Url(as: 'period', except: '')]
+    public string $periodFilter = ''; // '', today, 7d, 30d
 
     /** Inline form state: review_id => reason text */
     public array $hideReasons = [];
@@ -38,10 +41,30 @@ new class extends Component
     public function updatingSearch(): void { $this->resetPage(); }
     public function updatingStatusFilter(): void { $this->resetPage(); }
     public function updatingRatingFilter(): void { $this->resetPage(); }
+    public function updatingPeriodFilter(): void { $this->resetPage(); }
 
     public function clearFilters(): void
     {
-        $this->reset(['search', 'statusFilter', 'ratingFilter']);
+        $this->reset(['search', 'statusFilter', 'ratingFilter', 'periodFilter']);
+        $this->resetPage();
+    }
+
+    public function showLow(): void
+    {
+        $this->ratingFilter = 'low';
+        $this->statusFilter = 'published';
+        $this->resetPage();
+    }
+
+    public function showHidden(): void
+    {
+        $this->statusFilter = 'hidden';
+        $this->resetPage();
+    }
+
+    public function showToday(): void
+    {
+        $this->periodFilter = 'today';
         $this->resetPage();
     }
 
@@ -62,7 +85,7 @@ new class extends Component
         );
 
         $this->dispatch('flash', type: 'success', message: 'تم إخفاء التقييم.');
-        unset($this->reviews, $this->stats);
+        unset($this->reviews, $this->stats, $this->filteredStats);
     }
 
     public function unhide(int $reviewId): void
@@ -75,7 +98,7 @@ new class extends Component
 
         ActivityLog::log('review.unhidden', "إعادة نشر تقييم #{$review->id}", $review);
         $this->dispatch('flash', type: 'success', message: 'تمّت إعادة نشر التقييم.');
-        unset($this->reviews, $this->stats);
+        unset($this->reviews, $this->stats, $this->filteredStats);
     }
 
     public function destroy(int $reviewId): void
@@ -89,20 +112,31 @@ new class extends Component
 
         ActivityLog::log('review.deleted', "حذف تقييم #{$id}");
         $this->dispatch('flash', type: 'success', message: 'تم حذف التقييم نهائياً.');
-        unset($this->reviews, $this->stats);
+        unset($this->reviews, $this->stats, $this->filteredStats);
     }
 
     #[Computed]
     public function reviews()
     {
-        $query = Review::with(['customer', 'reservation', 'branch'])
+        $query = Review::with(['customer', 'reservation.table', 'branch', 'hiddenBy'])
             ->orderBy('created_at', 'desc');
 
         if ($this->statusFilter !== '') {
             $query->where('status', $this->statusFilter);
         }
         if ($this->ratingFilter !== '') {
-            $query->where('rating', (int) $this->ratingFilter);
+            if ($this->ratingFilter === 'low') {
+                $query->where('rating', '<=', 2);
+            } else {
+                $query->where('rating', (int) $this->ratingFilter);
+            }
+        }
+        if ($this->periodFilter === 'today') {
+            $query->whereDate('created_at', today());
+        } elseif ($this->periodFilter === '7d') {
+            $query->where('created_at', '>=', now()->subDays(7));
+        } elseif ($this->periodFilter === '30d') {
+            $query->where('created_at', '>=', now()->subDays(30));
         }
         if ($this->search !== '') {
             $s = $this->search;
@@ -110,8 +144,13 @@ new class extends Component
                 $q->whereHas('customer', fn ($c) =>
                     $c->where('name', 'like', "%{$s}%")
                       ->orWhere('phone', 'like', "%{$s}%")
+                      ->orWhere('email', 'like', "%{$s}%")
                 )->orWhere('title', 'like', "%{$s}%")
-                 ->orWhere('body',  'like', "%{$s}%");
+                 ->orWhere('body',  'like', "%{$s}%")
+                 ->orWhere('hidden_reason', 'like', "%{$s}%")
+                 ->orWhereHas('reservation', fn ($r) =>
+                     $r->where('reference', 'like', "%{$s}%")
+                 );
             });
         }
 
@@ -126,9 +165,28 @@ new class extends Component
             'avg'    => round((float) Review::published()->avg('rating'), 1),
             'hidden' => Review::hidden()->count(),
             'low'    => Review::published()->where('rating', '<=', 2)->count(),
+            'five'   => Review::published()->where('rating', 5)->count(),
+            'low_today' => Review::published()
+                ->where('rating', '<=', 2)
+                ->whereDate('created_at', today())
+                ->count(),
             // "New today" — drives the live badge so the moderator notices
             // fresh reviews coming in without scanning the list.
             'new_today' => Review::whereDate('created_at', today())->count(),
+        ];
+    }
+
+    #[Computed]
+    public function filteredStats(): array
+    {
+        $items = $this->reviews->getCollection();
+        $count = $this->reviews->total();
+
+        return [
+            'count' => $count,
+            'avg_page' => round((float) $items->where('status', 'published')->avg('rating'), 1),
+            'low_page' => $items->where('status', 'published')->where('rating', '<=', 2)->count(),
+            'hidden_page' => $items->where('status', 'hidden')->count(),
         ];
     }
 }
@@ -139,13 +197,33 @@ new class extends Component
         ['label' => 'إجمالي التقييمات', 'value' => $this->stats['total'],  'icon' => 'bi-star',           'color' => 'primary'],
         ['label' => 'متوسط التقييم',     'value' => $this->stats['avg'].' ★', 'icon' => 'bi-star-fill',  'color' => 'accent'],
         ['label' => 'تقييمات منخفضة',   'value' => $this->stats['low'],    'icon' => 'bi-emoji-frown',     'color' => 'warning'],
+        ['label' => 'منخفضة اليوم',      'value' => $this->stats['low_today'], 'icon' => 'bi-exclamation-triangle-fill', 'color' => 'danger'],
+        ['label' => '٥ نجوم منشورة',     'value' => $this->stats['five'],   'icon' => 'bi-stars',          'color' => 'success'],
         ['label' => 'مخفية',             'value' => $this->stats['hidden'], 'icon' => 'bi-eye-slash',       'color' => 'muted'],
         ['label' => 'جديدة اليوم',       'value' => $this->stats['new_today'], 'icon' => 'bi-sparkles',     'color' => 'success'],
     ]" />
 
+    <div class="review-command mb-3">
+        <div class="review-command__copy">
+            <strong>متابعة السمعة</strong>
+            <span>ابدأ بالتقييمات المنخفضة والجديدة، ثم قرر: إبقاء، إخفاء، أو متابعة العميل من صفحة الحجز.</span>
+        </div>
+        <div class="review-command__actions">
+            <button type="button" class="btn btn-sm btn-outline-warning" wire:click="showLow">
+                <i class="bi bi-emoji-frown"></i> منخفضة
+            </button>
+            <button type="button" class="btn btn-sm btn-light" wire:click="showHidden">
+                <i class="bi bi-eye-slash"></i> مخفية
+            </button>
+            <button type="button" class="btn btn-sm btn-primary" wire:click="showToday">
+                <i class="bi bi-sparkles"></i> اليوم
+            </button>
+        </div>
+    </div>
+
     <x-admin.data-panel title="قائمة التقييمات" :count="$this->reviews->total()" icon="bi-star">
         <x-slot:actions>
-            @if($search !== '' || $statusFilter !== '' || $ratingFilter !== '')
+            @if($search !== '' || $statusFilter !== '' || $ratingFilter !== '' || $periodFilter !== '')
                 <button wire:click="clearFilters" type="button" class="btn btn-light">
                     <i class="bi bi-x-circle"></i> مسح الفلاتر
                 </button>
@@ -153,38 +231,80 @@ new class extends Component
         </x-slot:actions>
 
         <x-slot:filters>
-            <div class="row g-2">
-                <div class="col-md-6">
+            <div class="row g-2 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label small text-muted mb-1">بحث</label>
                     <input type="text" wire:model.live.debounce.500ms="search"
-                           class="form-control" placeholder="🔍 الزبون / الهاتف / محتوى التقييم">
+                           class="form-control" placeholder="الزبون / الهاتف / محتوى التقييم / سبب الإخفاء">
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-1">التقييم</label>
                     <select wire:model.live="ratingFilter" class="form-select">
                         <option value="">كل التقييمات</option>
+                        <option value="low">منخفضة ١-٢ ★</option>
                         @for($i=5; $i>=1; $i--)
                             <option value="{{ $i }}">{{ $i }} ★</option>
                         @endfor
                     </select>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-1">الحالة</label>
                     <select wire:model.live="statusFilter" class="form-select">
                         <option value="">كل الحالات</option>
                         <option value="published">منشور</option>
                         <option value="hidden">مخفي</option>
                     </select>
                 </div>
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-1">الفترة</label>
+                    <select wire:model.live="periodFilter" class="form-select">
+                        <option value="">كل الفترات</option>
+                        <option value="today">اليوم</option>
+                        <option value="7d">آخر ٧ أيام</option>
+                        <option value="30d">آخر ٣٠ يوم</option>
+                    </select>
+                </div>
+                <div class="col-12 text-center mt-2">
+                    <button type="button" class="btn btn-primary px-5" wire:click="$refresh">
+                        <i class="bi bi-funnel"></i> استعلام
+                    </button>
+                </div>
             </div>
         </x-slot:filters>
 
+        <div class="review-summary mb-3">
+            <div>
+                <span>نتائج الفلتر</span>
+                <strong>{{ number_format($this->filteredStats['count']) }}</strong>
+            </div>
+            <div>
+                <span>متوسط الصفحة</span>
+                <strong class="text-primary">{{ $this->filteredStats['avg_page'] ?: '—' }} ★</strong>
+            </div>
+            <div>
+                <span>منخفضة في الصفحة</span>
+                <strong class="text-warning">{{ number_format($this->filteredStats['low_page']) }}</strong>
+            </div>
+            <div>
+                <span>مخفية في الصفحة</span>
+                <strong class="text-muted">{{ number_format($this->filteredStats['hidden_page']) }}</strong>
+            </div>
+        </div>
+
         <div class="reviews-stack">
             @forelse($this->reviews as $review)
-                <article class="review {{ $review->isHidden() ? 'is-hidden' : '' }}" wire:key="rv-{{ $review->id }}">
+                <article class="review {{ $review->isHidden() ? 'is-hidden' : '' }} {{ $review->rating <= 2 && $review->isPublished() ? 'needs-attention' : '' }}" wire:key="rv-{{ $review->id }}">
                     <div class="review__head">
                         <div class="review__stars" aria-label="{{ $review->rating }} of 5">
                             @for($i=1;$i<=5;$i++)
                                 <i class="bi bi-star{{ $i <= $review->rating ? '-fill' : '' }}"></i>
                             @endfor
                         </div>
+                        @if($review->rating <= 2 && $review->isPublished())
+                            <span class="badge bg-warning-transparent text-warning">
+                                <i class="bi bi-exclamation-triangle"></i> تحتاج متابعة
+                            </span>
+                        @endif
                         @if(session('view_all_branches'))
                             <x-admin.branch-tag :branch="$review->branch" />
                         @endif
@@ -216,6 +336,10 @@ new class extends Component
                                     @if($review->reservation)
                                         <span class="review__sep">·</span>
                                         <span><i class="bi bi-calendar-event"></i> {{ $review->reservation->reference }}</span>
+                                        @if($review->reservation?->table)
+                                            <span class="review__sep">·</span>
+                                            <span><i class="bi bi-grid-3x3-gap"></i> طاولة {{ $review->reservation->table->number }}</span>
+                                        @endif
                                     @endif
                                 </div>
                             </div>
@@ -272,6 +396,52 @@ new class extends Component
 
 @once
 <style>
+    .review-command {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        background: #fff;
+        padding: 12px 14px;
+    }
+    .review-command__copy strong {
+        display: block;
+        color: #1f2937;
+        font-size: .95rem;
+    }
+    .review-command__copy span {
+        color: #6b7280;
+        font-size: .82rem;
+    }
+    .review-command__actions {
+        display: inline-flex;
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+    .review-summary {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+    }
+    .review-summary > div {
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        background: #fff;
+        padding: 10px 12px;
+        min-width: 0;
+    }
+    .review-summary span {
+        display: block;
+        color: #6b7280;
+        font-size: .76rem;
+        margin-bottom: 3px;
+    }
+    .review-summary strong {
+        font-family: ui-monospace, monospace;
+        font-weight: 800;
+    }
     .reviews-stack { display: flex; flex-direction: column; gap: 12px; }
 
     .review {
@@ -283,6 +453,10 @@ new class extends Component
     }
     .review:hover { border-color: rgba(var(--primary-rgb),.2); box-shadow: 0 4px 12px rgba(0,0,0,.04); }
     .review.is-hidden { background: #fafafa; opacity: .85; }
+    .review.needs-attention {
+        border-color: rgba(245, 158, 11, .35);
+        background: rgba(245, 158, 11, .035);
+    }
 
     .review__head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
     .review__stars { display: inline-flex; gap: 2px; color: var(--gold, #F9A825); font-size: 1rem; }
@@ -317,6 +491,13 @@ new class extends Component
     .review__hidden-meta { font-size: .78rem; color: #6b7280; margin-inline-end: 6px; }
 
     @media (max-width: 768px) {
+        .review-command {
+            align-items: stretch;
+            flex-direction: column;
+        }
+        .review-summary {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
         .review__hide-form input { width: 100%; }
         .review__actions { width: 100%; }
     }

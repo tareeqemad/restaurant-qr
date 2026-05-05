@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Invoice;
 use App\Models\Refund;
 use App\Services\RefundService;
+use App\Support\BranchContext;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class RefundController extends Controller
 {
@@ -16,30 +18,60 @@ class RefundController extends Controller
     {
         $this->authorize('viewAny', Refund::class);
 
-        $q = Refund::query()->with(['invoice.tableSession.table', 'processor'])->latest('refunded_at');
+        $q = Refund::query()
+            ->with(['invoice.tableSession.table', 'invoice.branch', 'processor'])
+            ->latest('refunded_at');
+
+        if ($branchId = BranchContext::current()) {
+            $q->whereHas('invoice', fn ($invoice) => $invoice->where('branch_id', $branchId));
+        }
+
         if ($s = $request->get('status')) $q->where('status', $s);
+        if ($m = $request->get('method')) $q->where('method', $m);
         if ($d = $request->get('from'))   $q->whereDate('refunded_at', '>=', $d);
         if ($d = $request->get('to'))     $q->whereDate('refunded_at', '<=', $d);
         if ($s = $request->get('search')) {
             $q->where(function ($qq) use ($s) {
                 $qq->where('number', 'like', "%$s%")
+                   ->orWhere('reference', 'like', "%$s%")
+                   ->orWhere('reason', 'like', "%$s%")
                    ->orWhereHas('invoice', fn($i) => $i->where('number', 'like', "%$s%"));
             });
         }
+
+        $filteredQuery = clone $q;
+        $filteredStats = [
+            'count'     => (clone $filteredQuery)->count(),
+            'amount'    => (float) (clone $filteredQuery)->sum('amount'),
+            'pending'   => (clone $filteredQuery)->where('status', 'pending')->count(),
+            'completed' => (clone $filteredQuery)->where('status', 'completed')->count(),
+        ];
+
         $refunds = $q->paginate(20)->withQueryString();
 
         $today = today();
+        $statsBase = Refund::query();
+        if ($branchId = BranchContext::current()) {
+            $statsBase->whereHas('invoice', fn ($invoice) => $invoice->where('branch_id', $branchId));
+        }
+
         $stats = [
-            'today_count'  => Refund::whereDate('refunded_at', $today)->where('status', 'completed')->count(),
-            'today_amount' => (float) Refund::whereDate('refunded_at', $today)->where('status', 'completed')->sum('amount'),
-            'pending'      => Refund::where('status', 'pending')->count(),
-            'month_amount' => (float) Refund::whereMonth('refunded_at', $today->month)
+            'today_count'  => (clone $statsBase)->whereDate('refunded_at', $today)->where('status', 'completed')->count(),
+            'today_amount' => (float) (clone $statsBase)->whereDate('refunded_at', $today)->where('status', 'completed')->sum('amount'),
+            'pending'      => (clone $statsBase)->where('status', 'pending')->count(),
+            'month_amount' => (float) (clone $statsBase)->whereMonth('refunded_at', $today->month)
                                             ->whereYear('refunded_at', $today->year)
                                             ->where('status', 'completed')
                                             ->sum('amount'),
         ];
 
-        return view('admin.refunds.index', compact('refunds', 'stats'));
+        return view('admin.refunds.index', [
+            'refunds'       => $refunds,
+            'stats'         => $stats,
+            'filteredStats' => $filteredStats,
+            'methods'       => Refund::METHODS,
+            'showBranchCol' => (bool) session('view_all_branches'),
+        ]);
     }
 
     /** Store a new refund against an invoice (called from cashier's invoice page) */
@@ -49,7 +81,7 @@ class RefundController extends Controller
 
         $data = $request->validate([
             'amount'     => ['required', 'numeric', 'min:0.01'],
-            'method'     => ['required', 'in:cash,card,transfer,app,credit,other'],
+            'method'     => ['required', Rule::in(array_keys(Refund::METHODS))],
             'reason'     => ['required', 'string', 'max:500'],
             'reference'  => ['nullable', 'string', 'max:100'],
             'notes'      => ['nullable', 'string', 'max:1000'],

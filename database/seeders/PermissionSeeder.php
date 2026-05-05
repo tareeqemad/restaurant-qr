@@ -55,7 +55,6 @@ class PermissionSeeder extends Seeder
             'bar' => 'Bar station screen',
             'grill' => 'Grill station screen',
             'dessert' => 'Dessert station screen',
-            'coffee' => 'Coffee station screen',
             'cold' => 'Cold station screen',
         ] as $code => $label) {
             Permission::updateOrCreate(

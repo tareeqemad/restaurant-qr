@@ -22,7 +22,7 @@
     </x-slot:actions>
 
     <x-slot:filters>
-        <form class="row g-2">
+        <form class="row g-2 align-items-end">
             <div class="col-md-2">
                 <select name="type" class="form-select">
                     <option value="">كل الأنواع</option>
@@ -61,7 +61,9 @@
             </div>
             <div class="col-md-1"><input type="date" name="from" value="{{ request('from') }}" class="form-control" placeholder="من"></div>
             <div class="col-md-1"><input type="date" name="to"   value="{{ request('to')   }}" class="form-control" placeholder="إلى"></div>
-            <div class="col-md-1"><button class="btn btn-primary w-100"><i class="bi bi-funnel"></i></button></div>
+            <div class="col-12 text-center mt-2">
+                <button class="btn btn-primary px-5"><i class="bi bi-search"></i> استعلام</button>
+            </div>
         </form>
     </x-slot:filters>
 

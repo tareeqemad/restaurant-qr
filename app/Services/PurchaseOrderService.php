@@ -7,6 +7,7 @@ use App\Models\Ingredient;
 use App\Models\IngredientSupplierPrice;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
+use App\Models\PurchaseReceipt;
 use App\Support\BranchContext;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -77,10 +78,30 @@ class PurchaseOrderService
         if ($po->status !== 'draft') {
             throw ValidationException::withMessages(['status' => 'يمكن إرسال أوامر الشراء في حالة المسودة فقط.']);
         }
+        if (! $po->approved_at) {
+            throw ValidationException::withMessages(['status' => 'اعتمد أمر الشراء قبل إرساله للمورد.']);
+        }
         if ($po->items()->count() === 0) {
             throw ValidationException::withMessages(['items' => 'أضف بنوداً لأمر الشراء قبل إرساله.']);
         }
         $po->update(['status' => 'sent', 'sent_at' => now()]);
+        return $po->fresh();
+    }
+
+    public function approve(PurchaseOrder $po, int $userId): PurchaseOrder
+    {
+        if (! $po->isApprovable()) {
+            throw ValidationException::withMessages(['status' => 'لا يمكن اعتماد أمر الشراء بهذه الحالة.']);
+        }
+        if ($po->items()->count() === 0) {
+            throw ValidationException::withMessages(['items' => 'أضف بنوداً لأمر الشراء قبل اعتماده.']);
+        }
+
+        $po->update([
+            'approved_by' => $userId,
+            'approved_at' => now(),
+        ]);
+
         return $po->fresh();
     }
 
@@ -127,6 +148,7 @@ class PurchaseOrderService
 
         $po = DB::transaction(function () use ($po, $receipts, $userId, $meta) {
             $lines = $po->items()->with('ingredient.baseUnit', 'unit')->lockForUpdate()->get();
+            $receipt = null;
 
             foreach ($lines as $line) {
                 $qtyReceived = (float) ($receipts[$line->id] ?? 0);
@@ -170,6 +192,17 @@ class PurchaseOrderService
                     ? (float) $line->unit_price / $oneOrderedUnitInBase
                     : (float) $line->unit_price;
 
+                if (! $receipt) {
+                    $receipt = PurchaseReceipt::create([
+                        'branch_id' => $po->branch_id,
+                        'number' => PurchaseReceipt::generateNumber(),
+                        'purchase_order_id' => $po->id,
+                        'supplier_id' => $po->supplier_id,
+                        'received_by' => $userId,
+                        'received_at' => now(),
+                    ]);
+                }
+
                 // Weighted average cost update — read INSIDE the lock so we
                 // never compute against stale numbers.
                 $oldStock = (float) $ingredient->current_stock;
@@ -195,7 +228,7 @@ class PurchaseOrderService
                 // 2) Record the inventory movement (type='in', linked to PO line + batch).
                 //    The batch_id link is what enables reverse traceability:
                 //    "this 5kg of flour came from this delivery."
-                $this->inventory->recordMovement(
+                $movement = $this->inventory->recordMovement(
                     ingredient: $ingredient,
                     type:       'in',
                     qtyBase:    $qtyBase,
@@ -206,6 +239,20 @@ class PurchaseOrderService
                     batchId:    $batch->id,
                     storageLocationId: $storageLocationId,
                 );
+
+                $receipt->items()->create([
+                    'purchase_order_item_id' => $line->id,
+                    'ingredient_id' => $ingredient->id,
+                    'unit_id' => $line->unit_id,
+                    'storage_location_id' => $storageLocationId,
+                    'batch_id' => $batch->id,
+                    'quantity_received' => $qtyReceived,
+                    'quantity_in_base' => $qtyBase,
+                    'unit_price' => $line->unit_price,
+                    'unit_price_in_base' => $baseUnitCost,
+                    'subtotal' => $qtyReceived * (float) $line->unit_price,
+                    'notes' => $movement->reason,
+                ]);
 
                 // 3) Update ingredient price (recordMovement re-reads current_stock).
                 Ingredient::whereKey($ingredient->id)->update(['cost_per_unit' => round($newCpu, 4)]);

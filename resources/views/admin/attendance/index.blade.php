@@ -49,10 +49,10 @@
                     <option value="closed" @selected(request('status')==='closed')>مغلق (انصرف)</option>
                 </select>
             </div>
-            <div class="col-md-3">
-                <button class="btn btn-primary w-100"><i class="bi bi-funnel"></i> تطبيق</button>
+            <div class="col-12 text-center mt-2">
+                <button class="btn btn-primary px-5"><i class="bi bi-funnel"></i> استعلام</button>
                 @if(request()->hasAny(['date', 'user_id', 'status']))
-                    <a href="{{ route('admin.attendance.index') }}" class="d-block mt-1 small text-muted text-center">
+                    <a href="{{ route('admin.attendance.index') }}" class="d-block mt-1 small text-muted">
                         مسح الفلاتر
                     </a>
                 @endif

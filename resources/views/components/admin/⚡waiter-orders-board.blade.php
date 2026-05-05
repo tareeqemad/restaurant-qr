@@ -16,7 +16,7 @@ new class extends Component
 {
     use AuthorizesRequests;
 
-    public bool $peakMode = false;
+    public bool $peakMode = true;
 
     #[Url(as: 'focus', except: 'all')]
     public string $focus = 'all';
@@ -103,6 +103,22 @@ new class extends Component
     {
         $groups = $this->groups;
 
+        // Count ready ORDERS by how long their oldest ready item has sat —
+        // matches the kitchen's escalation thresholds (3 / 8 mins). The waiter
+        // sound system uses these to chime on transitions: 0→cold = pickup
+        // chime, cold→hot = warning beep when food is going to waste.
+        $readyCold = 0;
+        $readyHot = 0;
+        foreach ($groups['ready'] as $order) {
+            $oldestReadyAt = $order->items
+                ->where('status', OrderItemStatus::Ready->value)
+                ->pluck('ready_at')->filter()->min();
+            if (! $oldestReadyAt) continue;
+            $ageMin = (int) $oldestReadyAt->diffInMinutes(now());
+            if ($ageMin >= 8)      $readyHot++;
+            elseif ($ageMin >= 3)  $readyCold++;
+        }
+
         return [
             'pending' => $groups['pending']->count(),
             'urgent' => $groups['pending']->filter(fn ($order) => $order->created_at->lt(now()->subMinutes(5)))->count(),
@@ -110,6 +126,9 @@ new class extends Component
             'ready_items' => $groups['ready']->sum(fn ($order) => $order->items
                 ->where('status', OrderItemStatus::Ready->value)
                 ->count()),
+            'ready_orders' => $groups['ready']->count(),
+            'ready_cold' => $readyCold,
+            'ready_hot' => $readyHot,
             'billing' => $groups['billing']->count(),
         ];
     }
@@ -192,15 +211,27 @@ new class extends Component
                 ->min();
             $ageMin = $oldestReadyAt ? (int) $oldestReadyAt->diffInMinutes(now()) : (int) $order->created_at->diffInMinutes(now());
 
+            // Tier the ready urgency the same way the kitchen does so the
+            // colour story is consistent across screens. Cold food (8+ min on
+            // the pass) jumps above pending in priority — the order itself
+            // can wait, but a steak going cold can't.
+            $readyUrgency = $ageMin >= 8 ? 'red' : ($ageMin >= 3 ? 'amber' : 'green');
+            $priorityBase = match ($readyUrgency) {
+                'red'   => 5200,        // beats even an old pending (4000+)
+                'amber' => 3400,        // above fresh pending (1600), below late pending
+                default => 3000,
+            };
+
             $tasks->push([
                 'kind' => 'ready',
-                'label' => 'قدّم الآن',
+                'label' => $readyUrgency === 'red' ? 'قدّم فوراً — يبرد!' : 'قدّم الآن',
                 'title' => $order->table ? 'طاولة '.$order->table->number : $order->sourceLabel(),
-                'subtitle' => $readyCount.' صنف جاهز للتقديم',
+                'subtitle' => $readyCount.' صنف جاهز' . ($readyUrgency === 'red' ? ' · '.$ageMin.' د على الباس' : ''),
                 'age_min' => $ageMin,
-                'priority' => 3000 + $readyCount * 10 + $ageMin,
+                'priority' => $priorityBase + $readyCount * 10 + $ageMin,
                 'order' => $order,
                 'ready_count' => $readyCount,
+                'ready_urgency' => $readyUrgency,
             ]);
         }
 
@@ -269,7 +300,14 @@ new class extends Component
 }
 ?>
 
-<div class="waiter-board" wire:poll.visible.12s="refreshBoard">
+<div class="waiter-board"
+     wire:poll.visible.12s="refreshBoard"
+     x-data="waiterSound()"
+     data-pending-count="{{ $this->stats['pending'] }}"
+     data-ready-count="{{ $this->stats['ready_orders'] ?? 0 }}"
+     data-ready-cold="{{ $this->stats['ready_cold'] ?? 0 }}"
+     data-ready-hot="{{ $this->stats['ready_hot'] ?? 0 }}"
+     data-billing-count="{{ $this->stats['billing'] }}">
     @php
         $groups = $this->groups;
         $stats = $this->stats;
@@ -323,73 +361,71 @@ new class extends Component
         </div>
     @endif
 
-    <section class="waiter-hero">
+    <section class="waiter-hero waiter-hero--compact">
         <div class="waiter-hero-copy">
-            <span class="waiter-kicker">
-                <i class="bi bi-broadcast-pin"></i>
-                شاشة خدمة الصالة
-            </span>
-            <h2>مهام الجرسون اليوم</h2>
-            <p>اعتمد طلب الزبون، تابع التحضير، استلم الجاهز، ووجّه طلب الفاتورة للكاشير من نفس الشاشة.</p>
-            <div class="waiter-hero-actions">
-                <button type="button" wire:click="togglePeakMode" class="waiter-peak-toggle {{ $peakMode ? 'is-active' : '' }}">
-                    <i class="bi bi-lightning-charge-fill"></i>
-                    {{ $peakMode ? 'وضع الذروة يعمل' : 'تشغيل وضع الذروة' }}
-                </button>
-                @if($peakMode)
-                    <div class="waiter-focus-tabs" aria-label="فلترة مهام الذروة">
-                        @foreach($focusOptions as $focusKey => $option)
-                            <button type="button"
-                                wire:click="setFocus('{{ $focusKey }}')"
-                                class="waiter-focus-tab {{ $focus === $focusKey ? 'is-active' : '' }}">
-                                <i class="bi {{ $option['icon'] }}"></i>
-                                {{ $option['label'] }}
-                            </button>
-                        @endforeach
-                    </div>
-                @endif
-            </div>
+            <h2>مهام الجرسون</h2>
+            @if($stats['production'] > 0)
+                <span class="waiter-production-chip" title="طلبات المطبخ والبار يحضّرونها — لا تحتاج إجراء منك">
+                    <i class="bi bi-fire"></i>
+                    {{ $stats['production'] }} طلب تحت التحضير
+                </span>
+            @endif
+            <button type="button" @click="toggleSound()"
+                    class="waiter-sound-btn"
+                    :class="enabled ? 'is-on' : 'is-off'"
+                    title="تنبيه صوتي عند جاهزية الطلب أو تأخره">
+                <i class="bi" :class="enabled ? 'bi-volume-up-fill' : 'bi-volume-mute-fill'"></i>
+                <span x-text="enabled ? 'الصوت يعمل' : 'تفعيل الصوت'"></span>
+            </button>
         </div>
 
-        <div class="waiter-metrics">
-            <div class="waiter-metric waiter-metric--pending">
-                <span>بحاجة اعتماد</span>
-                <strong>{{ $stats['pending'] }}</strong>
+        @if($peakMode)
+            <div class="waiter-focus-tabs" aria-label="فلترة المهام">
+                @foreach($focusOptions as $focusKey => $option)
+                    <button type="button"
+                        wire:click="setFocus('{{ $focusKey }}')"
+                        class="waiter-focus-tab {{ $focus === $focusKey ? 'is-active' : '' }}">
+                        <i class="bi {{ $option['icon'] }}"></i>
+                        {{ $option['label'] }}
+                    </button>
+                @endforeach
             </div>
-            <div class="waiter-metric waiter-metric--urgent">
-                <span>متأخرة</span>
-                <strong>{{ $stats['urgent'] }}</strong>
-            </div>
-            <div class="waiter-metric waiter-metric--ready">
-                <span>أصناف جاهزة</span>
-                <strong>{{ $stats['ready_items'] }}</strong>
-            </div>
-            <div class="waiter-metric waiter-metric--billing">
-                <span>طلبات فاتورة</span>
-                <strong>{{ $stats['billing'] }}</strong>
-            </div>
-        </div>
+        @endif
+
+        <button type="button" wire:click="togglePeakMode" class="waiter-peak-toggle {{ ! $peakMode ? 'is-active' : '' }}">
+            <i class="bi {{ $peakMode ? 'bi-grid-3x3-gap-fill' : 'bi-list-task' }}"></i>
+            {{ $peakMode ? 'عرض المراحل بالتفصيل' : 'العودة لقائمة المهام' }}
+        </button>
     </section>
 
-    @php $visiblePeakTasks = $peakMode ? $peakTasks : $peakTasks->take(8); @endphp
-    @if($peakMode || $visiblePeakTasks->isNotEmpty())
+    @php $visiblePeakTasks = $peakTasks; @endphp
+    @if($peakMode)
         <section class="waiter-peak-queue">
             <header class="waiter-peak-head">
                 <div>
                     <span><i class="bi bi-lightning-charge-fill"></i> أولوية التنفيذ الآن</span>
-                    <small>اعتمد، قدّم الجاهز، أو افتح الفاتورة. هذه القائمة تختصر الزحمة بدون البحث داخل الأعمدة.</small>
+                    <small>اعتمد، قدّم الجاهز، أو افتح الفاتورة. مرتّبة من الأهم.</small>
                 </div>
                 <strong>{{ $visiblePeakTasks->count() }}</strong>
             </header>
             <div class="waiter-peak-list">
                 @forelse($visiblePeakTasks as $task)
-                    <article class="waiter-peak-task waiter-peak-task--{{ $task['kind'] }} {{ $task['age_min'] >= 5 ? 'is-hot' : '' }}">
+                    @php
+                        // Ready tasks have their own escalation (3/8 min on the pass).
+                        // Other tasks fall back to the existing 5-min hot threshold.
+                        $isHot = $task['kind'] === 'ready'
+                            ? ($task['ready_urgency'] ?? 'green') === 'red'
+                            : $task['age_min'] >= 5;
+                        $isWarm = $task['kind'] === 'ready'
+                            && ($task['ready_urgency'] ?? 'green') === 'amber';
+                    @endphp
+                    <article class="waiter-peak-task waiter-peak-task--{{ $task['kind'] }} {{ $isHot ? 'is-hot' : '' }} {{ $isWarm ? 'is-warm' : '' }}">
                         <div class="waiter-peak-task-main">
                             <span class="waiter-peak-label">{{ $task['label'] }}</span>
                             <strong>{{ $task['title'] }}</strong>
                             <small>{{ $task['subtitle'] }}</small>
                         </div>
-                        <span class="waiter-age {{ $task['age_min'] >= 5 ? 'is-hot' : '' }}">
+                        <span class="waiter-age {{ $isHot ? 'is-hot' : '' }} {{ $isWarm ? 'is-warm' : '' }}">
                             {{ $task['age_min'] < 1 ? 'الآن' : $task['age_min'].' د' }}
                         </span>
                         <div class="waiter-peak-action">
@@ -421,6 +457,7 @@ new class extends Component
         </section>
     @endif
 
+    @if(! $peakMode)
     <div class="waiter-flow {{ $peakMode ? 'waiter-flow--peak' : '' }}">
         @foreach($visibleColumns as $key => $column)
             @php $records = $groups[$key]; @endphp
@@ -619,4 +656,92 @@ new class extends Component
             </section>
         @endforeach
     </div>
+    @endif
+
+    <script>
+    /* Waiter sound system. Mirrors the kitchen system but listens to waiter
+     * signals: a new pending order, a fresh ready ticket on the pass, a bill
+     * request, and the warning beep when food has been sitting on the pass
+     * too long (3+ then 8+ minutes). All state lives on `window` so it
+     * survives Livewire morphs — chef and waiter both unlock once per shift.
+     */
+    function waiterSound() {
+        return {
+            enabled: window.__wbSoundEnabled === true,
+            init() {
+                if (typeof window.__wbPrev !== 'object') {
+                    window.__wbPrev = this.snapshot();
+                }
+                document.addEventListener('livewire:morph.updated', () => {
+                    this.enabled = window.__wbSoundEnabled === true;
+                    this.checkChanges();
+                });
+            },
+            snapshot() {
+                const r = this.$root;
+                return {
+                    pending: parseInt(r.dataset.pendingCount || '0', 10),
+                    ready:   parseInt(r.dataset.readyCount   || '0', 10),
+                    cold:    parseInt(r.dataset.readyCold    || '0', 10),
+                    hot:     parseInt(r.dataset.readyHot     || '0', 10),
+                    billing: parseInt(r.dataset.billingCount || '0', 10),
+                };
+            },
+            toggleSound() {
+                this.enabled = !this.enabled;
+                window.__wbSoundEnabled = this.enabled;
+                if (this.enabled) this.unlockAudio();
+            },
+            unlockAudio() {
+                try {
+                    if (!window.__kbAudioCtx) {
+                        const Ctx = window.AudioContext || window.webkitAudioContext;
+                        window.__kbAudioCtx = new Ctx();
+                    }
+                    const ctx = window.__kbAudioCtx;
+                    if (ctx.state === 'suspended') ctx.resume();
+                    const buf = ctx.createBuffer(1, 1, 22050);
+                    const src = ctx.createBufferSource();
+                    src.buffer = buf; src.connect(ctx.destination); src.start(0);
+                } catch (e) { /* noop */ }
+            },
+            checkChanges() {
+                const cur = this.snapshot();
+                const prev = window.__wbPrev || cur;
+                if (this.enabled) {
+                    // New ready ticket = "come pick this up". Highest UX value.
+                    if (cur.ready > prev.ready)         this.playPickup();
+                    // New pending order needing approval — softer chime.
+                    else if (cur.pending > prev.pending) this.playNewOrder();
+                    // New bill request — distinctive low-high tone.
+                    else if (cur.billing > prev.billing) this.playBill();
+                    // Any ready item just escalated to red (8+ min cold) = urgent warning.
+                    else if (cur.hot > prev.hot)         this.playWarning();
+                    // Crossed 3-min threshold without escalating to 8 = soft nudge.
+                    else if (cur.cold > prev.cold)       this.playNudge();
+                }
+                window.__wbPrev = cur;
+            },
+            beep(frequency, duration, type = 'sine', volume = 0.25) {
+                const ctx = window.__kbAudioCtx;
+                if (!ctx) return;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(frequency, ctx.currentTime);
+                gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(volume, ctx.currentTime + 0.01);
+                gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+                osc.connect(gain).connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + duration);
+            },
+            playPickup()    { this.beep(1175, 0.16, 'sine', 0.4); setTimeout(() => this.beep(1568, 0.22, 'sine', 0.4), 150); setTimeout(() => this.beep(1976, 0.22, 'sine', 0.4), 320); },
+            playNewOrder()  { this.beep(880, 0.14, 'sine', 0.3); setTimeout(() => this.beep(1175, 0.18, 'sine', 0.3), 150); },
+            playBill()      { this.beep(523, 0.18, 'sine', 0.3); setTimeout(() => this.beep(784, 0.22, 'sine', 0.3), 200); },
+            playWarning()   { this.beep(440, 0.18, 'square', 0.28); setTimeout(() => this.beep(440, 0.18, 'square', 0.28), 280); setTimeout(() => this.beep(440, 0.22, 'square', 0.32), 580); },
+            playNudge()     { this.beep(660, 0.12, 'sine', 0.22); },
+        };
+    }
+    </script>
 </div>

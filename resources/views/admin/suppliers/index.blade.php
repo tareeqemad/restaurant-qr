@@ -35,8 +35,8 @@
                     عرض غير الفعّالين فقط
                 </label>
             </div>
-            <div class="col-md-2">
-                <button class="btn btn-primary w-100"><i class="bi bi-funnel"></i> تطبيق</button>
+            <div class="col-12 text-center mt-2">
+                <button class="btn btn-primary px-5"><i class="bi bi-funnel"></i> استعلام</button>
             </div>
         </form>
     </x-slot:filters>

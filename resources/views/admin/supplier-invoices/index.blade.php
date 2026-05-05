@@ -17,14 +17,14 @@
         <a href="{{ route('admin.supplier-invoices.create') }}" class="btn btn-primary">
             <i class="bi bi-plus-lg"></i> فاتورة جديدة
         </a>
-        @if(request()->hasAny(['search', 'status', 'supplier_id', 'overdue']))
+        @if(request()->hasAny(['search', 'status', 'supplier_id', 'from', 'to', 'overdue']))
             <a href="{{ route('admin.supplier-invoices.index') }}" class="btn btn-light"><i class="bi bi-x-circle"></i> مسح</a>
         @endif
     </x-slot:actions>
 
     <x-slot:filters>
-        <form class="row g-2">
-            <div class="col-md-3"><input name="search" value="{{ request('search') }}" class="form-control" placeholder="🔍 رقم الفاتورة"></div>
+        <form class="row g-2 align-items-end">
+            <div class="col-md-2"><input name="search" value="{{ request('search') }}" class="form-control" placeholder="🔍 رقم الفاتورة"></div>
             <div class="col-md-3">
                 <select name="supplier_id" class="form-select" data-relax-choice data-choice-search-placeholder="ابحث عن مورد...">
                     <option value="">كل الموردين</option>
@@ -48,7 +48,11 @@
                     متأخرة فقط
                 </label>
             </div>
-            <div class="col-md-2"><button class="btn btn-primary w-100"><i class="bi bi-funnel"></i> تطبيق</button></div>
+            <div class="col-md-2"><input type="date" name="from" value="{{ request('from') }}" class="form-control" title="من تاريخ"></div>
+            <div class="col-md-2"><input type="date" name="to" value="{{ request('to') }}" class="form-control" title="إلى تاريخ"></div>
+            <div class="col-12 text-center mt-2">
+                <button class="btn btn-primary px-5"><i class="bi bi-search"></i> استعلام</button>
+            </div>
         </form>
     </x-slot:filters>
 

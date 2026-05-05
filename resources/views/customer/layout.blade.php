@@ -56,12 +56,51 @@ body { padding-bottom: env(safe-area-inset-bottom); min-height: 100vh; }
 .logo-icon { width: 40px; height: 40px; background: rgba(255,255,255,.95); color: var(--brand-dark); border-radius: 12px; padding: 4px; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 3px 10px rgba(0,0,0,.15), inset 0 -1px 3px rgba(0,0,0,.06); }
 .logo-icon img { width: 100%; height: 100%; object-fit: contain; display: block; border-radius: 9px; }
 .app-topbar .sub { font-size: .75rem; opacity: .9; }
-.table-big { background: var(--accent); color: var(--brand-dark); padding: 4px 12px; border-radius: 12px; font-weight: 900; font-size: .85rem; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 2px 6px rgba(0,0,0,.15); }
-.chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 99px; background: rgba(255,255,255,.18); color: white; font-size: .75rem; font-weight: 600; text-decoration: none; }
-.chip:hover { background: rgba(255,255,255,.28); color: white; }
-.chip-orders { background: var(--accent); color: var(--brand-dark); padding: 6px 12px; font-weight: 800; box-shadow: 0 3px 10px rgba(0,0,0,.15); animation: pulse-accent 2s infinite; }
-.chip-orders:hover { background: var(--accent); color: var(--brand-dark); transform: translateY(-1px); }
-.chip-badge { background: var(--brand-dark); color: white; border-radius: 99px; min-width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; font-size: .7rem; font-weight: 900; padding: 0 5px; }
+/* Topbar chips — they sit on the dark forest-green gradient, so we need
+   them to POP. The earlier dark-on-dark and dark-gold-on-dark combos
+   blended into the bar. Now using a vivid amber #fbbf24 with very dark
+   ink #1c1917 — contrast measures ~9:1 (well above WCAG AAA) and the
+   bright amber catches the eye from across the room, which is the whole
+   point of these chips for diners and waiters glancing at the QR session. */
+.table-big {
+    background: #fbbf24;
+    color: #1c1917;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-weight: 900;
+    font-size: .85rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.25), inset 0 -2px 0 rgba(0,0,0,.08);
+    border: 1px solid rgba(0,0,0,.08);
+}
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 99px; background: rgba(255,255,255,.95); color: #1c1917; font-size: .75rem; font-weight: 700; text-decoration: none; box-shadow: 0 2px 6px rgba(0,0,0,.18); }
+.chip:hover { background: #ffffff; color: #1c1917; }
+.chip-orders {
+    background: #fbbf24;
+    color: #1c1917;
+    padding: 6px 12px;
+    font-weight: 900;
+    box-shadow: 0 3px 12px rgba(0,0,0,.22), inset 0 -2px 0 rgba(0,0,0,.08);
+    border: 1px solid rgba(0,0,0,.08);
+    animation: pulse-accent 2s infinite;
+}
+.chip-orders:hover { background: #fbbf24; color: #1c1917; transform: translateY(-1px); }
+.chip-badge {
+    background: #ffffff;
+    color: var(--brand-dark);
+    border-radius: 99px;
+    min-width: 18px;
+    height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .7rem;
+    font-weight: 900;
+    padding: 0 5px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.15);
+}
 @keyframes pulse-accent { 0%, 100% { box-shadow: 0 3px 10px rgba(0,0,0,.15), 0 0 0 0 rgba(184,135,42,.5); } 50% { box-shadow: 0 3px 10px rgba(0,0,0,.15), 0 0 0 8px rgba(184,135,42,0); } }
 
 /* Hero — warm cream with olive-gold accents */
@@ -327,9 +366,28 @@ body { padding-bottom: env(safe-area-inset-bottom); min-height: 100vh; }
 }
 .view-toggle:hover { background: var(--brand); color: white; border-color: var(--brand); }
 
-/* Make grid show all when toggled */
-.menu-section.grid-mode .menu-slider { display: none; }
-.menu-section:not(.grid-mode) .menu-grid { display: none; }
+/* Grid mode: reuse the slider DOM but render it as a wrapping grid.
+   Saves rendering 75 menu items twice — items render once in .slider-track
+   and CSS swaps the layout when .grid-mode is toggled on the section. */
+.menu-section.grid-mode .menu-slider { padding-inline: .6rem; }
+.menu-section.grid-mode .slider-arrow { display: none; }
+.menu-section.grid-mode .slider-track {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    overflow: visible;
+    scroll-snap-type: none;
+    padding: .25rem 0;
+}
+.menu-section.grid-mode .slider-track > .dish {
+    flex: initial;
+    min-width: 0;
+}
+@media (min-width: 576px) {
+    .menu-section.grid-mode .slider-track { grid-template-columns: 1fr 1fr 1fr; }
+}
+@media (min-width: 1280px) {
+    .menu-section.grid-mode .slider-track { grid-template-columns: repeat(4, 1fr); }
+}
 
 /* Dish card — premium warm tone.
    NOTE: We deliberately DO NOT translate/scale the whole card on hover/active.

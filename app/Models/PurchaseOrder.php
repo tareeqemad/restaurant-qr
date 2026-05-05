@@ -17,7 +17,7 @@ class PurchaseOrder extends Model
         'number', 'supplier_id', 'status',
         'subtotal', 'tax_total', 'total',
         'expected_at', 'sent_at', 'received_at', 'cancelled_at', 'cancel_reason',
-        'notes', 'created_by', 'received_by',
+        'notes', 'created_by', 'approved_by', 'approved_at', 'received_by',
     ];
 
     protected $casts = [
@@ -26,6 +26,7 @@ class PurchaseOrder extends Model
         'total'        => 'decimal:4',
         'expected_at'  => 'date',
         'sent_at'      => 'datetime',
+        'approved_at'  => 'datetime',
         'received_at'  => 'datetime',
         'cancelled_at' => 'datetime',
     ];
@@ -40,6 +41,16 @@ class PurchaseOrder extends Model
         return $this->hasMany(PurchaseOrderItem::class);
     }
 
+    public function receipts(): HasMany
+    {
+        return $this->hasMany(PurchaseReceipt::class);
+    }
+
+    public function supplierInvoices(): HasMany
+    {
+        return $this->hasMany(SupplierInvoice::class);
+    }
+
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
@@ -50,11 +61,31 @@ class PurchaseOrder extends Model
         return $this->belongsTo(User::class, 'received_by');
     }
 
+    public function approver(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'approved_by');
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────
 
     public function isEditable(): bool
     {
-        return $this->status === 'draft';
+        return $this->status === 'draft' && ! $this->approved_at;
+    }
+
+    public function isApproved(): bool
+    {
+        return (bool) $this->approved_at;
+    }
+
+    public function isApprovable(): bool
+    {
+        return $this->status === 'draft' && ! $this->approved_at;
+    }
+
+    public function isSendable(): bool
+    {
+        return $this->status === 'draft' && (bool) $this->approved_at;
     }
 
     public function isReceivable(): bool

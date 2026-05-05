@@ -84,8 +84,7 @@ new class extends Component
         @endforeach
 
         @if($active->count())
-            <a href="{{ route('customer.menu') }}" class="btn-track-primary"
-               style="background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%); box-shadow: 0 8px 24px rgba(184,135,42,.4); color: var(--brand-dark);">
+            <a href="{{ route('customer.menu') }}" class="btn-track-primary">
                 <i class="bi bi-plus-circle-fill"></i> إضافة المزيد من الأصناف
             </a>
         @endif
