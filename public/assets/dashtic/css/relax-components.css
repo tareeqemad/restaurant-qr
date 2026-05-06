@@ -4134,6 +4134,14 @@ body {
     transition: transform .16s ease;
 }
 
+/* The base dashtic stylesheet flips the entire .fe-chevron-right wrapper
+   by 180deg in RTL, which double-rotates with our ::before transform and
+   ends up pointing the wrong way. Neutralise the wrapper rotation so our
+   own ::before angles drive the direction. */
+[dir="rtl"] .app-sidebar .side-menu__angle.fe-chevron-right {
+    transform: none;
+}
+
 [dir="rtl"] .app-sidebar .side-menu__angle::before {
     transform: rotate(135deg);
 }
