@@ -57,18 +57,26 @@ new class extends Component
     #[Computed(persist: false)]
     public function storageLocations(): array
     {
-        return StorageLocation::query()
-            ->where('active', true)
-            ->orderByDesc('is_default')
-            ->orderBy('display_order')
-            ->orderBy('name')
-            ->get(['id', 'name', 'code', 'is_default'])
-            ->map(fn ($location) => [
-                'id' => $location->id,
-                'label' => trim($location->name . ($location->code ? " ({$location->code})" : '')),
-                'is_default' => (bool) $location->is_default,
-            ])
-            ->all();
+        // Goods belong to the PO's branch, so the destination dropdown
+        // must show only that branch's storage locations — otherwise a
+        // user could accidentally route Khan-Yunis stock into a Gaza
+        // freezer. Bypass BranchScope so the lookup works even when the
+        // user is currently switched into a different branch context.
+        return \App\Support\BranchContext::unscoped(function () {
+            return StorageLocation::query()
+                ->where('active', true)
+                ->where('branch_id', $this->po->branch_id)
+                ->orderByDesc('is_default')
+                ->orderBy('display_order')
+                ->orderBy('name')
+                ->get(['id', 'name', 'code', 'is_default'])
+                ->map(fn ($location) => [
+                    'id' => $location->id,
+                    'label' => trim($location->name . ($location->code ? " ({$location->code})" : '')),
+                    'is_default' => (bool) $location->is_default,
+                ])
+                ->all();
+        });
     }
 
     /**
@@ -311,6 +319,11 @@ new class extends Component
     </div>
 </div>
 
+{{-- Same shape as po-line-builder: Livewire 4 strips inline <script>
+     siblings of the root element. Without @script the function isn't
+     defined when Alpine evaluates the x-data above and the form
+     renders empty (no lines, no destination). --}}
+@script
 <script>
 window.poReceiveForm = function (config) {
     return {
@@ -382,3 +395,4 @@ window.poReceiveForm = function (config) {
     };
 };
 </script>
+@endscript
