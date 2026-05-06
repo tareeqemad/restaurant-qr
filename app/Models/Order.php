@@ -157,6 +157,19 @@ class Order extends Model
         return ! in_array($this->status, [OrderStatus::Completed->value, OrderStatus::Cancelled->value], true);
     }
 
+    /**
+     * Customer-facing cancel rule: the diner can pull a ticket back only
+     * before the kitchen has fired it. Once the ticket is "preparing" the
+     * line has already touched the order and refusing it from the table
+     * QR would create wasted prep + ingredient spend with no human in the
+     * loop. From "preparing" onward, only staff can cancel through the
+     * admin/cashier surfaces (which still use isCancellable()).
+     */
+    public function isCustomerCancellable(): bool
+    {
+        return in_array($this->status, [OrderStatus::Pending->value, OrderStatus::Approved->value], true);
+    }
+
     // ─── Source / Delivery-platform helpers ────────────────────────────
 
     public function source(): ?\App\Enums\OrderSource

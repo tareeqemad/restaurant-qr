@@ -280,43 +280,112 @@
         }
 
         @page {
-            size: A5 portrait;
-            margin: 10mm;
+            /* A4 portrait — gives the table its own poster-sized sheet so
+               the QR is scannable from across a busy room and the table
+               number reads at a glance. */
+            size: A4 portrait;
+            margin: 12mm;
         }
 
         @media print {
-            body {
-                min-height: auto;
+            html, body {
+                width: 210mm;
+                height: 297mm;
+                margin: 0;
                 padding: 0;
                 background: #fff;
-            }
-
-            .page {
-                width: 100%;
-            }
-
-            .qr-card {
-                padding: 12mm;
-                border: 1.5pt solid #1f3f32;
-                border-radius: 18pt;
-                box-shadow: none;
-                break-inside: avoid;
+                color: var(--ink);
                 -webkit-print-color-adjust: exact;
                 print-color-adjust: exact;
             }
 
+            body {
+                display: block;
+                min-height: auto;
+            }
+
+            main.page {
+                width: 100%;
+                margin: 0 auto;
+                page-break-after: avoid;
+            }
+
+            .qr-card {
+                padding: 14mm 14mm 12mm;
+                border: 2pt solid #1f3f32;
+                border-radius: 16pt;
+                box-shadow: none;
+                break-inside: avoid;
+                page-break-inside: avoid;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+
+            .qr-card::before {
+                inset-inline: 16mm;
+                height: 4mm;
+            }
+
+            .card-head {
+                padding-block: 0 8mm;
+                margin-bottom: 4mm;
+            }
+
+            .brand-mark, .brand-mark img {
+                width: 24mm;
+                height: 24mm;
+            }
+
+            .brand-text strong { font-size: 28pt; }
+            .brand-text span { font-size: 11pt; }
+            .branch-line { font-size: 10pt; padding: 2pt 8pt; }
+
+            .table-badge {
+                min-width: 36mm;
+                padding: 5mm 6mm;
+                border-radius: 10pt;
+            }
+            .table-badge span { font-size: 10pt; }
+            .table-badge strong { font-size: 44pt; }
+
+            .qr-intro { padding: 4mm 0 2mm; }
+            .qr-intro h1 { font-size: 26pt; }
+            .qr-intro p { font-size: 12pt; max-width: 110mm; line-height: 1.5; }
+
             .qr-box {
-                padding: 10mm;
-                box-shadow: inset 0 0 0 5pt #faf7ef;
+                margin: 6mm auto 8mm;
+                padding: 8mm;
+                border-radius: 14pt;
+                box-shadow: inset 0 0 0 4pt #faf7ef;
             }
 
             .qr-box svg {
-                width: 82mm;
+                width: 110mm;
+                max-width: 110mm;
+                height: auto;
             }
 
-            .no-print {
-                display: none !important;
+            .info-grid {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 4mm;
+                margin-block: 4mm 6mm;
             }
+
+            .info-item {
+                padding: 4mm 5mm;
+                border-radius: 10pt;
+            }
+
+            .info-item span { font-size: 9pt; }
+            .info-item strong { font-size: 13pt; }
+
+            .scan-url {
+                padding: 3mm 5mm;
+                border-radius: 10pt;
+                font-size: 9pt;
+            }
+
+            .no-print { display: none !important; }
         }
     </style>
 </head>

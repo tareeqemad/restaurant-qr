@@ -47,16 +47,67 @@
 html, body { background: var(--bg); color: var(--ink); font-family: 'Tajawal', sans-serif; }
 body { padding-bottom: env(safe-area-inset-bottom); min-height: 100vh; }
 .app-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    color: #fff;
+    padding: .9rem 1.1rem;
+    padding-top: max(.9rem, env(safe-area-inset-top));
     background: var(--brand-gradient);
-    color: white; padding: .85rem 1rem; padding-top: max(.85rem, env(safe-area-inset-top));
-    position: sticky; top: 0; z-index: 50;
-    box-shadow: 0 4px 24px rgba(31, 71, 51, .25);
-    border-bottom: 2px solid var(--accent);
+    box-shadow: 0 6px 22px rgba(15, 45, 34, .22);
+    border-bottom: 1px solid rgba(255, 255, 255, .06);
 }
-.app-topbar h4 { margin: 0; font-weight: 900; font-size: 1.25rem; display: flex; align-items: center; gap: 10px; letter-spacing: -.02em; }
-.logo-icon { width: 40px; height: 40px; background: rgba(255,255,255,.95); color: var(--brand-dark); border-radius: 12px; padding: 4px; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 3px 10px rgba(0,0,0,.15), inset 0 -1px 3px rgba(0,0,0,.06); }
-.logo-icon img { width: 100%; height: 100%; object-fit: contain; display: block; border-radius: 9px; }
-.app-topbar .sub { font-size: .75rem; opacity: .9; }
+.app-topbar::before {
+    /* Subtle warm radial highlight on the start side — gives the bar a
+       sense of light/warmth without a hard gold underline. */
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(140% 90% at 100% 0%, rgba(184, 135, 42, .22), transparent 55%),
+        radial-gradient(60% 100% at 0% 100%, rgba(255, 255, 255, .08), transparent 70%);
+    pointer-events: none;
+}
+.app-topbar > * { position: relative; }
+.app-topbar h4 {
+    margin: 0;
+    font-weight: 900;
+    font-size: 1.22rem;
+    line-height: 1.15;
+    display: inline-flex;
+    align-items: center;
+    gap: .65rem;
+    letter-spacing: -.015em;
+}
+.logo-icon {
+    width: 42px;
+    height: 42px;
+    flex: 0 0 42px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    border-radius: 13px;
+    color: var(--brand-dark);
+    background: linear-gradient(160deg, #ffffff 0%, #f3ebd7 100%);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, .22), inset 0 0 0 1px rgba(184, 135, 42, .18);
+}
+.logo-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+    border-radius: 9px;
+}
+.app-topbar .sub {
+    margin-top: .45rem;
+    font-size: .78rem;
+    opacity: .96;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .4rem;
+}
 /* Topbar chips — they sit on the dark forest-green gradient, so we need
    them to POP. The earlier dark-on-dark and dark-gold-on-dark combos
    blended into the bar. Now using a vivid amber #fbbf24 with very dark
@@ -64,12 +115,12 @@ body { padding-bottom: env(safe-area-inset-bottom); min-height: 100vh; }
    bright amber catches the eye from across the room, which is the whole
    point of these chips for diners and waiters glancing at the QR session. */
 .table-big {
-    background: #fbbf24;
+    background: linear-gradient(180deg, #fcd34d 0%, #f5b224 100%);
     color: #1c1917;
-    padding: 4px 12px;
-    border-radius: 12px;
+    padding: 5px 12px;
+    border-radius: 11px;
     font-weight: 900;
-    font-size: .85rem;
+    font-size: .82rem;
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -111,7 +162,50 @@ body { padding-bottom: env(safe-area-inset-bottom); min-height: 100vh; }
 .hero h2 { font-weight: 900; margin: .5rem 0 .25rem; font-size: 1.35rem; color: var(--brand-dark); position: relative; z-index: 1; letter-spacing: -.02em; }
 .hero .welcome-emoji { font-size: 2.4rem; position: relative; z-index: 1; display: inline-block; filter: drop-shadow(0 4px 8px rgba(184,135,42,.3)); }
 .hero .subtitle { color: var(--muted); font-size: .85rem; margin: 0; position: relative; z-index: 1; font-weight: 500; }
-.flash { position: fixed; top: 80px; left: 1rem; right: 1rem; z-index: 1000; border-radius: var(--radius); font-weight: 600; box-shadow: 0 10px 30px rgba(0,0,0,.12); }
+/* Side toasts: pin to the bottom-end corner so they don't blanket the
+   whole page width, stack vertically when multiple events fire close
+   together, and slide in from the side instead of dropping in. */
+.toast-stack {
+    position: fixed;
+    bottom: max(1rem, env(safe-area-inset-bottom));
+    inset-inline-end: 1rem;
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+    pointer-events: none;
+    max-width: min(360px, calc(100vw - 2rem));
+}
+.flash {
+    pointer-events: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: .55rem;
+    margin: 0;
+    padding: .65rem .85rem;
+    border-radius: 14px;
+    color: #fff;
+    font-weight: 700;
+    font-size: .88rem;
+    line-height: 1.35;
+    background: var(--brand-dark);
+    border-inline-start: 4px solid var(--accent);
+    box-shadow: 0 14px 32px rgba(15, 45, 34, .22);
+    animation: toast-slide-in .22s ease-out;
+}
+.flash .bi:first-child { font-size: 1rem; opacity: .9; }
+.flash.is-leaving { animation: toast-slide-out .18s ease-in forwards; }
+@keyframes toast-slide-in {
+    from { opacity: 0; transform: translateX(20%); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+[dir="rtl"] @keyframes toast-slide-in {
+    from { opacity: 0; transform: translateX(-20%); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes toast-slide-out {
+    to { opacity: 0; transform: translateY(8px); }
+}
 .cat-tabs { background: white; position: sticky; top: var(--topbar-h, 72px); z-index: 40; border-bottom: 1px solid var(--border); padding: .6rem 0; box-shadow: 0 2px 10px rgba(0,0,0,.04); }
 /* Hide horizontal tabs on desktop — vertical sidebar takes over */
 @media (min-width: 992px) {
@@ -952,13 +1046,22 @@ body { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
     </div>
 </div>
 
-@if(session('success'))<div class="alert alert-success flash shadow">{{ session('success') }}</div>@endif
-@if(session('error'))<div class="alert alert-danger flash shadow">{{ session('error') }}</div>@endif
+<div class="toast-stack" id="toastStack" aria-live="polite" aria-atomic="true">
+@if(session('success'))<div class="flash" data-tone="success"><i class="bi bi-check-circle-fill"></i><span>{{ session('success') }}</span></div>@endif
+@if(session('error'))<div class="flash" data-tone="danger" style="background:#7f1d1d"><i class="bi bi-exclamation-triangle-fill"></i><span>{{ session('error') }}</span></div>@endif
+</div>
 
 <main>@yield('content')</main>
 
 <script src="{{ asset('assets/dashtic/libs/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
-<script>setTimeout(()=>document.querySelectorAll('.flash').forEach(a=>a.remove()), 4000);</script>
+<script>
+setTimeout(() => {
+    document.querySelectorAll('.flash').forEach(a => {
+        a.classList.add('is-leaving');
+        setTimeout(() => a.remove(), 200);
+    });
+}, 4000);
+</script>
 <script>
 // Measure topbar height dynamically and expose as CSS var so cat-tabs stick right under it.
 (function() {
@@ -999,13 +1102,33 @@ document.addEventListener('DOMContentLoaded', function() {
     }, 100);
 });
 function showToast(text, type = 'info') {
-    const colors = { success: '#1f4733', info: '#1f4733', warning: '#b8872a', danger: '#b91c1c' };
+    const tones = {
+        success: { bg: '#1f4733', icon: 'bi-check-circle-fill' },
+        info:    { bg: '#1f4733', icon: 'bi-info-circle-fill' },
+        warning: { bg: '#92590f', icon: 'bi-exclamation-triangle-fill' },
+        danger:  { bg: '#7f1d1d', icon: 'bi-x-octagon-fill' },
+    };
+    const tone = tones[type] || tones.info;
+    let stack = document.getElementById('toastStack');
+    if (! stack) {
+        stack = document.createElement('div');
+        stack.id = 'toastStack';
+        stack.className = 'toast-stack';
+        stack.setAttribute('aria-live', 'polite');
+        document.body.appendChild(stack);
+    }
     const div = document.createElement('div');
-    div.className = 'alert flash shadow text-white';
-    div.style.background = colors[type] || '#2563eb';
-    div.innerHTML = `<i class="bi bi-bell-fill me-1"></i> ${text}`;
-    document.body.appendChild(div);
-    setTimeout(() => div.remove(), 3500);
+    div.className = 'flash';
+    div.dataset.tone = type;
+    div.style.background = tone.bg;
+    div.innerHTML = `<i class="bi ${tone.icon}"></i><span></span>`;
+    div.lastElementChild.textContent = text;
+    stack.appendChild(div);
+    // Animate out then remove so the slide-out transition is visible.
+    setTimeout(() => {
+        div.classList.add('is-leaving');
+        setTimeout(() => div.remove(), 200);
+    }, 3200);
 }
 </script>
 @livewireScripts

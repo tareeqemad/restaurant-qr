@@ -118,13 +118,13 @@ class OrderStatusController extends Controller
         $submittedAt = $order->submitted_at ?? $order->created_at;
         $windowExpired = $cancelWindow <= 0 || ($submittedAt && $submittedAt->lt(now()->subSeconds($cancelWindow)));
 
-        if (! $order->isCancellable() || $order->status !== OrderStatus::Pending->value || $windowExpired) {
+        if (! $order->isCustomerCancellable() || $windowExpired) {
             return back()->with('error', 'لا يمكن إلغاء هذا الطلب');
         }
 
         $reason = $request->input('reason') ?: 'إلغاء من الزبون';
         if ($order->status !== OrderStatus::Pending->value) {
-            $reason = "إلغاء من الزبون بعد بدء التحضير: {$reason}";
+            $reason = "إلغاء من الزبون قبل بدء التحضير: {$reason}";
         }
 
         $this->orders->cancel($order, null, $reason);

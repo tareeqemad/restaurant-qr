@@ -100,12 +100,11 @@
     </div>
 
     {{-- Actions --}}
-    @if($order->isCancellable())
+    @if($order->isCustomerCancellable())
         <div class="track-actions">
             <button type="button" class="btn-track-cancel" data-bs-toggle="modal" data-bs-target="#cancel{{ $order->id }}">
                 <i class="bi bi-x-circle"></i>
-                @if($order->status === 'pending') إلغاء الطلب
-                @else طلب إلغاء @endif
+                إلغاء الطلب
             </button>
         </div>
 
@@ -119,14 +118,7 @@
                             <button class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
                         <div class="modal-body">
-                            @if($order->status === 'pending')
-                                <p>هل أنت متأكد من إلغاء هذا الطلب؟</p>
-                            @else
-                                <div class="alert alert-warning">
-                                    <i class="bi bi-exclamation-triangle-fill"></i>
-                                    الطلب قيد التحضير. الإلغاء سيُعلم المطبخ والبار مباشرةً.
-                                </div>
-                            @endif
+                            <p>هل أنت متأكد من إلغاء هذا الطلب؟</p>
                             <label class="form-label fw-bold">سبب الإلغاء (اختياري)</label>
                             <textarea name="reason" class="form-control" rows="2" placeholder="مثلاً: غيّرت رأيي"></textarea>
                         </div>
