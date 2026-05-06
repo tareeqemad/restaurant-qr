@@ -212,8 +212,8 @@ new class extends Component
                             <th class="text-end">المتبقي</th>
                             <th style="width:200px;">استلام الآن</th>
                             <th style="width:180px;">رقم الدفعة</th>
-                            <th style="width:160px;">انتهاء</th>
-                            <th class="text-end">سعر/وحدة</th>
+                            <th style="width:170px;">تاريخ الصلاحية</th>
+                            <th class="text-end" style="width:160px;">سعر/وحدة</th>
                             <th class="text-end">قيمة السطر</th>
                         </tr>
                     </thead>
@@ -280,18 +280,23 @@ new class extends Component
                                         <span class="text-muted" x-text="line.unit_price.toFixed(4) + ' ₪'"></span>
                                     </template>
                                     <template x-if="!line.is_full">
-                                        <div>
-                                            <div class="input-group input-group-sm">
-                                                <input type="number" step="0.0001" min="0"
-                                                       x-model.number="price[line.id]"
-                                                       class="form-control text-end"
-                                                       :class="priceChanged(line) ? 'border-warning' : ''">
-                                                <span class="input-group-text">₪</span>
-                                            </div>
-                                            <small class="text-warning d-block mt-1" x-show="priceChanged(line)" x-cloak>
-                                                <i class="bi bi-exclamation-triangle-fill"></i>
-                                                مختلف عن سعر PO (<span x-text="line.unit_price.toFixed(4)"></span>)
-                                            </small>
+                                        <div class="input-group input-group-sm flex-nowrap">
+                                            <input type="number" step="0.0001" min="0"
+                                                   x-model.number="price[line.id]"
+                                                   class="form-control text-end"
+                                                   :class="priceChanged(line) ? 'border-warning' : ''"
+                                                   :title="priceChanged(line)
+                                                       ? ('مختلف عن سعر أمر الشراء (' + line.unit_price.toFixed(4) + ' ₪). الفرق سيظهر في حساب متوسط التكلفة.')
+                                                       : ''">
+                                            <span class="input-group-text px-2">
+                                                <template x-if="priceChanged(line)">
+                                                    <i class="bi bi-exclamation-triangle-fill text-warning"
+                                                       :title="'مختلف عن سعر PO (' + line.unit_price.toFixed(4) + ' ₪)'"></i>
+                                                </template>
+                                                <template x-if="!priceChanged(line)">
+                                                    <span>₪</span>
+                                                </template>
+                                            </span>
                                         </div>
                                     </template>
                                 </td>
