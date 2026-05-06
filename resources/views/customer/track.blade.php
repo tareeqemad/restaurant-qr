@@ -123,7 +123,33 @@
     align-items: center;
     gap: 10px;
 }
-.track-item.cancelled { opacity: .55; text-decoration: line-through; }
+/* opacity on the parent would also fade the cancel-reason box; apply
+   the strike + fade only to the specific children that represent the
+   crossed-out dish so the reason can sit at full contrast underneath. */
+.track-item.cancelled .track-item-name,
+.track-item.cancelled .track-item-mods,
+.track-item.cancelled .track-item-notes,
+.track-item.cancelled .track-item-qty,
+.track-item.cancelled .track-item-price {
+    opacity: .55;
+    text-decoration: line-through;
+}
+.track-item-cancel-reason {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin-top: 8px;
+    padding: 6px 10px;
+    border-radius: 10px;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
+    font-size: .78rem;
+    font-weight: 700;
+    line-height: 1.45;
+    text-decoration: none;
+}
+.track-item-cancel-reason .bi { font-size: .9rem; flex: 0 0 auto; margin-top: 1px; }
 .track-item.ready { border-right-color: var(--brand); background: var(--brand-soft); }
 .track-item.preparing { border-right-color: var(--accent); background: var(--accent-soft); }
 .track-item-left { flex: 1; min-width: 0; }

@@ -72,6 +72,12 @@
                     @if($it->notes)
                         <div class="track-item-notes">📝 {{ $it->notes }}</div>
                     @endif
+                    @if($it->status === 'cancelled' && $it->cancelled_reason)
+                        <div class="track-item-cancel-reason">
+                            <i class="bi bi-info-circle-fill"></i>
+                            <span>سبب الإلغاء: {{ $it->cancelled_reason }}</span>
+                        </div>
+                    @endif
                 </div>
                 <div class="track-item-right">
                     <div class="track-item-qty">×{{ (int) $it->quantity }}</div>
