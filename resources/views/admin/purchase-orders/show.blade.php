@@ -47,10 +47,18 @@
                 @endcan
             @endif
 
-            {{-- Invoicing — relevant once any goods have arrived. --}}
+            {{-- Invoicing — relevant once any goods have arrived. When the
+                 PO is fully received this is the ONLY remaining action,
+                 so promote it to a primary CTA so the user can't miss it.
+                 While partially_received it's a secondary action sitting
+                 alongside "استلام دفعة جديدة". --}}
             @if($po->isInvoiceable())
-                <a href="{{ route('admin.supplier-invoices.create', ['po' => $po->id]) }}" class="btn btn-outline-primary" title="تسجيل فاتورة المورد المرتبطة بهذا الأمر">
-                    <i class="bi bi-receipt"></i> فاتورة المورد
+                @php $invoicePrimary = $po->status === 'received'; @endphp
+                <a href="{{ route('admin.supplier-invoices.create', ['po' => $po->id]) }}"
+                   class="btn {{ $invoicePrimary ? 'btn-primary btn-lg fw-bold px-4' : 'btn-outline-primary' }}"
+                   title="تسجيل فاتورة المورد المرتبطة بهذا الأمر">
+                    <i class="bi bi-receipt-cutoff me-1"></i>
+                    {{ $invoicePrimary ? 'تسجيل فاتورة المورد' : 'فاتورة المورد' }}
                 </a>
             @endif
 

@@ -5,6 +5,38 @@
 <x-admin.breadcrumb title="دفعات المكونات" icon="bi-box2-fill"
     subtitle="تتبع الدفعات وتواريخ الصلاحية (FIFO)" />
 
+{{-- Plain-Arabic explainer at the top of the page so a manager
+     opening it for the first time understands what a "batch" is and
+     why it's separate from supplier invoices / payments. --}}
+<div class="card custom-card mb-3" style="border-color: rgba(15, 71, 49, .12);">
+    <div class="card-body p-3 small" style="line-height: 1.85;">
+        <div class="d-flex align-items-start gap-2 mb-2">
+            <i class="bi bi-info-circle-fill text-primary fs-5"></i>
+            <strong class="fs-13">شو هي «الدفعات» وليش بتلزم؟</strong>
+        </div>
+        <div class="text-muted">
+            كل مرة بتستلم بضاعة من مورد، النظام بيخزّن السطر كـ <strong>دفعة</strong> منفصلة فيها:
+            تاريخ استلامها، تاريخ صلاحيتها، الكمية الأصلية، الكمية المتبقية، وتكلفة الوحدة في تلك الدفعة بالذات.
+            <strong>تلزم لثلاث أمور أساسية:</strong>
+            <ul class="mb-0 ps-3 mt-1">
+                <li><strong>FIFO</strong> — الاستهلاك يبدأ من الدفعة الأقدم تلقائياً (الكمية المتبقية تنقص أولاً للأقدم).</li>
+                <li><strong>تتبّع الصلاحية</strong> — تشوف أي دفعة بتنتهي خلال أسبوع وأي واحدة منتهية فعلياً قبل ما تخسرها.</li>
+                <li><strong>دقة التكلفة والاسترجاع</strong> — كل دفعة عندها سعرها الفعلي ورقمها، فلو ظهرت مشكلة في شحنة معينة من المورد بتعرف بالضبط أي وصفات استخدمتها.</li>
+            </ul>
+            <div class="mt-2">
+                <strong>تتحدّث متى؟</strong>
+                عند <strong>استلام أمر شراء</strong> (إنشاء دفعة جديدة) و<strong>استهلاك المخزون</strong>
+                من البيع/الهدر/التحويل (تنقيص الكمية المتبقية).
+                <span class="text-warning">
+                    <i class="bi bi-exclamation-circle"></i>
+                    <strong>دفع فاتورة المورد لا يؤثر على الدفعات</strong> — الدفعات تتعقّب البضاعة الفعلية،
+                    والفواتير تتعقّب المستحقات المالية. كلاهما مسارات منفصلة عن قصد.
+                </span>
+            </div>
+        </div>
+    </div>
+</div>
+
 <x-admin.stat-rail :stats="[
     ['label' => 'دفعات نشطة',          'value' => $stats['active'],                                'icon' => 'bi-box2-fill',                'color' => 'primary'],
     ['label' => 'تنتهي خلال 7 أيام',    'value' => $stats['expiring'],                              'icon' => 'bi-alarm-fill',                'color' => 'accent'],
