@@ -62,13 +62,25 @@
 
         <div class="menu-hero-panel">
             <div class="hero-stat-grid">
-                <div>
-                    <span>الأقسام</span>
-                    <strong>{{ $sectionsCount }}</strong>
+                <div class="hero-stat">
+                    <span class="hero-stat-icon" aria-hidden="true">
+                        <i class="bi bi-grid-1x2-fill"></i>
+                    </span>
+                    <div class="hero-stat-body">
+                        <span class="hero-stat-label">الأقسام</span>
+                        <strong class="hero-stat-value">{{ $sectionsCount }}</strong>
+                        <span class="hero-stat-meta">قسم متاح اليوم</span>
+                    </div>
                 </div>
-                <div>
-                    <span>الأصناف</span>
-                    <strong>{{ $itemsCount }}</strong>
+                <div class="hero-stat">
+                    <span class="hero-stat-icon hero-stat-icon--accent" aria-hidden="true">
+                        <i class="bi bi-egg-fried"></i>
+                    </span>
+                    <div class="hero-stat-body">
+                        <span class="hero-stat-label">الأصناف</span>
+                        <strong class="hero-stat-value">{{ $itemsCount }}</strong>
+                        <span class="hero-stat-meta">طبق على المنيو</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -769,28 +781,103 @@ body > main {
 .hero-stat-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: .7rem;
+    gap: .85rem;
 }
 
-.hero-stat-grid div {
-    border-radius: 18px;
-    border: 1px solid var(--menu-line);
-    background: rgba(255,255,255,.92);
-    padding: .75rem;
+.hero-stat {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: .85rem;
+    padding: 1rem 1.05rem;
+    border-radius: 20px;
+    background: linear-gradient(140deg, #ffffff 0%, #f5faf5 100%);
+    border: 1px solid rgba(15, 71, 49, .08);
+    box-shadow: 0 8px 22px rgba(15, 71, 49, .06);
+    overflow: hidden;
+    transition: transform .18s ease, box-shadow .18s ease;
 }
 
-.hero-stat-grid span {
-    display: block;
-    color: var(--menu-muted);
-    font-size: .78rem;
-    font-weight: 900;
+.hero-stat::before {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    width: 4px;
+    background: linear-gradient(180deg, var(--brand), var(--brand-dark));
+    border-start-end-radius: 4px;
+    border-end-end-radius: 4px;
 }
 
-.hero-stat-grid strong {
-    display: block;
+.hero-stat:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 14px 30px rgba(15, 71, 49, .1);
+}
+
+.hero-stat-icon {
+    flex: 0 0 46px;
+    width: 46px;
+    height: 46px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 14px;
+    background: linear-gradient(140deg, rgba(15, 71, 49, .12), rgba(15, 71, 49, .04));
     color: var(--brand-dark);
-    font-size: 1.5rem;
+    font-size: 1.25rem;
+}
+
+.hero-stat-icon--accent {
+    background: linear-gradient(140deg, rgba(184, 135, 42, .18), rgba(184, 135, 42, .06));
+    color: #8a6614;
+}
+
+.hero-stat-body {
+    display: flex;
+    flex-direction: column;
+    gap: .15rem;
+    min-width: 0;
+    line-height: 1.15;
+}
+
+.hero-stat-label {
+    color: var(--menu-muted);
+    font-size: .76rem;
+    font-weight: 800;
+    letter-spacing: 0;
+}
+
+.hero-stat-value {
+    color: var(--brand-dark);
+    font-size: 1.85rem;
     font-weight: 900;
+    font-feature-settings: "tnum" 1;
+    letter-spacing: -.5px;
+}
+
+.hero-stat-meta {
+    color: var(--menu-muted);
+    font-size: .72rem;
+    font-weight: 700;
+    opacity: .85;
+}
+
+@media (max-width: 480px) {
+    .hero-stat {
+        padding: .85rem;
+        gap: .7rem;
+    }
+
+    .hero-stat-icon {
+        flex-basis: 40px;
+        width: 40px;
+        height: 40px;
+        font-size: 1.1rem;
+    }
+
+    .hero-stat-value {
+        font-size: 1.55rem;
+    }
 }
 
 .menu-command-bar {
