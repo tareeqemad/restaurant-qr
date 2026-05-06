@@ -99,6 +99,29 @@ class PurchaseOrder extends Model
         return in_array($this->status, ['received', 'partially_received'], true);
     }
 
+    /**
+     * True when every received unit on this PO has already been covered
+     * by at least one supplier_invoice line. The "register supplier
+     * invoice" CTA hides once this is true so the user doesn't keep
+     * registering duplicate invoices for goods already billed.
+     *
+     * Requires items + items.supplierInvoiceItems to be eager-loaded;
+     * the show view already does this. 0.0001 tolerance avoids the
+     * usual float-compare flakiness on decimal:4 columns.
+     */
+    public function isFullyInvoiced(): bool
+    {
+        if ($this->items->isEmpty()) {
+            return false;
+        }
+        return $this->items->every(function ($line) {
+            $received = (float) $line->quantity_received;
+            if ($received <= 0) return true; // nothing to invoice yet
+            $invoiced = (float) $line->supplierInvoiceItems->sum('quantity');
+            return $invoiced + 0.0001 >= $received;
+        });
+    }
+
     public function isCancellable(): bool
     {
         return ! in_array($this->status, ['received', 'cancelled'], true);

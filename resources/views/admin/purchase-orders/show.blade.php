@@ -47,12 +47,14 @@
                 @endcan
             @endif
 
-            {{-- Invoicing — relevant once any goods have arrived. When the
-                 PO is fully received this is the ONLY remaining action,
-                 so promote it to a primary CTA so the user can't miss it.
-                 While partially_received it's a secondary action sitting
-                 alongside "استلام دفعة جديدة". --}}
-            @if($po->isInvoiceable())
+            {{-- Invoicing — relevant once any goods have arrived AND
+                 there's still uninvoiced quantity to cover. Once every
+                 received unit has been invoiced the button hides so the
+                 user can't accidentally double-register. When the PO is
+                 fully received this is the only remaining action so
+                 promote it to a primary CTA; while partially_received
+                 it's a secondary action next to "استلام دفعة جديدة". --}}
+            @if($po->isInvoiceable() && ! $po->isFullyInvoiced())
                 @php $invoicePrimary = $po->status === 'received'; @endphp
                 <a href="{{ route('admin.supplier-invoices.create', ['po' => $po->id]) }}"
                    class="btn {{ $invoicePrimary ? 'btn-primary btn-lg fw-bold px-4' : 'btn-outline-primary' }}"
@@ -60,6 +62,11 @@
                     <i class="bi bi-receipt-cutoff me-1"></i>
                     {{ $invoicePrimary ? 'تسجيل فاتورة المورد' : 'فاتورة المورد' }}
                 </a>
+            @elseif($po->isInvoiceable() && $po->isFullyInvoiced())
+                <span class="badge bg-success-transparent text-success fs-13 px-3 py-2"
+                      title="كل الكميات المستلمة مغطّاة بفواتير مورد مسجَّلة">
+                    <i class="bi bi-receipt-cutoff me-1"></i> فُوتر بالكامل
+                </span>
             @endif
 
             {{-- Edit — only meaningful while the PO is still a draft. --}}
