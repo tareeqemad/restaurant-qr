@@ -320,6 +320,14 @@ new class extends Component
     </div>
 </div>
 
+{{-- The function that the x-data above calls. We have to register it
+     via Livewire's @script directive (which queues the block with
+     Alpine and runs it before x-data evaluation) instead of a plain
+     inline <script> — Livewire 4 strips inline-script siblings of the
+     root element, leaving poLineBuilder undefined when Alpine first
+     evaluated the x-data and the supplier / ingredient / unit
+     dropdowns rendered empty. --}}
+@script
 <script>
 window.poLineBuilder = function (config) {
     return {
@@ -406,3 +414,4 @@ window.poLineBuilder = function (config) {
     };
 };
 </script>
+@endscript
