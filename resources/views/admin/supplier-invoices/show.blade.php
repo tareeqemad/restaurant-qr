@@ -195,8 +195,8 @@
                     </div>
                     <div class="mb-2">
                         <label class="form-label">القيمة <span class="text-danger">*</span></label>
-                        <input type="number" step="0.01" min="0.01" max="{{ $invoice->balance }}"
-                               name="amount" value="{{ $invoice->balance }}" class="form-control" required>
+                        <input type="number" step="0.01" min="0.01" max="{{ number_format((float) $invoice->balance, 2, '.', '') }}"
+                               name="amount" value="{{ number_format((float) $invoice->balance, 2, '.', '') }}" class="form-control" required>
                     </div>
                     <div class="mb-2">
                         <label class="form-label">طريقة الدفع <span class="text-danger">*</span></label>
