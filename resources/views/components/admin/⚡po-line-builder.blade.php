@@ -356,6 +356,21 @@ window.poLineBuilder = function (config) {
                 ? config.existing.map(l => ({ ...l }))
                 : [];
             if (this.lines.length === 0) this.addLine();
+
+            // Edit mode: Alpine wires x-model on each <select> before its
+            // <template x-for> renders the matching <option>, so the
+            // browser's <select>.value defaults to its first option (the
+            // "— اختر —" placeholder) and never picks up the seeded id.
+            // Wait one tick for the templates to expand, then re-assign
+            // the bound values — assignment triggers x-model to look up
+            // the option that now exists and select it. Same trick is
+            // needed for the row's ingredient_id and unit_id selects.
+            this.$nextTick(() => {
+                const sup = this.supplier_id;
+                this.supplier_id = 0;
+                this.supplier_id = sup;
+                this.lines = this.lines.map(l => ({ ...l }));
+            });
         },
 
         addLine() {
