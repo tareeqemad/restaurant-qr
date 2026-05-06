@@ -14,3 +14,7 @@ Route::middleware('guest')->group(function () {
 });
 
 Route::post('/logout', [LoginController::class, 'destroy'])->middleware('auth')->name('logout');
+
+// /storage/* is auto-served from config/filesystems.php's public disk
+// (serve=true). No custom route needed; the public disk's auto-route
+// streams files from storage/app/public.
