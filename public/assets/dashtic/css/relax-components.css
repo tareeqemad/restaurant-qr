@@ -4109,6 +4109,29 @@ body {
     color: var(--accent) !important;
 }
 
+/* In-dropdown section labels — used to group long submenus (e.g. the
+   inventory menu's 13 items) into workflow stages. Non-interactive. */
+.app-sidebar .slide-menu .slide-section {
+    margin-block: .35rem 0;
+    padding: .35rem .85rem .25rem;
+    color: var(--accent, #b97818);
+    font-size: .68rem;
+    font-weight: 900;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    line-height: 1;
+    pointer-events: none;
+    border-top: 1px solid rgba(15, 71, 49, .08);
+}
+.app-sidebar .slide-menu .slide-section:first-child {
+    margin-block-start: 0;
+    border-top: 0;
+}
+html[data-nav-layout="horizontal"] .app-sidebar .slide-menu .slide-section {
+    padding-inline: .85rem;
+    background: rgba(15, 71, 49, .03);
+}
+
 .app-sidebar .side-menu__angle {
     width: 18px;
     height: 18px;

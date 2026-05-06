@@ -334,20 +334,35 @@
                         <span class="side-menu__label">المخزون والمشتريات</span>
                         <i class="fe fe-chevron-right side-menu__angle"></i>
                     </a>
-                    <ul class="slide-menu child1">
+                    {{-- Reordered to follow the real-world inventory workflow:
+                         (1) reference data you set up first, (2) the
+                         procurement chain in sequence (suppliers → price
+                         compare → PO → invoice), (3) daily ops in the
+                         order they happen (expiry → count → waste →
+                         transfer), and finally (4) the monitoring views
+                         on top so the manager opens the dropdown and the
+                         dashboard is the first thing they see. --}}
+                    <ul class="slide-menu child1 inventory-menu">
+                        <li class="slide-section">المراقبة</li>
                         <li class="slide"><a href="{{ route('admin.inventory.dashboard') }}" class="side-menu__item {{ $isActive('admin.inventory.dashboard') }}"><i class="bi bi-speedometer2 submenu-icon"></i>لوحة المخزون</a></li>
-                        <li class="slide"><a href="{{ route('admin.ingredients.index') }}" class="side-menu__item {{ $isActive('admin.ingredients.*') }}"><i class="bi bi-basket-fill submenu-icon"></i>المكونات</a></li>
                         <li class="slide"><a href="{{ route('admin.inventory.index') }}" class="side-menu__item {{ $isActive('admin.inventory.*') }}"><i class="bi bi-arrow-left-right submenu-icon"></i>حركات المخزن</a></li>
-                        <li class="slide"><a href="{{ route('admin.waste.index') }}" class="side-menu__item {{ $isActive('admin.waste.*') }}"><i class="bi bi-trash3-fill submenu-icon"></i>الهدر</a></li>
-                        <li class="slide"><a href="{{ route('admin.stock-counts.index') }}" class="side-menu__item {{ $isActive('admin.stock-counts.*') }}"><i class="bi bi-clipboard-check-fill submenu-icon"></i>الجرد الدوري</a></li>
-                        <li class="slide"><a href="{{ route('admin.batches.index') }}" class="side-menu__item {{ $isActive('admin.batches.*') }}"><i class="bi bi-calendar-x submenu-icon"></i>الدفعات والصلاحية</a></li>
+
+                        <li class="slide-section">المرجعيات</li>
+                        <li class="slide"><a href="{{ route('admin.ingredients.index') }}" class="side-menu__item {{ $isActive('admin.ingredients.*') }}"><i class="bi bi-basket-fill submenu-icon"></i>المكونات</a></li>
+                        <li class="slide"><a href="{{ route('admin.units.index') }}" class="side-menu__item {{ $isActive('admin.units.*') }}"><i class="bi bi-rulers submenu-icon"></i>وحدات القياس</a></li>
                         <li class="slide"><a href="{{ route('admin.storage-locations.index') }}" class="side-menu__item {{ $isActive('admin.storage-locations.*') }}"><i class="bi bi-house-door-fill submenu-icon"></i>مواقع التخزين</a></li>
-                        <li class="slide"><a href="{{ route('admin.branch-transfers.index') }}" class="side-menu__item {{ $isActive('admin.branch-transfers.*') }}"><i class="bi bi-truck submenu-icon"></i>التحويلات بين الفروع</a></li>
-                        <li class="slide"><a href="{{ route('admin.purchase-orders.index') }}" class="side-menu__item {{ $isActive('admin.purchase-orders.*') }}"><i class="bi bi-file-earmark-text-fill submenu-icon"></i>أوامر الشراء</a></li>
-                        <li class="slide"><a href="{{ route('admin.supplier-invoices.index') }}" class="side-menu__item {{ $isActive('admin.supplier-invoices.*') }}"><i class="bi bi-receipt submenu-icon"></i>فواتير الموردين</a></li>
+
+                        <li class="slide-section">المشتريات</li>
                         <li class="slide"><a href="{{ route('admin.suppliers.index') }}" class="side-menu__item {{ $isActive('admin.suppliers.*') }}"><i class="bi bi-truck submenu-icon"></i>الموردون</a></li>
                         <li class="slide"><a href="{{ route('admin.vendor-prices.compare') }}" class="side-menu__item {{ $isActive('admin.vendor-prices.*') }}"><i class="bi bi-arrows-collapse submenu-icon"></i>مقارنة أسعار المورّدين</a></li>
-                        <li class="slide"><a href="{{ route('admin.units.index') }}" class="side-menu__item {{ $isActive('admin.units.*') }}"><i class="bi bi-rulers submenu-icon"></i>وحدات القياس</a></li>
+                        <li class="slide"><a href="{{ route('admin.purchase-orders.index') }}" class="side-menu__item {{ $isActive('admin.purchase-orders.*') }}"><i class="bi bi-file-earmark-text-fill submenu-icon"></i>أوامر الشراء</a></li>
+                        <li class="slide"><a href="{{ route('admin.supplier-invoices.index') }}" class="side-menu__item {{ $isActive('admin.supplier-invoices.*') }}"><i class="bi bi-receipt submenu-icon"></i>فواتير الموردين</a></li>
+
+                        <li class="slide-section">العمليات اليومية</li>
+                        <li class="slide"><a href="{{ route('admin.batches.index') }}" class="side-menu__item {{ $isActive('admin.batches.*') }}"><i class="bi bi-calendar-x submenu-icon"></i>الدفعات والصلاحية</a></li>
+                        <li class="slide"><a href="{{ route('admin.stock-counts.index') }}" class="side-menu__item {{ $isActive('admin.stock-counts.*') }}"><i class="bi bi-clipboard-check-fill submenu-icon"></i>الجرد الدوري</a></li>
+                        <li class="slide"><a href="{{ route('admin.waste.index') }}" class="side-menu__item {{ $isActive('admin.waste.*') }}"><i class="bi bi-trash3-fill submenu-icon"></i>الهدر</a></li>
+                        <li class="slide"><a href="{{ route('admin.branch-transfers.index') }}" class="side-menu__item {{ $isActive('admin.branch-transfers.*') }}"><i class="bi bi-arrow-left-right-square submenu-icon"></i>التحويلات بين الفروع</a></li>
                     </ul>
                 </li>
                 @endif
