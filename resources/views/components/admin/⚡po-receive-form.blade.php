@@ -83,7 +83,7 @@ new class extends Component
      * Persist the receipt. Alpine sends qtyMap = { lineId: qty, ... }.
      * Single round-trip on commit only.
      */
-    public function submitReceipt(array $qtyMap, $storageLocationId = null, array $batchMap = [], array $expiryMap = [])
+    public function submitReceipt(array $qtyMap, $storageLocationId = null, array $batchMap = [], array $expiryMap = [], array $priceMap = [])
     {
         $po = $this->po;
         $this->authorize('receive', $po);
@@ -107,10 +107,13 @@ new class extends Component
             if ($val > 0) {
                 $lineId = (int) $lineId;
                 $receipts[$lineId] = $val;
+                $price = (float) ($priceMap[$lineId] ?? 0);
                 $meta[$lineId] = [
                     'storage_location_id' => $storageLocationId,
                     'batch_number' => trim((string) ($batchMap[$lineId] ?? '')) ?: null,
                     'expiry_date' => $expiryMap[$lineId] ?? null,
+                    // null lets the service fall back to the PO line's price.
+                    'actual_unit_price' => $price > 0 ? $price : null,
                 ];
             }
         }
@@ -136,11 +139,16 @@ new class extends Component
 
 <div x-data='poReceiveForm({ lines: @json($this->seedLines), locations: @json($this->storageLocations) })' x-init="init()">
     <div class="alert d-flex align-items-start gap-2"
-         style="background: rgba(var(--accent-rgb),.08); border-right:4px solid var(--accent); color:var(--primary);">
+         style="background: rgba(var(--accent-rgb),.08); border-right:4px solid var(--accent); color:var(--primary); line-height: 1.7;">
         <i class="bi bi-info-circle-fill fs-18"></i>
-        <div>
-            <strong>تذكير:</strong> الاستلام يضيف للمخزون كحركة "إدخال"، يُحدّث السعر بالـ Weighted Average،
-            ويعيد حساب تكلفة أصناف المنيو. كل كمية تكتبها تُعرض حية في الإجمالي بالأسفل.
+        <div class="small">
+            <strong>كيف يعمل الاستلام:</strong>
+            <ul class="mb-0 mt-1 ps-3">
+                <li><strong>الكمية</strong> = ما وصلك فعلاً (تستطيع استلام أقل من المطلوب — الباقي يبقى مفتوح في الـ PO).</li>
+                <li><strong>رقم الدفعة</strong> اختياري لكل صنف على حدة — لتتبّع الـ FIFO وانتهاء الصلاحية. كل مكوّن له دفعته الخاصة من المورد.</li>
+                <li><strong>سعر/وحدة</strong> مُعبّأ مسبقاً بسعر أمر الشراء، لكنه <em>قابل للتعديل</em> لو السعر الفعلي على فاتورة المورد مختلف. النظام يستخدم السعر الذي تكتبه لحساب متوسط التكلفة (Weighted Average) وتحديث تاريخ الأسعار.</li>
+                <li>عند الحفظ: تُسجَّل حركة مخزون "إدخال" + يتحدّث متوسط تكلفة المكوّن + تُعاد تكلفة أصناف المنيو المرتبطة.</li>
+            </ul>
         </div>
     </div>
 
@@ -267,7 +275,26 @@ new class extends Component
                                                class="form-control form-control-sm">
                                     </template>
                                 </td>
-                                <td class="text-end text-muted" x-text="line.unit_price.toFixed(4) + ' ₪'"></td>
+                                <td>
+                                    <template x-if="line.is_full">
+                                        <span class="text-muted" x-text="line.unit_price.toFixed(4) + ' ₪'"></span>
+                                    </template>
+                                    <template x-if="!line.is_full">
+                                        <div>
+                                            <div class="input-group input-group-sm">
+                                                <input type="number" step="0.0001" min="0"
+                                                       x-model.number="price[line.id]"
+                                                       class="form-control text-end"
+                                                       :class="priceChanged(line) ? 'border-warning' : ''">
+                                                <span class="input-group-text">₪</span>
+                                            </div>
+                                            <small class="text-warning d-block mt-1" x-show="priceChanged(line)" x-cloak>
+                                                <i class="bi bi-exclamation-triangle-fill"></i>
+                                                مختلف عن سعر PO (<span x-text="line.unit_price.toFixed(4)"></span>)
+                                            </small>
+                                        </div>
+                                    </template>
+                                </td>
                                 <td class="text-end fw-bold text-primary"
                                     x-text="lineCost(line).toFixed(2) + ' ₪'"></td>
                             </tr>
@@ -333,17 +360,21 @@ window.poReceiveForm = function (config) {
         qty: {},                  // {lineId: number}
         batch: {},                // {lineId: string}
         expiry: {},               // {lineId: yyyy-mm-dd}
+        price: {},                // {lineId: number} actual received price
         submitting: false,
 
         init() {
             const defaultLocation = this.locations.find(l => l.is_default) || this.locations[0];
             this.locationId = defaultLocation ? defaultLocation.id : null;
 
-            // Pre-fill each line's qty with its outstanding amount
+            // Pre-fill each line's qty with its outstanding amount and
+            // seed the price input with the PO price so the user only
+            // edits when reality differs.
             this.lines.forEach(l => {
                 this.qty[l.id] = l.is_full ? 0 : l.outstanding;
                 this.batch[l.id] = '';
                 this.expiry[l.id] = '';
+                this.price[l.id] = l.unit_price;
             });
         },
 
@@ -351,11 +382,19 @@ window.poReceiveForm = function (config) {
         enteredQty(line) {
             return Number(this.qty[line.id] ?? 0) || 0;
         },
+        actualPrice(line) {
+            const v = Number(this.price[line.id] ?? 0);
+            return v > 0 ? v : line.unit_price;
+        },
+        priceChanged(line) {
+            // > 0.0001 to ignore float noise from typing
+            return Math.abs(this.actualPrice(line) - line.unit_price) > 0.0001;
+        },
         isOver(line) {
             return this.enteredQty(line) > line.outstanding + 0.0001;
         },
         lineCost(line) {
-            return Math.max(0, this.enteredQty(line)) * line.unit_price;
+            return Math.max(0, this.enteredQty(line)) * this.actualPrice(line);
         },
         rowClass(line) {
             if (line.is_full) return 'table-light text-muted';
@@ -387,7 +426,7 @@ window.poReceiveForm = function (config) {
             if (! confirm('تأكيد استلام البضاعة؟ سيتم تحديث المخزون والأسعار.')) return;
             this.submitting = true;
             try {
-                await this.$wire.submitReceipt(this.qty, this.locationId, this.batch, this.expiry);
+                await this.$wire.submitReceipt(this.qty, this.locationId, this.batch, this.expiry, this.price);
             } finally {
                 this.submitting = false;
             }

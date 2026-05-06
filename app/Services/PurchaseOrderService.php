@@ -188,6 +188,12 @@ class PurchaseOrderService
                 $expiryDate = ! empty($lineMeta['expiry_date'])
                     ? (string) $lineMeta['expiry_date']
                     : null;
+                // Optional price override: the supplier delivered at a
+                // price different from the PO. Falls back to the PO line
+                // price if the receiver didn't touch the field.
+                $actualUnitPrice = isset($lineMeta['actual_unit_price']) && (float) $lineMeta['actual_unit_price'] > 0
+                    ? (float) $lineMeta['actual_unit_price']
+                    : (float) $line->unit_price;
 
                 // Guard: can't receive more than outstanding
                 $outstanding = $line->outstandingQty();
@@ -210,13 +216,13 @@ class PurchaseOrderService
                 // Convert qty to base unit
                 $qtyBase = UnitConverter::convert($qtyReceived, $orderedUnit, $baseUnit);
 
-                // Unit cost in BASE unit (price paid / factor)
-                //   unit_price is per ORDERED unit, so base-unit cost = unit_price / (ordered_qty_base / ordered_qty)
-                // Simpler: base_cpu = unit_price ÷ (1 ordered unit in base units)
+                // Unit cost in BASE unit (price paid / factor). Use the
+                // actual receipt price when the user overrode it — otherwise
+                // the moving-average wouldn't reflect what actually got paid.
                 $oneOrderedUnitInBase = UnitConverter::convert(1.0, $orderedUnit, $baseUnit);
                 $baseUnitCost = $oneOrderedUnitInBase > 0
-                    ? (float) $line->unit_price / $oneOrderedUnitInBase
-                    : (float) $line->unit_price;
+                    ? $actualUnitPrice / $oneOrderedUnitInBase
+                    : $actualUnitPrice;
 
                 if (! $receipt) {
                     $receipt = PurchaseReceipt::create([
@@ -274,9 +280,13 @@ class PurchaseOrderService
                     'batch_id' => $batch->id,
                     'quantity_received' => $qtyReceived,
                     'quantity_in_base' => $qtyBase,
-                    'unit_price' => $line->unit_price,
+                    // Record the price the supplier actually delivered at,
+                    // not the notional PO price. This is what the
+                    // weighted-average and the supplier-invoice match
+                    // need to read back later.
+                    'unit_price' => $actualUnitPrice,
                     'unit_price_in_base' => $baseUnitCost,
-                    'subtotal' => $qtyReceived * (float) $line->unit_price,
+                    'subtotal' => $qtyReceived * $actualUnitPrice,
                     'notes' => $movement->reason,
                 ]);
 
@@ -285,7 +295,7 @@ class PurchaseOrderService
 
                 // 4) Vendor price history — append-only audit log of every
                 //    receipt's price. Computes change_pct vs prior observation.
-                $this->recordPriceObservation($po, $line, $ingredient, $baseUnitCost, $userId);
+                $this->recordPriceObservation($po, $line, $ingredient, $baseUnitCost, $actualUnitPrice, $userId);
 
                 // 5) Update the PO line
                 $line->quantity_received = (float) $line->quantity_received + $qtyReceived;
@@ -339,6 +349,7 @@ class PurchaseOrderService
         PurchaseOrderItem $line,
         Ingredient $ingredient,
         float $unitPriceInBase,
+        float $unitPriceOrdered,
         ?int $userId,
     ): void {
         $branchId = $po->branch_id ?? BranchContext::current();
@@ -359,7 +370,7 @@ class PurchaseOrderService
             'ingredient_id'          => $ingredient->id,
             'supplier_id'            => $po->supplier_id,
             'unit_id'                => $line->unit_id,
-            'unit_price'             => $line->unit_price,
+            'unit_price'             => $unitPriceOrdered,
             'unit_price_in_base'     => round($unitPriceInBase, 4),
             'previous_price_in_base' => $prev?->unit_price_in_base,
             'change_pct'             => $changePct !== null ? round($changePct, 2) : null,
