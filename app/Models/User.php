@@ -124,6 +124,23 @@ class User extends Authenticatable
         return in_array($this->role, UserRole::ownerRoles(), true);
     }
 
+    /**
+     * "Management-level" = roles that operate the multi-branch oversight
+     * surfaces (overview, live-monitor, branch dashboard). Includes owner-
+     * level (sees all branches) and the per-branch admin/manager (sees only
+     * their assigned branches). Floor staff (waiter/chef/cashier) are
+     * intentionally excluded — those screens aren't for them.
+     */
+    public function isManagementLevel(): bool
+    {
+        return $this->hasAnyRole([
+            UserRole::SuperAdmin->value,
+            UserRole::Partner->value,
+            UserRole::Admin->value,
+            UserRole::Manager->value,
+        ]);
+    }
+
     public function isAdmin(): bool
     {
         return $this->role === UserRole::Admin->value;
@@ -196,6 +213,26 @@ class User extends Authenticatable
 
         $this->setRelation('currentBranch', $branch);
         return $branch;
+    }
+
+    /**
+     * Branch IDs this user is allowed to see data for.
+     *
+     * Owner-level users get every active branch (they own the business).
+     * Everyone else gets the branches they are explicitly assigned to via
+     * the branch_user pivot — this is the source of truth that drives
+     * branch-scoped admin screens (partner overview, live monitor, etc.)
+     * so floor managers never see another branch's numbers.
+     *
+     * @return array<int,int>
+     */
+    public function accessibleBranchIds(): array
+    {
+        if ($this->isOwnerLevel()) {
+            return Branch::active()->orderBy('display_order')->pluck('id')->all();
+        }
+
+        return $this->branches()->pluck('branches.id')->all();
     }
 
     /**

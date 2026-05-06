@@ -58,7 +58,19 @@ new class extends Component
         $start = $today.' 00:00:00';
         $end   = $today.' 23:59:59';
 
-        return Branch::active()->orderBy('display_order')->get()->map(function (Branch $b) use ($start, $end) {
+        // Owner-level sees every branch; branch admin/manager sees only the
+        // branches they belong to. Without this scope a branch user would
+        // see another branch's columns in the monitor.
+        $branchIds = auth()->user()?->accessibleBranchIds() ?? [];
+        if (empty($branchIds)) {
+            return [];
+        }
+
+        return Branch::active()
+            ->whereIn('id', $branchIds)
+            ->orderBy('display_order')
+            ->get()
+            ->map(function (Branch $b) use ($start, $end) {
             // Today sales - paid + partially paid invoices.
             $sales = (float) Invoice::query()->withoutGlobalScopes()
                 ->where('branch_id', $b->id)

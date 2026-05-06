@@ -45,9 +45,10 @@
                     </a>
                 </li>
 
-                {{-- لمحة الفروع + شاشة المراقبة — للملاك فقط (شريك / سوبر أدمن).
-                     عرض موحَّد لكل الفروع بدون التبديل بينهم. --}}
-                @if(auth()->user()?->isOwnerLevel())
+                {{-- لمحة الفروع + شاشة المراقبة — للإدارة (مالك/شريك/مدير).
+                     مالك المنظومة يرى كل الفروع، ومدير الفرع يرى فرعه فقط
+                     (الفلترة تتم داخل المكوّن نفسه). --}}
+                @if(auth()->user()?->isManagementLevel())
                 @php
                     $monitorOpen = request()->routeIs('admin.partner.overview')
                         || request()->routeIs('admin.partner.live-monitor');

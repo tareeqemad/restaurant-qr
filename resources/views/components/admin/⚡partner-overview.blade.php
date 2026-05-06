@@ -34,36 +34,49 @@ new class extends Component
     #[Computed]
     public function summaries(): array
     {
-        return BranchContext::unscoped(function () {
+        // Branch admin/manager sees only their pivot-assigned branches; owner-
+        // level sees every active branch. Used to scope every aggregate below
+        // — without this, a branch user would see another branch's totals.
+        $branchIds = auth()->user()?->accessibleBranchIds() ?? [];
+        if (empty($branchIds)) {
+            return [];
+        }
+
+        return BranchContext::unscoped(function () use ($branchIds) {
             $today = now()->toDateString();
             $start = $today.' 00:00:00';
             $end = $today.' 23:59:59';
 
             $branches = Branch::active()
+                ->whereIn('id', $branchIds)
                 ->orderBy('display_order')
                 ->orderBy('name')
                 ->get();
 
-            $sales = Invoice::whereBetween('issued_at', [$start, $end])
+            $sales = Invoice::whereIn('branch_id', $branchIds)
+                ->whereBetween('issued_at', [$start, $end])
                 ->whereIn('status', ['paid', 'partially_paid'])
                 ->selectRaw('branch_id, SUM(paid_total) as sales, COUNT(*) as invoices, AVG(paid_total) as avg_ticket')
                 ->groupBy('branch_id')
                 ->get()
                 ->keyBy('branch_id');
 
-            $todayOrders = Order::whereBetween('created_at', [$start, $end])
+            $todayOrders = Order::whereIn('branch_id', $branchIds)
+                ->whereBetween('created_at', [$start, $end])
                 ->selectRaw('branch_id, COUNT(*) as orders')
                 ->groupBy('branch_id')
                 ->get()
                 ->keyBy('branch_id');
 
-            $activeOrders = Order::whereIn('status', OrderStatus::active())
+            $activeOrders = Order::whereIn('branch_id', $branchIds)
+                ->whereIn('status', OrderStatus::active())
                 ->selectRaw('branch_id, COUNT(*) as active_orders')
                 ->groupBy('branch_id')
                 ->get()
                 ->keyBy('branch_id');
 
-            $delayedOrders = Order::whereIn('status', [
+            $delayedOrders = Order::whereIn('branch_id', $branchIds)
+                ->whereIn('status', [
                     OrderStatus::Approved->value,
                     OrderStatus::Preparing->value,
                 ])
@@ -74,19 +87,22 @@ new class extends Component
                 ->get()
                 ->keyBy('branch_id');
 
-            $pendingOrders = Order::where('status', OrderStatus::Pending->value)
+            $pendingOrders = Order::whereIn('branch_id', $branchIds)
+                ->where('status', OrderStatus::Pending->value)
                 ->selectRaw('branch_id, COUNT(*) as pending_orders')
                 ->groupBy('branch_id')
                 ->get()
                 ->keyBy('branch_id');
 
-            $tables = Table::where('active', true)
+            $tables = Table::whereIn('branch_id', $branchIds)
+                ->where('active', true)
                 ->selectRaw('branch_id, COUNT(*) as total_tables, SUM(CASE WHEN status = "occupied" THEN 1 ELSE 0 END) as occupied_tables')
                 ->groupBy('branch_id')
                 ->get()
                 ->keyBy('branch_id');
 
             $expenses = Expense::approved()
+                ->whereIn('branch_id', $branchIds)
                 ->whereDate('expense_date', $today)
                 ->selectRaw('branch_id, SUM(amount) as expenses, COUNT(*) as expense_count')
                 ->groupBy('branch_id')
@@ -95,6 +111,7 @@ new class extends Component
 
             $refunds = DB::table('refunds')
                 ->join('invoices', 'refunds.invoice_id', '=', 'invoices.id')
+                ->whereIn('invoices.branch_id', $branchIds)
                 ->whereNull('refunds.deleted_at')
                 ->whereNull('invoices.deleted_at')
                 ->where('refunds.status', 'completed')
@@ -104,26 +121,30 @@ new class extends Component
                 ->get()
                 ->keyBy('branch_id');
 
-            $reservations = Reservation::whereDate('reserved_for', $today)
+            $reservations = Reservation::whereIn('branch_id', $branchIds)
+                ->whereDate('reserved_for', $today)
                 ->selectRaw('branch_id, COUNT(*) as reservations_today, SUM(CASE WHEN status = "pending" THEN 1 ELSE 0 END) as pending_reservations')
                 ->groupBy('branch_id')
                 ->get()
                 ->keyBy('branch_id');
 
             $reviews = Review::published()
+                ->whereIn('branch_id', $branchIds)
                 ->whereDate('created_at', '>=', now()->subDays(14)->toDateString())
                 ->selectRaw('branch_id, AVG(rating) as avg_rating, SUM(CASE WHEN rating <= 2 THEN 1 ELSE 0 END) as low_reviews, COUNT(*) as review_count')
                 ->groupBy('branch_id')
                 ->get()
                 ->keyBy('branch_id');
 
-            $ap = SupplierInvoice::whereNotIn('status', ['paid', 'cancelled'])
+            $ap = SupplierInvoice::whereIn('branch_id', $branchIds)
+                ->whereNotIn('status', ['paid', 'cancelled'])
                 ->selectRaw('branch_id, SUM(balance) as ap_due, SUM(CASE WHEN due_date < CURDATE() THEN balance ELSE 0 END) as overdue_ap, SUM(CASE WHEN due_date < CURDATE() THEN 1 ELSE 0 END) as overdue_ap_count')
                 ->groupBy('branch_id')
                 ->get()
                 ->keyBy('branch_id');
 
-            $po = PurchaseOrder::selectRaw('
+            $po = PurchaseOrder::whereIn('branch_id', $branchIds)
+                ->selectRaw('
                     branch_id,
                     SUM(CASE WHEN status = "draft" AND approved_at IS NULL THEN 1 ELSE 0 END) as po_needs_approval,
                     SUM(CASE WHEN status IN ("sent","partially_received") AND expected_at IS NOT NULL AND expected_at < CURDATE() THEN 1 ELSE 0 END) as overdue_pos,
@@ -133,7 +154,8 @@ new class extends Component
                 ->get()
                 ->keyBy('branch_id');
 
-            $receipts = PurchaseReceipt::where('received_at', '>=', now()->subDays(7))
+            $receipts = PurchaseReceipt::whereIn('branch_id', $branchIds)
+                ->where('received_at', '>=', now()->subDays(7))
                 ->selectRaw('branch_id, COUNT(*) as receipts_7d')
                 ->groupBy('branch_id')
                 ->get()
@@ -141,6 +163,7 @@ new class extends Component
 
             $invoiceVariances = DB::table('supplier_invoice_items')
                 ->join('supplier_invoices', 'supplier_invoice_items.supplier_invoice_id', '=', 'supplier_invoices.id')
+                ->whereIn('supplier_invoices.branch_id', $branchIds)
                 ->whereNull('supplier_invoices.deleted_at')
                 ->where(function ($query) {
                     $query->whereRaw('ABS(COALESCE(supplier_invoice_items.variance_qty, 0)) > 0.0001')
@@ -151,7 +174,8 @@ new class extends Component
                 ->get()
                 ->keyBy('branch_id');
 
-            $waste = InventoryMovement::where('type', 'waste')
+            $waste = InventoryMovement::whereIn('branch_id', $branchIds)
+                ->where('type', 'waste')
                 ->where('occurred_at', '>=', now()->subDays(7))
                 ->selectRaw('branch_id, SUM(total_cost) as waste_7d')
                 ->groupBy('branch_id')
@@ -161,6 +185,7 @@ new class extends Component
             $lowStock = DB::table('ingredient_stock')
                 ->join('storage_locations', 'ingredient_stock.storage_location_id', '=', 'storage_locations.id')
                 ->join('ingredients', 'ingredient_stock.ingredient_id', '=', 'ingredients.id')
+                ->whereIn('storage_locations.branch_id', $branchIds)
                 ->whereNull('storage_locations.deleted_at')
                 ->whereNull('ingredients.deleted_at')
                 ->where('storage_locations.active', true)
@@ -172,7 +197,8 @@ new class extends Component
                 ->get()
                 ->keyBy('branch_id');
 
-            $expiringBatches = IngredientBatch::where('remaining_qty', '>', 0)
+            $expiringBatches = IngredientBatch::whereIn('branch_id', $branchIds)
+                ->where('remaining_qty', '>', 0)
                 ->whereNotNull('expiry_date')
                 ->whereDate('expiry_date', '<=', now()->addDays(7)->toDateString())
                 ->selectRaw('branch_id, COUNT(*) as expiring_batches')
@@ -292,8 +318,14 @@ new class extends Component
     #[Computed]
     public function trend(): array
     {
-        return BranchContext::unscoped(function () {
-            $salesByDay = Invoice::whereIn('status', ['paid', 'partially_paid'])
+        $branchIds = auth()->user()?->accessibleBranchIds() ?? [];
+        if (empty($branchIds)) {
+            return array_fill(0, 7, ['label' => '', 'value' => 0.0]);
+        }
+
+        return BranchContext::unscoped(function () use ($branchIds) {
+            $salesByDay = Invoice::whereIn('branch_id', $branchIds)
+                ->whereIn('status', ['paid', 'partially_paid'])
                 ->whereDate('issued_at', '>=', now()->subDays(6)->toDateString())
                 ->selectRaw('DATE(issued_at) as day, SUM(paid_total) as total')
                 ->groupBy('day')
@@ -914,7 +946,10 @@ new class extends Component
     }
 
     .owner-card-grid {
-        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        /* auto-fit (not auto-fill) so a small number of branches stretches
+           to fill the row instead of leaving phantom empty columns and
+           wasted space on one side of the page. */
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     }
 
     .owner-card {
