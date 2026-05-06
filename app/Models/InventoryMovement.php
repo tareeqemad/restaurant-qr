@@ -13,6 +13,7 @@ class InventoryMovement extends Model
     use BelongsToBranch, HasFactory;
 
     protected $fillable = [
+        'branch_id',
         'ingredient_id', 'batch_id', 'storage_location_id',
         'type', 'quantity', 'unit_id', 'quantity_in_base',
         'unit_cost', 'total_cost', 'stock_before', 'stock_after',

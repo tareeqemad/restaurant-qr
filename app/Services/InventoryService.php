@@ -247,7 +247,28 @@ class InventoryService
                 }
             }
 
+            // inventory_movements has a NOT NULL branch_id. The trait
+            // auto-stamps from BranchContext, but receipts/queues run with
+            // no context bound. Resolve from the strongest available signal:
+            // location → reference's own branch_id → reference's parent
+            // (PO line carries it via purchaseOrder) → BranchContext.
+            $branchId = null;
+            if ($storageLocationId) {
+                $branchId = \App\Models\StorageLocation::whereKey($storageLocationId)->value('branch_id');
+            }
+            if (! $branchId && $reference) {
+                if (isset($reference->branch_id) && $reference->branch_id) {
+                    $branchId = (int) $reference->branch_id;
+                } elseif (method_exists($reference, 'purchaseOrder')
+                          && ($parent = $reference->purchaseOrder)
+                          && $parent->branch_id) {
+                    $branchId = (int) $parent->branch_id;
+                }
+            }
+            $branchId = $branchId ?: \App\Support\BranchContext::current();
+
             $mv = InventoryMovement::create([
+                'branch_id'     => $branchId,
                 'ingredient_id' => $ingredient->id,
                 'batch_id'      => $batchId,
                 'storage_location_id' => $storageLocationId,
