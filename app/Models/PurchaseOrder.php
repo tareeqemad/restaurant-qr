@@ -94,6 +94,16 @@ class PurchaseOrder extends Model
         return in_array($this->status, ['sent', 'partially_received'], true);
     }
 
+    public function isInvoiceable(): bool
+    {
+        return in_array($this->status, ['received', 'partially_received'], true);
+    }
+
+    public function isCancellable(): bool
+    {
+        return ! in_array($this->status, ['received', 'cancelled'], true);
+    }
+
     public function statusLabel(): string
     {
         return match ($this->status) {

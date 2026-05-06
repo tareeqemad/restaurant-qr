@@ -7,39 +7,70 @@
     icon="bi-truck"
     subtitle="{{ $po->supplier?->name ?? 'بدون مورد' }}">
     <x-slot:actions>
-        <div class="d-flex flex-wrap gap-2">
-            @can('update', $po)
-                <a href="{{ route('admin.purchase-orders.edit', $po) }}" class="btn btn-light">
-                    <i class="bi bi-pencil"></i> تعديل
-                </a>
-            @endcan
-            @can('approve', $po)
-                <form method="POST" action="{{ route('admin.purchase-orders.approve', $po) }}">
-                    @csrf
-                    <button class="btn btn-success"><i class="bi bi-check2-circle"></i> اعتماد</button>
-                </form>
-            @endcan
-            @can('send', $po)
-                <form method="POST" action="{{ route('admin.purchase-orders.send', $po) }}">
-                    @csrf
-                    <button class="btn btn-primary"><i class="bi bi-send-check"></i> إرسال للمورد</button>
-                </form>
-            @endcan
-            @can('receive', $po)
-                <a href="{{ route('admin.purchase-orders.receive-form', $po) }}" class="btn btn-success">
-                    <i class="bi bi-box-arrow-in-down"></i> استلام
-                </a>
-            @endcan
-            @if(in_array($po->status, ['received', 'partially_received'], true))
-                <a href="{{ route('admin.supplier-invoices.create', ['po' => $po->id]) }}" class="btn btn-outline-primary">
-                    <i class="bi bi-receipt"></i> فاتورة مورد
+        {{-- The PO has a strict workflow: draft → approved → sent →
+             (partially_received) → received. At each state only one or
+             two actions make sense. The model exposes is*able()
+             helpers; we gate the buttons on those AND on policy. The
+             policy alone isn't enough because BasePolicy::before bypasses
+             every check for owner-level, so without the state guard a
+             super-admin would see every button at once. --}}
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+            @if($po->isCancellable())
+                <span class="badge bg-{{ $po->statusColor() }}-transparent text-{{ $po->statusColor() }} fs-13 px-3 py-2 me-2">
+                    <i class="bi bi-info-circle"></i> {{ $po->statusLabel() }}
+                </span>
+            @endif
+
+            {{-- Primary next-step action — exactly one of these renders. --}}
+            @if($po->isApprovable())
+                @can('approve', $po)
+                    <form method="POST" action="{{ route('admin.purchase-orders.approve', $po) }}">@csrf
+                        <button class="btn btn-success" title="اعتماد الأمر للسماح بإرساله للمورد">
+                            <i class="bi bi-check2-circle"></i> اعتماد الأمر
+                        </button>
+                    </form>
+                @endcan
+            @elseif($po->isSendable())
+                @can('send', $po)
+                    <form method="POST" action="{{ route('admin.purchase-orders.send', $po) }}">@csrf
+                        <button class="btn btn-primary" title="تأكيد إرسال الأمر للمورد">
+                            <i class="bi bi-send-check"></i> إرسال للمورد
+                        </button>
+                    </form>
+                @endcan
+            @elseif($po->isReceivable())
+                @can('receive', $po)
+                    <a href="{{ route('admin.purchase-orders.receive-form', $po) }}" class="btn btn-success" title="تسجيل استلام البضاعة من المورد">
+                        <i class="bi bi-box-arrow-in-down"></i>
+                        {{ $po->status === 'partially_received' ? 'استلام دفعة جديدة' : 'استلام البضاعة' }}
+                    </a>
+                @endcan
+            @endif
+
+            {{-- Invoicing — relevant once any goods have arrived. --}}
+            @if($po->isInvoiceable())
+                <a href="{{ route('admin.supplier-invoices.create', ['po' => $po->id]) }}" class="btn btn-outline-primary" title="تسجيل فاتورة المورد المرتبطة بهذا الأمر">
+                    <i class="bi bi-receipt"></i> فاتورة المورد
                 </a>
             @endif
-            @can('cancel', $po)
-                <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#cancelPO">
-                    <i class="bi bi-x-circle"></i> إلغاء
-                </button>
-            @endcan
+
+            {{-- Edit — only meaningful while the PO is still a draft. --}}
+            @if($po->isEditable())
+                @can('update', $po)
+                    <a href="{{ route('admin.purchase-orders.edit', $po) }}" class="btn btn-light" title="تعديل بنود الأمر">
+                        <i class="bi bi-pencil"></i> تعديل
+                    </a>
+                @endcan
+            @endif
+
+            {{-- Cancel — last in the row, danger style, only while alive. --}}
+            @if($po->isCancellable())
+                @can('cancel', $po)
+                    <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#cancelPO" title="إلغاء أمر الشراء">
+                        <i class="bi bi-x-circle"></i> إلغاء
+                    </button>
+                @endcan
+            @endif
         </div>
     </x-slot:actions>
 </x-admin.breadcrumb>
