@@ -80,8 +80,34 @@
     ['label' => 'الإيرادات',       'value' => \App\Helpers\Money::format($revenue),      'icon' => 'bi-cash-stack',        'color' => 'primary'],
     ['label' => 'تكلفة المبيعات', 'value' => \App\Helpers\Money::format($cogs),         'icon' => 'bi-boxes',              'color' => 'muted'],
     ['label' => 'الربح الإجمالي', 'value' => \App\Helpers\Money::format($grossProfit),  'icon' => 'bi-graph-up-arrow',     'color' => $grossProfit >= 0 ? 'success' : 'danger'],
-    ['label' => 'هامش الربح',      'value' => number_format($marginPct, 1).'%',         'icon' => 'bi-percent',            'color' => $marginPct >= 50 ? 'success' : ($marginPct >= 30 ? 'accent' : 'danger')],
+    ['label' => 'هامش الربح %',   'value' => number_format($marginPct, 1).'%',         'icon' => 'bi-percent',            'color' => $marginPct >= 50 ? 'success' : ($marginPct >= 30 ? 'accent' : 'danger')],
 ]" />
+
+{{-- Plain-Arabic legend so a non-accountant reader knows what each KPI
+     means and what counts as "good" — restaurant owners shouldn't have
+     to translate "gross margin" in their head. --}}
+<div class="kpi-legend">
+    <div><strong class="text-primary">الإيرادات</strong> &nbsp;مجموع مبيعاتك في الفترة (قبل خصم أي تكلفة).</div>
+    <div><strong>تكلفة المبيعات</strong> &nbsp;تكلفة المكوّنات للأصناف المباعة فقط — مش كل اللي اشتريته.</div>
+    <div><strong class="text-success">الربح الإجمالي</strong> &nbsp;= الإيرادات − تكلفة المبيعات. ما بيشمل الرواتب والإيجار والكهرباء.</div>
+    <div><strong class="text-accent">هامش الربح %</strong> &nbsp;= (الربح ÷ الإيرادات) × 100. كم تكسب من كل 100 ر.ع. مبيعات. ↑ <span class="text-success">50%+</span> ممتاز · <span class="text-accent">30–50%</span> مقبول · <span class="text-danger">&lt;30%</span> مراجعة.</div>
+</div>
+@push('styles')
+<style>
+    .kpi-legend {
+        margin-bottom: 1rem;
+        padding: .85rem 1rem;
+        border-radius: 12px;
+        background: rgba(15, 71, 49, .04);
+        border: 1px solid rgba(15, 71, 49, .08);
+        font-size: .85rem;
+        line-height: 1.7;
+        color: #475563;
+    }
+    .kpi-legend > div + div { margin-top: .15rem; }
+    .kpi-legend strong { font-weight: 800; }
+</style>
+@endpush
 
 <div class="row g-3 mb-3">
     <div class="col-xl-8">
@@ -237,7 +263,10 @@
                         <th>الإيرادات</th>
                         <th>التكلفة</th>
                         <th>الربح</th>
-                        <th>هامش</th>
+                        <th title="نسبة الربح من سعر بيع الصنف. (الربح ÷ الإيرادات) × 100">
+                            هامش الربح %
+                            <i class="bi bi-info-circle text-muted small" style="cursor: help;"></i>
+                        </th>
                     </tr>
                 </thead>
                 <tbody>
