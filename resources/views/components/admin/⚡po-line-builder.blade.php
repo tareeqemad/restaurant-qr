@@ -35,14 +35,24 @@ new class extends Component
         }
     }
 
-    /** Suppliers for the dropdown — small list, cached for the request. */
+    /**
+     * Suppliers for the dropdown — branch-scoped: a branch only sees the
+     * suppliers it serves (linked via the branch_supplier pivot). Owner-
+     * level users in "view all branches" mode (no BranchContext bound)
+     * see every active supplier, since they can also create POs for any
+     * branch.
+     */
     #[Computed(persist: false)]
     public function suppliers()
     {
-        return Supplier::where('active', true)
-            ->orderBy('name')
-            ->get(['id', 'name'])
-            ->all();
+        $query = Supplier::where('active', true)->orderBy('name');
+
+        $branchId = \App\Support\BranchContext::current();
+        if ($branchId) {
+            $query->servingBranch((int) $branchId);
+        }
+
+        return $query->get(['id', 'name'])->all();
     }
 
     /** Ingredients seed for the row dropdowns — id + name + base_unit_id only. */
