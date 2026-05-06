@@ -44,24 +44,29 @@
                  More accurate when branches buy from different suppliers
                  at different prices, at the cost of a heavier compute. --}}
             <div class="col-12 mt-2">
-                <label class="d-inline-flex align-items-center gap-2 p-2 rounded"
+                <label class="d-flex align-items-start gap-2 p-2 rounded"
                        style="background: rgba(var(--accent-rgb), .08); border: 1px solid rgba(var(--accent-rgb), .25); cursor: pointer;">
                     <input type="checkbox"
                            name="per_branch_cost"
                            value="1"
-                           class="form-check-input m-0"
+                           class="form-check-input m-0 mt-1"
                            @checked($perBranchCost)
                            onchange="this.form.submit()">
-                    <span class="fw-semibold">
-                        <i class="bi bi-building text-accent"></i>
-                        احسب COGS بسعر هذا الفرع
+                    <span class="d-block">
+                        <span class="fw-semibold d-block">
+                            <i class="bi bi-building text-accent"></i>
+                            احسب تكلفة الأصناف بأسعار الشراء الفعلية لهذا الفرع
+                        </span>
+                        <small class="text-muted d-block mt-1" style="line-height: 1.6;">
+                            افتراضياً نحسب تكلفة كل طبق بالسعر الموحَّد المسجَّل على المكوّن.
+                            عند تفعيل هذا الخيار، نستخدم بدلاً منه <strong>متوسط ما دفعه هذا الفرع فعلياً</strong>
+                            لشراء المكوّنات من فواتير الموردين. أدق لاحتساب صافي ربح الفرع لما تكون الفروع
+                            تشتري من موردين مختلفين أو بأسعار متفاوتة.
+                        </small>
                     </span>
-                    <small class="text-muted ms-2">
-                        (يستخدم الـ weighted-average للمكوّنات في dieser الفرع بدلاً من السعر العام — أدقّ للـ P&L الفرعي)
-                    </small>
                 </label>
                 @if($perBranchCost)
-                    <span class="badge bg-accent-transparent text-accent ms-2">
+                    <span class="badge bg-accent-transparent text-accent ms-2 mt-1">
                         <i class="bi bi-check-circle-fill"></i> مفعّل
                     </span>
                 @endif
