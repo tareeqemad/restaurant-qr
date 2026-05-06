@@ -2,7 +2,7 @@
 @section('title', $location->name)
 
 @section('content')
-<x-admin.breadcrumb title="{{ $location- />
+<x-admin.breadcrumb title="{{ $location->name }}" icon="bi-boxes" />
 
 {{-- How stock arrives at a storage location — the system has no
      "إضافة كمية مباشرة" button by design (every change must come from
