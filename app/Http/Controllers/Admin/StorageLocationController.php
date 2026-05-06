@@ -65,6 +65,13 @@ class StorageLocationController extends Controller
             ?? optional($request->user()->primaryBranch())->id
             ?? optional($request->user()->branches()->first())->id;
 
+        // Owner-level (super admin / partner) is never seated in branch_user,
+        // so the fallback chain above hits null. Default them to the first
+        // active branch so they aren't blocked at the create form.
+        if (! $branchId && $request->user()->isOwnerLevel()) {
+            $branchId = \App\Models\Branch::active()->orderBy('display_order')->value('id');
+        }
+
         if (! $branchId) {
             return back()->withInput()->with(
                 'error',

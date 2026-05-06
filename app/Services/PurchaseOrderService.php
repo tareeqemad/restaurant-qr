@@ -40,7 +40,33 @@ class PurchaseOrderService
     public function create(array $data, array $lines, ?int $userId = null): PurchaseOrder
     {
         return DB::transaction(function () use ($data, $lines, $userId) {
+            // BelongsToBranch normally auto-stamps branch_id from the active
+            // BranchContext, but an owner-level user in "view all branches"
+            // mode (or any flow that hasn't passed through SetActiveBranch)
+            // has no context bound — the insert would fail with a NOT NULL
+            // violation. Resolve the branch with a tiered fallback:
+            //   context → user's primary branch → user's first member branch
+            //   → first active branch (only used for owner-level, who never
+            //      sit in branch_user).
+            $branchId = BranchContext::current();
+            if (! $branchId && $userId) {
+                $user = \App\Models\User::find($userId);
+                $branchId = optional($user?->primaryBranch())->id
+                    ?? optional($user?->branches()->first())->id;
+                if (! $branchId && $user?->isOwnerLevel()) {
+                    $branchId = \App\Models\Branch::active()
+                        ->orderBy('display_order')
+                        ->value('id');
+                }
+            }
+            if (! $branchId) {
+                throw ValidationException::withMessages([
+                    'branch_id' => 'تعذّر تحديد فرع للأمر. اختر فرعاً نشطاً من شريط التبديل في الأعلى ثم أعد المحاولة.',
+                ]);
+            }
+
             $po = PurchaseOrder::create([
+                'branch_id'   => $branchId,
                 'number'      => PurchaseOrder::generateNumber(),
                 'supplier_id' => $data['supplier_id'],
                 'status'      => 'draft',

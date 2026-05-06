@@ -14,6 +14,7 @@ class PurchaseOrder extends Model
     use BelongsToBranch, HasFactory, SoftDeletes;
 
     protected $fillable = [
+        'branch_id',
         'number', 'supplier_id', 'status',
         'subtotal', 'tax_total', 'total',
         'expected_at', 'sent_at', 'received_at', 'cancelled_at', 'cancel_reason',
