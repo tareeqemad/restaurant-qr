@@ -183,6 +183,11 @@
 @endsection
 
 @push('scripts')
+{{-- The form is Alpine-driven (x-data/x-for/x-model). The admin layout
+     loads @livewireScripts only when a page asks for it, and Livewire
+     bundles Alpine — without this directive Alpine never initialises
+     and the branch / location <select> templates render empty. --}}
+@livewireScripts
 <script>
 window.branchTransferForm = function (config) {
     return {
