@@ -82,21 +82,64 @@
     </div>
 
     <div class="col-lg-3">
-        <div class="card"><div class="card-header"><strong><i class="bi bi-boxes"></i> استهلاك المخزون</strong></div>
+        <div class="card">
+            <div class="card-header">
+                <strong><i class="bi bi-boxes"></i> استهلاك المخزون</strong>
+            </div>
+            <div class="px-3 pt-2 pb-1 small text-muted" style="line-height: 1.55; background: rgba(15, 71, 49, .03); border-bottom: 1px solid rgba(15, 71, 49, .06);">
+                المكوّنات اللي خرجت من المستودع اليوم — سواء استُهلكت في تحضير الأصناف المباعة (<span class="text-primary fw-bold">بيع</span>) أو سُجِّلت كهدر (<span class="text-danger fw-bold">هدر</span>).
+                التكلفة محسوبة بـ <strong>متوسط سعر الشراء</strong> الفعلي للمكوّن وقت الحركة.
+            </div>
         <div class="card-body p-0">
-        <table class="table mb-0"><thead class="bg-light"><tr><th>المكون</th><th>كمية</th><th>تكلفة</th></tr></thead><tbody>
-            @php $totalCost = 0; @endphp
+        <table class="table mb-0"><thead class="bg-light"><tr><th>المكون</th><th>النوع</th><th>كمية</th><th>تكلفة</th></tr></thead><tbody>
+            @php
+                $usageCost = 0;
+                $wasteCost = 0;
+            @endphp
             @forelse($inventoryUsage as $name => $rows)
-                @php
-                    $qty = $rows->sum('qty');
-                    $cost = $rows->sum('cost');
-                    $totalCost += $cost;
-                @endphp
-                <tr><td class="small">{{ $name }}</td><td>{{ number_format((float)$qty, 1) }}</td><td class="small">{{ number_format((float)$cost, 2) }}</td></tr>
-            @empty<tr><td colspan="3" class="text-center text-muted py-3">—</td></tr>@endforelse
+                @foreach($rows as $row)
+                    @php
+                        $isWaste = $row->type === 'waste';
+                        if ($isWaste) {
+                            $wasteCost += (float) $row->cost;
+                        } else {
+                            $usageCost += (float) $row->cost;
+                        }
+                    @endphp
+                    <tr>
+                        <td class="small">{{ $name }}</td>
+                        <td>
+                            @if($isWaste)
+                                <span class="badge bg-danger-transparent text-danger">هدر</span>
+                            @else
+                                <span class="badge bg-primary-transparent text-primary">بيع</span>
+                            @endif
+                        </td>
+                        <td>{{ number_format((float) $row->qty, 1) }}</td>
+                        <td class="small">{{ number_format((float) $row->cost, 2) }}</td>
+                    </tr>
+                @endforeach
+            @empty
+                <tr><td colspan="4" class="text-center text-muted py-3">—</td></tr>
+            @endforelse
         </tbody>
-        @if($totalCost > 0)
-            <tfoot class="bg-light"><tr><td colspan="2"><strong>تكلفة الاستهلاك</strong></td><td class="fw-bold">{{ number_format($totalCost, 2) }}</td></tr></tfoot>
+        @if(($usageCost + $wasteCost) > 0)
+            <tfoot class="bg-light">
+                <tr>
+                    <td colspan="3" class="text-primary"><strong>تكلفة الاستهلاك (بيع)</strong></td>
+                    <td class="fw-bold text-primary">{{ number_format($usageCost, 2) }}</td>
+                </tr>
+                @if($wasteCost > 0)
+                    <tr>
+                        <td colspan="3" class="text-danger"><strong>تكلفة الهدر</strong></td>
+                        <td class="fw-bold text-danger">{{ number_format($wasteCost, 2) }}</td>
+                    </tr>
+                @endif
+                <tr>
+                    <td colspan="3"><strong>الإجمالي</strong></td>
+                    <td class="fw-bold">{{ number_format($usageCost + $wasteCost, 2) }}</td>
+                </tr>
+            </tfoot>
         @endif
         </table>
         </div></div>
