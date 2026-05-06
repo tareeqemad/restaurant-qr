@@ -16,6 +16,24 @@ class BranchTransferController extends Controller
     public function __construct(protected BranchTransferService $service) {}
 
     /**
+     * Inter-branch transfers are an HQ-level operation: a single branch
+     * shouldn't be able to pull stock from a peer branch on its own —
+     * that needs corporate-level visibility into both inventories and
+     * the business reason for the move. Branch-level admins still get
+     * the read-only list (their incoming/outgoing) and can mark a
+     * physical receipt; everything else (create, send, cancel) is
+     * gated to owner-level (Super Admin / Partner).
+     */
+    protected function assertOwnerLevel(): void
+    {
+        abort_unless(
+            auth()->user()?->isOwnerLevel(),
+            403,
+            'إنشاء وإدارة التحويلات بين الفروع متاحة لمسؤول النظام فقط.'
+        );
+    }
+
+    /**
      * List view — shows transfers visible to the user's current branch
      * context (either as sender or receiver). Owner-level sees all.
      */
@@ -73,12 +91,14 @@ class BranchTransferController extends Controller
     public function create()
     {
         $this->authorize('viewAny', \App\Models\Ingredient::class);
+        $this->assertOwnerLevel();
         return view('admin.branch-transfers.create');
     }
 
     public function store(Request $request)
     {
         $this->authorize('viewAny', \App\Models\Ingredient::class);
+        $this->assertOwnerLevel();
 
         $data = $request->validate([
             'from_branch_id'        => ['required', 'exists:branches,id'],
@@ -113,6 +133,7 @@ class BranchTransferController extends Controller
     public function send(BranchTransfer $branchTransfer)
     {
         $this->authorize('viewAny', \App\Models\Ingredient::class);
+        $this->assertOwnerLevel();
         try {
             $this->service->send($branchTransfer, auth()->id());
             return back()->with('success', "تم إرسال التحويل — في الطريق إلى {$branchTransfer->toBranch->name}.");
@@ -124,6 +145,7 @@ class BranchTransferController extends Controller
     public function receive(BranchTransfer $branchTransfer)
     {
         $this->authorize('viewAny', \App\Models\Ingredient::class);
+        $this->assertOwnerLevel();
         try {
             $this->service->receive($branchTransfer, auth()->id());
             return back()->with('success', 'تم استلام التحويل وإضافة المخزون لفرعك.');
@@ -135,6 +157,7 @@ class BranchTransferController extends Controller
     public function cancel(Request $request, BranchTransfer $branchTransfer)
     {
         $this->authorize('viewAny', \App\Models\Ingredient::class);
+        $this->assertOwnerLevel();
         $data = $request->validate(['reason' => ['required', 'string', 'max:500']]);
         try {
             $this->service->cancel($branchTransfer, $data['reason'], auth()->id());

@@ -16,9 +16,11 @@
 
 <x-admin.data-panel title="قائمة التحويلات" icon="bi-list-ul" :count="$transfers->total()">
     <x-slot:actions>
-        <a href="{{ route('admin.branch-transfers.create') }}" class="btn btn-primary">
-            <i class="bi bi-plus-lg"></i> تحويل جديد
-        </a>
+        @if(auth()->user()?->isOwnerLevel())
+            <a href="{{ route('admin.branch-transfers.create') }}" class="btn btn-primary">
+                <i class="bi bi-plus-lg"></i> تحويل جديد
+            </a>
+        @endif
     </x-slot:actions>
 
     <x-slot:filters>

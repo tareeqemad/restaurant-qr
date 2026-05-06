@@ -109,6 +109,16 @@
                     <i class="bi bi-plus-circle"></i> أضف بند
                 </button>
             </div>
+            <div class="px-3 pt-2 pb-1 small text-muted" style="line-height: 1.55; background: rgba(15, 71, 49, .03); border-bottom: 1px solid rgba(15, 71, 49, .06);">
+                خانتا «من مستودع» و«إلى مستودع» <strong>اختيارية</strong>. تُستخدم فقط لو الفرع عنده عدّة مواقع تخزين مفصّلة (ثلاجة، فريزر، مستودع جاف…). لو ما حدّدتها، الكمية تُخصم/تُضاف من الإجمالي العام للمكوّن في الفرع.
+                @if(empty($locationsByBranch))
+                    <span class="d-block mt-1">
+                        <i class="bi bi-info-circle"></i>
+                        لم يتم إنشاء أي مواقع تخزين بعد. يمكنك إدارتها من
+                        <a href="{{ route('admin.storage-locations.index') }}" class="alert-link">شاشة مواقع التخزين</a>.
+                    </span>
+                @endif
+            </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
                     <table class="table align-middle mb-0">
@@ -117,8 +127,14 @@
                                 <th style="min-width: 220px;">المكوّن</th>
                                 <th style="width: 130px;">الكمية</th>
                                 <th>الوحدة</th>
-                                <th style="min-width: 150px;">من موقع (اختياري)</th>
-                                <th style="min-width: 150px;">إلى موقع (اختياري)</th>
+                                <th style="min-width: 150px;" title="موقع التخزين داخل فرع المصدر (مثلاً: ثلاجة المطبخ، مستودع جاف). اتركه فارغاً ليُخصم من إجمالي المخزون.">
+                                    من مستودع (اختياري)
+                                    <i class="bi bi-info-circle text-muted small" style="cursor: help;"></i>
+                                </th>
+                                <th style="min-width: 150px;" title="موقع التخزين داخل فرع الوجهة. اتركه فارغاً ليُضاف إلى الإجمالي بدون موقع محدد.">
+                                    إلى مستودع (اختياري)
+                                    <i class="bi bi-info-circle text-muted small" style="cursor: help;"></i>
+                                </th>
                                 <th style="width: 50px;"></th>
                             </tr>
                         </thead>

@@ -113,9 +113,11 @@
             </ul>
         </x-admin.data-panel>
 
-        {{-- Action buttons depending on status --}}
+        {{-- Action buttons depending on status. Mutations are reserved for
+             owner-level so a branch-level user gets a read-only view. --}}
+        @php $isOwner = auth()->user()?->isOwnerLevel(); @endphp
         <div class="d-grid gap-2 mt-3">
-            @if($transfer->isDraft())
+            @if($isOwner && $transfer->isDraft())
                 <form method="POST" action="{{ route('admin.branch-transfers.send', $transfer) }}"
                       onsubmit="return confirm('سيُخصم المخزون من فرع المصدر فوراً. متابعة؟');">
                     @csrf
@@ -125,20 +127,27 @@
                 </form>
             @endif
 
-            @if($transfer->isInTransit())
+            @if($isOwner && $transfer->isInTransit())
                 <form method="POST" action="{{ route('admin.branch-transfers.receive', $transfer) }}"
-                      onsubmit="return confirm('تأكيد استلام البضاعة في فرعك؟');">
+                      onsubmit="return confirm('تأكيد استلام البضاعة في فرع الوجهة؟');">
                     @csrf
                     <button class="btn btn-success btn-lg w-100">
-                        <i class="bi bi-check-circle-fill me-1"></i> استلام في فرعنا
+                        <i class="bi bi-check-circle-fill me-1"></i> تأكيد الاستلام
                     </button>
                 </form>
             @endif
 
-            @if($transfer->isDraft() || $transfer->isInTransit())
+            @if($isOwner && ($transfer->isDraft() || $transfer->isInTransit()))
                 <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#cancelModal">
                     <i class="bi bi-x-circle me-1"></i> إلغاء التحويل
                 </button>
+            @endif
+
+            @if(! $isOwner && ($transfer->isDraft() || $transfer->isInTransit()))
+                <div class="alert alert-info mb-0 small">
+                    <i class="bi bi-info-circle"></i>
+                    إجراءات الإرسال والاستلام والإلغاء محصورة بمسؤول النظام.
+                </div>
             @endif
 
             <a href="{{ route('admin.branch-transfers.index') }}" class="btn btn-light">
