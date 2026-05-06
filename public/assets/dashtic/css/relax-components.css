@@ -4377,12 +4377,12 @@ html[data-nav-layout="horizontal"] .app-sidebar .slide-menu .side-menu__item::be
         margin: 0 !important;
     }
 
-    html[dir="rtl"][data-nav-layout="horizontal"] .app-sidebar .slide-menu .slide.has-sub > .slide-menu {
-        inset-inline-start: auto !important;
-        inset-inline-end: calc(100% - 8px) !important;
-    }
-
-    html:not([dir="rtl"])[data-nav-layout="horizontal"] .app-sidebar .slide-menu .slide.has-sub > .slide-menu {
+    /* Nested submenus follow reading direction: in LTR the child flies
+       out to the right of its parent, so in RTL it must mirror and fly
+       out to the left. Both directions therefore use the same logical
+       inset (start = next-line direction) and let the browser flip
+       physical sides. */
+    html[data-nav-layout="horizontal"] .app-sidebar .slide-menu .slide.has-sub > .slide-menu {
         inset-inline-end: auto !important;
         inset-inline-start: calc(100% - 8px) !important;
     }
@@ -4390,6 +4390,17 @@ html[data-nav-layout="horizontal"] .app-sidebar .slide-menu .side-menu__item::be
     html[data-nav-layout="horizontal"] .app-sidebar .slide-menu .slide.has-sub > .side-menu__item {
         justify-content: space-between;
         padding-inline: .78rem .66rem !important;
+    }
+
+    /* The base theme pins .side-menu__angle absolute (.45rem from inline
+       end) which is right for the vertical sidebar but inside a horizontal
+       dropdown it floats over the label text. Drop it back into the flex
+       row so it sits cleanly after the label with the gap the parent flex
+       container already provides. */
+    html[data-nav-layout="horizontal"] .app-sidebar .slide-menu .slide.has-sub > .side-menu__item .side-menu__angle {
+        position: relative !important;
+        inset: auto !important;
+        margin-inline-start: .35rem;
     }
 
     html[data-nav-layout="horizontal"][data-nav-style="menu-hover"] .app-sidebar .main-menu > .slide.has-sub:hover > .side-menu__item {
