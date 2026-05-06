@@ -260,15 +260,34 @@ new class extends Component
                     <tbody>
                         <template x-for="(line, idx) in lines" :key="idx">
                             <tr>
-                                <td>
-                                    <select x-model.number="line.ingredient_id"
-                                            @change="onIngredientChange(idx)"
-                                            class="form-select form-select-sm">
-                                        <option value="0">— اختر مكون —</option>
-                                        <template x-for="ing in ingredients" :key="ing.id">
-                                            <option :value="ing.id" x-text="ing.name"></option>
-                                        </template>
-                                    </select>
+                                <td style="min-width: 220px;">
+                                    {{-- Searchable ingredient combobox: type to filter, click
+                                         to pick. Falls back to opening on focus so a click
+                                         in the empty cell still shows the full list. --}}
+                                    <div class="po-combo position-relative" @click.outside="line._open = false">
+                                        <input type="text"
+                                               class="form-control form-control-sm"
+                                               :value="line._open ? (line._q ?? '') : ingredientLabel(line)"
+                                               @focus="line._open = true; line._q = ''"
+                                               @input="line._q = $event.target.value; line._open = true"
+                                               @keydown.escape="line._open = false"
+                                               placeholder="ابحث أو اختر مكوناً…">
+                                        <div class="po-combo-list" x-show="line._open" x-cloak
+                                             style="max-height: 260px; overflow-y: auto;">
+                                            <template x-for="ing in filteredIngredients(line._q ?? '')" :key="ing.id">
+                                                <div class="po-combo-item"
+                                                     :class="line.ingredient_id === ing.id ? 'is-active' : ''"
+                                                     @click="pickIngredient(idx, ing)">
+                                                    <span x-text="ing.name"></span>
+                                                </div>
+                                            </template>
+                                            <div class="po-combo-empty"
+                                                 x-show="filteredIngredients(line._q ?? '').length === 0"
+                                                 x-cloak>
+                                                لا نتائج
+                                            </div>
+                                        </div>
+                                    </div>
                                 </td>
                                 <td>
                                     <input type="number" step="0.0001" min="0.0001"
@@ -353,7 +372,7 @@ window.poLineBuilder = function (config) {
 
         init() {
             this.lines = config.existing.length > 0
-                ? config.existing.map(l => ({ ...l }))
+                ? config.existing.map(l => ({ ...l, _q: '', _open: false }))
                 : [];
             if (this.lines.length === 0) this.addLine();
 
@@ -369,7 +388,10 @@ window.poLineBuilder = function (config) {
                 const sup = this.supplier_id;
                 this.supplier_id = 0;
                 this.supplier_id = sup;
-                this.lines = this.lines.map(l => ({ ...l }));
+                // Re-spread to retrigger select reactivity, but keep the
+                // combobox state (_q/_open) defaulted so the input shows
+                // the picked ingredient's name on first render.
+                this.lines = this.lines.map(l => ({ ...l, _q: '', _open: false }));
             });
         },
 
@@ -380,7 +402,27 @@ window.poLineBuilder = function (config) {
                 quantity_ordered: 1,
                 unit_price: 0,
                 notes: '',
+                _q: '',
+                _open: false,
             });
+        },
+
+        // ─── Ingredient combobox helpers ─────────────────────────────────
+        ingredientLabel(line) {
+            const ing = this.ingredients.find(i => i.id === line.ingredient_id);
+            return ing ? ing.name : '';
+        },
+        filteredIngredients(query) {
+            const q = (query || '').trim().toLowerCase();
+            if (! q) return this.ingredients;
+            return this.ingredients.filter(i => (i.name || '').toLowerCase().includes(q));
+        },
+        pickIngredient(idx, ing) {
+            const line = this.lines[idx];
+            line.ingredient_id = ing.id;
+            line._q = '';
+            line._open = false;
+            this.onIngredientChange(idx);
         },
 
         removeLine(idx) {
@@ -440,3 +482,31 @@ window.poLineBuilder = function (config) {
 };
 </script>
 @endscript
+
+@once
+<style>
+.po-combo-list {
+    position: absolute;
+    inset-inline-start: 0;
+    inset-inline-end: 0;
+    top: calc(100% + 4px);
+    z-index: 1050;
+    background: #fff;
+    border: 1px solid var(--border, #dfe7df);
+    border-radius: 10px;
+    box-shadow: 0 12px 28px rgba(15, 71, 49, .12);
+    overflow: hidden;
+}
+.po-combo-item {
+    padding: .45rem .75rem;
+    cursor: pointer;
+    font-size: .88rem;
+    line-height: 1.4;
+    border-bottom: 1px solid rgba(15, 71, 49, .04);
+}
+.po-combo-item:last-child { border-bottom: 0; }
+.po-combo-item:hover { background: rgba(15, 71, 49, .06); color: var(--primary); }
+.po-combo-item.is-active { background: rgba(15, 71, 49, .1); color: var(--primary); font-weight: 700; }
+.po-combo-empty { padding: .85rem .75rem; color: #888; font-size: .85rem; text-align: center; }
+</style>
+@endonce
