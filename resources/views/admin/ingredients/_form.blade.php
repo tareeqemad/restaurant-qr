@@ -1,9 +1,24 @@
 @csrf
 @php $ing = $ingredient ?? null; @endphp
 <div class="row g-3">
-    <div class="col-md-4"><label class="form-label">SKU</label><input name="sku" value="{{ old('sku', $ing?->sku) }}" class="form-control"></div>
-    <div class="col-md-4"><label class="form-label">الاسم *</label><input name="name" value="{{ old('name', $ing?->name) }}" class="form-control" required></div>
-    <div class="col-md-4"><label class="form-label">Name (EN)</label><input name="name_en" value="{{ old('name_en', $ing?->name_en) }}" class="form-control"></div>
+    {{-- SKU is auto-generated on create (ING-00001, ING-00002, …). On
+         edit we still show it read-only so the user can copy it but
+         can't accidentally rewrite it and break references. The field
+         is hidden from the create form entirely so the user doesn't
+         have to invent a code or guess what was last used. --}}
+    @if($ing)
+        <div class="col-md-4">
+            <label class="form-label">SKU</label>
+            <input value="{{ $ing->sku }}" class="form-control bg-light"
+                   readonly tabindex="-1"
+                   title="رمز داخلي يُولَّد تلقائياً عند الإنشاء — للعرض فقط">
+        </div>
+        <div class="col-md-4"><label class="form-label">الاسم *</label><input name="name" value="{{ old('name', $ing->name) }}" class="form-control" required></div>
+        <div class="col-md-4"><label class="form-label">Name (EN)</label><input name="name_en" value="{{ old('name_en', $ing->name_en) }}" class="form-control"></div>
+    @else
+        <div class="col-md-6"><label class="form-label">الاسم *</label><input name="name" value="{{ old('name') }}" class="form-control" required autofocus></div>
+        <div class="col-md-6"><label class="form-label">Name (EN)</label><input name="name_en" value="{{ old('name_en') }}" class="form-control"></div>
+    @endif
 
     <div class="col-md-4"><label class="form-label">الوحدة الأساسية *</label>
         <select name="base_unit_id" class="form-select" required>

@@ -18,6 +18,39 @@ class Ingredient extends Model
         'track_stock', 'active', 'notes',
     ];
 
+    /**
+     * Auto-stamp an SKU on insert if the caller didn't supply one. Lets the
+     * UI hide the SKU field entirely so the user doesn't have to invent or
+     * guess a code, while still leaving the field overridable when an
+     * import / migration explicitly sets it.
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (Ingredient $ingredient) {
+            if (empty($ingredient->sku)) {
+                $ingredient->sku = static::generateSku();
+            }
+        });
+    }
+
+    /**
+     * Generates the next sequential ING-XXXXX code. Reads the highest
+     * existing numeric suffix from `sku` (including soft-deleted rows so
+     * we never collide with a tombstoned code) and increments. Pads to
+     * five digits — gives 99,999 ingredients of headroom, plenty for any
+     * real restaurant.
+     */
+    public static function generateSku(): string
+    {
+        $prefix = 'ING-';
+        $max = static::withTrashed()
+            ->where('sku', 'like', $prefix.'%')
+            ->selectRaw('MAX(CAST(SUBSTRING(sku, '.(strlen($prefix) + 1).') AS UNSIGNED)) AS n')
+            ->value('n');
+        $next = ((int) $max) + 1;
+        return $prefix . str_pad((string) $next, 5, '0', STR_PAD_LEFT);
+    }
+
     protected $casts = [
         'current_stock' => 'decimal:4',
         'reorder_threshold' => 'decimal:4',
