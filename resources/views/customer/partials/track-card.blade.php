@@ -106,7 +106,7 @@
     </div>
 
     {{-- Actions --}}
-    @if($order->isCustomerCancellable())
+    @if($order->canCancelEntireOrder())
         <div class="track-actions">
             <button type="button" class="btn-track-cancel" data-bs-toggle="modal" data-bs-target="#cancel{{ $order->id }}">
                 <i class="bi bi-x-circle"></i>

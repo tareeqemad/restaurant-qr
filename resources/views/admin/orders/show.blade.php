@@ -80,7 +80,7 @@
             @if($order->status==='pending')
                 <form action="{{ route('admin.orders.approve', $order) }}" method="POST" class="d-grid mb-2">@csrf<button class="btn btn-success btn-lg"><i class="bi bi-check2-circle"></i> اعتماد الطلب</button></form>
             @endif
-            @if($order->isCancellable())
+            @if($order->canCancelEntireOrder())
                 <button class="btn btn-outline-danger w-100" data-bs-toggle="modal" data-bs-target="#cancelOrder"><i class="bi bi-x-circle"></i> إلغاء الطلب بالكامل</button>
                 <div class="modal fade" id="cancelOrder"><div class="modal-dialog"><div class="modal-content">
                     <form action="{{ route('admin.orders.cancel', $order) }}" method="POST">@csrf

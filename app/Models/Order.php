@@ -158,14 +158,14 @@ class Order extends Model
     }
 
     /**
-     * Customer-facing cancel rule: the diner can pull a ticket back only
-     * before the kitchen has fired it. Once the ticket is "preparing" the
-     * line has already touched the order and refusing it from the table
-     * QR would create wasted prep + ingredient spend with no human in the
-     * loop. From "preparing" onward, only staff can cancel through the
-     * admin/cashier surfaces (which still use isCancellable()).
+     * Cancel rule for "kill the entire ticket": only allowed before the
+     * kitchen has fired it (status in pending/approved). Once a ticket is
+     * preparing/ready/delivered, the right move is item-level cancel
+     * through cancelItem() — bulk-cancel after that point would waste
+     * already-fired prep and confuse the line. Used by both the diner's
+     * track view and the admin order-detail "cancel entire order" button.
      */
-    public function isCustomerCancellable(): bool
+    public function canCancelEntireOrder(): bool
     {
         return in_array($this->status, [OrderStatus::Pending->value, OrderStatus::Approved->value], true);
     }

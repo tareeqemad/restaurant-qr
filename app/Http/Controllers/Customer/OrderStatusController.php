@@ -118,7 +118,7 @@ class OrderStatusController extends Controller
         $submittedAt = $order->submitted_at ?? $order->created_at;
         $windowExpired = $cancelWindow <= 0 || ($submittedAt && $submittedAt->lt(now()->subSeconds($cancelWindow)));
 
-        if (! $order->isCustomerCancellable() || $windowExpired) {
+        if (! $order->canCancelEntireOrder() || $windowExpired) {
             return back()->with('error', 'لا يمكن إلغاء هذا الطلب');
         }
 

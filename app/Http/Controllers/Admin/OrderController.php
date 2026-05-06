@@ -265,6 +265,14 @@ class OrderController extends Controller
     public function cancel(Request $request, Order $order)
     {
         $this->authorize('cancel', $order);
+
+        // Once the kitchen has fired the ticket the right tool is per-item
+        // cancellation, not a sweeping bulk cancel — guard the bulk path so
+        // a stale browser tab can't blow away an order that's mid-prep.
+        if (! $order->canCancelEntireOrder()) {
+            return back()->with('error', 'لا يمكن إلغاء الطلب بالكامل بعد بدء التحضير. ألغِ الأصناف المتبقية بشكل فردي.');
+        }
+
         $data = $request->validate(['reason' => ['required', 'string', 'max:500']]);
         $this->service->cancel($order, auth()->id(), $data['reason']);
         return back()->with('success', 'تم إلغاء الطلب وإرجاع المخزون');
