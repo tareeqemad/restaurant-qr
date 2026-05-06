@@ -22,6 +22,8 @@
             --ink: #10231b;
             --muted: #66736d;
             --line: #e4ded2;
+            --gold-soft: #efe4c6;
+            --gold-line: #d6b876;
         }
 
         * { box-sizing: border-box; }
@@ -46,21 +48,40 @@
         .qr-card {
             position: relative;
             overflow: hidden;
-            padding: 24px;
+            padding: 28px 24px 24px;
             border: 1px solid rgba(22, 76, 55, .14);
             border-radius: 28px;
-            background: #fff;
+            background:
+                radial-gradient(120% 60% at 50% -10%, rgba(214, 184, 118, .14), transparent 55%),
+                #ffffff;
             box-shadow: 0 24px 70px rgba(16, 35, 27, .14);
         }
 
+        /* Luxury double-stripe at the top: brand-green underlay + thinner
+           gold band laid on top with a tiny breathing gap between them. */
         .qr-card::before {
             content: "";
             position: absolute;
-            inset-inline: 18px;
+            inset-inline: 22px;
             top: 0;
-            height: 8px;
+            height: 6px;
             border-radius: 0 0 999px 999px;
-            background: linear-gradient(90deg, var(--primary), var(--accent));
+            background: linear-gradient(90deg, var(--primary), var(--dark));
+        }
+
+        .qr-card::after {
+            content: "";
+            position: absolute;
+            inset-inline: 60px;
+            top: 9px;
+            height: 2px;
+            border-radius: 0 0 999px 999px;
+            background: linear-gradient(90deg, transparent, var(--accent) 30%, var(--accent) 70%, transparent);
+        }
+
+        .qr-card-inner {
+            position: relative;
+            padding: 8px 4px 0;
         }
 
         .card-head {
@@ -157,38 +178,89 @@
         }
 
         .qr-intro {
-            padding: 20px 4px 14px;
+            position: relative;
+            padding: 22px 4px 14px;
             text-align: center;
         }
 
+        /* Subtle gold flourish lines flanking the headline — quiet but
+           gives the page a hand-finished feel rather than a templated one. */
         .qr-intro h1 {
             margin: 0;
+            display: inline-flex;
+            align-items: center;
+            gap: 14px;
             color: var(--dark);
-            font-size: clamp(28px, 7vw, 44px);
+            font-size: clamp(28px, 7vw, 42px);
             font-weight: 900;
             letter-spacing: 0;
         }
 
+        .qr-intro h1::before,
+        .qr-intro h1::after {
+            content: "";
+            width: 38px;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--gold-line));
+            border-radius: 999px;
+        }
+
+        .qr-intro h1::after {
+            background: linear-gradient(90deg, var(--gold-line), transparent);
+        }
+
         .qr-intro p {
-            margin: 8px auto 0;
-            max-width: 360px;
+            margin: 10px auto 0;
+            max-width: 380px;
             color: var(--muted);
-            font-size: 16px;
-            font-weight: 700;
-            line-height: 1.7;
+            font-size: 15px;
+            font-weight: 600;
+            line-height: 1.65;
         }
 
         .qr-box {
+            position: relative;
             display: grid;
             place-items: center;
             width: fit-content;
             max-width: 100%;
-            margin: 12px auto 18px;
-            padding: 18px;
-            border: 1px solid #efe7d7;
-            border-radius: 24px;
+            margin: 14px auto 18px;
+            padding: 22px;
+            border: 1px solid var(--gold-line);
+            border-radius: 22px;
             background: #fff;
-            box-shadow: inset 0 0 0 8px #faf7ef;
+            box-shadow:
+                inset 0 0 0 1px rgba(214, 184, 118, .35),
+                0 8px 24px rgba(16, 35, 27, .08);
+        }
+
+        /* Four gold corner brackets — the classic high-end menu / wedding
+           invite tell. Drawn as ::before/::after on the qr-box plus two
+           helper layers on its inner spans, but we don't want extra DOM,
+           so we use radial-gradients on a pseudo. */
+        .qr-box::before,
+        .qr-box::after {
+            content: "";
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            border: 2px solid var(--gold-line);
+        }
+
+        .qr-box::before {
+            top: 8px;
+            inset-inline-start: 8px;
+            border-inline-end: 0;
+            border-block-end: 0;
+            border-start-start-radius: 8px;
+        }
+
+        .qr-box::after {
+            bottom: 8px;
+            inset-inline-end: 8px;
+            border-inline-start: 0;
+            border-block-start: 0;
+            border-end-end-radius: 8px;
         }
 
         .qr-box svg {
@@ -280,11 +352,9 @@
         }
 
         @page {
-            /* A4 portrait — gives the table its own poster-sized sheet so
-               the QR is scannable from across a busy room and the table
-               number reads at a glance. */
+            /* A4 portrait poster sheet — one table per sheet. */
             size: A4 portrait;
-            margin: 12mm;
+            margin: 0;
         }
 
         @media print {
@@ -305,85 +375,123 @@
             }
 
             main.page {
-                width: 100%;
+                width: 210mm;
+                height: 297mm;
                 margin: 0 auto;
+                padding: 8mm;
                 page-break-after: avoid;
+                page-break-inside: avoid;
             }
 
             .qr-card {
-                padding: 14mm 14mm 12mm;
-                border: 2pt solid #1f3f32;
-                border-radius: 16pt;
+                /* Hard-pin the card to the printable area so the browser
+                   can't push any content to a phantom page 2. */
+                width: 100%;
+                height: 100%;
+                padding: 12mm 12mm 10mm;
+                border: 1.5pt solid var(--primary);
+                border-radius: 14pt;
+                background: #ffffff;
                 box-shadow: none;
                 break-inside: avoid;
                 page-break-inside: avoid;
-                -webkit-print-color-adjust: exact;
-                print-color-adjust: exact;
+                page-break-after: avoid;
+                display: flex;
+                flex-direction: column;
+                gap: 0;
+                overflow: hidden;
             }
 
             .qr-card::before {
                 inset-inline: 16mm;
-                height: 4mm;
+                height: 3mm;
+            }
+
+            .qr-card::after {
+                inset-inline: 50mm;
+                top: 5mm;
+                height: 1.2mm;
             }
 
             .card-head {
-                padding-block: 0 8mm;
-                margin-bottom: 4mm;
+                padding-block: 1mm 5mm;
+                margin-bottom: 3mm;
             }
+
+            .brand { gap: 4mm; }
 
             .brand-mark, .brand-mark img {
-                width: 24mm;
-                height: 24mm;
+                width: 22mm;
+                height: 22mm;
+                flex-basis: 22mm;
             }
 
-            .brand-text strong { font-size: 28pt; }
-            .brand-text span { font-size: 11pt; }
-            .branch-line { font-size: 10pt; padding: 2pt 8pt; }
+            .brand-text strong { font-size: 24pt; }
+            .brand-text span { font-size: 10pt; }
+            .branch-line { font-size: 10pt; padding: 1pt 7pt; margin-top: 2mm; }
 
             .table-badge {
-                min-width: 36mm;
-                padding: 5mm 6mm;
-                border-radius: 10pt;
+                min-width: 32mm;
+                padding: 4mm 5mm;
+                border-radius: 9pt;
             }
             .table-badge span { font-size: 10pt; }
-            .table-badge strong { font-size: 44pt; }
+            .table-badge strong { font-size: 40pt; }
 
             .qr-intro { padding: 4mm 0 2mm; }
-            .qr-intro h1 { font-size: 26pt; }
-            .qr-intro p { font-size: 12pt; max-width: 110mm; line-height: 1.5; }
+            .qr-intro h1 {
+                font-size: 24pt;
+                gap: 9mm;
+            }
+            .qr-intro h1::before,
+            .qr-intro h1::after { width: 20mm; height: .6mm; }
+            .qr-intro p {
+                font-size: 11pt;
+                max-width: 120mm;
+                line-height: 1.5;
+                margin-top: 3mm;
+            }
 
             .qr-box {
-                margin: 6mm auto 8mm;
+                /* Auto-fill remaining vertical space so the QR is the
+                   centerpiece without overflowing. */
+                margin: 4mm auto 4mm;
                 padding: 8mm;
-                border-radius: 14pt;
-                box-shadow: inset 0 0 0 4pt #faf7ef;
+                border-radius: 12pt;
+                box-shadow: inset 0 0 0 .8pt rgba(214, 184, 118, .4);
+            }
+
+            .qr-box::before,
+            .qr-box::after {
+                width: 6mm;
+                height: 6mm;
+                border-width: 1.2pt;
             }
 
             .qr-box svg {
-                width: 110mm;
-                max-width: 110mm;
+                width: 95mm;
+                max-width: 95mm;
                 height: auto;
             }
 
             .info-grid {
                 grid-template-columns: repeat(3, minmax(0, 1fr));
-                gap: 4mm;
-                margin-block: 4mm 6mm;
+                gap: 3mm;
+                margin-block: 3mm 0;
             }
 
             .info-item {
-                padding: 4mm 5mm;
-                border-radius: 10pt;
+                padding: 3mm 4mm;
+                border-radius: 8pt;
             }
 
-            .info-item span { font-size: 9pt; }
-            .info-item strong { font-size: 13pt; }
+            .info-item span { font-size: 8.5pt; margin-bottom: 1mm; }
+            .info-item strong { font-size: 12pt; }
 
-            .scan-url {
-                padding: 3mm 5mm;
-                border-radius: 10pt;
-                font-size: 9pt;
-            }
+            /* The URL is encoded in the QR itself, and reading a long URL
+               off paper is slower than scanning. Drop it on print so the
+               poster stays clean and guaranteed-single-page. */
+            .scan-url { display: none !important; }
 
             .no-print { display: none !important; }
         }
