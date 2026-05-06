@@ -38,4 +38,27 @@ trait BelongsToBranch
     {
         return $this->belongsTo(Branch::class);
     }
+
+    /**
+     * Owner-level users (Super Admin / Partner) need to be able to open
+     * a specific record by URL even if their currently-active branch is
+     * a different one — e.g. a PO created under "view all branches" then
+     * the user switched into Gaza, the PO still belongs to Khan Yunis.
+     * Without this override the route binding goes through BranchScope,
+     * fails to find the row, and the user gets a confusing 404 on a
+     * record they themselves just created.
+     *
+     * Lists/queries that don't go through route binding still scope as
+     * before — this only relaxes single-record lookups by ID/key.
+     */
+    public function resolveRouteBinding($value, $field = null)
+    {
+        $user = auth()->user();
+        if ($user && $user->isOwnerLevel()) {
+            return \App\Support\BranchContext::unscoped(
+                fn () => parent::resolveRouteBinding($value, $field)
+            );
+        }
+        return parent::resolveRouteBinding($value, $field);
+    }
 }
