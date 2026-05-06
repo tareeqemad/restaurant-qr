@@ -456,6 +456,7 @@ new class extends Component
     </div>
 
     <div class="owner-layout">
+        <div class="owner-main">
         <section class="owner-panel owner-panel--wide">
             <div class="owner-panel-head">
                 <div>
@@ -531,6 +532,48 @@ new class extends Component
             </div>
         </section>
 
+        <div class="owner-card-grid">
+            @foreach($summaries as $row)
+                @php $branch = $row['branch']; $hue = ($branch->id * 47) % 360; @endphp
+                <article class="owner-card {{ $row['needs_attention'] ? 'is-warn' : '' }}" style="--hue: {{ $hue }};">
+                    <header class="owner-card-head">
+                        <span class="owner-card-avatar">{{ mb_substr($branch->name, 0, 1, 'UTF-8') }}</span>
+                        <div>
+                            <h3>{{ $branch->name }}</h3>
+                            <span>{{ $branch->city ?: 'فرع نشط' }}</span>
+                        </div>
+                        <span class="owner-live-dot" title="مباشر"></span>
+                    </header>
+
+                    <div class="owner-card-metrics">
+                        <div><span>صافي</span><strong>{{ \App\Helpers\Money::format($row['net']) }}</strong></div>
+                        <div><span>متوسط فاتورة</span><strong>{{ \App\Helpers\Money::format($row['avg_ticket']) }}</strong></div>
+                        <div><span>طلبات نشطة</span><strong>{{ $row['active_orders'] }}</strong></div>
+                        <div><span>حجوزات اليوم</span><strong>{{ $row['reservations_today'] }}</strong></div>
+                        <div><span>أوامر شراء</span><strong>{{ $row['open_pos'] }}</strong></div>
+                        <div><span>استلامات 7 أيام</span><strong>{{ $row['receipts_7d'] }}</strong></div>
+                    </div>
+
+                    <div class="owner-card-alert {{ $row['attention_count'] > 0 ? 'is-hot' : '' }}">
+                        <i class="bi {{ $row['attention_count'] > 0 ? 'bi-exclamation-triangle-fill' : 'bi-check-circle-fill' }}"></i>
+                        @if($row['attention_count'] > 0)
+                            {{ $row['attention_count'] }} نقطة تحتاج متابعة
+                        @else
+                            التشغيل مستقر
+                        @endif
+                    </div>
+
+                    <form action="{{ route('admin.branches.switch', $branch) }}" method="POST">
+                        @csrf
+                        <button type="submit" class="btn btn-outline-primary w-100">
+                            <i class="bi bi-box-arrow-in-right"></i> دخول الفرع
+                        </button>
+                    </form>
+                </article>
+            @endforeach
+        </div>
+        </div>{{-- /.owner-main --}}
+
         <aside class="owner-side">
             <section class="owner-panel">
                 <div class="owner-panel-head">
@@ -599,47 +642,6 @@ new class extends Component
                 </div>
             </section>
         </aside>
-    </div>
-
-    <div class="owner-card-grid">
-        @foreach($summaries as $row)
-            @php $branch = $row['branch']; $hue = ($branch->id * 47) % 360; @endphp
-            <article class="owner-card {{ $row['needs_attention'] ? 'is-warn' : '' }}" style="--hue: {{ $hue }};">
-                <header class="owner-card-head">
-                    <span class="owner-card-avatar">{{ mb_substr($branch->name, 0, 1, 'UTF-8') }}</span>
-                    <div>
-                        <h3>{{ $branch->name }}</h3>
-                        <span>{{ $branch->city ?: 'فرع نشط' }}</span>
-                    </div>
-                    <span class="owner-live-dot" title="مباشر"></span>
-                </header>
-
-                <div class="owner-card-metrics">
-                    <div><span>صافي</span><strong>{{ \App\Helpers\Money::format($row['net']) }}</strong></div>
-                    <div><span>متوسط فاتورة</span><strong>{{ \App\Helpers\Money::format($row['avg_ticket']) }}</strong></div>
-                    <div><span>طلبات نشطة</span><strong>{{ $row['active_orders'] }}</strong></div>
-                    <div><span>حجوزات اليوم</span><strong>{{ $row['reservations_today'] }}</strong></div>
-                    <div><span>أوامر شراء</span><strong>{{ $row['open_pos'] }}</strong></div>
-                    <div><span>استلامات 7 أيام</span><strong>{{ $row['receipts_7d'] }}</strong></div>
-                </div>
-
-                <div class="owner-card-alert {{ $row['attention_count'] > 0 ? 'is-hot' : '' }}">
-                    <i class="bi {{ $row['attention_count'] > 0 ? 'bi-exclamation-triangle-fill' : 'bi-check-circle-fill' }}"></i>
-                    @if($row['attention_count'] > 0)
-                        {{ $row['attention_count'] }} نقطة تحتاج متابعة
-                    @else
-                        التشغيل مستقر
-                    @endif
-                </div>
-
-                <form action="{{ route('admin.branches.switch', $branch) }}" method="POST">
-                    @csrf
-                    <button type="submit" class="btn btn-outline-primary w-100">
-                        <i class="bi bi-box-arrow-in-right"></i> دخول الفرع
-                    </button>
-                </form>
-            </article>
-        @endforeach
     </div>
 </div>
 
@@ -849,6 +851,16 @@ new class extends Component
     .owner-attention.is-hot {
         color: #dc2626;
         background: rgba(220, 38, 38, .1);
+    }
+
+    .owner-main {
+        /* Stack the comparison table and the per-branch cards in the
+           main column so the cards fill the empty space below the table
+           instead of breaking onto a new full-width row at the bottom. */
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        min-width: 0;
     }
 
     .owner-side {
