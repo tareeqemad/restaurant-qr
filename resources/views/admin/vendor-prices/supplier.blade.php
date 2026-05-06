@@ -51,11 +51,11 @@
                                 <small class="text-muted">SKU: {{ $latest->ingredient?->sku ?? '—' }}</small>
                             </td>
                             <td class="text-end">
-                                {{ number_format((float) $latest->unit_price, 4) }}
+                                {{ \App\Helpers\Qty::format($latest->unit_price) }}
                                 <small class="text-muted">/ {{ $latest->unit?->code }}</small>
                             </td>
                             <td class="text-end fw-semibold text-primary">
-                                {{ number_format((float) $latest->unit_price_in_base, 4) }} ₪
+                                {{ \App\Helpers\Qty::format($latest->unit_price_in_base) }} ₪
                                 <small class="text-muted fs-11">/ {{ $latest->ingredient?->baseUnit?->code }}</small>
                             </td>
                             <td class="text-end">

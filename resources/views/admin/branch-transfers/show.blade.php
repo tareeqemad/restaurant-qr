@@ -27,12 +27,12 @@
                             <tr>
                                 <td class="fw-semibold">{{ $item->ingredient->name }}</td>
                                 <td class="text-end">
-                                    {{ number_format((float) $item->quantity_base, 4) }}
+                                    {{ \App\Helpers\Qty::format($item->quantity_base) }}
                                     <small class="text-muted">{{ $item->ingredient->baseUnit?->code }}</small>
                                 </td>
                                 <td class="fs-13">{{ $item->fromLocation?->name ?? '—' }}</td>
                                 <td class="fs-13">{{ $item->toLocation?->name ?? '—' }}</td>
-                                <td class="text-end text-muted">{{ number_format((float) $item->unit_cost, 4) }} ₪</td>
+                                <td class="text-end text-muted">{{ \App\Helpers\Qty::format($item->unit_cost) }} ₪</td>
                                 <td class="text-end fw-semibold text-primary">{{ number_format($item->lineCost(), 2) }} ₪</td>
                             </tr>
                         @endforeach

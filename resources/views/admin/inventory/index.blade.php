@@ -126,7 +126,7 @@
                         </td>
                         <td>{{ number_format((float)$m->quantity_in_base, 2) }} {{ $m->ingredient->baseUnit->code ?? '' }}</td>
                         <td>{{ number_format((float)$m->stock_after, 2) }}</td>
-                        <td>{{ number_format((float)$m->total_cost, 4) }}</td>
+                        <td>{{ \App\Helpers\Qty::format($m->total_cost) }}</td>
                         <td>
                             @php($ref = $m->reference_meta)
                             @if($ref['url'])

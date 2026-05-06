@@ -8,9 +8,9 @@
     subtitle="كل سعر تم تسجيله لهذا المكون عبر كل المورّدين — بالوحدة الأساسية ({{ $ingredient->baseUnit?->code ?? '—' }})." />
 
 <x-admin.stat-rail :stats="[
-    ['label' => 'آخر سعر', 'value' => $latest ? number_format((float) $latest->unit_price_in_base, 4).' ₪' : '—', 'icon' => 'bi-tag-fill', 'color' => 'primary'],
-    ['label' => 'أدنى سعر مسجّل', 'value' => $rows->isEmpty() ? '—' : number_format($minPrice, 4).' ₪', 'icon' => 'bi-arrow-down-circle-fill', 'color' => 'success'],
-    ['label' => 'أعلى سعر مسجّل', 'value' => $rows->isEmpty() ? '—' : number_format($maxPrice, 4).' ₪', 'icon' => 'bi-arrow-up-circle-fill', 'color' => 'danger'],
+    ['label' => 'آخر سعر', 'value' => $latest ? \App\Helpers\Qty::format($latest->unit_price_in_base).' ₪' : '—', 'icon' => 'bi-tag-fill', 'color' => 'primary'],
+    ['label' => 'أدنى سعر مسجّل', 'value' => $rows->isEmpty() ? '—' : \App\Helpers\Qty::format($minPrice).' ₪', 'icon' => 'bi-arrow-down-circle-fill', 'color' => 'success'],
+    ['label' => 'أعلى سعر مسجّل', 'value' => $rows->isEmpty() ? '—' : \App\Helpers\Qty::format($maxPrice).' ₪', 'icon' => 'bi-arrow-up-circle-fill', 'color' => 'danger'],
     ['label' => 'مورّدون مختلفون', 'value' => $bySupplier->count(), 'icon' => 'bi-truck', 'color' => 'accent'],
     ['label' => 'عدد الملاحظات', 'value' => $rows->count(), 'icon' => 'bi-collection-fill', 'color' => 'info'],
 ]" />
@@ -40,7 +40,7 @@
                             </span>
                         </div>
                         <div class="fs-22 fw-bold text-primary mb-1">
-                            {{ number_format((float) $latestRow->unit_price_in_base, 4) }} ₪
+                            {{ \App\Helpers\Qty::format($latestRow->unit_price_in_base) }} ₪
                             <small class="text-muted fs-12 fw-normal">/ {{ $ingredient->baseUnit?->code }}</small>
                         </div>
                         <small class="text-muted">
@@ -76,11 +76,11 @@
                             </td>
                             <td>{{ $r->supplier?->name ?? '—' }}</td>
                             <td class="text-end">
-                                {{ number_format((float) $r->unit_price, 4) }}
+                                {{ \App\Helpers\Qty::format($r->unit_price) }}
                                 <small class="text-muted">/ {{ $r->unit?->code }}</small>
                             </td>
                             <td class="text-end fw-semibold">
-                                {{ number_format((float) $r->unit_price_in_base, 4) }} ₪
+                                {{ \App\Helpers\Qty::format($r->unit_price_in_base) }} ₪
                             </td>
                             <td class="text-end">
                                 <span class="badge bg-{{ $r->changeColor() }}-transparent text-{{ $r->changeColor() }}">

@@ -74,7 +74,7 @@
                                 <tr>
                                     <td class="fw-semibold">{{ $ing->name }}</td>
                                     <td class="text-end">{{ $ing->event_count }}</td>
-                                    <td class="text-end">{{ number_format((float) $ing->qty, 4) }}</td>
+                                    <td class="text-end">{{ \App\Helpers\Qty::format($ing->qty) }}</td>
                                     <td class="text-end fw-semibold text-danger">{{ number_format((float) $ing->total_cost, 2) }} ₪</td>
                                     <td class="text-end">
                                         <a href="{{ route('admin.waste.create', ['ingredient_id' => $ing->id]) }}"
@@ -205,7 +205,7 @@
                                 @endif
                             </td>
                             <td class="text-end">
-                                {{ number_format((float) $m->quantity_in_base, 4) }}
+                                {{ \App\Helpers\Qty::format($m->quantity_in_base) }}
                                 <small class="text-muted">{{ $m->ingredient?->baseUnit?->code }}</small>
                             </td>
                             <td class="text-end fw-semibold text-danger">{{ number_format((float) $m->total_cost, 2) }} ₪</td>

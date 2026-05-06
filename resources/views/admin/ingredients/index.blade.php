@@ -80,10 +80,10 @@
                         <td>{{ number_format($threshold, 2) }}</td>
                         <td>{{ $ing->baseUnit->code ?? '' }}</td>
                         <td>
-                            {{ number_format($cost, 4) }}
+                            {{ \App\Helpers\Qty::format($cost) }}
                             @if($activeBranchId && abs($cost - (float) $ing->cost_per_unit) > 0.0001)
                                 <small class="text-muted d-block fs-11" title="السعر المتوسط العام">
-                                    عام: {{ number_format((float) $ing->cost_per_unit, 4) }}
+                                    عام: {{ \App\Helpers\Qty::format($ing->cost_per_unit) }}
                                 </small>
                             @endif
                         </td>

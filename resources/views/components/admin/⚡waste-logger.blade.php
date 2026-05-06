@@ -146,8 +146,8 @@ new class extends Component
                     if ((float) $batch->remaining_qty + 0.0001 < $qtyBase) {
                         throw new \RuntimeException(
                             "الدفعة لا تحتوي على الكمية الكافية ("
-                            . number_format((float) $batch->remaining_qty, 4)
-                            . ' < ' . number_format($qtyBase, 4) . ').'
+                            . \App\Helpers\Qty::format($batch->remaining_qty)
+                            . ' < ' . \App\Helpers\Qty::format($qtyBase) . ').'
                         );
                     }
                     $batch->update(['remaining_qty' => (float) $batch->remaining_qty - $qtyBase]);

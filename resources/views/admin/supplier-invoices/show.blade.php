@@ -120,11 +120,11 @@
                                         <div class="fw-bold">{{ $item->description }}</div>
                                         <small class="text-muted">{{ $item->unit?->code ?? $item->ingredient?->baseUnit?->code }}</small>
                                     </td>
-                                    <td>{{ number_format((float) $item->quantity, 4) }}</td>
-                                    <td>{{ $item->received_qty !== null ? number_format((float) $item->received_qty, 4) : '—' }}</td>
+                                    <td>{{ \App\Helpers\Qty::format($item->quantity) }}</td>
+                                    <td>{{ $item->received_qty !== null ? \App\Helpers\Qty::format($item->received_qty) : '—' }}</td>
                                     <td class="fw-bold" style="color: var(--primary);">{{ \App\Helpers\Money::format($item->total) }}</td>
                                     <td class="{{ abs($qtyVariance) > 0.0001 ? 'text-danger fw-bold' : 'text-muted' }}">
-                                        {{ $item->variance_qty !== null ? number_format($qtyVariance, 4) : '—' }}
+                                        {{ $item->variance_qty !== null ? \App\Helpers\Qty::format($qtyVariance) : '—' }}
                                     </td>
                                     <td class="{{ abs($totalVariance) > 0.01 ? 'text-danger fw-bold' : 'text-muted' }}">
                                         {{ $item->variance_total !== null ? \App\Helpers\Money::format($totalVariance) : '—' }}

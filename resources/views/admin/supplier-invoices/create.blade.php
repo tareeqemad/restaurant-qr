@@ -101,7 +101,7 @@
                                     </td>
                                     <td>
                                         <span class="badge bg-{{ $line->isFullyReceived() ? 'success' : 'warning' }}">
-                                            {{ number_format((float) $line->quantity_received, 4) }}
+                                            {{ \App\Helpers\Qty::format($line->quantity_received) }}
                                         </span>
                                     </td>
                                     <td><input type="number" step="0.0001" min="0" name="lines[{{ $idx }}][quantity]" value="{{ $qty }}" class="form-control invoice-qty"></td>

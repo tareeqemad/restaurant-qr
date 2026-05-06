@@ -97,15 +97,15 @@
                                 <span class="text-muted">—</span>
                             @endif
                         </td>
-                        <td>{{ number_format((float) $b->initial_qty, 4) }} {{ $b->ingredient?->baseUnit?->code }}</td>
+                        <td>{{ \App\Helpers\Qty::format($b->initial_qty) }} {{ $b->ingredient?->baseUnit?->code }}</td>
                         <td class="fw-bold">
                             @if($b->isDepleted())
                                 <span class="text-muted"><i class="bi bi-check2"></i> نفذت</span>
                             @else
-                                {{ number_format((float) $b->remaining_qty, 4) }}
+                                {{ \App\Helpers\Qty::format($b->remaining_qty) }}
                             @endif
                         </td>
-                        <td>{{ number_format((float) $b->unit_cost, 4) }}</td>
+                        <td>{{ \App\Helpers\Qty::format($b->unit_cost) }}</td>
                         <td class="fw-bold" style="color:var(--primary);">
                             {{ \App\Helpers\Money::format((float) $b->remaining_qty * (float) $b->unit_cost) }}
                         </td>

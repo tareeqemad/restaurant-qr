@@ -59,8 +59,8 @@
                                     {{ $line['ingredient'] }}
                                 </div>
                                 <div class="text-muted" style="font-size:.72rem;">
-                                    {{ number_format($line['quantity'], 4) }} {{ $line['unit'] }}
-                                    × {{ number_format($line['cost_per_unit'], 4) }}
+                                    {{ \App\Helpers\Qty::format($line['quantity']) }} {{ $line['unit'] }}
+                                    × {{ \App\Helpers\Qty::format($line['cost_per_unit']) }}
                                 </div>
                             </div>
                             <div class="fw-bold" style="color: {{ $line['is_optional'] ? '#9ca3af' : 'var(--primary)' }}; font-variant-numeric: tabular-nums;">

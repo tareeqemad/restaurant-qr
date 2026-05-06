@@ -218,7 +218,7 @@
                                     </td>
                                     <td>{{ $item->description }}</td>
                                     <td class="text-end {{ abs((float) $item->variance_qty) > 0.0001 ? 'text-danger fw-bold' : 'text-muted' }}">
-                                        {{ $item->variance_qty !== null ? number_format((float) $item->variance_qty, 4) : '—' }}
+                                        {{ $item->variance_qty !== null ? \App\Helpers\Qty::format($item->variance_qty) : '—' }}
                                     </td>
                                     <td class="text-end {{ abs((float) $item->variance_total) > 0.01 ? 'text-danger fw-bold' : 'text-muted' }}">
                                         {{ $item->variance_total !== null ? \App\Helpers\Money::format($item->variance_total) : '—' }}

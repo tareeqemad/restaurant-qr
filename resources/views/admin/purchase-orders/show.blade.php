@@ -160,15 +160,15 @@
                                     <div class="fw-bold">{{ $line->ingredient?->name ?? '—' }}</div>
                                     @if($line->notes)<small class="text-muted">{{ $line->notes }}</small>@endif
                                 </td>
-                                <td>{{ number_format((float) $line->quantity_ordered, 4) }} {{ $line->unit?->code ?? '' }}</td>
+                                <td>{{ \App\Helpers\Qty::format($line->quantity_ordered) }} {{ $line->unit?->code ?? '' }}</td>
                                 <td>
                                     <span class="badge bg-{{ $line->isFullyReceived() ? 'success' : ((float) $line->quantity_received > 0 ? 'warning' : 'secondary') }}">
-                                        {{ number_format((float) $line->quantity_received, 4) }}
+                                        {{ \App\Helpers\Qty::format($line->quantity_received) }}
                                     </span>
                                 </td>
                                 <td>
                                     <span class="badge bg-{{ $invoicedQty >= (float) $line->quantity_received && $invoicedQty > 0 ? 'success' : 'light text-muted' }}">
-                                        {{ number_format((float) $invoicedQty, 4) }}
+                                        {{ \App\Helpers\Qty::format($invoicedQty) }}
                                     </span>
                                 </td>
                                 <td>{{ \App\Helpers\Money::format($line->unit_price) }}</td>

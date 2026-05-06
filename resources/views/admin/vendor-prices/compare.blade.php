@@ -51,7 +51,7 @@
                                 <td class="text-end {{ $bg }}">
                                     @if($row)
                                         <div class="fw-semibold {{ $isCheapest ? 'text-success' : ($isPriciest ? 'text-danger' : '') }}">
-                                            {{ number_format((float) $row->unit_price_in_base, 4) }}
+                                            {{ \App\Helpers\Qty::format($row->unit_price_in_base) }}
                                         </div>
                                         <small class="text-muted fs-11" title="{{ optional($row->observed_at)->format('Y-m-d') }}">
                                             {{ optional($row->observed_at)->diffForHumans() }}

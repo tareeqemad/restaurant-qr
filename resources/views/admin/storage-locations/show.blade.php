@@ -110,9 +110,9 @@
                     @endphp
                     <tr class="{{ $low ? 'table-warning' : '' }}">
                         <td class="fw-bold">{{ $ing?->name ?? '—' }}</td>
-                        <td>{{ number_format((float) $s->quantity, 4) }} {{ $ing?->baseUnit?->code }}</td>
-                        <td>{{ number_format((float) $s->reorder_threshold, 4) }}</td>
-                        <td>{{ number_format((float) ($ing?->cost_per_unit ?? 0), 4) }}</td>
+                        <td>{{ \App\Helpers\Qty::format($s->quantity) }} {{ $ing?->baseUnit?->code }}</td>
+                        <td>{{ \App\Helpers\Qty::format($s->reorder_threshold) }}</td>
+                        <td>{{ \App\Helpers\Qty::format(($ing?->cost_per_unit ?? 0)) }}</td>
                         <td class="fw-bold" style="color:var(--primary);">{{ \App\Helpers\Money::format($value) }}</td>
                         <td>
                             @if($low)

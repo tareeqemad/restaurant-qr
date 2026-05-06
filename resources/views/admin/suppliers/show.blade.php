@@ -90,7 +90,7 @@
                                 <td><code>{{ $ing->sku }}</code></td>
                                 <td>{{ number_format((float)$ing->current_stock, 2) }} {{ $ing->baseUnit->code ?? '' }}</td>
                                 <td>{{ number_format((float)$ing->reorder_threshold, 2) }}</td>
-                                <td>{{ number_format((float)$ing->cost_per_unit, 4) }}</td>
+                                <td>{{ \App\Helpers\Qty::format($ing->cost_per_unit) }}</td>
                                 <td class="fw-bold" style="color:var(--primary);">
                                     {{ \App\Helpers\Money::format((float)$ing->current_stock * (float)$ing->cost_per_unit) }}
                                 </td>

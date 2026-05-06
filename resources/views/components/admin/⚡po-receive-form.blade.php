@@ -226,11 +226,11 @@ new class extends Component
                                         وحدة: <span x-text="line.unit_name"></span> (<span x-text="line.unit_code"></span>)
                                     </small>
                                 </td>
-                                <td class="text-end" x-text="line.quantity_ordered.toFixed(4)"></td>
-                                <td class="text-end" x-text="line.quantity_received.toFixed(4)"></td>
+                                <td class="text-end" x-text="fmtQty(line.quantity_ordered)"></td>
+                                <td class="text-end" x-text="fmtQty(line.quantity_received)"></td>
                                 <td class="text-end fw-bold"
                                     :class="line.outstanding > 0 ? 'text-warning' : 'text-success'"
-                                    x-text="line.outstanding.toFixed(4)"></td>
+                                    x-text="fmtQty(line.outstanding)"></td>
                                 <td>
                                     <template x-if="line.is_full">
                                         <span class="badge bg-success w-100 py-2">
@@ -249,7 +249,7 @@ new class extends Component
                                             </div>
                                             <small class="text-danger" x-show="isOver(line)" x-cloak>
                                                 <i class="bi bi-exclamation-triangle-fill"></i>
-                                                أكبر من المتبقي (<span x-text="line.outstanding.toFixed(4)"></span>)
+                                                أكبر من المتبقي (<span x-text="fmtQty(line.outstanding)"></span>)
                                             </small>
                                         </div>
                                     </template>
@@ -361,6 +361,13 @@ window.poReceiveForm = function (config) {
     return {
         lines: config.lines,
         locations: config.locations || [],
+
+        // Trim trailing zeros so quantities read cleanly (520 not 520.0000).
+        // Method on the data object so Alpine's expression scope sees it.
+        fmtQty(n) {
+            const s = (Number(n) || 0).toFixed(2);
+            return s.indexOf('.') === -1 ? s : s.replace(/\.?0+$/, '') || '0';
+        },
         locationId: null,
         qty: {},                  // {lineId: number}
         batch: {},                // {lineId: string}

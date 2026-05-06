@@ -37,7 +37,7 @@
                                 @default        <span class="badge bg-secondary">{{ $u->unit_type }}</span>
                             @endswitch
                         </td>
-                        <td>{{ number_format((float)$u->factor_to_base, 4) }}</td>
+                        <td>{{ \App\Helpers\Qty::format($u->factor_to_base) }}</td>
                         <td>@if($u->is_base)<i class="bi bi-check-circle-fill text-success"></i>@endif</td>
                         <td>
                             <a href="{{ route('admin.units.edit', $u) }}" class="btn btn-sm btn-light"><i class="bi bi-pencil"></i></a>
