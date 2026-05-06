@@ -14,6 +14,7 @@ class IngredientBatch extends Model
     use BelongsToBranch, HasFactory, SoftDeletes;
 
     protected $fillable = [
+        'branch_id',
         'ingredient_id', 'storage_location_id', 'batch_number',
         'received_date', 'expiry_date',
         'initial_qty', 'remaining_qty', 'unit_cost',

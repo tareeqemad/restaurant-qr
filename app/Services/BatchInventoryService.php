@@ -46,7 +46,22 @@ class BatchInventoryService
             throw ValidationException::withMessages(['qty' => 'كمية الدفعة يجب أن تكون أكبر من صفر.']);
         }
 
+        // ingredient_batches has a NOT NULL branch_id. The BelongsToBranch
+        // trait auto-stamps from BranchContext, but receipt flows often run
+        // in transactions where the context isn't bound (queue, owner-level
+        // in view-all mode, CLI). Derive from the strongest available
+        // signal: the storage location belongs to a specific branch, so
+        // use that first; fall back to the source PO/receipt's branch_id;
+        // finally to the runtime context.
+        $branchId = $this->resolveBranchId($storageLocationId, $source);
+        if (! $branchId) {
+            throw ValidationException::withMessages([
+                'branch_id' => 'تعذّر تحديد فرع الدفعة. تأكد من اختيار موقع تخزين أو من ضبط الفرع النشط.',
+            ]);
+        }
+
         return IngredientBatch::create([
+            'branch_id'     => $branchId,
             'ingredient_id' => $ingredient->id,
             'storage_location_id' => $storageLocationId,
             'batch_number'  => $batchNumber,
@@ -59,6 +74,33 @@ class BatchInventoryService
             'source_id'     => $source?->getKey(),
             'notes'         => $notes,
         ]);
+    }
+
+    /**
+     * Storage location is the most reliable signal for branch ownership —
+     * goods physically sit in a location, and locations belong to one
+     * branch. Fall back to the source record's branch_id (PO line / PO
+     * carries it directly) and finally to the runtime context for
+     * legacy callers.
+     */
+    protected function resolveBranchId(?int $storageLocationId, $source): ?int
+    {
+        if ($storageLocationId) {
+            $bid = \App\Models\StorageLocation::whereKey($storageLocationId)->value('branch_id');
+            if ($bid) return (int) $bid;
+        }
+
+        if ($source) {
+            if (isset($source->branch_id) && $source->branch_id) {
+                return (int) $source->branch_id;
+            }
+            // PO line carries branch_id via its parent PO, not directly
+            if (method_exists($source, 'purchaseOrder') && ($parent = $source->purchaseOrder) && $parent->branch_id) {
+                return (int) $parent->branch_id;
+            }
+        }
+
+        return \App\Support\BranchContext::current();
     }
 
     /**
