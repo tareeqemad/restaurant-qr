@@ -2,7 +2,7 @@
 @section('title', $supplier->name)
 
 @section('content')
-<x-admin.breadcrumb title="{{ $supplier- />
+<x-admin.breadcrumb title="{{ $supplier->name }}" icon="bi-truck" />
 
 <div class="d-flex justify-content-end mb-3 gap-2">
     <a href="{{ route('admin.vendor-prices.supplier', $supplier) }}" class="btn btn-info">
