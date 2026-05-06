@@ -14,6 +14,7 @@ class StorageLocation extends Model
     use BelongsToBranch, HasFactory, SoftDeletes;
 
     protected $fillable = [
+        'branch_id',
         'code', 'name', 'icon', 'color', 'description',
         'is_default', 'active', 'display_order',
     ];

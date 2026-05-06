@@ -7,6 +7,7 @@ use App\Models\Ingredient;
 use App\Models\IngredientStock;
 use App\Models\StorageLocation;
 use App\Services\LocationInventoryService;
+use App\Support\BranchContext;
 use Illuminate\Http\Request;
 
 class StorageLocationController extends Controller
@@ -52,6 +53,26 @@ class StorageLocationController extends Controller
     {
         $this->authorize('create', Ingredient::class);
         $data = $this->validated($request);
+
+        // BelongsToBranch normally auto-fills branch_id from the active
+        // BranchContext, but an owner-level user in "view all branches"
+        // mode has no context bound — the insert would fail with a NOT
+        // NULL violation. Pin the new location to the user's current
+        // branch (context > primary > first member branch) and refuse to
+        // proceed if none can be determined, with a clear instruction
+        // instead of a stack trace.
+        $branchId = BranchContext::current()
+            ?? optional($request->user()->primaryBranch())->id
+            ?? optional($request->user()->branches()->first())->id;
+
+        if (! $branchId) {
+            return back()->withInput()->with(
+                'error',
+                'تعذّر تحديد فرع لإضافة الموقع. اختر فرعاً نشطاً من شريط التبديل في الأعلى ثم أعد المحاولة.'
+            );
+        }
+
+        $data['branch_id'] = $branchId;
         $loc = StorageLocation::create($data);
         return redirect()->route('admin.storage-locations.index')->with('success', "تم إنشاء الموقع {$loc->name}");
     }
