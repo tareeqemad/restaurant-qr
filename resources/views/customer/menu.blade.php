@@ -98,7 +98,7 @@
         <div class="cat-tabs" aria-label="أقسام القائمة"
              x-data="tabsSlider()" x-init="$nextTick(() => init())">
             <button type="button" class="slider-arrow slider-arrow-prev tabs-arrow"
-                    x-show="canPrev" x-cloak @click="slide(-1)" aria-label="السابق">›</button>
+                    x-show="canPrev" x-cloak @click="slide(-1)" aria-label="السابق">‹</button>
             <div class="cat-tabs-scroll" id="catScroll" x-ref="scroll" @scroll.passive="update()">
                 @if($featured->count())
                     <a href="#cat-featured" class="cat-tab" :class="activeCat === 'featured' ? 'active' : ''"
@@ -116,7 +116,7 @@
                 @endforeach
             </div>
             <button type="button" class="slider-arrow slider-arrow-next tabs-arrow"
-                    x-show="canNext" x-cloak @click="slide(1)" aria-label="التالي">‹</button>
+                    x-show="canNext" x-cloak @click="slide(1)" aria-label="التالي">›</button>
         </div>
     </section>
 
@@ -184,13 +184,13 @@
                         </div>
                     </div>
                     <div class="menu-slider">
-                        <button type="button" class="slider-arrow slider-arrow-prev" @click="slide(-1)" aria-label="السابق">›</button>
+                        <button type="button" class="slider-arrow slider-arrow-prev" @click="slide(-1)" aria-label="السابق">‹</button>
                         <div class="slider-track">
                             @foreach($featured as $item)
                                 @include('customer.partials.dish', ['item' => $item])
                             @endforeach
                         </div>
-                        <button type="button" class="slider-arrow slider-arrow-next" @click="slide(1)" aria-label="التالي">‹</button>
+                        <button type="button" class="slider-arrow slider-arrow-next" @click="slide(1)" aria-label="التالي">›</button>
                     </div>
                 </div>
             @endif
@@ -214,13 +214,13 @@
                         </div>
                     </div>
                     <div class="menu-slider">
-                        <button type="button" class="slider-arrow slider-arrow-prev" @click="slide(-1)" aria-label="السابق">›</button>
+                        <button type="button" class="slider-arrow slider-arrow-prev" @click="slide(-1)" aria-label="السابق">‹</button>
                         <div class="slider-track">
                             @foreach($cat->menuItems as $item)
                                 @include('customer.partials.dish', ['item' => $item])
                             @endforeach
                         </div>
-                        <button type="button" class="slider-arrow slider-arrow-next" @click="slide(1)" aria-label="التالي">‹</button>
+                        <button type="button" class="slider-arrow slider-arrow-next" @click="slide(1)" aria-label="التالي">›</button>
                     </div>
                 </div>
             @endforeach
