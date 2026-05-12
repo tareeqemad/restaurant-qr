@@ -31,19 +31,39 @@ class UserPolicy extends BasePolicy
 
     public function update(User $user, User $target): bool
     {
-        // Branch admins/managers cannot touch owner-level accounts.
-        if ($target->isOwnerLevel() && ! $user->isOwnerLevel()) {
+        // Self-edit always allowed (subject to ProfileController gates).
+        if ($user->id === $target->id) {
+            return $user->hasAnyRole(['admin', 'manager']);
+        }
+
+        // Rank guard — never let a lower-rank actor edit a peer-or-higher
+        // target. Without this an Admin could edit another Admin (or, with
+        // the bypass at line 9, edit a SuperAdmin) and rotate their password
+        // / change their role / suspend them.
+        //
+        // Hierarchy = the inverse of UserRole::grantableBy: an actor can
+        // only EDIT users whose role they could ALSO have GRANTED.
+        $grantable = \App\Enums\UserRole::grantableBy($user);
+        if (! in_array($target->role, $grantable, true)) {
             return false;
         }
-        return $user->hasAnyRole(['admin', 'manager']) || $user->id === $target->id;
+
+        return $user->hasAnyRole(['admin', 'manager']);
     }
 
     public function delete(User $user, User $target): bool
     {
         if ($user->id === $target->id) return false;
+
+        // Same rank-based guard as update — you can only delete users at or
+        // below your own grantable level.
+        $grantable = \App\Enums\UserRole::grantableBy($user);
+        if (! in_array($target->role, $grantable, true)) return false;
+
         // Owner-level accounts are protected from deletion by anyone but
         // another owner-level user (which is gated by BasePolicy::before).
         if ($target->isOwnerLevel()) return false;
+
         return $user->isAdmin();
     }
 }

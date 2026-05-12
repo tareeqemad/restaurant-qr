@@ -136,7 +136,10 @@ class MenuItemController extends Controller
             'categories' => Category::where('active', true)->orderBy('display_order')->get(),
             'stations' => Station::where('active', true)->get(),
             'allergens' => Allergen::orderBy('display_order')->get(),
-            'modifierGroups' => ModifierGroup::where('active', true)->get(),
+            'modifierGroups' => ModifierGroup::with(['modifiers' => fn ($q) => $q->orderBy('display_order')])
+                ->where('active', true)
+                ->orderBy('display_order')
+                ->get(),
             'ingredients' => Ingredient::where('active', true)->orderBy('name')->get(),
             'units' => Unit::all(),
         ];

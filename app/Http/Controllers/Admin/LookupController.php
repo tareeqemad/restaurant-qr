@@ -34,11 +34,12 @@ class LookupController extends Controller
             ->get();
 
         // Per-group usage count — for the dashboard chips above each tab.
-        // Add new entries here when a new lookup group ships.
-        $usage = [
-            'expense_categories' => Lookup::for('expense_categories')->count(),
-            'zones'              => Lookup::for('zones')->count(),
-        ];
+        // Derived from knownGroups() so a new lookup group automatically
+        // gets its count chip without touching this file. Each call hits
+        // the cached `Lookup::for($group)` (default cache driver, 5 min).
+        $usage = collect(array_keys($groups))
+            ->mapWithKeys(fn ($g) => [$g => Lookup::for($g)->count()])
+            ->all();
 
         return view('admin.lookups.index', [
             'groups'      => $groups,
@@ -56,9 +57,18 @@ class LookupController extends Controller
 
         $lookup = Lookup::create([
             ...$data,
+            // Always derive branch_id server-side from the group, NEVER from
+            // request input. Per-branch groups bind to the active branch;
+            // global groups stay null. Stops a non-owner from POSTing
+            // `branch_id=<other branch>` to seed lookups in someone else's
+            // branch. (`validateData()` doesn't include branch_id in its
+            // rules but this is defense in depth — model is fillable.)
+            'branch_id' => $this->resolveBranchIdForGroup($data['group']),
             'is_system' => false,        // anything created via UI is user-defined
             'is_active' => $data['is_active'] ?? true,
         ]);
+
+        Lookup::forget($lookup->group);  // bust cross-request cache
 
         ActivityLog::log('lookup.created',
             "إضافة قيمة \"{$lookup->label}\" إلى \"{$lookup->group}\"",
@@ -81,7 +91,13 @@ class LookupController extends Controller
             unset($data['code']);
         }
 
+        // Strip branch_id from update payload — group is immutable post-create
+        // and branch_id derives from group. Belt-and-braces against fillable.
+        unset($data['branch_id'], $data['group']);
+
         $lookup->update($data);
+
+        Lookup::forget($lookup->group);  // bust cross-request cache
 
         ActivityLog::log('lookup.updated',
             "تعديل قيمة \"{$lookup->label}\" في \"{$lookup->group}\"",
@@ -90,6 +106,22 @@ class LookupController extends Controller
 
         return redirect()->route('admin.lookups.index', ['group' => $lookup->group])
             ->with('success', 'تم حفظ التعديلات.');
+    }
+
+    /**
+     * Resolve the branch_id for a new lookup row based on its group:
+     *   - Per-branch groups (`Lookup::PER_BRANCH_GROUPS`) → active branch
+     *   - Global groups → null
+     * Owner-level on "كل الفروع" creating a per-branch lookup falls back
+     * to the user's primary branch (cleaner than refusing).
+     */
+    protected function resolveBranchIdForGroup(string $group): ?int
+    {
+        if (! in_array($group, Lookup::PER_BRANCH_GROUPS, true)) {
+            return null;
+        }
+        return \App\Support\BranchContext::current()
+            ?? auth()->user()?->primaryBranch()?->id;
     }
 
     public function destroy(Lookup $lookup)
@@ -105,6 +137,7 @@ class LookupController extends Controller
         $label = $lookup->label;
 
         $lookup->delete(); // soft delete — preserves FK references for history
+        Lookup::forget($group);
 
         ActivityLog::log('lookup.deleted', "حذف قيمة \"{$label}\" من \"{$group}\"");
 
@@ -118,6 +151,7 @@ class LookupController extends Controller
         $this->authorize('update', $lookup);
 
         $lookup->restore();
+        Lookup::forget($lookup->group);
 
         ActivityLog::log('lookup.restored',
             "استعادة قيمة \"{$lookup->label}\" في \"{$lookup->group}\"",

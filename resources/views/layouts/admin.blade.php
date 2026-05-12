@@ -199,7 +199,6 @@
         <!-- Start::app-content -->
         <div class="main-content app-content">
             <div class="container-fluid">
-                @include('admin.partials.toast')
                 @yield('content')
             </div>
         </div>
@@ -260,21 +259,17 @@
 
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
+    {{-- SweetAlert2-driven toast + form-confirm interceptor. Must come AFTER
+         the Swal CDN — the partial gates its IIFE on window.Swal. --}}
+    @include('admin.partials.toast')
+
     {{-- Global notification sound helper --}}
     <audio id="notify-sound" src="data:audio/wav;base64,UklGRl9vAAAXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQ=="></audio>
     <script>
         window.playNotify = function() {
             try { const a = document.getElementById('notify-sound'); if (a) { a.currentTime = 0; a.play().catch(()=>{}); } } catch(e) {}
         };
-        window.showNotification = function(title, body, variant = 'info') {
-            if (window.Swal) {
-                Swal.fire({
-                    toast: true, position: 'top-end', icon: variant, title, text: body,
-                    showConfirmButton: false, timer: 5000, timerProgressBar: true
-                });
-            }
-            window.playNotify();
-        };
+        // window.showNotification is registered by admin.partials.toast (uses SweetAlert2).
 
         @php $u = auth()->user(); @endphp
         /* Echo listeners intentionally absent in polling mode. window.Echo

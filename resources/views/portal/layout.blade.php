@@ -312,14 +312,220 @@
             .pf-hero__cta { width: 100%; }
             .pf-hero__cta .pf-btn { width: 100%; }
         }
+
+        /* ─── Hamburger menu (mobile only) ───────────────────────────
+           Desktop keeps the inline horizontal nav. Below 760px the nav
+           collapses into a hamburger button on the start side; tapping
+           it slides a full-height drawer in from the start edge with
+           every link, role, and a logout footer. The drawer locks body
+           scroll while open and traps clicks outside to close itself. */
+        .pf-burger {
+            display: none;
+            background: transparent; border: 0;
+            width: 42px; height: 42px;
+            border-radius: 10px;
+            font-size: 1.4rem; color: var(--ink);
+            cursor: pointer; padding: 0;
+            transition: background .15s;
+        }
+        .pf-burger:hover { background: #f3f4f6; }
+
+        .pf-drawer-overlay {
+            position: fixed; inset: 0;
+            background: rgba(15,45,34,.55);
+            backdrop-filter: blur(4px);
+            opacity: 0; pointer-events: none;
+            transition: opacity .25s;
+            z-index: 100;
+        }
+        .pf-drawer-overlay.is-open { opacity: 1; pointer-events: auto; }
+
+        .pf-drawer {
+            position: fixed; top: 0; bottom: 0; inset-inline-start: 0;
+            width: 84%; max-width: 320px;
+            background: #fff;
+            box-shadow: 0 0 30px rgba(15,45,34,.18);
+            transform: translateX(100%); /* RTL: starts off-screen on the right */
+            transition: transform .28s cubic-bezier(.4, 0, .2, 1);
+            z-index: 101;
+            display: flex; flex-direction: column;
+            overflow-y: auto;
+        }
+        [dir="rtl"] .pf-drawer { transform: translateX(100%); }
+        .pf-drawer.is-open { transform: translateX(0) !important; }
+
+        .pf-drawer__head {
+            background: linear-gradient(135deg, #0f2d22 0%, #1f4733 100%);
+            color: #fff;
+            padding: 22px 20px 20px;
+            position: relative;
+            border-bottom: 3px solid #F9A825;
+        }
+        .pf-drawer__brand {
+            display: flex; align-items: center; gap: 10px;
+            font-size: 1.05rem; font-weight: 800;
+        }
+        .pf-drawer__brand img {
+            width: 38px; height: 38px;
+            border-radius: 10px;
+            background: rgba(255,255,255,.1);
+            padding: 4px; object-fit: contain;
+        }
+        .pf-drawer__user {
+            margin-top: 14px;
+            font-size: .82rem;
+            color: rgba(255,255,255,.78);
+            display: flex; align-items: center; gap: 8px;
+        }
+        .pf-drawer__user i { color: #F9A825; }
+        .pf-drawer__close {
+            position: absolute;
+            top: 14px; inset-inline-end: 14px;
+            width: 32px; height: 32px;
+            border: 0; border-radius: 8px;
+            background: rgba(255,255,255,.12);
+            color: #fff; font-size: 1rem;
+            cursor: pointer;
+            display: inline-flex; align-items: center; justify-content: center;
+        }
+        .pf-drawer__close:hover { background: rgba(255,255,255,.22); }
+
+        .pf-drawer__nav {
+            padding: 12px 14px;
+            display: flex; flex-direction: column; gap: 4px;
+        }
+        .pf-drawer__link {
+            display: flex; align-items: center; gap: 12px;
+            padding: 13px 14px;
+            border-radius: 12px;
+            color: var(--ink-2); text-decoration: none;
+            font-size: .95rem; font-weight: 600;
+            transition: all .15s;
+            border: 1px solid transparent;
+        }
+        .pf-drawer__link i {
+            width: 28px; height: 28px;
+            background: #f3f4f6; border-radius: 8px;
+            display: inline-flex; align-items: center; justify-content: center;
+            color: var(--green-primary);
+            font-size: .95rem; flex-shrink: 0;
+            transition: all .15s;
+        }
+        .pf-drawer__link:hover {
+            background: #f9fafb;
+            color: var(--green-dark);
+        }
+        .pf-drawer__link.is-active {
+            background: rgba(46,125,50,.08);
+            color: var(--green-dark);
+            border-color: rgba(46,125,50,.18);
+        }
+        .pf-drawer__link.is-active i {
+            background: linear-gradient(135deg, #2E7D32, #1B5E20);
+            color: #fff;
+        }
+        .pf-drawer__badge {
+            margin-inline-start: auto;
+            min-width: 22px; height: 22px;
+            background: linear-gradient(135deg, #F9A825, #b97818);
+            color: #fff;
+            font-size: .68rem; font-weight: 800;
+            line-height: 22px; text-align: center;
+            border-radius: 99px;
+            padding: 0 7px;
+            box-shadow: 0 2px 4px rgba(185,120,24,.3);
+        }
+
+        .pf-drawer__foot {
+            margin-top: auto;
+            padding: 14px;
+            border-top: 1px solid var(--line);
+        }
+        .pf-drawer__logout {
+            display: flex; align-items: center; gap: 10px;
+            width: 100%;
+            padding: 12px 14px;
+            background: #fff7f7; border: 1px solid #fecaca;
+            color: #b91c1c; font-weight: 700; font-size: .92rem;
+            border-radius: 12px;
+            font-family: inherit;
+            cursor: pointer;
+            transition: background .15s;
+        }
+        .pf-drawer__logout:hover { background: #fee2e2; }
+
+        body.pf-no-scroll { overflow: hidden; }
+
+        /* Tablet & phone: swap horizontal nav for hamburger */
+        @media (max-width: 760px) {
+            .pf-header-inner { padding: 12px 14px; }
+            .pf-brand span { font-size: .95rem; }
+            .pf-link, .pf-logout { display: none !important; }
+            .pf-burger { display: inline-flex; align-items: center; justify-content: center; }
+            /* Reorder: burger on the start (right in RTL), brand centered,
+               bell on the end (left in RTL) so it's reachable with one hand */
+            .pf-header-inner > .pf-burger { order: 0; }
+            .pf-header-inner > .pf-brand { order: 1; }
+            .pf-header-inner > .pf-spacer { order: 2; }
+            .pf-header-inner > .pf-bell  { order: 3; }
+        }
+
+        /* ─── Notification bell ─────────────────────────────────────
+           Same shape as the header link buttons but with a tiny gold
+           counter pill. Renders on every viewport, scaled down for
+           mobile. The data-count attribute drives `display:none` so
+           an unread total of 0 hides the badge entirely. */
+        .pf-bell {
+            position: relative;
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 38px; height: 38px;
+            border-radius: 10px;
+            color: var(--ink-2); text-decoration: none;
+            transition: all .15s;
+            flex-shrink: 0;
+        }
+        .pf-bell:hover { background: rgba(46,125,50,.08); color: var(--green-dark); }
+        .pf-bell.is-active { background: rgba(46,125,50,.10); color: var(--green-dark); }
+        .pf-bell i { font-size: 1.05rem; }
+        .pf-bell__count {
+            position: absolute;
+            top: 4px; inset-inline-start: 4px;
+            min-width: 18px; height: 18px;
+            background: linear-gradient(135deg, #F9A825, #b97818);
+            color: #fff;
+            font-size: .65rem; font-weight: 800;
+            line-height: 18px; text-align: center;
+            border-radius: 99px;
+            padding: 0 5px;
+            border: 2px solid #fff;
+            box-shadow: 0 2px 4px rgba(185,120,24,.35);
+            animation: bellPulse 1.6s ease-in-out infinite;
+        }
+        @keyframes bellPulse {
+            0%, 100% { transform: scale(1); }
+            50%      { transform: scale(1.08); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .pf-bell__count { animation: none; }
+        }
     </style>
     @include('partials.runtime-theme')
     @stack('styles')
 </head>
 <body>
     @auth('customer')
+        @php
+            $customer = auth('customer')->user();
+            // Cheap COUNT scoped to the active customer — runs once per page
+            // load. The bell icon polls /notifications/unread-count later if
+            // the page is left open for a while.
+            $unreadNotifs = $customer ? $customer->unreadNotifications()->count() : 0;
+        @endphp
         <header class="pf-header">
             <div class="pf-header-inner">
+                <button type="button" class="pf-burger" onclick="pfOpenDrawer()" aria-label="القائمة" aria-controls="pfDrawer">
+                    <i class="bi bi-list"></i>
+                </button>
                 <a href="{{ route('portal.dashboard') }}" class="pf-brand">
                     <img src="{{ \App\Helpers\Brand::logoUrl() }}" alt="{{ config('restaurant.name') }}">
                     <span>{{ config('restaurant.name') }}</span>
@@ -327,20 +533,122 @@
                 <div class="pf-spacer"></div>
                 <a href="{{ route('portal.dashboard') }}"
                    class="pf-link {{ request()->routeIs('portal.dashboard') ? 'is-active' : '' }}">الرئيسية</a>
-                <a href="{{ route('portal.order.branches') }}"
-                   class="pf-link pf-link--cta {{ request()->routeIs('portal.order.*') ? 'is-active' : '' }}">
-                    <i class="bi bi-bag-plus-fill"></i> اطلب الآن
+                <a href="{{ route('portal.order.history') }}"
+                   class="pf-link {{ request()->routeIs('portal.order.*') ? 'is-active' : '' }}">
+                    <i class="bi bi-bag-fill"></i> طلباتي
                 </a>
                 <a href="{{ route('portal.reservations.index') }}"
                    class="pf-link {{ request()->routeIs('portal.reservations.*') ? 'is-active' : '' }}">حجوزاتي</a>
                 <a href="{{ route('portal.reviews.index') }}"
                    class="pf-link {{ request()->routeIs('portal.reviews.*') ? 'is-active' : '' }}">تقييماتي</a>
+
+                {{-- Notification bell — visible on every viewport (next to
+                     the burger on mobile, in the link row on desktop). The
+                     dot/counter only renders when there are unread items. --}}
+                <a href="{{ route('portal.notifications.index') }}"
+                   class="pf-bell {{ request()->routeIs('portal.notifications.*') ? 'is-active' : '' }}"
+                   id="pfBell"
+                   title="الإشعارات والعروض"
+                   aria-label="الإشعارات">
+                    <i class="bi bi-bell-fill"></i>
+                    <span class="pf-bell__count" id="pfBellCount" data-count="{{ $unreadNotifs }}"
+                          @if($unreadNotifs === 0) style="display:none;" @endif>
+                        {{ $unreadNotifs > 99 ? '99+' : $unreadNotifs }}
+                    </span>
+                </a>
+
                 <form method="POST" action="{{ route('portal.logout') }}" class="d-inline" style="margin:0;">
                     @csrf
                     <button class="pf-logout"><i class="bi bi-box-arrow-right"></i> خروج</button>
                 </form>
             </div>
         </header>
+
+        {{-- Mobile slide-out drawer (hidden on desktop). Toggled by the
+             hamburger button above; closes on overlay click, ESC, or
+             a tap on any inner link. --}}
+        <div class="pf-drawer-overlay" id="pfOverlay" onclick="pfCloseDrawer()"></div>
+        <aside class="pf-drawer" id="pfDrawer" role="dialog" aria-modal="true" aria-label="قائمة التنقل">
+            <div class="pf-drawer__head">
+                <button type="button" class="pf-drawer__close" onclick="pfCloseDrawer()" aria-label="إغلاق">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+                <div class="pf-drawer__brand">
+                    <img src="{{ \App\Helpers\Brand::logoUrl() }}" alt="">
+                    <span>{{ config('restaurant.name') }}</span>
+                </div>
+                @if($customer)
+                    <div class="pf-drawer__user">
+                        <i class="bi bi-person-circle"></i>
+                        <span>{{ $customer->name ?? $customer->phone ?? 'زبوننا الكريم' }}</span>
+                    </div>
+                @endif
+            </div>
+
+            <nav class="pf-drawer__nav">
+                <a href="{{ route('portal.dashboard') }}"
+                   class="pf-drawer__link {{ request()->routeIs('portal.dashboard') ? 'is-active' : '' }}">
+                    <i class="bi bi-house-fill"></i>
+                    <span>الرئيسية</span>
+                </a>
+                <a href="{{ route('portal.order.history') }}"
+                   class="pf-drawer__link {{ request()->routeIs('portal.order.*') ? 'is-active' : '' }}">
+                    <i class="bi bi-bag-fill"></i>
+                    <span>طلباتي</span>
+                </a>
+                <a href="{{ route('portal.reservations.index') }}"
+                   class="pf-drawer__link {{ request()->routeIs('portal.reservations.*') ? 'is-active' : '' }}">
+                    <i class="bi bi-calendar-heart-fill"></i>
+                    <span>حجوزاتي</span>
+                </a>
+                <a href="{{ route('portal.reviews.index') }}"
+                   class="pf-drawer__link {{ request()->routeIs('portal.reviews.*') ? 'is-active' : '' }}">
+                    <i class="bi bi-stars"></i>
+                    <span>تقييماتي</span>
+                </a>
+                <a href="{{ route('portal.notifications.index') }}"
+                   class="pf-drawer__link {{ request()->routeIs('portal.notifications.*') ? 'is-active' : '' }}">
+                    <i class="bi bi-bell-fill"></i>
+                    <span>الإشعارات والعروض</span>
+                    @if($unreadNotifs > 0)
+                        <span class="pf-drawer__badge">{{ $unreadNotifs > 99 ? '99+' : $unreadNotifs }}</span>
+                    @endif
+                </a>
+            </nav>
+
+            <div class="pf-drawer__foot">
+                <form method="POST" action="{{ route('portal.logout') }}" style="margin:0;">
+                    @csrf
+                    <button type="submit" class="pf-drawer__logout">
+                        <i class="bi bi-box-arrow-right"></i>
+                        <span>تسجيل الخروج</span>
+                    </button>
+                </form>
+            </div>
+        </aside>
+
+        <script>
+            (function () {
+                window.pfOpenDrawer = function () {
+                    document.getElementById('pfDrawer')?.classList.add('is-open');
+                    document.getElementById('pfOverlay')?.classList.add('is-open');
+                    document.body.classList.add('pf-no-scroll');
+                };
+                window.pfCloseDrawer = function () {
+                    document.getElementById('pfDrawer')?.classList.remove('is-open');
+                    document.getElementById('pfOverlay')?.classList.remove('is-open');
+                    document.body.classList.remove('pf-no-scroll');
+                };
+                // ESC key closes the drawer
+                document.addEventListener('keydown', e => {
+                    if (e.key === 'Escape') window.pfCloseDrawer();
+                });
+                // Auto-close when navigating via a drawer link
+                document.querySelectorAll('.pf-drawer__link').forEach(a => {
+                    a.addEventListener('click', () => window.pfCloseDrawer());
+                });
+            })();
+        </script>
     @endauth
 
     <main class="pf-main">

@@ -58,12 +58,16 @@ class User extends Authenticatable
     }
 
     /**
-     * All branches the user is a member of, with their per-branch role.
+     * All branches the user is a member of.
+     *
+     * Pivot used to carry an optional `role_id` for per-branch role
+     * overrides; that concept was removed in May 2026 (the team always
+     * relied on the global `users.role`, the override added confusion).
      */
     public function branches(): BelongsToMany
     {
         return $this->belongsToMany(Branch::class, 'branch_user')
-            ->withPivot(['role_id', 'is_primary', 'joined_at'])
+            ->withPivot(['is_primary', 'joined_at'])
             ->withTimestamps();
     }
 
@@ -248,16 +252,10 @@ class User extends Authenticatable
         return $this->branches()->where('branches.id', $branchId)->exists();
     }
 
-    /**
-     * The role assigned to the user inside a specific branch (from the pivot).
-     * Falls back to null if the user is not a member of that branch.
-     */
-    public function roleInBranch(int $branchId): ?Role
-    {
-        $pivot = $this->branches()->where('branches.id', $branchId)->first();
+    // roleInBranch() removed in May 2026 — per-branch role overrides
+    // were dropped (see migration 2026_05_10_220000). The user's role
+    // is always the global `$this->role` (UserRole enum).
 
-        return $pivot?->pivot->role_id ? Role::find($pivot->pivot->role_id) : null;
-    }
 
     public function getRoleLabelAttribute(): string
     {

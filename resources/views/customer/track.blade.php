@@ -381,6 +381,34 @@
     font-weight: 600;
     line-height: 1.5;
 }
+/* Perks list inside the signup banner — short, concrete benefit lines.
+   Each bullet uses a brand-colored icon so it scans fast on mobile. */
+.track-signup-perks {
+    list-style: none;
+    margin: 0 0 .75rem;
+    padding: .55rem .65rem;
+    background: #fffaf0;
+    border: 1px dashed rgba(184, 135, 42, .4);
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: .3rem;
+}
+.track-signup-perks li {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    font-size: .8rem;
+    font-weight: 700;
+    color: #3f5346;
+    line-height: 1.45;
+}
+.track-signup-perks li i {
+    color: #b8872a;
+    font-size: .9rem;
+    flex: 0 0 auto;
+}
+
 .track-signup-actions {
     display: flex;
     flex-wrap: wrap;
@@ -473,10 +501,15 @@
              Cleanest moment to ask for signup — the order is in, food is on
              its way, they have nothing to do but stare at their phone. --}}
         <div class="track-signup">
-            <div class="track-signup-icon"><i class="bi bi-stars"></i></div>
+            <div class="track-signup-icon"><i class="bi bi-gift-fill"></i></div>
             <div class="track-signup-body">
-                <strong>سجّل لتجمع نقاط ولاء على زياراتك القادمة</strong>
-                <p>عندنا رقمك ({{ $session->customer_phone }}) — ضغطة وحدة وحسابك جاهز. مش حنطلب منك ولا حقل ثاني.</p>
+                <strong>افتح حسابك بضغطة — وفّر بزياراتك الجاية 🎁</strong>
+                <p>عندنا رقمك ({{ $session->customer_phone }}) — ضغطة وحدة وحسابك جاهز، بدون ما نطلب منك ولا معلومة زيادة.</p>
+                <ul class="track-signup-perks">
+                    <li><i class="bi bi-percent"></i> <span>عروض وخصومات حصرية للزبائن المسجَّلين</span></li>
+                    <li><i class="bi bi-clock-history"></i> <span>سجل طلباتك جاهز للإعادة بنقرة</span></li>
+                    <li><i class="bi bi-stars"></i> <span>نقاط ولاء تتحوّل لخصومات</span></li>
+                </ul>
                 <div class="track-signup-actions">
                     <form method="POST" action="{{ route('customer.track.signup') }}" class="d-inline">
                         @csrf

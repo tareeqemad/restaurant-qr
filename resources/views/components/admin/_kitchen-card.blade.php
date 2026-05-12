@@ -13,6 +13,12 @@
         $originValue = $isTableOrder
             ? $order->table?->number
             : ($order->order_type === 'delivery' ? 'DLV' : 'TOGO');
+
+        // Order-level ETA — set the moment status flipped to "preparing"
+        // (OrderTimingService::stampPrepStart). Shown as a "due by" badge
+        // so the chef sees the order's overall deadline, not just per-item.
+        $orderEta = $order->estimated_ready_at;
+        $orderOverdue = $orderEta && now()->greaterThan($orderEta);
     @endphp
     {{-- Hero table ribbon --}}
     <div class="kb-table-ribbon">
@@ -26,6 +32,13 @@
                 <strong>{{ $age_min < 1 ? '<1' : $age_min }}</strong>
                 <span class="kb-age-unit">د</span>
             </span>
+            @if($orderEta && $column === 'cooking')
+                <span class="kb-eta-chip {{ $orderOverdue ? 'is-overdue' : '' }}"
+                      title="ينتهي تحضيره عند {{ $orderEta->format('H:i') }}">
+                    <i class="bi bi-flag-fill"></i>
+                    <strong>{{ $orderEta->format('H:i') }}</strong>
+                </span>
+            @endif
             <div class="kb-order-mini">#{{ $order->number }}</div>
         </div>
     </div>
@@ -40,11 +53,45 @@
                     'ready'     => 'is-ready',
                     'cancelled' => 'is-cancelled',
                 ][$it->status] ?? '';
+
+                // Per-item timing — drives the prep-time badge + delay
+                // coloring on items that are actively being cooked.
+                $prepTime    = (int) ($it->menuItem?->prep_time_minutes ?? 0);
+                $elapsedMin  = null;
+                $delayClass  = '';
+                if ($it->status === 'preparing' && $it->prep_started_at) {
+                    $elapsedMin = (int) max(0, round($it->prep_started_at->diffInMinutes(now())));
+                    if ($prepTime > 0) {
+                        $ratio = $elapsedMin / $prepTime;
+                        $delayClass = match (true) {
+                            $ratio >= 1.0 => 'kb-delay-red',      // over time
+                            $ratio >= 0.8 => 'kb-delay-amber',    // close to deadline
+                            default       => 'kb-delay-ok',
+                        };
+                    }
+                }
             @endphp
-            <div class="kb-item {{ $itemClass }}">
+            <div class="kb-item {{ $itemClass }} {{ $delayClass }}">
                 <span class="kb-item-qty">×{{ $it->quantity }}</span>
                 <div class="kb-item-body">
-                    <div class="kb-item-name">{{ $it->name_snapshot }}</div>
+                    <div class="kb-item-name">
+                        {{ $it->name_snapshot }}
+                        @if($prepTime > 0)
+                            {{-- Static prep_time tag — always shown so the
+                                 chef knows the target before starting. --}}
+                            <span class="kb-prep-tag" title="وقت التحضير المتوقع">
+                                <i class="bi bi-clock"></i> {{ $prepTime }}د
+                            </span>
+                        @endif
+                        @if($elapsedMin !== null)
+                            {{-- Live elapsed — only appears while cooking.
+                                 Colored amber/red by the wrapper class. --}}
+                            <span class="kb-elapsed-tag" title="منقضي منذ بدء التحضير">
+                                <i class="bi bi-hourglass-split"></i>
+                                منقضي {{ $elapsedMin < 1 ? '<1' : $elapsedMin }}د
+                            </span>
+                        @endif
+                    </div>
                     @if($it->modifiers->count())
                         <div class="kb-item-mods">
                             @foreach($it->modifiers as $m)
@@ -120,3 +167,82 @@
         @endif
     </footer>
 </article>
+
+@once
+@push('styles')
+<style>
+    /* ─── Per-item prep time + elapsed badges ─────────────────────── */
+    .kb-prep-tag,
+    .kb-elapsed-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        padding: 1px 7px;
+        border-radius: 99px;
+        font-size: .68rem;
+        font-weight: 700;
+        margin-inline-start: 6px;
+        white-space: nowrap;
+        line-height: 1.4;
+    }
+    .kb-prep-tag {
+        background: #f1f5f9;
+        color: #475569;
+    }
+    .kb-prep-tag i { font-size: .65rem; }
+
+    .kb-elapsed-tag {
+        background: #ecfdf5;
+        color: #065f46;
+        border: 1px solid #bbf7d0;
+    }
+    .kb-elapsed-tag i { font-size: .65rem; }
+
+    /* Elapsed badge colors flip with the wrapping item state */
+    .kb-item.kb-delay-amber .kb-elapsed-tag {
+        background: #fef3c7;
+        color: #92400e;
+        border-color: #fcd34d;
+    }
+    .kb-item.kb-delay-red .kb-elapsed-tag {
+        background: #fee2e2;
+        color: #991b1b;
+        border-color: #fca5a5;
+        animation: kbPulseRed 2s ease-in-out infinite;
+    }
+    .kb-item.kb-delay-red {
+        background: rgba(254, 226, 226, .35);
+        border-inline-start: 3px solid #dc2626;
+    }
+    .kb-item.kb-delay-amber {
+        background: rgba(254, 243, 199, .25);
+        border-inline-start: 3px solid #f59e0b;
+    }
+    @keyframes kbPulseRed {
+        0%, 100% { opacity: 1; }
+        50%      { opacity: .55; }
+    }
+
+    /* ─── Order-level ETA chip on the ribbon ──────────────────────── */
+    .kb-eta-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 8px;
+        background: rgba(255, 255, 255, .9);
+        color: #1e3a8a;
+        border-radius: 99px;
+        font-size: .7rem;
+        font-weight: 800;
+        font-variant-numeric: tabular-nums;
+        margin-inline-start: 6px;
+    }
+    .kb-eta-chip i { font-size: .65rem; color: #2563eb; }
+    .kb-eta-chip.is-overdue {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+    .kb-eta-chip.is-overdue i { color: #dc2626; }
+</style>
+@endpush
+@endonce

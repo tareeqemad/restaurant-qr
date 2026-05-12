@@ -111,6 +111,9 @@ class OrderController extends Controller
 
         $item = MenuItem::findOrFail($data['menu_item_id']);
         if (! $item->is_available) {
+            if ($request->wantsJson()) {
+                return response()->json(['ok' => false, 'message' => 'الصنف غير متوفر حالياً.'], 422);
+            }
             return back()->with('error', 'الصنف غير متوفر حالياً.');
         }
 
@@ -138,6 +141,13 @@ class OrderController extends Controller
         $cart[] = $row;
         $this->saveCart($branch, $cart);
 
+        if ($request->wantsJson()) {
+            return response()->json([
+                'ok'      => true,
+                'message' => 'أُضيف للسلة',
+                'cart'    => $this->cartPayload($branch, $cart),
+            ]);
+        }
         return back()->with('success', 'أُضيف للسلة');
     }
 
@@ -150,7 +160,25 @@ class OrderController extends Controller
             ->all();
         $this->saveCart($branch, $cart);
 
+        if ($request->wantsJson()) {
+            return response()->json([
+                'ok'   => true,
+                'cart' => $this->cartPayload($branch, $cart),
+            ]);
+        }
         return back();
+    }
+
+    /** Shape used by the AJAX cart response — keeps the JS tiny. */
+    protected function cartPayload(Branch $branch, array $cart): array
+    {
+        $count = collect($cart)->sum('quantity');
+        $total = collect($cart)->sum('subtotal');
+        return [
+            'rows'  => $cart,
+            'count' => (int) $count,
+            'total' => round((float) $total, 2),
+        ];
     }
 
     public function checkout(Branch $branch)
@@ -188,6 +216,14 @@ class OrderController extends Controller
             'delivery_address'  => ['required_if:order_type,delivery', 'nullable', 'string', 'max:500'],
             'scheduled_for'     => ['nullable', 'date', 'after:now'],
             'customer_notes'    => ['nullable', 'string', 'max:500'],
+        ], [
+            'order_type.required'         => 'اختر نوع الطلب (استلام أو توصيل).',
+            'order_type.in'                => 'نوع الطلب غير صالح.',
+            'delivery_address.required_if' => 'عنوان التوصيل مطلوب لأن نوع الطلب توصيل.',
+            'delivery_address.max'         => 'عنوان التوصيل طويل جداً (الحد 500 حرف).',
+            'scheduled_for.date'           => 'صيغة الوقت غير صحيحة.',
+            'scheduled_for.after'          => 'الوقت المحدد يجب أن يكون في المستقبل.',
+            'customer_notes.max'           => 'الملاحظات طويلة جداً (الحد 500 حرف).',
         ]);
 
         $cart = $this->cart($branch);

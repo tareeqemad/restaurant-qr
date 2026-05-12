@@ -107,9 +107,28 @@
             <x-admin.data-panel title="تغيير كلمة المرور" icon="bi-shield-lock">
                 <div class="alert bg-primary-transparent border-0 mb-3">
                     <i class="bi bi-info-circle-fill"></i>
-                    اترك الحقلين فارغين إن لم ترد تغيير كلمة المرور.
+                    اترك الحقول فارغة إن لم ترد تغيير كلمة المرور.
                 </div>
                 <div class="row g-3">
+                    {{-- Current password — required when setting a new one. Stops a
+                         stolen session from silently rotating the password. --}}
+                    <div class="col-md-12">
+                        <label class="form-label fw-bold">
+                            كلمة المرور الحالية
+                            <small class="text-muted ms-1" title="مطلوبة لتأكيد هويتك قبل تغيير كلمة المرور">
+                                <i class="bi bi-shield-exclamation"></i>
+                            </small>
+                        </label>
+                        <div class="password-field">
+                            <input type="password" name="current_password" id="currentPassword"
+                                   class="form-control @error('current_password') is-invalid @enderror"
+                                   autocomplete="current-password">
+                            <button type="button" class="password-toggle" data-target="#currentPassword" title="إظهار/إخفاء">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
+                        @error('current_password')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
+                    </div>
                     <div class="col-md-6">
                         <label class="form-label fw-bold">كلمة مرور جديدة</label>
                         <div class="password-field">

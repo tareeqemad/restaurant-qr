@@ -54,7 +54,18 @@ class SupplierInvoiceController extends Controller
     {
         $this->authorize('create', SupplierInvoice::class);
         $po = $request->filled('po') ? PurchaseOrder::find($request->get('po')) : null;
-        $po?->load('supplier', 'items.ingredient.baseUnit', 'items.unit');
+        // Eager-load receiptItems so the invoice form can show the ACTUAL
+        // received price (which the cashier may have edited at receipt
+        // time) instead of the original PO ordered price. Without this
+        // the form silently fell back to `items.unit_price` (= ordered)
+        // and the manager would re-record the supplier invoice at the
+        // wrong price, breaking weighted-average + variance reports.
+        $po?->load([
+            'supplier',
+            'items.ingredient.baseUnit',
+            'items.unit',
+            'items.receiptItems',  // latest is the source of truth
+        ]);
         return view('admin.supplier-invoices.create', [
             'suppliers' => Supplier::where('active', true)->orderBy('name')->get(),
             'pos'       => PurchaseOrder::with('supplier')

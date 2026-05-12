@@ -36,13 +36,18 @@ class Branch extends Model
     public function users(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'branch_user')
-            ->withPivot(['role_id', 'is_primary', 'joined_at'])
+            ->withPivot(['is_primary', 'joined_at'])
             ->withTimestamps();
     }
 
     /**
-     * Roles defined specifically for this branch (customizations of templates).
-     * Global role templates (roles.branch_id IS NULL) are not returned here.
+     * Roles defined specifically for this branch.
+     *
+     * Returns 0 rows in current schema — per-branch role overrides were
+     * removed in May 2026 (the team always relied on the global
+     * `users.role`). Relation kept as a no-op so calling code still
+     * works without if-checks; consider removing once all callers are
+     * audited.
      */
     public function roles(): HasMany
     {

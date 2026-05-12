@@ -79,6 +79,19 @@ class BranchTransferController extends Controller
     public function show(BranchTransfer $branchTransfer)
     {
         $this->authorize('viewAny', \App\Models\Ingredient::class);
+
+        // Branch ownership: a non-owner can only view a transfer if their
+        // branch is one of the two legs (source OR destination). Without
+        // this, a manager in branch A could direct-URL-visit any transfer
+        // ID and see another branch's stock movements.
+        $user = auth()->user();
+        if (! $user->isOwnerLevel()) {
+            $myBranches = $user->accessibleBranchIds();
+            $involved = in_array((int) $branchTransfer->from_branch_id, $myBranches, true)
+                     || in_array((int) $branchTransfer->to_branch_id, $myBranches, true);
+            abort_unless($involved, 404);
+        }
+
         $branchTransfer->load([
             'items.ingredient.baseUnit',
             'items.fromLocation', 'items.toLocation',

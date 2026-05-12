@@ -37,8 +37,14 @@ class Lookup extends Model
     /**
      * Groups whose rows are scoped to a single branch. Anything not in this
      * list is treated as global (branch_id IS NULL).
+     *
+     * `zones` used to live here, but operations want them shared across
+     * branches — "indoor / outdoor / VIP" mean the same thing everywhere
+     * and re-creating them per-branch was just busywork. Tables still
+     * carry their own zone_lookup_id so seating layouts stay independent
+     * per branch; only the dictionary of zone names is global now.
      */
-    public const PER_BRANCH_GROUPS = ['zones'];
+    public const PER_BRANCH_GROUPS = [];
 
     protected $fillable = [
         'branch_id', 'group', 'code', 'label', 'color', 'icon',
@@ -70,7 +76,12 @@ class Lookup extends Model
 
         $cacheKey = "lookups.active.{$group}.".($branchId ?? 'global');
 
-        return Cache::driver('array')->remember($cacheKey, now()->addMinutes(5),
+        // Use the default cache driver (file/redis depending on env) so the
+        // 5-minute TTL actually applies across requests. The previous
+        // `Cache::driver('array')` lived only for one PHP request → every
+        // page rebuilt the lookup. Default driver gives real cross-request
+        // hits while `forget()` (called on CRUD) keeps it fresh.
+        return Cache::remember($cacheKey, now()->addMinutes(5),
             fn () => static::query()
                 ->where('group', $group)
                 ->when(in_array($group, static::PER_BRANCH_GROUPS, true),
@@ -85,17 +96,19 @@ class Lookup extends Model
     }
 
     /**
-     * Bust the per-request cache for a group — call after CRUD. Clears all
-     * branch variants since we don't know which one was edited from here.
+     * Bust the cache for a group — call after CRUD. Clears the global
+     * variant + every branch-specific entry by iterating the active branch
+     * set (the array-driver-era hardcoded `range(1, 50)` would silently
+     * miss branch IDs > 50).
      */
     public static function forget(string $group): void
     {
-        $cache = Cache::driver('array');
-        $cache->forget("lookups.active.{$group}.global");
-        // Best-effort: prune any per-branch entries. The array driver lives
-        // for the request only, so this is a tiny set in practice.
-        foreach (range(1, 50) as $branchId) {
-            $cache->forget("lookups.active.{$group}.{$branchId}");
+        Cache::forget("lookups.active.{$group}.global");
+
+        // Per-branch entries — iterate the actual branch IDs in the DB so
+        // this scales beyond the legacy hardcoded 50 ceiling.
+        foreach (\App\Models\Branch::pluck('id') as $branchId) {
+            Cache::forget("lookups.active.{$group}.{$branchId}");
         }
     }
 
@@ -154,6 +167,16 @@ class Lookup extends Model
                 'label'    => 'مناطق الطاولات',
                 'icon'     => 'bi-geo-alt-fill',
                 'subtitle' => 'مناطق المطعم (داخلي / VIP / تراس…) — تظهر عند إنشاء طاولة وفي شاشة الطاولات.',
+            ],
+            'discount_categories' => [
+                'label'    => 'تصنيفات الخصومات',
+                'icon'     => 'bi-percent',
+                'subtitle' => 'تظهر في قائمة "السبب" عند إضافة خصم على فاتورة من شاشة الكاشير.',
+            ],
+            'waste_reasons' => [
+                'label'    => 'أسباب الهدر',
+                'icon'     => 'bi-trash3-fill',
+                'subtitle' => 'تظهر في قائمة "السبب" عند تسجيل هدر مخزون. تساعدك في تحليل أسباب الهدر لاحقاً وفي تقارير المخزون.',
             ],
         ];
     }

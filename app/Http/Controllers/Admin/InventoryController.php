@@ -33,15 +33,24 @@ class InventoryController extends Controller
             ->orderBy('name')
             ->get()
             ->map(function (Ingredient $ingredient) use ($branchId) {
-                $stock = $branchId ? $ingredient->stockAtBranch($branchId) : (float) $ingredient->current_stock;
+                $stock     = $branchId ? $ingredient->stockAtBranch($branchId)            : $ingredient->trackedStock();
                 $threshold = $branchId ? $ingredient->reorderThresholdAtBranch($branchId) : (float) $ingredient->reorder_threshold;
-                $cost = $branchId ? $ingredient->costAtBranch($branchId) : (float) $ingredient->cost_per_unit;
+
+                // Inventory value = SUM(per-branch stock × per-branch cost) for
+                // the all-branches view, so this dashboard's totals match the
+                // ingredients page. The cost column then becomes the blended
+                // rate (value/stock) so cost × stock = value still holds.
+                $value = $branchId ? $ingredient->valueAtBranch($branchId) : $ingredient->trackedValue();
+                $cost  = $branchId
+                    ? $ingredient->costAtBranch($branchId)
+                    : ($stock > 0 ? $value / $stock : (float) $ingredient->cost_per_unit);
+
                 $targetStock = max($threshold * 2, $threshold + 1);
 
                 $ingredient->setAttribute('dashboard_stock', $stock);
                 $ingredient->setAttribute('dashboard_threshold', $threshold);
                 $ingredient->setAttribute('dashboard_cost', $cost);
-                $ingredient->setAttribute('dashboard_value', $stock * $cost);
+                $ingredient->setAttribute('dashboard_value', $value);
                 $ingredient->setAttribute('dashboard_need_qty', max(0, $targetStock - $stock));
                 $ingredient->setAttribute('dashboard_need_cost', max(0, $targetStock - $stock) * $cost);
                 $ingredient->setAttribute('dashboard_health_pct', $threshold > 0 ? ($stock / $threshold) * 100 : 100);

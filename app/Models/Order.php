@@ -25,7 +25,7 @@ class Order extends Model
         'tax_rate', 'service_rate',
         'submitted_at', 'scheduled_for',
         'estimated_prep_minutes', 'estimated_ready_at', 'estimated_delivered_at',
-        'approved_at', 'ready_at', 'delivered_at', 'completed_at', 'cancelled_at',
+        'approved_at', 'prep_started_at', 'ready_at', 'delivered_at', 'completed_at', 'cancelled_at',
     ];
 
     protected $casts = [
@@ -45,6 +45,7 @@ class Order extends Model
         'estimated_ready_at' => 'datetime',
         'estimated_delivered_at' => 'datetime',
         'approved_at' => 'datetime',
+        'prep_started_at' => 'datetime',
         'ready_at' => 'datetime',
         'delivered_at' => 'datetime',
         'completed_at' => 'datetime',

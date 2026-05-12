@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Exports\StockCountXlsx;
 use App\Http\Controllers\Controller;
 use App\Models\Ingredient;
 use App\Models\StockCount;
@@ -71,6 +72,17 @@ class StockCountController extends Controller
         $this->authorize('view', $stockCount);
         $stockCount->load(['items.ingredient.baseUnit', 'creator', 'finalizer', 'storageLocation']);
         return view('admin.stock-counts.show', ['count' => $stockCount]);
+    }
+
+    /**
+     * Stream a multi-sheet xlsx of this count: ملخص + كل البنود + الفروقات فقط.
+     * Available in any state — draft (work-in-progress snapshot), finalized
+     * (permanent record of adjustments), or cancelled (audit of abandoned work).
+     */
+    public function export(StockCount $stockCount)
+    {
+        $this->authorize('view', $stockCount);
+        return (new StockCountXlsx())->download($stockCount);
     }
 
     /** Save the entered quantities (without finalizing) */

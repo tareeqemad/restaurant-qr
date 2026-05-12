@@ -193,6 +193,12 @@ class BillingService
             $shift = \App\Models\Shift::where('user_id', $userId)->where('status', 'open')->latest('opened_at')->first();
 
             $payment = Payment::create([
+                // Stamp branch_id from the invoice itself, NOT from
+                // BranchContext. Payments arrive from contexts where the
+                // active branch may differ (queue jobs, customer portal
+                // paying for takeaway, owner-level user in "all branches"
+                // mode). The invoice always has the canonical branch.
+                'branch_id' => $invoice->branch_id,
                 'invoice_id' => $invoice->id,
                 'method' => $method,
                 'amount' => $amount,
@@ -222,6 +228,18 @@ class BillingService
             if ($status === 'paid') {
                 if ($invoice->table_session_id) {
                     $this->closeOrdersAndSession($invoice);
+                } elseif ($invoice->order_id) {
+                    // Portal-flow invoice (takeaway / delivery) — settles a
+                    // single order directly. Mark it completed so the diner
+                    // sees "مكتمل" in their history instead of "تم التسليم"
+                    // hanging forever after they've already paid.
+                    $order = $invoice->order;
+                    if ($order && ! in_array($order->status, [OrderStatus::Cancelled->value, OrderStatus::Completed->value])) {
+                        $order->update([
+                            'status' => OrderStatus::Completed->value,
+                            'completed_at' => now(),
+                        ]);
+                    }
                 }
                 SafeBroadcast::dispatch(new InvoicePaid($invoice->refresh()->load('tableSession.table', 'order')));
             }
@@ -284,6 +302,11 @@ class BillingService
 
             foreach ($splits as $i => $s) {
                 $invoice->splits()->create([
+                    // Carry the branch from the invoice — same reasoning
+                    // as Payment above. `splits()` doesn't auto-fill it
+                    // because InvoiceSplit::branch_id isn't on the invoice
+                    // FK relation.
+                    'branch_id' => $invoice->branch_id,
                     'label' => $s['label'] ?? ('الشخص '.($i + 1)),
                     'amount' => Money::round((float) $s['amount']),
                     'method' => $s['method'] ?? 'cash',

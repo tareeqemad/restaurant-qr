@@ -77,7 +77,9 @@ new class extends Component
     #[Computed]
     public function ordersByColumn(): array
     {
-        $rows = OrderItem::with(['order.table', 'modifiers'])
+        // Eager-load menuItem so the card can show each item's
+        // prep_time_minutes badge (and color it red if elapsed > prep_time).
+        $rows = OrderItem::with(['order.table', 'modifiers', 'menuItem:id,prep_time_minutes'])
             ->where('station_id', $this->stationId)
             ->whereIn('status', [
                 OrderItemStatus::Approved->value,
@@ -374,7 +376,7 @@ new class extends Component
                     <i class="bi bi-clock"></i>
                 </button>
                 <button wire:click="setSort('urgency')" type="button" class="kb-sort-btn {{ $sortBy === 'urgency' ? 'is-active' : '' }}" title="الأكثر استعجالاً">
-                    <i class="bi bi-fire"></i>
+                    <i class="bi bi-lightning-charge-fill"></i>
                 </button>
                 <button wire:click="setSort('table')"   type="button" class="kb-sort-btn {{ $sortBy === 'table'   ? 'is-active' : '' }}" title="حسب رقم الطاولة">
                     <i class="bi bi-grid-3x3-gap-fill"></i>
@@ -412,7 +414,7 @@ new class extends Component
             @include('components.admin._kitchen-card', $card + ['column' => $card['items']->contains(fn($i) => $i->status === 'preparing') ? 'cooking' : 'waiting'])
         @empty
             <div class="kb-empty kb-empty--big">
-                <i class="bi bi-cup-hot"></i>
+                <i class="bi bi-cup-straw"></i>
                 <span>لا طلبات نشطة الآن</span>
                 <small>التذكرة الجديدة ستظهر هنا تلقائياً مع صوت تنبيه</small>
             </div>

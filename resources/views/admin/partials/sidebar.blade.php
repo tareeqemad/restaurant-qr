@@ -3,6 +3,10 @@
     $u = auth()->user();
     $isActive = fn($routes) => request()->routeIs($routes) ? 'active' : '';
     $isOpen   = fn($routes) => request()->routeIs($routes) ? 'open'   : '';
+    // Single 30s-cached round-trip for the four "needs attention" badges
+    // (open attendance, pending reservations, pending orders, pending
+    // expenses). Beats running 4 separate COUNTs on every page render.
+    $sidebarBadges = \App\Support\SidebarBadges::counts();
 @endphp
 {{-- Sidebar structure follows Dashtic's horizontal admin navigation.
      .app-sidebar + .main-sidebar-header (logo) + .main-sidebar >
@@ -115,12 +119,8 @@
                     <a href="{{ route('admin.attendance.index') }}" class="side-menu__item">
                         <svg class="side-menu__icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
                         <span class="side-menu__label">الحضور والانصراف</span>
-                        @php
-                            $openCount = 0;
-                            try { $openCount = \App\Models\Attendance::open()->count(); } catch (\Throwable $e) {}
-                        @endphp
-                        @if($openCount > 0)
-                            <span class="badge bg-success ms-auto">{{ $openCount }}</span>
+                        @if($sidebarBadges['open_attendance'] > 0)
+                            <span class="badge bg-success ms-auto">{{ $sidebarBadges['open_attendance'] }}</span>
                         @endif
                     </a>
                 </li>
@@ -140,12 +140,8 @@
                                 || request()->routeIs('admin.reservations.*')
                                 || request()->routeIs('admin.reviews.*');
 
-                    $pendingRes = 0;
-                    if ($canRes) {
-                        try {
-                            $pendingRes = \App\Models\Reservation::withStatus(\App\Enums\ReservationStatus::Pending)->count();
-                        } catch (\Throwable $e) {}
-                    }
+                    // Cached count from SidebarBadges (computed once per request).
+                    $pendingRes = $canRes ? $sidebarBadges['pending_reservations'] : 0;
                 @endphp
                 @if($showCustGrp)
                 <li class="slide has-sub {{ $custGrpOpen ? 'open' : '' }}">
@@ -199,12 +195,8 @@
                     <a href="{{ route('admin.orders.index') }}" class="side-menu__item">
                         <svg class="side-menu__icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                         <span class="side-menu__label">طلبات الصالة</span>
-                        @php
-                            $pending = 0;
-                            try { $pending = \App\Models\Order::where('status','pending')->count(); } catch(\Throwable $e) {}
-                        @endphp
-                        @if($pending > 0)
-                            <span class="badge bg-danger ms-auto">{{ $pending }}</span>
+                        @if($sidebarBadges['pending_orders'] > 0)
+                            <span class="badge bg-danger ms-auto">{{ $sidebarBadges['pending_orders'] }}</span>
                         @endif
                     </a>
                 </li>
@@ -267,20 +259,20 @@
                 @endif
 
 
-                {{-- ─── الحسابات (كاشير + استردادات + مصروفات) ─── --}}
+                {{-- ─── الحسابات (كاشير + ورديات + استردادات + مصروفات) ─── --}}
                 @php
                     $canCashier  = $u && $u->can('viewAny', \App\Models\Payment::class);
+                    $canShifts   = $u && $u->can('viewAny', \App\Models\Shift::class);
                     $canRefunds  = $u && $u->can('viewAny', \App\Models\Refund::class);
                     $canExpenses = $u && $u->can('viewAny', \App\Models\Expense::class);
-                    $showAccounts = $canCashier || $canRefunds || $canExpenses;
+                    $showAccounts = $canCashier || $canShifts || $canRefunds || $canExpenses;
                     $accountsOpen = request()->routeIs('admin.cashier.*')
+                                 || request()->routeIs('admin.shifts.*')
                                  || request()->routeIs('admin.refunds.*')
                                  || request()->routeIs('admin.expenses.*');
 
-                    $pendingExpenses = 0;
-                    if ($canExpenses) {
-                        try { $pendingExpenses = \App\Models\Expense::pending()->count(); } catch (\Throwable $e) {}
-                    }
+                    // Cached count from SidebarBadges (computed once per request).
+                    $pendingExpenses = $canExpenses ? $sidebarBadges['pending_expenses'] : 0;
                 @endphp
                 @if($showAccounts)
                 <li class="slide has-sub {{ $accountsOpen ? 'open' : '' }}">
@@ -296,6 +288,13 @@
                         @if($canCashier)
                             <li class="slide"><a href="{{ route('admin.cashier.index') }}" class="side-menu__item {{ $isActive('admin.cashier.*') }}"><i class="bi bi-cash-stack submenu-icon"></i>الكاشير</a></li>
                         @endif
+                        @if($canShifts)
+                            <li class="slide">
+                                <a href="{{ route('admin.shifts.index') }}" class="side-menu__item {{ $isActive('admin.shifts.*') }}">
+                                    <i class="bi bi-clock-history submenu-icon"></i>الورديات (الشفت)
+                                </a>
+                            </li>
+                        @endif
                         @if($canExpenses)
                             <li class="slide">
                                 <a href="{{ route('admin.expenses.index') }}" class="side-menu__item {{ $isActive('admin.expenses.*') }}">
@@ -309,6 +308,13 @@
                         @if($canRefunds)
                             <li class="slide"><a href="{{ route('admin.refunds.index') }}" class="side-menu__item {{ $isActive('admin.refunds.*') }}"><i class="bi bi-arrow-counterclockwise submenu-icon"></i>الاستردادات</a></li>
                         @endif
+                        @can('viewAny', App\Models\Announcement::class)
+                            <li class="slide">
+                                <a href="{{ route('admin.announcements.index') }}" class="side-menu__item {{ $isActive('admin.announcements.*') }}">
+                                    <i class="bi bi-megaphone-fill submenu-icon"></i>العروض والإعلانات
+                                </a>
+                            </li>
+                        @endcan
                     </ul>
                 </li>
                 @endif

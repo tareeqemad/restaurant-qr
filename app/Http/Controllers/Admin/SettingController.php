@@ -45,6 +45,19 @@ class SettingController extends Controller
             'theme_menu' => ['nullable', 'regex:/^#[0-9a-fA-F]{6}$/'],
             'theme_header_style' => ['nullable', 'in:light,dark,color'],
             'theme_menu_style' => ['nullable', 'in:light,dark,brand'],
+            // Discount caps per role — admins can tune the per-role
+            // ceiling (max % and max fixed amount) without redeploying.
+            'discount_cap_cashier_pct'   => ['sometimes', 'numeric', 'min:0', 'max:100'],
+            'discount_cap_cashier_fixed' => ['sometimes', 'numeric', 'min:0'],
+            'discount_cap_waiter_pct'    => ['sometimes', 'numeric', 'min:0', 'max:100'],
+            'discount_cap_waiter_fixed'  => ['sometimes', 'numeric', 'min:0'],
+            'discount_cap_manager_pct'   => ['sometimes', 'numeric', 'min:0', 'max:100'],
+            'discount_cap_manager_fixed' => ['sometimes', 'numeric', 'min:0'],
+            // Prep-time buffer: extra % piled on top of max(item prep_time)
+            // when computing the customer-facing ETA + the kitchen's
+            // "should be ready by" stamp. 20% is the rule-of-thumb default;
+            // capped at 200 so a typo can't quote "ready in 4 hours".
+            'prep_time_buffer_pct' => ['sometimes', 'integer', 'min:0', 'max:200'],
         ]);
 
         $meta = [
@@ -69,6 +82,13 @@ class SettingController extends Controller
             'theme_menu' => ['theme', 'string'],
             'theme_header_style' => ['theme', 'string'],
             'theme_menu_style' => ['theme', 'string'],
+            'discount_cap_cashier_pct'   => ['discounts', 'float'],
+            'discount_cap_cashier_fixed' => ['discounts', 'float'],
+            'discount_cap_waiter_pct'    => ['discounts', 'float'],
+            'discount_cap_waiter_fixed'  => ['discounts', 'float'],
+            'discount_cap_manager_pct'   => ['discounts', 'float'],
+            'discount_cap_manager_fixed' => ['discounts', 'float'],
+            'prep_time_buffer_pct'       => ['general', 'int'],
         ];
 
         $clearable = ['legal_name', 'tax_number', 'receipt_footer'];

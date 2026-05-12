@@ -211,8 +211,9 @@ class InventoryService
         ?int $batchId = null,
         ?string $wasteReason = null,
         ?int $storageLocationId = null,
+        ?int $wasteReasonLookupId = null,
     ): InventoryMovement {
-        [$mv, $crossedLowStock, $freshIngredient] = DB::transaction(function () use ($ingredient, $type, $qtyBase, $unitCost, $reference, $reason, $userId, $batchId, $wasteReason, $storageLocationId) {
+        [$mv, $crossedLowStock, $freshIngredient] = DB::transaction(function () use ($ingredient, $type, $qtyBase, $unitCost, $reference, $reason, $userId, $batchId, $wasteReason, $storageLocationId, $wasteReasonLookupId) {
             // Lock the ingredient row for the duration of this transaction.
             // Concurrent receipts/deductions on the same SKU are now serialized,
             // preventing weighted-average cost interleaving.
@@ -224,18 +225,23 @@ class InventoryService
             $stockAfter = $stockBefore + $delta;
 
             if ($ingredient->track_stock) {
-                $ingredient->update(['current_stock' => $stockAfter]);
+                // Per-location row is the source of truth. We always touch one,
+                // falling back to a sensible default location when the caller
+                // doesn't supply one — otherwise the global counter and the
+                // per-branch sum drift apart and the index page shows
+                // different totals depending on the active branch filter.
+                $locId = $storageLocationId ?: $this->resolveFallbackLocationId($reference);
 
-                if ($storageLocationId) {
+                if ($locId) {
                     $locationStock = IngredientStock::where([
                         'ingredient_id' => $ingredient->id,
-                        'storage_location_id' => $storageLocationId,
+                        'storage_location_id' => $locId,
                     ])->lockForUpdate()->first();
 
                     if (! $locationStock) {
                         $locationStock = IngredientStock::create([
                             'ingredient_id' => $ingredient->id,
-                            'storage_location_id' => $storageLocationId,
+                            'storage_location_id' => $locId,
                             'quantity' => 0,
                             'reorder_threshold' => (float) $ingredient->reorder_threshold,
                         ]);
@@ -244,7 +250,19 @@ class InventoryService
                     $locationStock->update([
                         'quantity' => (float) $locationStock->quantity + $delta,
                     ]);
+
+                    // Echo the resolved location back to the movement record
+                    // so the audit trail and downstream views (transfer show
+                    // page, etc.) reference the actual storage row.
+                    $storageLocationId = $locId;
                 }
+
+                // Derive the global counter from the per-location truth.
+                // Guarantees current_stock == SUM(ingredient_stock.quantity).
+                $newGlobal = (float) IngredientStock::where('ingredient_id', $ingredient->id)
+                    ->sum('quantity');
+                $ingredient->update(['current_stock' => $newGlobal]);
+                $stockAfter = $newGlobal;
             }
 
             // inventory_movements has a NOT NULL branch_id. The trait
@@ -284,6 +302,7 @@ class InventoryService
                 'reference_id' => $reference?->getKey(),
                 'reason' => $reason,
                 'waste_reason' => $type === 'waste' ? $wasteReason : null,
+                'waste_reason_lookup_id' => $type === 'waste' ? $wasteReasonLookupId : null,
                 'user_id' => $userId ?? auth()->id(),
                 'occurred_at' => now(),
             ]);
@@ -306,6 +325,46 @@ class InventoryService
         }
 
         return $mv;
+    }
+
+    /**
+     * Pick a storage location to attribute a movement to when the caller
+     * didn't supply one. Walks the strongest-signal chain:
+     *   1. The reference's own branch_id (PO line, transfer item, etc.) →
+     *      that branch's default → first active location.
+     *   2. The reference's parent (e.g. PO line → PO header) branch.
+     *   3. Active BranchContext.
+     *   4. Any branch's default → any first active location (truly last resort).
+     * Returns null only when the system has zero active storage locations.
+     */
+    protected function resolveFallbackLocationId($reference = null): ?int
+    {
+        $branchId = null;
+        if ($reference) {
+            if (isset($reference->branch_id) && $reference->branch_id) {
+                $branchId = (int) $reference->branch_id;
+            } elseif (method_exists($reference, 'purchaseOrder')
+                      && ($parent = $reference->purchaseOrder)
+                      && $parent->branch_id) {
+                $branchId = (int) $parent->branch_id;
+            }
+        }
+        $branchId ??= \App\Support\BranchContext::current();
+
+        if ($branchId) {
+            $locId = \App\Models\StorageLocation::where('branch_id', $branchId)
+                ->where('active', true)
+                ->orderByDesc('is_default')
+                ->orderBy('display_order')
+                ->value('id');
+            if ($locId) return (int) $locId;
+        }
+
+        // No branch context — pick any active location, default first.
+        return \App\Models\StorageLocation::where('active', true)
+            ->orderByDesc('is_default')
+            ->orderBy('display_order')
+            ->value('id');
     }
 
     public function checkStockForOrderPreview(array $cartItems): array

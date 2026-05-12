@@ -121,4 +121,30 @@ class Invoice extends Model
     {
         return $this->hasMany(InvoiceSplit::class);
     }
+
+    /** Arabic label for the invoice status — used in every cashier surface. */
+    public function statusLabel(): string
+    {
+        return match ($this->status) {
+            'paid'            => 'مدفوعة بالكامل',
+            'partially_paid'  => 'مدفوعة جزئياً',
+            'issued'          => 'صادرة',
+            'cancelled'       => 'ملغاة',
+            'unpaid_writeoff' => 'مشطوبة',
+            default           => $this->status,
+        };
+    }
+
+    /** Bootstrap badge color matching the status. */
+    public function statusColor(): string
+    {
+        return match ($this->status) {
+            'paid'            => 'success',
+            'partially_paid'  => 'info',
+            'issued'          => 'warning',
+            'cancelled'       => 'danger',
+            'unpaid_writeoff' => 'dark',
+            default           => 'secondary',
+        };
+    }
 }

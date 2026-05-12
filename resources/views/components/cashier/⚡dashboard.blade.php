@@ -73,6 +73,16 @@ new class extends Component
     public string $refundMethod = 'cash';
     public string $refundReason = '';
 
+    // Discount form state — driven from the totals card. Open/close flips a
+    // local panel (no Bootstrap modal, no nested form) so it morphs cleanly
+    // alongside the rest of the invoice block on each Livewire round trip.
+    public bool $discountOpen = false;
+    public string $discountType = 'percent';
+    public string $discountValue = '';
+    public ?int $discountCategoryLookupId = null;
+    public string $discountReason = '';
+    public string $discountName = '';
+
     public function mount(?int $session = null): void
     {
         $this->authorize('viewAny', Payment::class);
@@ -839,6 +849,161 @@ new class extends Component
         } catch (\Throwable $e) {
             $this->dispatch('toast', type: 'error', message: $e->getMessage());
         }
+    }
+
+    // ─── Discount (cashier-applied) ───────────────────────────────────
+
+    public function openDiscount(): void
+    {
+        $this->authorize('apply', \App\Models\OrderDiscount::class);
+        $this->discountOpen = true;
+        $this->discountType = 'percent';
+        $this->discountValue = '';
+        // Default to the first category in the catalog (typically "regular
+        // customer" by display_order). Falls back to null if the lookup is
+        // empty — the form will render with no preselected category.
+        $first = \App\Models\Lookup::for('discount_categories')->first();
+        $this->discountCategoryLookupId = $first?->id;
+        $this->discountReason = '';
+        $this->discountName = '';
+    }
+
+    public function closeDiscount(): void
+    {
+        $this->discountOpen = false;
+        $this->reset(['discountValue', 'discountReason', 'discountName']);
+    }
+
+    /**
+     * Apply the discount to whatever the cashier is looking at — the
+     * standalone portal/takeaway order if one is selected, otherwise the
+     * whole table session (fans out one OrderDiscount per non-cancelled
+     * order, prorated for fixed amounts).
+     */
+    public function submitDiscount(\App\Services\OrderDiscountService $service): void
+    {
+        $this->authorize('apply', \App\Models\OrderDiscount::class);
+
+        $this->validate([
+            'discountType'              => ['required', 'in:percent,fixed'],
+            'discountValue'             => ['required', 'numeric', 'min:0.01'],
+            'discountReason'            => ['required', 'string', 'max:500'],
+            'discountCategoryLookupId'  => ['nullable', 'integer', 'exists:lookups,id'],
+            'discountName'              => ['nullable', 'string', 'max:120'],
+        ], attributes: [
+            'discountValue'            => 'قيمة الخصم',
+            'discountReason'           => 'سبب الخصم',
+            'discountCategoryLookupId' => 'تصنيف الخصم',
+        ]);
+
+        $payload = [
+            'type'               => $this->discountType,
+            'value'              => (float) $this->discountValue,
+            'reason'             => $this->discountReason,
+            'category_lookup_id' => $this->discountCategoryLookupId,
+            'name'               => $this->discountName,
+        ];
+
+        try {
+            if ($this->selectedRemoteOrderId) {
+                $order = $this->selectedRemoteOrder;
+                if (! $order) throw new \RuntimeException('الطلب غير محدد.');
+                $service->applyToOrder($order, $payload, auth()->user());
+            } elseif ($this->selectedSessionId) {
+                $session = $this->selectedSession;
+                if (! $session) throw new \RuntimeException('الجلسة غير محددة.');
+                $service->applyToSession($session, $payload, auth()->user());
+            } else {
+                throw new \RuntimeException('لا يوجد طلب أو جلسة محددة.');
+            }
+
+            $this->dispatch('toast', type: 'success', message: 'تم تطبيق الخصم');
+            $this->closeDiscount();
+
+            // Bust the cached computed properties so the totals refresh from
+            // the new order/invoice state on the next render.
+            unset($this->selectedSession, $this->selectedRemoteOrder, $this->remoteOrders);
+
+            $invoice = $this->activeInvoice();
+            if ($invoice && (float) $invoice->balance > 0) {
+                $this->paymentAmount = (string) number_format((float) $invoice->balance, 2, '.', '');
+            }
+        } catch (\Throwable $e) {
+            $this->dispatch('toast', type: 'error', message: $e->getMessage());
+        }
+    }
+
+    public function removeDiscount(int $discountId, \App\Services\OrderDiscountService $service): void
+    {
+        $discount = \App\Models\OrderDiscount::find($discountId);
+        if (! $discount) {
+            $this->dispatch('toast', type: 'error', message: 'الخصم غير موجود.');
+            return;
+        }
+        $this->authorize('remove', $discount);
+
+        try {
+            $service->remove($discount, auth()->user());
+            $this->dispatch('toast', type: 'success', message: 'تم إزالة الخصم');
+            unset($this->selectedSession, $this->selectedRemoteOrder, $this->remoteOrders);
+
+            $invoice = $this->activeInvoice();
+            if ($invoice && (float) $invoice->balance > 0) {
+                $this->paymentAmount = (string) number_format((float) $invoice->balance, 2, '.', '');
+            }
+        } catch (\Throwable $e) {
+            $this->dispatch('toast', type: 'error', message: $e->getMessage());
+        }
+    }
+
+    /**
+     * Cap (max percent / max fixed) for the current cashier's role. Returned
+     * to the view so the form can show "حد دورك: 10%" and validate inline
+     * before round-tripping. Null means uncapped (owner-level).
+     */
+    #[Computed]
+    public function userDiscountCap(): ?array
+    {
+        return app(\App\Services\OrderDiscountService::class)
+            ->userCap(auth()->user());
+    }
+
+    /**
+     * Combined list of discounts already applied to the active selection,
+     * with each row's order number folded in for the multi-order session
+     * case (a 10% session-wide discount shows up as four separate rows when
+     * the table has four orders — the order number disambiguates them).
+     */
+    #[Computed]
+    public function activeDiscounts()
+    {
+        if ($this->selectedRemoteOrderId) {
+            $order = $this->selectedRemoteOrder;
+            if (! $order) return collect();
+            return $order->discounts()->with(['appliedBy', 'categoryLookup'])->get()
+                ->map(fn ($d) => tap($d, fn () => $d->setAttribute('_order_number', $order->number)));
+        }
+
+        $session = $this->selectedSession;
+        if (! $session) return collect();
+
+        $orderIds = $session->orders->pluck('id');
+        return \App\Models\OrderDiscount::with(['appliedBy', 'categoryLookup', 'order'])
+            ->whereIn('order_id', $orderIds)
+            ->latest()
+            ->get()
+            ->map(fn ($d) => tap($d, fn () => $d->setAttribute('_order_number', $d->order?->number)));
+    }
+
+    /**
+     * Categories for the discount-reason picker, pulled from the
+     * `discount_categories` lookup group so admins can edit the catalog
+     * from /admin/lookups without touching code.
+     */
+    #[Computed]
+    public function discountCategories()
+    {
+        return \App\Models\Lookup::for('discount_categories');
     }
 
     /**
@@ -1711,6 +1876,8 @@ new class extends Component
                                         <span wire:loading wire:target="issueRemoteInvoice">جاري...</span>
                                     </button>
                                 </div>
+
+                                @include('components.cashier._discount-panel')
                             @else
                                 <div class="cx-section">
                                     <div class="cx-invoice-head">
@@ -1718,10 +1885,13 @@ new class extends Component
                                             <small class="text-muted">رقم الفاتورة</small>
                                             <div class="fw-bold" style="font-family: 'Courier New', monospace;">{{ $invoice->number }}</div>
                                         </div>
-                                        <span class="badge bg-{{ $invoice->balance > 0 ? 'warning' : 'success' }}">{{ $invoice->status }}</span>
+                                        <span class="badge bg-{{ $invoice->statusColor() }}">{{ $invoice->statusLabel() }}</span>
                                     </div>
                                     <div class="cx-totals">
                                         <div class="d-flex justify-content-between"><span>الفرعي</span><strong>{{ \App\Helpers\Money::format($invoice->subtotal) }}</strong></div>
+                                        @if($invoice->discount_total > 0)
+                                            <div class="d-flex justify-content-between text-success"><span>الخصم</span><strong>−{{ \App\Helpers\Money::format($invoice->discount_total) }}</strong></div>
+                                        @endif
                                         @if($invoice->tax_total > 0)<div class="d-flex justify-content-between"><span>الضريبة</span><strong>{{ \App\Helpers\Money::format($invoice->tax_total) }}</strong></div>@endif
                                         @if($invoice->delivery_fee > 0)<div class="d-flex justify-content-between"><span>التوصيل</span><strong>{{ \App\Helpers\Money::format($invoice->delivery_fee) }}</strong></div>@endif
                                         <div class="cx-grand d-flex justify-content-between mt-2">
@@ -1739,6 +1909,8 @@ new class extends Component
                                         @endif
                                     </div>
                                 </div>
+
+                                @include('components.cashier._discount-panel')
 
                                 @if($invoice->balance > 0)
                                     <div class="cx-section">
@@ -2015,6 +2187,10 @@ new class extends Component
                                     </button>
                                 @endif
                             </div>
+
+                            @unless($this->canCloseWithoutBilling)
+                                @include('components.cashier._discount-panel')
+                            @endunless
                         @else
                             {{-- Invoice totals + payment --}}
                             <div class="cx-section">
@@ -2023,16 +2199,7 @@ new class extends Component
                                         <small class="text-muted">رقم الفاتورة</small>
                                         <div class="fw-bold" style="font-family: 'Courier New', monospace;">{{ $invoice->number }}</div>
                                     </div>
-                                    <span class="badge bg-{{ $invoice->balance > 0 ? 'warning' : 'success' }}">
-                                        {{ match($invoice->status) {
-                                            'paid'           => 'مدفوعة بالكامل',
-                                            'partially_paid' => 'مدفوعة جزئياً',
-                                            'issued'         => 'صادرة',
-                                            'cancelled'      => 'ملغاة',
-                                            'unpaid_writeoff'=> 'شطب',
-                                            default          => $invoice->status,
-                                        } }}
-                                    </span>
+                                    <span class="badge bg-{{ $invoice->statusColor() }}">{{ $invoice->statusLabel() }}</span>
                                 </div>
 
                                 <div class="cx-totals">
@@ -2066,6 +2233,8 @@ new class extends Component
                                     @endif
                                 </div>
                             </div>
+
+                            @include('components.cashier._discount-panel')
 
                             {{-- Payment keypad --}}
                             @if($invoice->balance > 0)

@@ -159,7 +159,9 @@
                             <th>مطلوب</th>
                             <th>مستلم</th>
                             <th>مفوتر</th>
-                            <th>السعر</th>
+                            <th title="السعر الفعلي يأخذ من الاستلام لو تم؛ وإلا من الـ PO الأصلي">
+                                السعر <i class="bi bi-info-circle text-muted small"></i>
+                            </th>
                             <th>الإجمالي</th>
                             <th>التقدم</th>
                         </tr>
@@ -169,6 +171,27 @@
                             @php
                                 $pct = $line->receivedPercent();
                                 $invoicedQty = $line->supplierInvoiceItems->sum('quantity');
+
+                                // Effective price = weighted average of actual receipts.
+                                // Falls back to ordered price when nothing received yet.
+                                // This is the price that genuinely hit the warehouse and
+                                // drives the supplier-invoice default + WAC update.
+                                $orderedPrice    = (float) $line->unit_price;
+                                $orderedSubtotal = (float) $line->subtotal;
+                                $receipts        = $line->receiptItems ?? collect();
+                                $totalRecvQty    = (float) $receipts->sum('quantity_received');
+                                $totalRecvValue  = (float) $receipts->sum(fn ($r) =>
+                                    (float) $r->quantity_received * (float) $r->unit_price
+                                );
+                                $effectivePrice    = $totalRecvQty > 0
+                                    ? $totalRecvValue / $totalRecvQty
+                                    : $orderedPrice;
+                                $effectiveSubtotal = $totalRecvQty > 0
+                                    ? $totalRecvValue
+                                    : $orderedSubtotal;
+                                $priceDelta   = $effectivePrice - $orderedPrice;
+                                $hasReceipt   = $totalRecvQty > 0;
+                                $priceChanged = $hasReceipt && abs($priceDelta) > 0.0001;
                             @endphp
                             <tr>
                                 <td>
@@ -186,8 +209,38 @@
                                         {{ \App\Helpers\Qty::format($invoicedQty) }}
                                     </span>
                                 </td>
-                                <td>{{ \App\Helpers\Money::format($line->unit_price) }}</td>
-                                <td class="fw-bold" style="color:var(--primary);">{{ \App\Helpers\Money::format($line->subtotal) }}</td>
+                                <td>
+                                    {{-- Effective price (actual receipt). Bold + colored
+                                         when it differs from the ordered price so vendor
+                                         price changes are obvious at a glance. --}}
+                                    <div class="fw-bold {{ $priceChanged ? ($priceDelta > 0 ? 'text-warning' : 'text-info') : '' }}">
+                                        {{ \App\Helpers\Money::format($effectivePrice) }}
+                                    </div>
+                                    @if($priceChanged)
+                                        <small class="d-block text-muted fs-11"
+                                               title="السعر في الـ PO الأصلي كان {{ \App\Helpers\Money::format($orderedPrice) }}">
+                                            <i class="bi bi-arrow-{{ $priceDelta > 0 ? 'up' : 'down' }}-short"></i>
+                                            {{ $priceDelta > 0 ? '+' : '' }}{{ \App\Helpers\Money::format($priceDelta) }}
+                                            عن الـ PO
+                                        </small>
+                                    @elseif($hasReceipt)
+                                        <small class="text-success fs-11">
+                                            <i class="bi bi-check2"></i> مطابق لسعر الـ PO
+                                        </small>
+                                    @else
+                                        <small class="text-muted fs-11">
+                                            <i class="bi bi-clock"></i> سعر الـ PO (لم يُستلم بعد)
+                                        </small>
+                                    @endif
+                                </td>
+                                <td class="fw-bold" style="color:var(--primary);">
+                                    {{ \App\Helpers\Money::format($effectiveSubtotal) }}
+                                    @if($priceChanged)
+                                        <small class="d-block text-muted fs-11">
+                                            (PO: {{ \App\Helpers\Money::format($orderedSubtotal) }})
+                                        </small>
+                                    @endif
+                                </td>
                                 <td style="min-width:150px;">
                                     <div class="progress" style="height:8px; background:rgba(var(--primary-rgb),.08);">
                                         <div class="progress-bar" style="width: {{ $pct }}%; background:linear-gradient(90deg, var(--primary), var(--accent));"></div>
@@ -198,9 +251,39 @@
                         @endforeach
                     </tbody>
                     <tfoot>
+                        @php
+                            // Effective grand total = sum of effective subtotals.
+                            // When all receipts match the PO it equals $po->total;
+                            // when prices changed at receipt, it diverges.
+                            $effectiveTotal = 0; $orderedTotal = (float) $po->total;
+                            foreach ($po->items as $L) {
+                                $rec = $L->receiptItems ?? collect();
+                                $rqty = (float) $rec->sum('quantity_received');
+                                $rval = (float) $rec->sum(fn ($r) => (float) $r->quantity_received * (float) $r->unit_price);
+                                $effectiveTotal += ($rqty > 0 ? $rval : (float) $L->subtotal);
+                            }
+                            $totalDelta = $effectiveTotal - $orderedTotal;
+                            $totalsMatch = abs($totalDelta) < 0.01;
+                        @endphp
                         <tr class="table-light">
-                            <td colspan="5" class="text-end fw-bold">الإجمالي الكلي</td>
-                            <td colspan="2" class="fw-bold fs-5" style="color:var(--primary);">{{ \App\Helpers\Money::format($po->total) }}</td>
+                            <td colspan="5" class="text-end fw-bold">
+                                الإجمالي الكلي
+                                @if(! $totalsMatch)
+                                    <small class="text-muted d-block fs-11">
+                                        (حسب أسعار الاستلام الفعلية)
+                                    </small>
+                                @endif
+                            </td>
+                            <td colspan="2" class="fw-bold fs-5" style="color:var(--primary);">
+                                {{ \App\Helpers\Money::format($effectiveTotal) }}
+                                @if(! $totalsMatch)
+                                    <small class="d-block fs-11 {{ $totalDelta > 0 ? 'text-warning' : 'text-info' }}">
+                                        <i class="bi bi-arrow-{{ $totalDelta > 0 ? 'up' : 'down' }}-short"></i>
+                                        {{ $totalDelta > 0 ? '+' : '' }}{{ \App\Helpers\Money::format($totalDelta) }}
+                                        عن طلب الـ PO ({{ \App\Helpers\Money::format($orderedTotal) }})
+                                    </small>
+                                @endif
+                            </td>
                         </tr>
                     </tfoot>
                 </table>

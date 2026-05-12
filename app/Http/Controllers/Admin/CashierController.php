@@ -4,9 +4,12 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
+use App\Models\Order;
+use App\Models\OrderDiscount;
 use App\Models\Payment;
 use App\Models\TableSession;
 use App\Services\BillingService;
+use App\Services\OrderDiscountService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 
@@ -146,5 +149,60 @@ class CashierController extends Controller
         }
         $invoice->splits()->delete();
         return back()->with('success', 'تم إلغاء التقسيم');
+    }
+
+    public function applyDiscountToOrder(Request $request, Order $order, OrderDiscountService $service)
+    {
+        $this->authorize('apply', OrderDiscount::class);
+        $data = $this->validateDiscount($request);
+        try {
+            $service->applyToOrder($order, $data, $request->user());
+            return back()->with('success', 'تم تطبيق الخصم');
+        } catch (\Throwable $e) {
+            return back()->with('error', $e->getMessage());
+        }
+    }
+
+    public function applyDiscountToSession(Request $request, TableSession $session, OrderDiscountService $service)
+    {
+        $this->authorize('apply', OrderDiscount::class);
+        $data = $this->validateDiscount($request);
+        try {
+            $service->applyToSession($session, $data, $request->user());
+            return back()->with('success', 'تم تطبيق الخصم على الجلسة');
+        } catch (\Throwable $e) {
+            return back()->with('error', $e->getMessage());
+        }
+    }
+
+    public function removeDiscount(OrderDiscount $discount, OrderDiscountService $service, Request $request)
+    {
+        $this->authorize('remove', $discount);
+        try {
+            $service->remove($discount, $request->user());
+            return back()->with('success', 'تم إزالة الخصم');
+        } catch (\Throwable $e) {
+            return back()->with('error', $e->getMessage());
+        }
+    }
+
+    /**
+     * Reason is intentionally REQUIRED — every discount is audited, and a
+     * blank reason makes the report column useless. The cashier types one
+     * sentence at the till; this is the cheapest moment to capture context.
+     */
+    protected function validateDiscount(Request $request): array
+    {
+        return $request->validate([
+            'type'               => ['required', 'in:percent,fixed'],
+            'value'              => ['required', 'numeric', 'min:0.01'],
+            'reason'             => ['required', 'string', 'max:500'],
+            'category_lookup_id' => ['nullable', 'integer', 'exists:lookups,id'],
+            'name'               => ['nullable', 'string', 'max:120'],
+        ], [
+            'type.required'   => 'اختر نوع الخصم.',
+            'value.required'  => 'أدخل قيمة الخصم.',
+            'reason.required' => 'سبب الخصم إلزامي.',
+        ]);
     }
 }

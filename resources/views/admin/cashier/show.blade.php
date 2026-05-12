@@ -63,7 +63,7 @@
             @php $inv = $session->invoice; @endphp
             <div class="card"><div class="card-body">
                 <div class="d-flex justify-content-between mb-2"><h5 class="fw-bold mb-0">{{ $inv->number }}</h5>
-                    <span class="badge bg-info">{{ $inv->status }}</span></div>
+                    <span class="badge bg-{{ $inv->statusColor() }}">{{ $inv->statusLabel() }}</span></div>
                 <div class="d-flex justify-content-between"><span>الفرعي:</span>{{ \App\Helpers\Money::format($inv->subtotal) }}</div>
                 <div class="d-flex justify-content-between"><span>الضريبة:</span>{{ \App\Helpers\Money::format($inv->tax_total) }}</div>
                 <div class="d-flex justify-content-between"><span>الخدمة:</span>{{ \App\Helpers\Money::format($inv->service_total) }}</div>

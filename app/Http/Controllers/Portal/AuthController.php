@@ -7,6 +7,7 @@ use App\Models\Branch;
 use App\Models\Customer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cookie;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -101,7 +102,17 @@ class AuthController extends Controller
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        return redirect()->route('portal.login');
+        // Clear the "soft remember-me" cookie too. Without this, the next
+        // visitor on the same browser (could be a totally different person,
+        // an admin checking the table flow, or someone testing) gets
+        // silently identified as the customer who just logged out — because
+        // MenuController::open() falls back to the qr_customer_id cookie
+        // when no portal session is present. We also drop the table_session
+        // cookie so an old table cart doesn't follow the logged-out diner
+        // around.
+        return redirect()->route('portal.login')
+            ->withCookie(Cookie::forget('qr_customer_id'))
+            ->withCookie(Cookie::forget('table_session'));
     }
 
     private function storeSafeReturnTo(Request $request): void

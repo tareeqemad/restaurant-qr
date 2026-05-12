@@ -24,6 +24,11 @@
 
 <x-admin.data-panel title="السجلات" :count="$attendances->total()" icon="bi-clock-history">
     <x-slot:actions>
+        <a href="{{ route('admin.attendance.export.xlsx', request()->query()) }}"
+           class="btn btn-success"
+           title="تصدير السجلات الحالية بصيغة Excel (.xlsx)">
+            <i class="bi bi-file-earmark-spreadsheet"></i> تصدير Excel
+        </a>
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#attAddModal">
             <i class="bi bi-plus-lg"></i> سجل يدوي
         </button>
@@ -31,10 +36,20 @@
 
     <x-slot:filters>
         <form class="row g-2">
-            <div class="col-md-3">
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-1">تاريخ محدد</label>
                 <input type="date" name="date" value="{{ request('date') }}" class="form-control">
             </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-1">من تاريخ</label>
+                <input type="date" name="from" value="{{ request('from') }}" class="form-control">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-1">إلى تاريخ</label>
+                <input type="date" name="to" value="{{ request('to') }}" class="form-control">
+            </div>
             <div class="col-md-3">
+                <label class="form-label small text-muted mb-1">الموظف</label>
                 <select name="user_id" class="form-select">
                     <option value="">كل الموظفين</option>
                     @foreach($staff as $s)
@@ -43,6 +58,7 @@
                 </select>
             </div>
             <div class="col-md-3">
+                <label class="form-label small text-muted mb-1">الحالة</label>
                 <select name="status" class="form-select">
                     <option value="">كل الحالات</option>
                     <option value="open"   @selected(request('status')==='open')>مفتوح (حاضر)</option>
@@ -51,11 +67,14 @@
             </div>
             <div class="col-12 text-center mt-2">
                 <button class="btn btn-primary px-5"><i class="bi bi-funnel"></i> استعلام</button>
-                @if(request()->hasAny(['date', 'user_id', 'status']))
+                @if(request()->hasAny(['date', 'from', 'to', 'user_id', 'status']))
                     <a href="{{ route('admin.attendance.index') }}" class="d-block mt-1 small text-muted">
                         مسح الفلاتر
                     </a>
                 @endif
+                <small class="d-block mt-1 text-muted">
+                    💡 «تاريخ محدد» للاستعلام عن يوم واحد، أو «من — إلى» لمدى زمني (مفيد لتقارير الراتب الشهرية).
+                </small>
             </div>
         </form>
     </x-slot:filters>

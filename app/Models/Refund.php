@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,10 +10,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Refund extends Model
 {
-    use HasFactory, SoftDeletes;
+    use BelongsToBranch, HasFactory, SoftDeletes;
 
+    // branch_id added May 2026 (migration 2026_05_10_230000) — must be
+    // derived from invoice.branch_id by the writer (RefundService /
+    // RefundController), not from BranchContext.
     protected $fillable = [
-        'number', 'invoice_id', 'payment_id',
+        'branch_id', 'number', 'invoice_id', 'payment_id',
         'amount', 'method', 'reference', 'status',
         'reason', 'notes',
         'processed_by', 'shift_id', 'refunded_at',

@@ -72,12 +72,7 @@ class UserController extends Controller
     public function create()
     {
         $this->authorize('create', User::class);
-        return view('admin.users.create', [
-            'roles'           => UserRole::options(),
-            'stations'        => Station::where('active', true)->get(),
-            'branches'        => Branch::where('is_active', true)->orderBy('display_order')->orderBy('name')->get(),
-            'branchRoles'     => Role::orderBy('display_order')->get(),
-        ]);
+        return view('admin.users.create', $this->branchFormData());
     }
 
     public function store(Request $request)
@@ -86,7 +81,15 @@ class UserController extends Controller
         $data = $this->validateData($request);
         $data['password'] = Hash::make($data['password']);
 
-        $branchAssignments = $this->extractBranchAssignments($request);
+        // Server-side filter: drop any branch_id the creator can't manage,
+        // even if it slipped through validation (defense in depth — the form
+        // marks them disabled but a hand-crafted POST would bypass).
+        $branchAssignments = $this->extractBranchAssignments(
+            $request,
+            existingAssignments: collect(),
+            accessibleBranchIds: $this->accessibleBranchIdsForAssignment()
+        );
+
         $user = User::create($data);
         $user->branches()->sync($branchAssignments);
 
@@ -97,13 +100,10 @@ class UserController extends Controller
     public function edit(User $user)
     {
         $this->authorize('update', $user);
-        return view('admin.users.edit', [
-            'user'            => $user->load('branches'),
-            'roles'           => UserRole::options(),
-            'stations'        => Station::where('active', true)->get(),
-            'branches'        => Branch::where('is_active', true)->orderBy('display_order')->orderBy('name')->get(),
-            'branchRoles'     => Role::orderBy('display_order')->get(),
-        ]);
+        return view('admin.users.edit', array_merge(
+            ['user' => $user->load('branches')],
+            $this->branchFormData(),
+        ));
     }
 
     public function update(Request $request, User $user)
@@ -116,7 +116,15 @@ class UserController extends Controller
             unset($data['password']);
         }
 
-        $branchAssignments = $this->extractBranchAssignments($request);
+        // Preserve any existing assignments to branches the editor can't
+        // see — otherwise a Gaza manager editing a user who's also
+        // assigned to Khanyounis would silently strip the Khanyounis row.
+        $branchAssignments = $this->extractBranchAssignments(
+            $request,
+            existingAssignments: $user->branches,
+            accessibleBranchIds: $this->accessibleBranchIdsForAssignment()
+        );
+
         $user->update($data);
         $user->branches()->sync($branchAssignments);
 
@@ -142,65 +150,214 @@ class UserController extends Controller
 
     protected function validateData(Request $request, ?int $id = null): array
     {
+        // Privilege escalation guard — actor can ONLY assign roles their
+        // hierarchy allows (see UserRole::grantableBy). Without this, a
+        // branch manager could POST `role=super_admin` and immediately get
+        // a fresh root account they fully control.
+        $actor = auth()->user();
+        $grantable = UserRole::grantableBy($actor);
+        $submittedRole = $request->input('role');
+
+        if ($submittedRole && ! in_array($submittedRole, $grantable, true)) {
+            // Audit the attempt before throwing — same pattern we use for
+            // out-of-scope branch assignments.
+            ActivityLog::log(
+                'user.role_escalation_attempt',
+                "محاولة منح دور خارج صلاحية المُنشئ: {$submittedRole}",
+                null,
+                [
+                    'attempted_role' => $submittedRole,
+                    'allowed_roles'  => $grantable,
+                    'actor_id'       => $actor?->id,
+                    'actor_role'     => $actor?->role,
+                    'target_user_id' => $id,
+                ]
+            );
+
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'role' => 'لا تملك صلاحية منح هذا الدور. اختر دوراً ضمن صلاحياتك.',
+            ]);
+        }
+
+        // Branches are REQUIRED for everyone except owner-level roles
+        // (super_admin / partner) who see all branches anyway. A regular
+        // staffer with zero branches falls into a confusing "all branches"
+        // mode that breaks BranchScope assumptions everywhere.
+        $branchesRequiredForRole = $submittedRole
+            && ! in_array($submittedRole, \App\Enums\UserRole::ownerRoles(), true);
+        $branchesRule = $branchesRequiredForRole
+            ? ['required', 'array', 'min:1']
+            : ['nullable', 'array'];
+
         $validated = $request->validate([
             'name'                 => ['required', 'string', 'max:255'],
             'name_en'              => ['nullable', 'string', 'max:255'],
             'username'             => ['required', 'string', 'max:64', Rule::unique('users')->ignore($id)],
             'email'                => ['nullable', 'email', Rule::unique('users')->ignore($id)],
             'phone'                => ['nullable', 'string', 'max:20'],
-            'role'                 => ['required', Rule::in(array_keys(UserRole::options()))],
+            // Restrict the dropdown values at validation time too — Rule::in
+            // against $grantable instead of the full options() list.
+            'role'                 => ['required', Rule::in($grantable)],
             'station_id'           => ['nullable', 'exists:stations,id'],
             'status'               => ['required', Rule::in(['active', 'inactive', 'suspended'])],
             'password'             => [$id ? 'nullable' : 'required', 'min:6', 'confirmed'],
 
-            // Branch assignments — validated separately below to keep the user
-            // create/update payload focused; pivot rows are written via sync().
-            'branches'             => ['nullable', 'array'],
+            // Branch assignments — required for non-owner roles (see above).
+            // Pivot rows are written via sync() in extractBranchAssignments().
+            // (`branch_roles` removed in May 2026 — per-branch role overrides
+            // were dropped, only the global `users.role` is used now.)
+            'branches'             => $branchesRule,
             'branches.*'           => ['integer', 'exists:branches,id'],
-            'branch_roles'         => ['nullable', 'array'],
-            'branch_roles.*'       => ['nullable', 'integer', 'exists:roles,id'],
             'primary_branch_id'    => ['nullable', 'integer', 'exists:branches,id'],
+        ], [
+            // Arabic messages for the most user-visible failures.
+            'role.required' => 'اختر الدور للمستخدم — لا يمكن ترك هذا الحقل فارغاً.',
+            'role.in'       => 'لا تملك صلاحية منح هذا الدور. اختر دوراً ضمن صلاحياتك.',
+            'name.required'     => 'اكتب اسم المستخدم.',
+            'username.required' => 'اكتب اسم الدخول.',
+            'username.unique'   => 'اسم الدخول مستخدم من قبل — اختر اسماً آخر.',
+            'email.unique'      => 'البريد الإلكتروني مسجَّل لمستخدم آخر.',
+            'password.required' => 'اكتب كلمة المرور.',
+            'password.min'      => 'كلمة المرور يجب أن تكون 6 أحرف فأكثر.',
+            'password.confirmed'=> 'تأكيد كلمة المرور لا يطابق كلمة المرور.',
+            'status.required'   => 'اختر حالة المستخدم.',
+            'branches.required' => 'اختر فرعاً واحداً على الأقل يعمل فيه هذا المستخدم.',
+            'branches.array'    => 'اختر فرعاً واحداً على الأقل يعمل فيه هذا المستخدم.',
+            'branches.min'      => 'اختر فرعاً واحداً على الأقل يعمل فيه هذا المستخدم.',
         ]);
 
         // Strip pivot fields from the User::update payload — they don't belong
         // on the users table.
-        unset($validated['branches'], $validated['branch_roles'], $validated['primary_branch_id']);
+        unset($validated['branches'], $validated['primary_branch_id']);
 
         return $validated;
     }
 
     /**
-     * Build the sync() payload for `branch_user` from the request.
+     * Build the sync() payload for `branch_user` from the request — with
+     * a server-side scope filter so a non-owner can never assign someone
+     * to a branch they themselves don't manage.
+     *
+     * The trick on UPDATE is to preserve the existing rows for branches
+     * outside our scope: a Gaza manager editing a user who's ALSO in
+     * Khanyounis must keep the Khanyounis assignment intact even though
+     * they can't see it in the form. Otherwise sync() would wipe it.
      *
      * Returns: [branch_id => ['role_id' => ?int, 'is_primary' => bool, 'joined_at' => Carbon]]
      */
-    protected function extractBranchAssignments(Request $request): array
-    {
+    protected function extractBranchAssignments(
+        Request $request,
+        \Illuminate\Support\Collection $existingAssignments,
+        array $accessibleBranchIds,
+    ): array {
         $selected   = $request->input('branches', []);
-        $roleMap    = $request->input('branch_roles', []);
         $primaryId  = (int) $request->input('primary_branch_id', 0);
 
+        // Limit anything WE write to branches we're allowed to manage.
+        $accessible = array_map('intval', $accessibleBranchIds);
+
         $payload = [];
+
+        // 1. Carry forward existing rows for branches OUTSIDE our scope.
+        // We never had the right to touch them, so we leave them alone.
+        foreach ($existingAssignments as $branch) {
+            if (! in_array((int) $branch->id, $accessible, true)) {
+                $payload[(int) $branch->id] = [
+                    'is_primary' => (bool) $branch->pivot->is_primary,
+                    'joined_at'  => $branch->pivot->joined_at ?? now(),
+                ];
+            }
+        }
+
+        // 2. Apply the form selections — but only for branches we can manage.
+        // Track any bypass attempt for the audit log: the form marks
+        // out-of-scope checkboxes `disabled`, but a hand-crafted POST
+        // (curl, devtools removing the attribute) is the exact attack we
+        // need to log so future incidents are explainable.
+        $bypassed = [];
         foreach ((array) $selected as $branchId) {
             $bid = (int) $branchId;
-            if ($bid <= 0) {
-                continue;
+            if ($bid <= 0) continue;
+            if (! in_array($bid, $accessible, true)) {
+                $bypassed[] = $bid;
+                continue;   // silently drop anything out-of-scope
             }
 
             $payload[$bid] = [
-                'role_id'    => isset($roleMap[$bid]) && $roleMap[$bid] !== '' ? (int) $roleMap[$bid] : null,
-                'is_primary' => $bid === $primaryId,
+                // Primary flag honoured only if the chosen branch is in scope.
+                'is_primary' => $bid === $primaryId && in_array($primaryId, $accessible, true),
                 'joined_at'  => now(),
             ];
         }
 
-        // Guarantee exactly one primary assignment when there are any rows: if
-        // the form didn't pick one, mark the first selected branch as primary.
+        // 3. Guarantee exactly one primary. If none picked, prefer one of
+        // OUR assignments first (so a Gaza manager creating a user lands
+        // them on Gaza by default), else fall back to whatever exists.
         if ($payload && ! collect($payload)->contains('is_primary', true)) {
-            $firstBid = array_key_first($payload);
+            $ourBids = array_intersect(array_keys($payload), $accessible);
+            $firstBid = $ourBids ? reset($ourBids) : array_key_first($payload);
             $payload[$firstBid]['is_primary'] = true;
         }
 
+        // 4. Audit any bypass attempt — actor + which branches were dropped.
+        // Goes to the activity log so SuperAdmin can review later.
+        if ($bypassed) {
+            ActivityLog::log(
+                'user.branch_bypass_attempt',
+                'محاولة إسناد فرع خارج نطاق الصلاحية: ' . implode(',', $bypassed),
+                null,
+                [
+                    'attempted_branch_ids' => $bypassed,
+                    'allowed_branch_ids'   => $accessible,
+                    'actor_id'             => auth()->id(),
+                    'actor_name'           => auth()->user()?->name,
+                ]
+            );
+        }
+
         return $payload;
+    }
+
+    /**
+     * The set of branch IDs the current user is allowed to assign other
+     * users to. Owner-level (super_admin/partner) sees every active branch;
+     * everyone else is restricted to their own member branches.
+     *
+     * @return int[]
+     */
+    protected function accessibleBranchIdsForAssignment(): array
+    {
+        $user = auth()->user();
+        if ($user->isOwnerLevel()) {
+            return Branch::where('is_active', true)->pluck('id')->all();
+        }
+        return $user->accessibleBranchIds();   // already filters to active branches
+    }
+
+    /**
+     * Shared form data for create/edit: the FULL active-branches list (so
+     * out-of-scope rows can still render disabled with a 🔒 hint), plus the
+     * accessible-id allowlist the form uses to enable/disable each card,
+     * plus the role + station catalogues.
+     */
+    protected function branchFormData(): array
+    {
+        $branches = Branch::where('is_active', true)
+            ->orderBy('display_order')
+            ->orderBy('name')
+            ->get();
+
+        $actor = auth()->user();
+
+        return [
+            // Only show roles the actor is allowed to grant. UI honours this;
+            // the server `validateData()` re-validates as defense in depth.
+            'roles'                => UserRole::grantableOptions($actor),
+            'stations'             => Station::where('active', true)->get(),
+            'branches'             => $branches,
+            'accessibleBranchIds'  => $this->accessibleBranchIdsForAssignment(),
+            // `branchRoles` removed — per-branch role overrides were
+            // dropped in May 2026 (only the global `users.role` is used).
+        ];
     }
 }

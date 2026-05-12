@@ -56,10 +56,16 @@ class SupplierController extends Controller
     {
         $this->authorize('create', Supplier::class);
         $data = $this->validated($request);
-        $branchIds = $this->validatedBranchIds($request);
+        $submitted = $this->validatedBranchIds($request);
+
+        // Filter to branches the current user is actually allowed to assign
+        // to. Without this guard, a branch user could POST `branch_ids[]=99`
+        // (a branch they don't manage) and link the supplier to it anyway —
+        // bypassing the same restriction enforced visually in the form.
+        $allowedIds = $this->filterToAccessible($submitted);
 
         $supplier = Supplier::create($data);
-        $supplier->branches()->sync($this->resolveBranchIds($branchIds));
+        $supplier->branches()->sync($this->resolveBranchIds($allowedIds));
 
         return redirect()->route('admin.suppliers.index')->with('success', 'تم إضافة المورد "'.$supplier->name.'"');
     }
@@ -67,11 +73,18 @@ class SupplierController extends Controller
     public function edit(Supplier $supplier)
     {
         $this->authorize('update', $supplier);
-        $supplier->load('branches:id');
+        $supplier->load('branches:id,name');
+
+        $user = auth()->user();
+        $accessibleIds = $user?->isOwnerLevel()
+            ? \App\Models\Branch::where('is_active', true)->pluck('id')->all()
+            : ($user?->accessibleBranchIds() ?? []);
+
         return view('admin.suppliers.edit', [
-            'supplier' => $supplier,
-            'branches' => $this->availableBranches(),
-            'selectedBranchIds' => $supplier->branches->pluck('id')->all(),
+            'supplier'           => $supplier,
+            'branches'           => $this->visibleBranches($supplier),
+            'selectedBranchIds'  => $supplier->branches->pluck('id')->all(),
+            'accessibleBranchIds'=> $accessibleIds,
         ]);
     }
 
@@ -80,8 +93,31 @@ class SupplierController extends Controller
         $this->authorize('update', $supplier);
         $supplier->update($this->validated($request));
 
-        $branchIds = $this->validatedBranchIds($request);
-        $supplier->branches()->sync($this->resolveBranchIds($branchIds));
+        $submitted = $this->validatedBranchIds($request);
+        $allowedIds = $this->filterToAccessible($submitted);
+
+        $user = auth()->user();
+        if ($user?->isOwnerLevel()) {
+            // Owner-level can reset the full list — sync replaces everything.
+            $supplier->branches()->sync($this->resolveBranchIds($allowedIds));
+        } else {
+            // Branch-scoped users only manage links inside their own
+            // branches. We diff against the existing pivot rows and only
+            // attach/detach within their accessible set — preserves links
+            // to branches the user can't see, instead of silently wiping
+            // them on save.
+            $accessibleIds = collect($user?->accessibleBranchIds() ?? []);
+            $existingInScope = $supplier->branches()
+                ->whereIn('branches.id', $accessibleIds)
+                ->pluck('branches.id');
+            $desiredInScope = collect($allowedIds)->intersect($accessibleIds);
+
+            $toAttach = $desiredInScope->diff($existingInScope);
+            $toDetach = $existingInScope->diff($desiredInScope);
+
+            if ($toAttach->isNotEmpty()) $supplier->branches()->attach($toAttach->all());
+            if ($toDetach->isNotEmpty()) $supplier->branches()->detach($toDetach->all());
+        }
 
         return redirect()->route('admin.suppliers.index')->with('success', 'تم تحديث المورد');
     }
@@ -97,10 +133,34 @@ class SupplierController extends Controller
                 ->orderBy('display_order')->orderBy('name')
                 ->get(['id', 'name']);
         }
-        // Branch-scoped users can only assign their own branches
         return $user->branches()->where('is_active', true)
             ->orderBy('display_order')->orderBy('name')
             ->get(['branches.id', 'branches.name']);
+    }
+
+    /**
+     * Branches to display in the edit form: the user's accessible ones,
+     * plus any branches the supplier already serves (so a Gaza admin
+     * editing a Khanyounis-linked supplier can see — but not change —
+     * the existing Khanyounis link). The view marks the latter as
+     * disabled so the checkbox is read-only.
+     */
+    protected function visibleBranches(Supplier $supplier)
+    {
+        $user = auth()->user();
+        if (! $user) return collect();
+
+        $accessibleIds = collect($user->isOwnerLevel()
+            ? \App\Models\Branch::where('is_active', true)->pluck('id')->all()
+            : $user->accessibleBranchIds());
+
+        $supplierBranchIds = $supplier->branches->pluck('id');
+        $unionIds = $accessibleIds->merge($supplierBranchIds)->unique();
+
+        return \App\Models\Branch::whereIn('id', $unionIds)
+            ->where('is_active', true)
+            ->orderBy('display_order')->orderBy('name')
+            ->get(['id', 'name']);
     }
 
     protected function validatedBranchIds(Request $request): array
@@ -109,6 +169,20 @@ class SupplierController extends Controller
             'branch_ids'   => ['nullable', 'array'],
             'branch_ids.*' => ['integer', 'exists:branches,id'],
         ])['branch_ids'] ?? [];
+    }
+
+    /**
+     * Drop every submitted branch id the current user doesn't have
+     * access to. Defence-in-depth — the form already hides them, but
+     * a hand-crafted POST shouldn't be able to bypass that.
+     */
+    protected function filterToAccessible(array $ids): array
+    {
+        $user = auth()->user();
+        if (! $user) return [];
+        if ($user->isOwnerLevel()) return $ids;
+        $accessible = collect($user->accessibleBranchIds());
+        return collect($ids)->intersect($accessible)->values()->all();
     }
 
     /**
@@ -138,10 +212,13 @@ class SupplierController extends Controller
         $this->authorize('view', $supplier);
         $supplier->load(['ingredients.baseUnit']);
 
+        // Stock value is the per-location truth (sum of ingredient_stock ×
+        // per-branch cost) rather than the legacy current_stock × global
+        // cost_per_unit, which can drift on top of older seed data.
         $totals = [
             'ingredient_count' => $supplier->ingredients->count(),
             'low_stock'        => $supplier->ingredients->filter(fn($i) => $i->isLowStock())->count(),
-            'stock_value'      => $supplier->ingredients->sum(fn($i) => (float)$i->current_stock * (float)$i->cost_per_unit),
+            'stock_value'      => $supplier->ingredients->sum(fn($i) => $i->trackedValue()),
         ];
 
         return view('admin.suppliers.show', compact('supplier', 'totals'));

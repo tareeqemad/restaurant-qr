@@ -12,6 +12,8 @@ Route::post('/currency', [\App\Http\Controllers\Admin\CurrencyController::class,
 // After session is opened (cookie set)
 Route::middleware('table.session')->group(function () {
     Route::get('/menu', [Customer\MenuController::class, 'menu'])->name('customer.menu');
+    Route::post('/menu/dismiss-promo/{id}', [Customer\MenuController::class, 'dismissGuestPromo'])
+        ->name('customer.menu.dismissGuestPromo');
     Route::post('/cart/add', [Customer\CartController::class, 'add'])->name('customer.cart.add');
     Route::post('/cart/update', [Customer\CartController::class, 'update'])->name('customer.cart.update');
     Route::post('/cart/remove', [Customer\CartController::class, 'remove'])->name('customer.cart.remove');

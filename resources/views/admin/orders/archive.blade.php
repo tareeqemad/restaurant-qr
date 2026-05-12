@@ -19,6 +19,44 @@
     ['label' => 'ملغاة',          'value' => number_format($stats['cancelled']),   'icon' => 'bi-x-octagon',     'color' => 'muted'],
 ]" />
 
+{{-- ─── Prep-timing performance KPIs ─────────────────────────────
+     Only renders when there's at least one measured order in the
+     filtered window (i.e., something actually went through preparing).
+     For drinks-only / cancelled-heavy queries we skip the row to avoid
+     "0% on time" looking like a fire-alarm when really there's nothing
+     to measure. --}}
+@if(($timingStats['measured'] ?? 0) > 0)
+    @php
+        $delayMin = (float) $timingStats['avg_delay'];
+        $pct      = (float) ($timingStats['on_time_pct'] ?? 0);
+        $delayLbl = $delayMin >= 0
+            ? '+' . number_format($delayMin, 1) . ' د'
+            : number_format($delayMin, 1) . ' د';
+        // Color logic: on_time_pct → traffic-light
+        //   ≥ 80% green · 50-79% amber · < 50% red
+        $pctColor = $pct >= 80 ? 'success' : ($pct >= 50 ? 'warning' : 'danger');
+        $delayColor = $delayMin <= 0 ? 'success' : ($delayMin <= 5 ? 'warning' : 'danger');
+    @endphp
+    <x-admin.stat-rail :stats="[
+        ['label' => 'طلبات تم قياسها',
+         'value' => number_format($timingStats['measured']),
+         'icon'  => 'bi-stopwatch',
+         'color' => 'info'],
+        ['label' => 'وصلت في الوقت',
+         'value' => $pct . '%',
+         'icon'  => 'bi-check2-circle',
+         'color' => $pctColor],
+        ['label' => 'متوسط الوقت الفعلي',
+         'value' => number_format($timingStats['avg_actual'], 1) . ' د',
+         'icon'  => 'bi-clock-history',
+         'color' => 'primary'],
+        ['label' => 'متوسط الفرق (متأخر +)',
+         'value' => $delayLbl,
+         'icon'  => $delayMin > 0 ? 'bi-arrow-up-circle' : 'bi-arrow-down-circle',
+         'color' => $delayColor],
+    ]" />
+@endif
+
 {{-- ─── Filter card (collapsible advanced section) ──────────────── --}}
 <div class="archive-filters">
     <form method="GET" id="archiveFilters">
@@ -55,7 +93,7 @@
                     onclick="document.getElementById('archiveAdvanced').classList.toggle('is-open')">
                 <i class="bi bi-sliders"></i> فلاتر متقدّمة
             </button>
-            @if(request()->hasAny(['search', 'status', 'source', 'order_type', 'table_id', 'min_total', 'max_total', 'sort', 'dir', 'from', 'to']))
+            @if(request()->hasAny(['search', 'status', 'source', 'order_type', 'table_id', 'min_total', 'max_total', 'sort', 'dir', 'from', 'to', 'delayed_only']))
                 <a href="{{ route('admin.orders.archive') }}" class="btn btn-outline-danger">
                     <i class="bi bi-x-circle"></i> مسح
                 </a>
@@ -141,6 +179,25 @@
                         </select>
                     </div>
                 </div>
+
+                {{-- Delayed-only quick filter — checkbox styled as a toggle.
+                     Submits with the form on change so the manager doesn't
+                     hunt for the "filter" button. Hidden 0 sends false when
+                     unchecked. --}}
+                <div class="archive-filters__group">
+                    <label class="archive-filters__label">أداء التحضير</label>
+                    <label class="archive-filters__toggle"
+                           title="عرض الطلبات التي تأخّر فيها وقت التحضير الفعلي عن المتوقع">
+                        <input type="hidden" name="delayed_only" value="0">
+                        <input type="checkbox" name="delayed_only" value="1"
+                               @checked(! empty($f['delayed_only']))
+                               onchange="this.form.submit()">
+                        <span>
+                            <i class="bi bi-stopwatch-fill"></i>
+                            المتأخرة فقط
+                        </span>
+                    </label>
+                </div>
             </div>
         </div>
     </form>
@@ -198,6 +255,9 @@
                     <th>المبلغ</th>
                     <th>الصافي</th>
                     <th>الحالة</th>
+                    <th title="مقارنة وقت التحضير المتوقع بالفعلي. الأخضر = في الوقت / مبكّر، الأصفر = تأخير ≤ 5 د، الأحمر = تأخير أكبر.">
+                        وقت التحضير <i class="bi bi-info-circle text-muted small"></i>
+                    </th>
                     <th></th>
                 </tr>
             </thead>
@@ -256,6 +316,67 @@
                                 <span class="badge bg-{{ $st->color() }}">{{ $st->label() }}</span>
                             @endif
                         </td>
+                        {{-- Prep-timing cell — three pieces of info:
+                             expected (faint), actual (bold), variance (badge).
+                             Empty dash when the order never entered preparing
+                             (cancelled early, drinks-only, etc.). --}}
+                        <td>
+                            @php
+                                $estMin    = (int) ($o->estimated_prep_minutes ?? 0);
+                                $hasStart  = $o->prep_started_at !== null;
+                                $hasReady  = $o->ready_at !== null;
+                                $isCooking = $hasStart && ! $hasReady;
+                                // Use signed diff and reject anything where
+                                // ready_at landed BEFORE prep_started_at —
+                                // that means the order skipped (or was forced
+                                // through) preparing and the data is bogus.
+                                $rawActual = ($hasStart && $hasReady)
+                                    ? (int) round($o->prep_started_at->diffInMinutes($o->ready_at, false))
+                                    : null;
+                                $actualMin = ($rawActual !== null && $rawActual >= 0) ? $rawActual : null;
+                                $isBogus   = $rawActual !== null && $rawActual < 0;
+                                $delta     = ($actualMin !== null && $estMin > 0)
+                                    ? $actualMin - $estMin
+                                    : null;
+                                // Variance bucket:
+                                //   ≤ 0   → on-time / early (green)
+                                //   1-5  → minor delay (amber)
+                                //   > 5  → significant delay (red)
+                                $varClass = $delta === null
+                                    ? 'arx-var--none'
+                                    : ($delta <= 0
+                                        ? 'arx-var--good'
+                                        : ($delta <= 5 ? 'arx-var--warn' : 'arx-var--bad'));
+                            @endphp
+                            @if($actualMin !== null)
+                                <div class="arx-timing">
+                                    <div class="arx-timing__line">
+                                        <span class="arx-timing__est" title="متوقع">{{ $estMin > 0 ? $estMin . 'د' : '—' }}</span>
+                                        <span class="arx-timing__sep">→</span>
+                                        <span class="arx-timing__act" title="فعلي">{{ $actualMin }}د</span>
+                                    </div>
+                                    @if($delta !== null)
+                                        <span class="arx-var {{ $varClass }}"
+                                              title="{{ $delta > 0 ? 'متأخر بـ' : 'مبكّر بـ' }} {{ abs($delta) }} دقيقة">
+                                            <i class="bi {{ $delta > 0 ? 'bi-arrow-up-short' : ($delta < 0 ? 'bi-arrow-down-short' : 'bi-check2') }}"></i>
+                                            {{ $delta === 0 ? 'في الوقت' : ($delta > 0 ? '+' . $delta : $delta) . 'د' }}
+                                        </span>
+                                    @endif
+                                </div>
+                            @elseif($isCooking)
+                                <small class="text-warning">
+                                    <i class="bi bi-fire"></i>
+                                    قيد التحضير منذ
+                                    {{ (int) max(1, round($o->prep_started_at->diffInMinutes(now()))) }}د
+                                </small>
+                            @elseif($isBogus)
+                                <small class="text-muted" title="‫ready_at‬ سابق ل‫prep_started_at‬ — بيانات غير متّسقة">
+                                    <i class="bi bi-exclamation-triangle"></i> —
+                                </small>
+                            @else
+                                <span class="text-muted">—</span>
+                            @endif
+                        </td>
                         <td>
                             <a href="{{ route('admin.orders.show', $o) }}" class="btn btn-sm btn-light" title="تفاصيل">
                                 <i class="bi bi-eye"></i>
@@ -264,7 +385,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="{{ $showBranchCol ? 12 : 11 }}">
+                        <td colspan="{{ $showBranchCol ? 13 : 12 }}">
                             <x-admin.empty-state icon="bi-archive"
                                 title="لا توجد نتائج"
                                 message="جرّب تعديل الفلاتر أو توسيع نطاق التواريخ." />
@@ -527,6 +648,63 @@
     @media (max-width: 767.98px) {
         .archive-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
+
+    /* ─── Prep-timing column — compact 2-line cell ───────────────── */
+    .arx-timing {
+        display: flex; flex-direction: column;
+        gap: 2px;
+        line-height: 1.3;
+    }
+    .arx-timing__line {
+        display: inline-flex; align-items: center; gap: 4px;
+        font-variant-numeric: tabular-nums;
+        font-size: .82rem;
+    }
+    .arx-timing__est { color: #94a3b8; font-weight: 500; }
+    .arx-timing__sep { color: #cbd5e1; font-size: .7rem; }
+    .arx-timing__act { color: #0f172a; font-weight: 800; }
+    .arx-var {
+        display: inline-flex; align-items: center; gap: 2px;
+        padding: 1px 7px;
+        border-radius: 99px;
+        font-size: .7rem;
+        font-weight: 700;
+        white-space: nowrap;
+        width: fit-content;
+    }
+    .arx-var i { font-size: .8rem; }
+    .arx-var--good { background: #d1fae5; color: #065f46; }
+    .arx-var--warn { background: #fef3c7; color: #92400e; }
+    .arx-var--bad  { background: #fee2e2; color: #991b1b; }
+    .arx-var--none { background: #f1f5f9; color: #475569; }
+
+    /* ─── Delayed-only toggle (filter card) ──────────────────────── */
+    .archive-filters__toggle {
+        display: inline-flex; align-items: center; gap: .55rem;
+        padding: .5rem .85rem;
+        background: #fff;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 10px;
+        cursor: pointer;
+        font-size: .85rem;
+        font-weight: 600;
+        color: #475569;
+        margin: 0;
+        transition: border-color .15s, background .15s, color .15s;
+        user-select: none;
+    }
+    .archive-filters__toggle:hover { border-color: #cbd5e1; background: #f8fafc; }
+    .archive-filters__toggle input[type="checkbox"] {
+        margin: 0;
+        accent-color: #dc2626;
+        width: 16px; height: 16px;
+    }
+    .archive-filters__toggle:has(input:checked) {
+        border-color: #fca5a5;
+        background: #fef2f2;
+        color: #991b1b;
+    }
+    .archive-filters__toggle:has(input:checked) i { color: #dc2626; }
 </style>
 @endpush
 

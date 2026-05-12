@@ -62,9 +62,9 @@ class RestaurantCriticalWorkflowTest extends TestCase
         $waiterRole = Role::create(['name' => 'waiter', 'label' => 'Waiter', 'is_system' => true]);
         $chefRole = Role::create(['name' => 'chef', 'label' => 'Kitchen', 'is_system' => true]);
 
-        $this->cashier = $this->staff('cashier-test', 'cashier', $cashierRole);
-        $this->waiter = $this->staff('waiter-test', 'waiter', $waiterRole);
-        $this->chef = $this->staff('chef-test', 'chef', $chefRole);
+        $this->cashier = $this->staff('cashier-test', 'cashier');
+        $this->waiter = $this->staff('waiter-test', 'waiter');
+        $this->chef = $this->staff('chef-test', 'chef');
 
         $this->unit = Unit::create([
             'code' => 'pcs',
@@ -266,7 +266,7 @@ class RestaurantCriticalWorkflowTest extends TestCase
         $this->assertFalse($this->waiter->can('create', Payment::class));
     }
 
-    protected function staff(string $username, string $role, Role $roleModel): User
+    protected function staff(string $username, string $role): User
     {
         $user = User::create([
             'name' => $username,
@@ -277,7 +277,6 @@ class RestaurantCriticalWorkflowTest extends TestCase
         ]);
 
         $user->branches()->attach($this->branch->id, [
-            'role_id' => $roleModel->id,
             'is_primary' => true,
             'joined_at' => now(),
         ]);

@@ -53,8 +53,11 @@ trait BelongsToBranch
      */
     public function resolveRouteBinding($value, $field = null)
     {
-        $user = auth()->user();
-        if ($user && $user->isOwnerLevel()) {
+        // Use the staff guard explicitly. Portal routes default `auth()->user()`
+        // to a Customer (via auth:customer middleware), and Customer doesn't
+        // implement isOwnerLevel — calling it blew up the order-tracking page.
+        $staff = \Illuminate\Support\Facades\Auth::guard('web')->user();
+        if ($staff && $staff->isOwnerLevel()) {
             return \App\Support\BranchContext::unscoped(
                 fn () => parent::resolveRouteBinding($value, $field)
             );

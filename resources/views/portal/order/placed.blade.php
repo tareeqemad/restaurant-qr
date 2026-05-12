@@ -87,7 +87,7 @@
         @endif
         <div class="pop-total">
             <span>الإجمالي</span>
-            <strong>{{ number_format($order->total, 2) }} ر.ع</strong>
+            <strong>{{ number_format($order->total, 2) }} {{ config('restaurant.currency_symbol', '₪') }}</strong>
         </div>
         <div class="pop-paynote">
             <i class="bi bi-cash-coin"></i>

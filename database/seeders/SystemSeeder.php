@@ -30,6 +30,7 @@ class SystemSeeder extends Seeder
             CurrencySeeder::class,
             UnitSeeder::class,
             AllergenSeeder::class,
+            DiscountCategorySeeder::class,
         ]);
     }
 }

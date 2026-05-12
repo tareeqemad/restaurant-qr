@@ -319,6 +319,33 @@
         .caps-warn.is-on { display: flex; align-items: center; gap: .4rem; }
         .caps-warn i { color: var(--gold); }
 
+        /* Remember me row */
+        .remember-row {
+            display: flex;
+            align-items: flex-start;
+            gap: .65rem;
+            margin: .25rem 0 1.1rem;
+            padding: .7rem .85rem;
+            background: rgba(46,125,50,.045);
+            border: 1px solid rgba(46,125,50,.14);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: background .15s, border-color .15s;
+            user-select: none;
+        }
+        .remember-row:hover { background: rgba(46,125,50,.075); border-color: rgba(46,125,50,.25); }
+        .remember-row input[type="checkbox"] {
+            width: 16px; height: 16px;
+            margin: 3px 0 0;
+            accent-color: var(--green-primary);
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        .remember-text { display: flex; flex-direction: column; gap: .15rem; line-height: 1.35; }
+        .remember-title { font-size: .88rem; font-weight: 600; color: var(--text); }
+        .remember-hint  { font-size: .73rem; color: var(--muted-2); font-weight: 500; }
+        .remember-hint i { color: var(--gold); margin-inline-end: .25rem; }
+
         /* Submit button */
         .btn-submit {
             position: relative;
@@ -582,7 +609,16 @@
                                 </div>
                             </div>
 
-                            <input type="hidden" name="remember" value="1">
+                            <label class="remember-row" for="rememberMe">
+                                <input type="checkbox" name="remember" id="rememberMe" value="1" {{ old('remember') ? 'checked' : '' }}>
+                                <span class="remember-text">
+                                    <span class="remember-title">ابقني مسجلاً على هذا الجهاز</span>
+                                    <span class="remember-hint">
+                                        <i class="bi bi-shield-exclamation"></i>
+                                        لا تختر هذا الخيار على جهاز مشترك أو عام
+                                    </span>
+                                </span>
+                            </label>
 
                             <button type="submit" class="btn-submit" id="submitBtn" :class="{ 'is-loading': submitting }" :disabled="submitting">
                                 <span class="label">دخول إلى النظام</span>
@@ -591,7 +627,10 @@
                             </button>
                         </form>
 
-                        <button type="button" class="forgot-link" @click="forgotOpen = true; $nextTick(() => $refs.phoneField?.focus())">نسيت كلمة المرور؟</button>
+                        {{-- "نسيت كلمة المرور؟" link removed by request to keep
+                             the admin login card compact. The forgot-panel
+                             markup below is kept (inert) — re-add the trigger
+                             button here if the flow is needed again. --}}
                     </div>
 
                     {{-- Forgot password panel --}}

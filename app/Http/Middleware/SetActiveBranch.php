@@ -29,7 +29,11 @@ class SetActiveBranch
 {
     public function handle(Request $request, Closure $next): Response
     {
-        $user = $request->user();
+        // We bind branch context for STAFF only — customer-portal routes use
+        // the `customer` guard, which sets the request's user resolver to
+        // return a Customer model. That model doesn't have role helpers
+        // (isOwnerLevel, branches, …) and shouldn't drive admin scoping.
+        $user = \Illuminate\Support\Facades\Auth::guard('web')->user();
         if (! $user) {
             return $next($request);
         }

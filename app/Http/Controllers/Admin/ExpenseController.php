@@ -241,6 +241,11 @@ class ExpenseController extends Controller
 
                 if ($shift) {
                     $movement = CashMovement::create([
+                        // Stamp the branch from the shift (which itself is
+                        // branch-scoped). Don't rely on BranchContext —
+                        // expense approval can be done by an owner-level
+                        // user in "all branches" mode.
+                        'branch_id' => $shift->branch_id,
                         'shift_id' => $shift->id,
                         'type'     => 'pay_out',
                         'amount'   => $expense->amount,

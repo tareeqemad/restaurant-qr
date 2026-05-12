@@ -27,7 +27,7 @@
                             </small>
                         @endif
                         <span class="poe-item__price">
-                            {{ number_format((float) $item->unit_price + (float) $item->modifiers_total, 2) }} ر.ع / للقطعة
+                            {{ number_format((float) $item->unit_price + (float) $item->modifiers_total, 2) }} {{ config('restaurant.currency_symbol', '₪') }} / للقطعة
                         </span>
                     </div>
                     <div class="poe-item__qty">

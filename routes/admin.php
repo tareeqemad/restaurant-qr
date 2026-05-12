@@ -65,6 +65,7 @@ Route::middleware(['auth', 'admin', 'branch'])->group(function () {
     Route::post  ('attendance/clock-in',          [Admin\AttendanceController::class, 'clockIn'])->name('attendance.clock-in');
     Route::post  ('attendance/clock-out',         [Admin\AttendanceController::class, 'clockOut'])->name('attendance.clock-out');
     Route::get   ('attendance',                   [Admin\AttendanceController::class, 'index'])->name('attendance.index');
+    Route::get   ('attendance/export.xlsx',       [Admin\AttendanceController::class, 'export'])->name('attendance.export.xlsx');
     Route::post  ('attendance',                   [Admin\AttendanceController::class, 'store'])->name('attendance.store');
     Route::put   ('attendance/{attendance}',      [Admin\AttendanceController::class, 'update'])->name('attendance.update');
     Route::delete('attendance/{attendance}',      [Admin\AttendanceController::class, 'destroy'])->name('attendance.destroy');
@@ -92,6 +93,8 @@ Route::middleware(['auth', 'admin', 'branch'])->group(function () {
     Route::resource('tables', Admin\TableController::class);
     Route::get('tables/{table}/qr', [Admin\TableController::class, 'qr'])->name('tables.qr');
     Route::get('tables/{table}/qr-print', [Admin\TableController::class, 'qrPrint'])->name('tables.qr-print');
+    Route::post('tables/{table}/close-session', [Admin\TableController::class, 'closeSession'])->name('tables.close-session');
+    Route::post('tables/{table}/transfer-session', [Admin\TableController::class, 'transferSession'])->name('tables.transfer');
 
     // Zones — merged into the unified Lookups admin (group='zones').
     // Old /admin/zones routes removed; see admin.lookups.* routes below.
@@ -149,6 +152,7 @@ Route::middleware(['auth', 'admin', 'branch'])->group(function () {
 
     // Stock Counts (physical inventory / جرد)
     Route::resource('stock-counts', Admin\StockCountController::class)->except(['edit', 'update']);
+    Route::get ('stock-counts/{stock_count}/export.xlsx', [Admin\StockCountController::class, 'export'])->name('stock-counts.export.xlsx');
     Route::post('stock-counts/{stock_count}/save-counts', [Admin\StockCountController::class, 'saveCounts'])->name('stock-counts.save-counts');
     Route::post('stock-counts/{stock_count}/finalize',    [Admin\StockCountController::class, 'finalize'])->name('stock-counts.finalize');
     Route::post('stock-counts/{stock_count}/cancel',      [Admin\StockCountController::class, 'cancel'])->name('stock-counts.cancel');
@@ -224,6 +228,9 @@ Route::middleware(['auth', 'admin', 'branch'])->group(function () {
     Route::post('cashier/invoice/{invoice}/split', [Admin\CashierController::class, 'split'])->name('cashier.split');
     Route::post('cashier/invoice/{invoice}/split/{split}/pay', [Admin\CashierController::class, 'paySplit'])->name('cashier.split.pay');
     Route::delete('cashier/invoice/{invoice}/splits', [Admin\CashierController::class, 'clearSplits'])->name('cashier.split.clear');
+    Route::post('cashier/order/{order}/discount', [Admin\CashierController::class, 'applyDiscountToOrder'])->name('cashier.discount.order');
+    Route::post('cashier/session/{session}/discount', [Admin\CashierController::class, 'applyDiscountToSession'])->name('cashier.discount.session');
+    Route::delete('cashier/discount/{discount}', [Admin\CashierController::class, 'removeDiscount'])->name('cashier.discount.remove');
     Route::get('cashier/invoice/{invoice}/pdf', [Admin\CashierController::class, 'pdf'])->name('cashier.pdf');
     Route::get('cashier/invoice/{invoice}/print', [Admin\CashierController::class, 'print'])->name('cashier.print');
 
@@ -242,6 +249,18 @@ Route::middleware(['auth', 'admin', 'branch'])->group(function () {
     Route::post  ('expenses/{expense}/reject',    [Admin\ExpenseController::class, 'reject'])->name('expenses.reject');
     Route::delete('expenses/{expense}',           [Admin\ExpenseController::class, 'destroy'])->name('expenses.destroy');
 
+    // Marketing announcements / promo broadcasts to portal customers.
+    // Publishing fans out one notification per matched customer; the
+    // service enforces audience filtering and idempotency.
+    Route::get   ('announcements',                          [Admin\AnnouncementController::class, 'index'])->name('announcements.index');
+    Route::get   ('announcements/create',                   [Admin\AnnouncementController::class, 'create'])->name('announcements.create');
+    Route::post  ('announcements',                          [Admin\AnnouncementController::class, 'store'])->name('announcements.store');
+    Route::get   ('announcements/{announcement}/edit',      [Admin\AnnouncementController::class, 'edit'])->name('announcements.edit');
+    Route::put   ('announcements/{announcement}',           [Admin\AnnouncementController::class, 'update'])->name('announcements.update');
+    Route::post  ('announcements/{announcement}/publish',   [Admin\AnnouncementController::class, 'publish'])->name('announcements.publish');
+    Route::post  ('announcements/{announcement}/unpublish', [Admin\AnnouncementController::class, 'unpublish'])->name('announcements.unpublish');
+    Route::delete('announcements/{announcement}',           [Admin\AnnouncementController::class, 'destroy'])->name('announcements.destroy');
+
     // Reports
     Route::prefix('reports')->name('reports.')->group(function () {
         Route::get('/',            [Admin\ReportController::class, 'index'])->name('index');
@@ -251,6 +270,8 @@ Route::middleware(['auth', 'admin', 'branch'])->group(function () {
         Route::get('shifts',       [Admin\ReportController::class, 'shifts'])->name('shifts');
         Route::get('end-of-day',            [Admin\ReportController::class, 'endOfDay'])->name('end-of-day');
         Route::get('profit-loss',           [Admin\ReportController::class, 'profitLoss'])->name('profit-loss');
+        Route::get('profit-loss/export.xlsx', [Admin\ReportController::class, 'profitLossExportXlsx'])->name('profit-loss.export.xlsx');
+        Route::get('profit-loss/export.pdf',  [Admin\ReportController::class, 'profitLossExportPdf'])->name('profit-loss.export.pdf');
         Route::get('menu-engineering',      [Admin\ReportController::class, 'menuEngineering'])->name('menu-engineering');
         Route::get ('reorder-suggestions',   [Admin\ReportController::class, 'reorderSuggestions'])->name('reorder-suggestions');
         Route::post('reorder-suggestions/bulk-create-pos',

@@ -222,30 +222,37 @@
                         </td>
                         <td class="text-end">
                             <div class="exp-actions">
-                                @can('approve', $exp)
-                                    <button class="btn btn-sm btn-success" title="اعتماد"
-                                            data-bs-toggle="modal" data-bs-target="#expApproveModal"
-                                            data-exp-id="{{ $exp->id }}"
-                                            data-exp-num="{{ $exp->expense_number }}"
-                                            data-exp-amount="{{ $money($exp->amount) }}"
-                                            data-exp-cash="{{ $exp->isCash() ? '1' : '0' }}">
-                                        <i class="bi bi-check-lg"></i>
-                                    </button>
-                                @endcan
-                                @can('reject', $exp)
-                                    <button class="btn btn-sm btn-outline-danger" title="رفض"
-                                            data-bs-toggle="modal" data-bs-target="#expRejectModal"
-                                            data-exp-id="{{ $exp->id }}"
-                                            data-exp-num="{{ $exp->expense_number }}">
-                                        <i class="bi bi-x-lg"></i>
-                                    </button>
-                                @endcan
-                                @can('update', $exp)
-                                    <a href="{{ route('admin.expenses.edit', $exp) }}"
-                                       class="btn btn-sm btn-light" title="تعديل">
-                                        <i class="bi bi-pencil"></i>
-                                    </a>
-                                @endcan
+                                {{-- Action buttons shown ONLY while pending. The policy
+                                     also enforces this, but `BasePolicy::before` lets
+                                     owner-level bypass per-method checks — so we gate
+                                     on the model state in the view as well. Approved
+                                     and rejected rows show no mutation buttons. --}}
+                                @if($exp->isPending())
+                                    @can('approve', $exp)
+                                        <button class="btn btn-sm btn-success" title="اعتماد"
+                                                data-bs-toggle="modal" data-bs-target="#expApproveModal"
+                                                data-exp-id="{{ $exp->id }}"
+                                                data-exp-num="{{ $exp->expense_number }}"
+                                                data-exp-amount="{{ $money($exp->amount) }}"
+                                                data-exp-cash="{{ $exp->isCash() ? '1' : '0' }}">
+                                            <i class="bi bi-check-lg"></i>
+                                        </button>
+                                    @endcan
+                                    @can('reject', $exp)
+                                        <button class="btn btn-sm btn-outline-danger" title="رفض"
+                                                data-bs-toggle="modal" data-bs-target="#expRejectModal"
+                                                data-exp-id="{{ $exp->id }}"
+                                                data-exp-num="{{ $exp->expense_number }}">
+                                            <i class="bi bi-x-lg"></i>
+                                        </button>
+                                    @endcan
+                                    @can('update', $exp)
+                                        <a href="{{ route('admin.expenses.edit', $exp) }}"
+                                           class="btn btn-sm btn-light" title="تعديل">
+                                            <i class="bi bi-pencil"></i>
+                                        </a>
+                                    @endcan
+                                @endif
                                 @can('delete', $exp)
                                     <form action="{{ route('admin.expenses.destroy', $exp) }}"
                                           method="POST" class="d-inline"

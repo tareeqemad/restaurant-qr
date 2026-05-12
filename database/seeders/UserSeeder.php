@@ -4,7 +4,6 @@ namespace Database\Seeders;
 
 use App\Enums\UserRole;
 use App\Models\Branch;
-use App\Models\Role;
 use App\Models\Station;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -62,9 +61,7 @@ class UserSeeder extends Seeder
             return;
         }
 
-        $rolesByName = Role::global()->pluck('id', 'name');
-
-        User::query()->each(function (User $user) use ($main, $rolesByName) {
+        User::query()->each(function (User $user) use ($main) {
             if ($user->isOwnerLevel()) {
                 return;
             }
@@ -73,7 +70,6 @@ class UserSeeder extends Seeder
             }
 
             $main->users()->attach($user->id, [
-                'role_id'    => $rolesByName[$user->role] ?? null,
                 'is_primary' => true,
                 'joined_at'  => $user->created_at ?? now(),
             ]);

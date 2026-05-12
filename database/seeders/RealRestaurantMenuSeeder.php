@@ -9,6 +9,7 @@ use App\Models\Station;
 use App\Support\BranchContext;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Realistic Arabic/Jordanian restaurant menu — 7 categories × 10+ items each.
@@ -51,13 +52,10 @@ class RealRestaurantMenuSeeder extends Seeder
             // Hard-delete so unique indexes (slug, SKU) are freed for fresh seed.
             // Disable FK checks briefly since historic order_items reference menu_items.
             // Those historic rows keep their snapshot fields so past orders still display.
-            DB::statement('SET FOREIGN_KEY_CHECKS = 0');
-            try {
+            Schema::withoutForeignKeyConstraints(function () {
                 MenuItem::withTrashed()->forceDelete();
                 Category::withTrashed()->forceDelete();
-            } finally {
-                DB::statement('SET FOREIGN_KEY_CHECKS = 1');
-            }
+            });
 
             $data = $this->menuData($kitchen->id ?? 1, $bar->id ?? 1);
 

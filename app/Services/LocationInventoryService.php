@@ -112,7 +112,11 @@ class LocationInventoryService
         $after  = $before + ($qtyBase * $direction);
         $stock->update(['quantity' => $after]);
 
+        // inventory_movements.branch_id is NOT NULL. The trait normally
+        // auto-stamps from BranchContext, but transfers run with no
+        // context bound — explicitly inherit from the location.
         $mv = InventoryMovement::create([
+            'branch_id'           => $location->branch_id,
             'ingredient_id'       => $ingredient->id,
             'storage_location_id' => $location->id,
             'type'                => $type,

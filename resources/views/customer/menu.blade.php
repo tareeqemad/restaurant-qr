@@ -26,6 +26,19 @@
     $customerTaxDisplay = $session->table?->branch?->customerTaxDisplayMode()
         ?? \App\Models\Setting::get('customer_tax_display', 'exclusive');
     $customerTaxDisplay = in_array($customerTaxDisplay, ['exclusive', 'inclusive'], true) ? $customerTaxDisplay : 'exclusive';
+
+    // Guest promo banner — only resolved when this is an anonymous diner.
+    // Source: most-recent published announcement with audience_type='guests'
+    // whose branch matches the table (or is global). One announcement at a
+    // time keeps the screen calm; staff can rotate by publishing a fresher
+    // one which sorts to the top by published_at.
+    $guestPromo = null;
+    if (! $linkedCustomer) {
+        $guestPromo = \App\Models\Announcement::activeNow()
+            ->forGuests($session->table?->branch_id)
+            ->latest('published_at')
+            ->first();
+    }
 @endphp
 
 <div x-data="menuApp()" @keydown.escape.window="closeAll()" class="qr-menu-page">
@@ -85,6 +98,49 @@
             </div>
         </div>
     </section>
+
+    {{-- Guest-targeted promo banner.
+         Conversion strip aimed at anonymous diners — only renders when
+         (a) no portal customer is linked AND (b) an admin has published
+         an announcement with audience_type='guests' that's currently in
+         its schedule window. Hidden once the diner registers or already
+         has a session. The dismiss button stores a session flag so the
+         banner doesn't re-appear after they wave it off on this visit. --}}
+    @if($guestPromo && ! session('guest_promo_dismissed_'.$guestPromo->id))
+        <section class="menu-guest-promo"
+                 style="--promo-color: {{ $guestPromo->color ?: '#b8872a' }};"
+                 x-data="{ dismissing: false }"
+                 x-show="!dismissing" x-transition.opacity>
+            <div class="menu-guest-promo-icon">
+                <i class="bi {{ $guestPromo->icon ?: 'bi-megaphone-fill' }}"></i>
+            </div>
+            <div class="menu-guest-promo-body">
+                <strong>{{ $guestPromo->title }}</strong>
+                <p>{{ $guestPromo->body }}</p>
+                <div class="menu-guest-promo-actions">
+                    @if($guestPromo->cta_text)
+                        <a href="{{ $guestPromo->cta_url ?: $portalRegisterUrl }}"
+                           class="menu-guest-promo-cta">
+                            <i class="bi bi-arrow-left-circle-fill"></i>
+                            {{ $guestPromo->cta_text }}
+                        </a>
+                    @else
+                        <a href="{{ $portalRegisterUrl }}" class="menu-guest-promo-cta">
+                            <i class="bi bi-person-plus-fill"></i>
+                            افتح حسابك الآن
+                        </a>
+                    @endif
+                </div>
+            </div>
+            <form method="POST" action="{{ route('customer.menu.dismissGuestPromo', ['id' => $guestPromo->id]) }}"
+                  @submit="dismissing = true">
+                @csrf
+                <button type="submit" class="menu-guest-promo-close" title="إخفاء" aria-label="إخفاء الإعلان">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </form>
+        </section>
+    @endif
 
     <section class="menu-command-bar" aria-label="أدوات القائمة">
         <label class="menu-search">
@@ -156,8 +212,8 @@
                     @else
                         <span class="menu-client-avatar"><i class="bi bi-qr-code-scan"></i></span>
                         <div>
-                            <strong>جلسة QR</strong>
-                            <small>تقدر تطلب بدون تسجيل، والجرسون يتابع الطلب.</small>
+                            <strong>طلب كضيف</strong>
+                            <small>اطلب من غير تسجيل — أو افتح حساب لتحصل على عروض وخصومات في زياراتك الجاية.</small>
                         </div>
                     @endif
                 </div>
@@ -414,8 +470,9 @@
                                     <input type="number" :value="Number(row.quantity)" readonly>
                                     <button type="button" @click="updateQty(row.id, Number(row.quantity) + 1)">+</button>
                                 </div>
-                                <button type="button" class="btn btn-sm btn-link text-danger" @click="removeRow(row.id)">
-                                    <i class="bi bi-trash3"></i> إزالة
+                                <button type="button" class="btn btn-sm btn-link text-danger p-1" @click="removeRow(row.id)"
+                                        title="إزالة الصنف" aria-label="إزالة">
+                                    <i class="bi bi-trash3 fs-5"></i>
                                 </button>
                             </div>
                         </div>
@@ -450,15 +507,30 @@
                                 </div>
                             </div>
                         @else
-                            <div class="cart-customer-card">
-                                <span class="cart-customer-avatar"><i class="bi bi-person"></i></span>
-                                <div>
+                            {{-- Guest-checkout card — compact version.
+                                 The cart is the conversion moment; if this
+                                 card dominates the drawer, the diner thinks
+                                 signup is required (it isn't). So the layout
+                                 is now tight:
+                                   • Headline + green pill = "no signup
+                                     needed" lands instantly.
+                                   • Single inline benefit hook hints at the
+                                     upside without a list.
+                                   • Two pill buttons stay small. --}}
+                            <div class="cart-customer-card cart-customer-card--guest">
+                                <div class="cart-guest-head">
                                     <strong>تطلب كضيف</strong>
-                                    <small>ما بنطلب تسجيل دخول عشان ترسل الطلب. الحساب فقط لحفظ الزيارة وسجل الطلبات.</small>
-                                    <div class="cart-account-actions">
-                                        <a href="{{ $portalLoginUrl }}">عندي حساب</a>
-                                        <a href="{{ $portalRegisterUrl }}">إنشاء حساب</a>
-                                    </div>
+                                    <span class="cart-guest-ok">✓ بدون تسجيل</span>
+                                </div>
+                                <p class="cart-guest-hint">
+                                    <i class="bi bi-gift-fill"></i>
+                                    لو بدك تطلب <strong>كزبون دائم</strong> وتحصل على عروض وخصومات، اضغط <strong>«إنشاء حساب»</strong> وكمّل طلبك من هناك.
+                                </p>
+                                <div class="cart-account-actions">
+                                    <a href="{{ $portalRegisterUrl }}" class="is-primary">
+                                        <i class="bi bi-person-plus-fill"></i> إنشاء حساب
+                                    </a>
+                                    <a href="{{ $portalLoginUrl }}">عندي حساب</a>
                                 </div>
                             </div>
 
@@ -608,20 +680,35 @@ body > main {
 }
 
 .menu-hero {
+    /* Portal-style hero: dark green gradient + radial gold glow + white text.
+       Mirrors `/portal/order/history` so the brand reads consistent across
+       the QR-table flow and the logged-in customer flow. */
+    position: relative;
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(210px, 270px);
     gap: clamp(.75rem, 1.6vw, 1.15rem);
     align-items: stretch;
-    border: 1px solid var(--menu-line);
-    border-radius: 24px;
+    border: 0;
+    border-radius: 22px;
     background:
-        linear-gradient(135deg, rgba(255,255,255,.96), rgba(242,248,242,.9)),
-        var(--menu-surface);
-    box-shadow: var(--menu-shadow);
+        radial-gradient(ellipse 60% 80% at 92% 0%, rgba(184, 135, 42, .18) 0%, transparent 60%),
+        linear-gradient(135deg, #0f4731 0%, #1c5e44 100%);
+    box-shadow: 0 14px 32px rgba(15, 71, 49, .22);
     padding: clamp(.9rem, 2.1vw, 1.45rem);
+    color: #fff;
     overflow: hidden;
     max-width: 100%;
 }
+.menu-hero::after {
+    content: '';
+    position: absolute;
+    inset-inline-start: -40px; bottom: -40px;
+    width: 110px; height: 110px;
+    background: rgba(255, 255, 255, .07);
+    border-radius: 50%;
+    pointer-events: none;
+}
+.menu-hero > * { position: relative; z-index: 1; }
 
 .menu-hero-copy {
     min-width: 0;
@@ -692,24 +779,30 @@ body > main {
     align-items: center;
     gap: .35rem;
     border-radius: 999px;
-    background: #edf6ee;
-    color: var(--brand-dark);
-    border: 1px solid rgba(31, 71, 51, .09);
+    background: rgba(255, 255, 255, .15);
+    backdrop-filter: blur(6px);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, .2);
     padding: .38rem .78rem;
     font-size: .78rem;
-    font-weight: 900;
+    font-weight: 800;
     line-height: 1;
     white-space: nowrap;
+}
+.client-pill.is-linked {
+    background: rgba(184, 135, 42, .25);
+    border-color: rgba(184, 135, 42, .4);
 }
 
 .menu-hero h1 {
     margin: 0;
-    color: var(--brand-dark);
+    color: #fff;
     font-size: clamp(2rem, 4.2vw, 3.35rem);
     font-weight: 900;
     line-height: 1.02;
     letter-spacing: 0;
     text-wrap: balance;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, .15);
 }
 
 .menu-hero p {
@@ -725,7 +818,7 @@ body > main {
     min-height: 48px;
     border: 0;
     border-radius: 999px;
-    background: var(--brand);
+    background: rgba(184, 135, 42, .9);
     color: #fff;
     padding: 0 1.15rem;
     display: inline-flex;
@@ -733,18 +826,19 @@ body > main {
     justify-content: center;
     gap: .55rem;
     font-weight: 900;
-    box-shadow: 0 12px 28px rgba(31, 71, 51, .28);
+    box-shadow: 0 8px 20px rgba(184, 135, 42, .35);
+    transition: all .15s ease;
 }
-
+.hero-cart-btn:hover:not(:disabled) {
+    background: #b8872a;
+    transform: translateY(-1px);
+    box-shadow: 0 12px 26px rgba(184, 135, 42, .45);
+}
 .hero-cart-btn:disabled {
-    opacity: .68;
+    opacity: .55;
     box-shadow: none;
-}
-
-.client-pill.is-linked {
-    background: #fff3d8;
-    color: #795316;
-    border-color: rgba(184, 135, 42, .22);
+    background: rgba(255, 255, 255, .15);
+    border: 1px solid rgba(255, 255, 255, .15);
 }
 
 .menu-hero-panel {
@@ -790,12 +884,13 @@ body > main {
     align-items: center;
     gap: .85rem;
     padding: 1rem 1.05rem;
-    border-radius: 20px;
-    background: linear-gradient(140deg, #ffffff 0%, #f5faf5 100%);
-    border: 1px solid rgba(15, 71, 49, .08);
-    box-shadow: 0 8px 22px rgba(15, 71, 49, .06);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, .12);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, .15);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .08);
     overflow: hidden;
-    transition: transform .18s ease, box-shadow .18s ease;
+    transition: transform .18s ease, background .18s ease;
 }
 
 .hero-stat::before {
@@ -803,15 +898,15 @@ body > main {
     position: absolute;
     inset-block: 0;
     inset-inline-start: 0;
-    width: 4px;
-    background: linear-gradient(180deg, var(--brand), var(--brand-dark));
-    border-start-end-radius: 4px;
-    border-end-end-radius: 4px;
+    width: 3px;
+    background: rgba(184, 135, 42, .9);
+    border-start-end-radius: 3px;
+    border-end-end-radius: 3px;
 }
 
 .hero-stat:hover {
     transform: translateY(-2px);
-    box-shadow: 0 14px 30px rgba(15, 71, 49, .1);
+    background: rgba(255, 255, 255, .18);
 }
 
 .hero-stat-icon {
@@ -822,14 +917,16 @@ body > main {
     align-items: center;
     justify-content: center;
     border-radius: 14px;
-    background: linear-gradient(140deg, rgba(15, 71, 49, .12), rgba(15, 71, 49, .04));
-    color: var(--brand-dark);
+    background: rgba(255, 255, 255, .15);
+    border: 1px solid rgba(255, 255, 255, .15);
+    color: #fff;
     font-size: 1.25rem;
 }
 
 .hero-stat-icon--accent {
-    background: linear-gradient(140deg, rgba(184, 135, 42, .18), rgba(184, 135, 42, .06));
-    color: #8a6614;
+    background: rgba(184, 135, 42, .25);
+    border-color: rgba(184, 135, 42, .35);
+    color: #f4d490;
 }
 
 .hero-stat-body {
@@ -841,25 +938,25 @@ body > main {
 }
 
 .hero-stat-label {
-    color: var(--menu-muted);
+    color: rgba(255, 255, 255, .8);
     font-size: .76rem;
     font-weight: 800;
     letter-spacing: 0;
 }
 
 .hero-stat-value {
-    color: var(--brand-dark);
+    color: #fff;
     font-size: 1.85rem;
     font-weight: 900;
     font-feature-settings: "tnum" 1;
     letter-spacing: -.5px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, .15);
 }
 
 .hero-stat-meta {
-    color: var(--menu-muted);
+    color: rgba(255, 255, 255, .65);
     font-size: .72rem;
     font-weight: 700;
-    opacity: .85;
 }
 
 @media (max-width: 480px) {
@@ -1386,6 +1483,195 @@ body > main {
     background: #fff3d8;
     color: #795316;
     border-color: rgba(184, 135, 42, .2);
+}
+
+/* ─── Guest-checkout card (compact) ─────────────────────────────────
+   Single-stack layout — total height drops from ~210px to ~110px.
+   The headline + green ✓-pill carry the reassurance; one short hint
+   line carries the upsell; two pill buttons close it. No avatar, no
+   bulleted list, no nested cards — those were what made it feel huge. */
+.cart-customer-card--guest {
+    display: block;
+    background: linear-gradient(135deg, #fffbf2 0%, #fef6e6 100%);
+    border-color: rgba(184, 135, 42, .22);
+    padding: .65rem .8rem;
+}
+.cart-guest-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .45rem;
+    margin-bottom: .35rem;
+}
+.cart-guest-head strong {
+    color: var(--brand-dark);
+    font-weight: 900;
+    font-size: .95rem;
+    line-height: 1.2;
+    margin: 0;
+}
+.cart-guest-ok {
+    background: #1f4733;
+    color: #fff;
+    font-size: .65rem;
+    font-weight: 800;
+    padding: 2px 8px;
+    border-radius: 999px;
+    letter-spacing: .02em;
+    white-space: nowrap;
+}
+/* Hint paragraph — must flow as one continuous line of text.
+   The parent .cart-customer-card has a `strong { display: block }`
+   rule from the linked-customer variant (where strong is the diner's
+   name and SHOULD be on its own line). Inside this hint, the strongs
+   are mid-sentence emphasis ("كزبون دائم", "«إنشاء حساب»") — they
+   MUST stay inline, otherwise each one drops to a new line and the
+   text fractures into single-word columns.
+   Using a <p> + inline strong overrides + word-break:normal forces
+   proper RTL inline flow with safe wrapping at word boundaries. */
+.cart-guest-hint {
+    display: block;
+    font-size: .82rem;
+    font-weight: 600;
+    color: #5b4a2a;
+    line-height: 1.65;
+    margin-bottom: .55rem;
+    word-break: normal;
+    overflow-wrap: break-word;
+}
+.cart-guest-hint i {
+    color: #b8872a;
+    font-size: .85rem;
+    margin-inline-end: .25rem;
+    vertical-align: -1px;
+}
+.cart-guest-hint strong {
+    display: inline !important;
+    color: #795316;
+    font-weight: 900;
+    white-space: nowrap;
+}
+.cart-customer-card--guest .cart-account-actions {
+    margin-top: 0;
+}
+
+/* Primary CTA gets brand-gold treatment so the eye lands on "create
+   account" first; the secondary "I have an account" stays muted. */
+.cart-account-actions a.is-primary {
+    background: var(--brand);
+    color: #fff;
+    border-color: var(--brand);
+    gap: .3rem;
+}
+.cart-account-actions a.is-primary i { font-size: .85rem; }
+
+/* ─── Guest-targeted promo banner ─────────────────────────────────
+   Sits between the hero and the command bar; uses the announcement's
+   custom color (with a safe brand-gold default) as a left accent so
+   each campaign feels distinct. Designed to be skipped easily — the
+   close button is generous, dismissal is per-session. */
+.menu-guest-promo {
+    --promo-color: #b8872a;
+    display: grid;
+    grid-template-columns: 48px 1fr auto;
+    gap: .85rem;
+    align-items: start;
+    padding: .85rem 1rem;
+    /* Margin-top breathes the banner away from the hero card above it
+       so the two surfaces don't visually collide. Bottom margin keeps
+       it clear of the command bar (search + tabs) below. */
+    margin: 1rem 0;
+    border-radius: 18px;
+    background: linear-gradient(135deg, rgba(255, 251, 240, 1) 0%, rgba(254, 246, 230, .9) 100%);
+    border: 1px solid rgba(184, 135, 42, .22);
+    border-inline-start: 5px solid var(--promo-color);
+    box-shadow: 0 6px 18px rgba(184, 135, 42, .08);
+    position: relative;
+    overflow: hidden;
+}
+.menu-guest-promo::before {
+    content: '';
+    position: absolute;
+    inset-block-start: -30px;
+    inset-inline-end: -30px;
+    width: 120px;
+    height: 120px;
+    background: radial-gradient(circle, var(--promo-color) 0%, transparent 70%);
+    opacity: .08;
+    pointer-events: none;
+}
+.menu-guest-promo-icon {
+    width: 48px; height: 48px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--promo-color);
+    color: #fff;
+    border-radius: 14px;
+    font-size: 1.35rem;
+    flex-shrink: 0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, .08);
+}
+.menu-guest-promo-body { min-width: 0; }
+.menu-guest-promo-body strong {
+    display: block;
+    color: var(--brand-dark);
+    font-size: 1.02rem;
+    font-weight: 900;
+    line-height: 1.3;
+    margin-bottom: .15rem;
+}
+.menu-guest-promo-body p {
+    margin: 0 0 .55rem;
+    color: #5b4a2a;
+    font-size: .87rem;
+    font-weight: 600;
+    line-height: 1.55;
+}
+.menu-guest-promo-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+.menu-guest-promo-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    padding: .5rem 1rem;
+    background: var(--promo-color);
+    color: #fff;
+    border-radius: 999px;
+    text-decoration: none;
+    font-weight: 900;
+    font-size: .85rem;
+    box-shadow: 0 4px 10px rgba(184, 135, 42, .28);
+    transition: transform .15s ease, box-shadow .15s ease;
+}
+.menu-guest-promo-cta:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 14px rgba(184, 135, 42, .38);
+    color: #fff;
+}
+.menu-guest-promo-close {
+    align-self: start;
+    background: transparent;
+    border: 0;
+    color: #94795a;
+    font-size: .9rem;
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background .15s ease;
+}
+.menu-guest-promo-close:hover {
+    background: rgba(0, 0, 0, .06);
+    color: var(--brand-dark);
+}
+
+@media (max-width: 540px) {
+    .menu-guest-promo {
+        grid-template-columns: 40px 1fr auto;
+        padding: .75rem .85rem;
+    }
+    .menu-guest-promo-icon { width: 40px; height: 40px; font-size: 1.15rem; }
+    .menu-guest-promo-body strong { font-size: .95rem; }
+    .menu-guest-promo-body p { font-size: .82rem; }
 }
 
 .cart-checkout-panel .form-label {

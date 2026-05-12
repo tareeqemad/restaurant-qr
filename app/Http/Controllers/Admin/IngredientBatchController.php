@@ -63,7 +63,10 @@ class IngredientBatchController extends Controller
     /** Create a batch manually (e.g., for existing stock that wasn't captured in PO) */
     public function store(Request $request)
     {
-        $this->authorize('viewAny', Ingredient::class);
+        // Hardened (was `viewAny`): manual batch creation injects stock into
+        // the warehouse bypassing the PO trail. Only `manage` can do this —
+        // not chefs/cashiers.
+        $this->authorize('manage', Ingredient::class);
 
         $data = $request->validate([
             'ingredient_id' => ['required', 'exists:ingredients,id'],

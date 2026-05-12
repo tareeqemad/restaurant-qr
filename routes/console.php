@@ -25,3 +25,18 @@ Schedule::command('notifications:reservation-reminders')
     ->everyFiveMinutes()
     ->withoutOverlapping()
     ->runInBackground();
+
+/*
+|--------------------------------------------------------------------------
+| Attendance — auto-close stale shifts
+|--------------------------------------------------------------------------
+|
+| Staffer forgets to clock out → record stays open and the system keeps
+| counting "working hours" indefinitely. Hourly sweep closes any shift
+| open more than 24h, capping the credited time at 12h so payroll doesn't
+| reward the unattended interval.
+*/
+Schedule::command('attendance:close-stale')
+    ->hourly()
+    ->withoutOverlapping()
+    ->runInBackground();

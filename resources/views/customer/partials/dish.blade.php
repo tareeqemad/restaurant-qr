@@ -56,7 +56,11 @@
             <p class="dish-desc">{{ $item->description }}</p>
         @endif
         @if($item->allergens->count())
-            <div class="allergens">
+            <div class="allergens" role="group" aria-label="مسببات حساسية">
+                <span class="allergens-label">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    يحتوي على مسببات حساسية:
+                </span>
                 @foreach($item->allergens as $a)
                     <span class="allergen-chip">{{ $a->icon }} {{ $a->name }}</span>
                 @endforeach

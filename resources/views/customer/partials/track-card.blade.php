@@ -58,6 +58,51 @@
                 </div>
             @endforeach
         </div>
+
+        {{-- Live countdown: kicks in only while the order is `preparing`.
+             OrderTimingService stamped `estimated_ready_at` on the moment
+             status flipped to preparing; we ship that as an ISO timestamp
+             to a tiny JS ticker. When time runs out the badge swaps to
+             "جاهز قريباً" instead of negative numbers (less anxiety). --}}
+        @if($order->status === 'preparing' && $order->estimated_ready_at)
+            @php
+                $etaIso       = $order->estimated_ready_at->toIso8601String();
+                $etaUnix      = $order->estimated_ready_at->getTimestamp();
+                $nowUnix      = now()->getTimestamp();
+                $initialSecs  = max(0, $etaUnix - $nowUnix);
+                $initialMins  = (int) ceil($initialSecs / 60);
+            @endphp
+            <div class="track-eta"
+                 data-track-eta="{{ $etaIso }}"
+                 data-eta-unix="{{ $etaUnix }}">
+                <div class="track-eta__icon">
+                    <i class="bi bi-stopwatch-fill"></i>
+                </div>
+                <div class="track-eta__body">
+                    <div class="track-eta__label">الوقت المتبقي للتجهيز</div>
+                    <div class="track-eta__time" data-track-eta-display>
+                        @if($initialSecs > 0)
+                            <span class="track-eta__num">{{ $initialMins }}</span>
+                            <span class="track-eta__unit">دقيقة تقريباً</span>
+                        @else
+                            <span class="track-eta__soon">جاهز قريباً…</span>
+                        @endif
+                    </div>
+                </div>
+            </div>
+        @elseif($order->status === 'ready')
+            <div class="track-eta track-eta--ready">
+                <div class="track-eta__icon">
+                    <i class="bi bi-bag-check-fill"></i>
+                </div>
+                <div class="track-eta__body">
+                    <div class="track-eta__label">طلبك جاهز!</div>
+                    <div class="track-eta__time">
+                        <span class="track-eta__soon">يُسلَّم لك حالاً</span>
+                    </div>
+                </div>
+            </div>
+        @endif
     @endif
 
     {{-- Items --}}
@@ -104,6 +149,109 @@
         <span class="label">الإجمالي</span>
         <span class="amount">{{ \App\Helpers\Money::format($order->total) }}</span>
     </div>
+
+    {{-- Live countdown JS + styles — pushed once for the whole page even
+         if there are multiple cards (the ticker walks every [data-track-eta]
+         element on each tick). --}}
+    @once
+        @push('styles')
+        <style>
+            .track-eta {
+                display: flex;
+                align-items: center;
+                gap: 14px;
+                padding: 12px 16px;
+                margin: 14px 0;
+                background: linear-gradient(135deg, #fff7ed, #ffedd5);
+                border: 1px solid #fdba74;
+                border-radius: 14px;
+                color: #7c2d12;
+            }
+            .track-eta--ready {
+                background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+                border-color: #6ee7b7;
+                color: #065f46;
+            }
+            .track-eta__icon {
+                width: 44px; height: 44px;
+                flex-shrink: 0;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                background: rgba(255, 255, 255, .7);
+                border-radius: 12px;
+                font-size: 1.35rem;
+            }
+            .track-eta--ready .track-eta__icon { color: #16a34a; }
+            .track-eta__body { flex: 1; min-width: 0; }
+            .track-eta__label {
+                font-size: .78rem;
+                font-weight: 600;
+                opacity: .85;
+                margin-bottom: 2px;
+            }
+            .track-eta__time {
+                display: inline-flex;
+                align-items: baseline;
+                gap: 6px;
+            }
+            .track-eta__num {
+                font-size: 1.8rem;
+                font-weight: 900;
+                font-variant-numeric: tabular-nums;
+                line-height: 1;
+            }
+            .track-eta__unit { font-size: .8rem; font-weight: 600; opacity: .85; }
+            .track-eta__soon {
+                font-size: 1.05rem;
+                font-weight: 800;
+                animation: trackEtaPulse 1.6s ease-in-out infinite;
+            }
+            @keyframes trackEtaPulse {
+                0%, 100% { opacity: 1; }
+                50%      { opacity: .55; }
+            }
+        </style>
+        @endpush
+
+        @push('scripts')
+        <script>
+            // Live ETA ticker — updates the "X minutes remaining" badge
+            // every 5s. Five seconds is fine: we display minutes, not
+            // seconds, so finer ticks waste CPU without visible effect.
+            // When time runs out the badge swaps to the "جاهز قريباً..."
+            // pulse — no negative numbers / "متأخر" anxiety for the
+            // customer. The Livewire poll on the parent component
+            // refreshes the actual order data every 5s independently.
+            (function () {
+                function tickEta() {
+                    const now = Math.floor(Date.now() / 1000);
+                    document.querySelectorAll('[data-track-eta]').forEach(el => {
+                        const target  = parseInt(el.dataset.etaUnix || '0', 10);
+                        const display = el.querySelector('[data-track-eta-display]');
+                        if (! display || ! target) return;
+                        const remaining = target - now;
+                        if (remaining <= 0) {
+                            display.innerHTML = '<span class="track-eta__soon">جاهز قريباً…</span>';
+                        } else {
+                            const minutes = Math.max(1, Math.ceil(remaining / 60));
+                            display.innerHTML =
+                                '<span class="track-eta__num">' + minutes + '</span>' +
+                                '<span class="track-eta__unit">دقيقة تقريباً</span>';
+                        }
+                    });
+                }
+                tickEta();
+                setInterval(tickEta, 5000);
+                // Also re-tick after Livewire updates the DOM (poll refresh).
+                document.addEventListener('livewire:navigated', tickEta);
+                if (window.Livewire) {
+                    window.Livewire.hook('morph.added', tickEta);
+                }
+            })();
+        </script>
+        @endpush
+    @endonce
 
     {{-- Actions --}}
     @if($order->canCancelEntireOrder())

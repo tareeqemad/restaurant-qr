@@ -10,7 +10,12 @@ Route::get('/brand-assets/{key}', BrandAssetController::class)->name('brand.asse
 Route::get('/login', [LoginController::class, 'show'])->name('login');
 
 Route::middleware('guest')->group(function () {
-    Route::post('/login', [LoginController::class, 'store'])->name('login.store');
+    // throttle:5,1 → max 5 attempts per minute per IP+route. Prevents brute
+    // force of admin credentials. The throttle key is derived from request
+    // IP + the named route, so different IPs are limited independently.
+    Route::post('/login', [LoginController::class, 'store'])
+        ->middleware('throttle:5,1')
+        ->name('login.store');
 });
 
 Route::post('/logout', [LoginController::class, 'destroy'])->middleware('auth')->name('logout');

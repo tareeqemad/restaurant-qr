@@ -22,9 +22,9 @@ class RefundController extends Controller
             ->with(['invoice.tableSession.table', 'invoice.branch', 'processor'])
             ->latest('refunded_at');
 
-        if ($branchId = BranchContext::current()) {
-            $q->whereHas('invoice', fn ($invoice) => $invoice->where('branch_id', $branchId));
-        }
+        // Refund.branch_id exists as of May 2026 → BranchScope handles
+        // this filter automatically. The legacy whereHas('invoice')
+        // subquery was redundant and slow; removed.
 
         if ($s = $request->get('status')) $q->where('status', $s);
         if ($m = $request->get('method')) $q->where('method', $m);
@@ -50,10 +50,9 @@ class RefundController extends Controller
         $refunds = $q->paginate(20)->withQueryString();
 
         $today = today();
+        // BranchScope handles the per-branch filter automatically now —
+        // see comment above on the main query.
         $statsBase = Refund::query();
-        if ($branchId = BranchContext::current()) {
-            $statsBase->whereHas('invoice', fn ($invoice) => $invoice->where('branch_id', $branchId));
-        }
 
         $stats = [
             'today_count'  => (clone $statsBase)->whereDate('refunded_at', $today)->where('status', 'completed')->count(),

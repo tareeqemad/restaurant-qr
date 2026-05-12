@@ -629,6 +629,13 @@ class OrderService
         } elseif ($active->contains(fn($i) => $i->status === OrderItemStatus::Preparing->value)) {
             $order->update(['status' => OrderStatus::Preparing->value]);
             $newStatus = OrderStatus::Preparing->value;
+
+            // Stamp prep_started_at + estimated_ready_at the first time
+            // we enter Preparing. OrderTimingService is idempotent — a
+            // late second item triggering this code path won't reset the
+            // baseline. Customer countdown + kitchen elapsed counters
+            // both anchor on prep_started_at.
+            app(\App\Services\OrderTimingService::class)->stampPrepStart($order);
         }
 
         if ($newStatus && $newStatus !== $previous) {

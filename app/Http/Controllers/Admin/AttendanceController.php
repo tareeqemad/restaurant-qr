@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Exports\AttendanceXlsx;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\Attendance;
@@ -109,8 +110,17 @@ class AttendanceController extends Controller
         $query = Attendance::with(['user', 'branch', 'editedBy'])
             ->orderBy('clock_in_at', 'desc');
 
+        // Single-day filter takes precedence over from/to range — matches
+        // the index UX where managers either pick "today" or a span.
         if ($date = $request->get('date')) {
             $query->forDate($date);
+        } else {
+            if ($from = $request->get('from')) {
+                $query->whereDate('clock_in_at', '>=', $from);
+            }
+            if ($to = $request->get('to')) {
+                $query->whereDate('clock_in_at', '<=', $to);
+            }
         }
         if (($status = $request->get('status')) && in_array($status, ['open', 'closed'], true)) {
             $status === 'open' ? $query->open() : $query->closed();
@@ -199,6 +209,24 @@ class AttendanceController extends Controller
         );
 
         return back()->with('success', 'تم تحديث السجل.');
+    }
+
+    /**
+     * Stream a multi-sheet xlsx of the filtered attendance set.
+     * Same filters as index() — date / from-to / status / user_id —
+     * so what the manager sees is exactly what they get in the file.
+     */
+    public function export(Request $request)
+    {
+        $this->authorize('viewAny', Attendance::class);
+
+        return (new AttendanceXlsx())->download([
+            'date'    => $request->get('date'),
+            'from'    => $request->get('from'),
+            'to'      => $request->get('to'),
+            'status'  => $request->get('status'),
+            'user_id' => $request->get('user_id'),
+        ]);
     }
 
     public function destroy(Attendance $attendance)

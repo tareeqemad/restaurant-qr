@@ -2,8 +2,26 @@
 @section('title', 'الهدر')
 
 @php
-    use App\Enums\WasteReason;
-    $reasonMap = collect(WasteReason::cases())->keyBy(fn($c) => $c->value);
+    /**
+     * $reasons      → keyed by `id` for lookup against waste_reason_lookup_id (FK).
+     * $reasonsByCode → keyed by `code` for fallback lookup against the legacy
+     *                  `waste_reason` string column (old rows pre-FK-migration).
+     *
+     * The dropdown filter sends the lookup ID (number); the controller filters
+     * on the FK column `waste_reason_lookup_id`. The breakdown query also
+     * groups by FK so reports survive renames in the lookups admin.
+     *
+     * Color helpers — hex (#xxxxxx) from the lookups admin → inline styles.
+     */
+    $reasonsByCode = $reasons->keyBy('code');
+    $reasonStyle = function ($lookup) {
+        $hex = $lookup?->color ?: '#64748b';
+        return "background:{$hex}1a;color:{$hex};border:1px solid {$hex}40;";
+    };
+    $reasonProgressBg = function ($lookup) {
+        $hex = $lookup?->color ?: '#64748b';
+        return "background:{$hex};";
+    };
 @endphp
 
 @section('content')
@@ -29,19 +47,27 @@
                 <div class="vstack gap-2">
                     @foreach($byReason as $r)
                         @php
-                            $reason = $reasonMap[$r->waste_reason] ?? null;
-                            $pct = $stats['total_cost'] > 0 ? ($r->total_cost / $stats['total_cost']) * 100 : 0;
+                            // Prefer the FK id (most rows post-migration), fall back to
+                            // matching the legacy string column to a code-keyed lookup.
+                            $lookup = $r->lookup_id ? ($reasons[$r->lookup_id] ?? null) : null;
+                            if (! $lookup && $r->legacy_code) {
+                                $lookup = $reasonsByCode[$r->legacy_code] ?? null;
+                            }
+                            $pct    = $stats['total_cost'] > 0 ? ($r->total_cost / $stats['total_cost']) * 100 : 0;
+                            $hex    = $lookup?->color ?: '#64748b';
+                            $icon   = $lookup?->icon  ?: 'bi-question-circle';
+                            $label  = $lookup?->label ?: ($r->legacy_code ?: 'غير محدد');
                         @endphp
                         <div class="d-flex align-items-center gap-3 p-2 rounded bg-light">
-                            <i class="bi {{ $reason?->icon() ?? 'bi-question-circle' }} fs-20 text-{{ $reason?->color() ?? 'secondary' }}"></i>
+                            <i class="bi {{ $icon }} fs-20" style="color: {{ $hex }};"></i>
                             <div class="flex-fill">
                                 <div class="d-flex justify-content-between fw-semibold fs-13">
-                                    <span>{{ $reason?->label() ?? ($r->waste_reason ?: 'غير محدد') }}</span>
+                                    <span>{{ $label }}</span>
                                     <span>{{ number_format((float) $r->total_cost, 2) }} ₪</span>
                                 </div>
                                 <div class="progress mt-1" style="height: 4px;">
-                                    <div class="progress-bar bg-{{ $reason?->color() ?? 'secondary' }}"
-                                         style="width: {{ $pct }}%"></div>
+                                    <div class="progress-bar"
+                                         style="width: {{ $pct }}%; {{ $reasonProgressBg($lookup) }}"></div>
                                 </div>
                                 <small class="text-muted">{{ $r->count }} حدث · {{ number_format($pct, 1) }}%</small>
                             </div>
@@ -110,11 +136,19 @@
                 <input type="date" name="to" value="{{ $to }}" class="form-control form-control-sm">
             </div>
             <div class="col-md-2">
-                <label class="form-label fs-12 mb-1">السبب</label>
+                <label class="form-label fs-12 mb-1 d-flex align-items-center justify-content-between">
+                    <span>السبب</span>
+                    @can('viewAny', \App\Models\Lookup::class)
+                        <a href="{{ route('admin.lookups.index', ['group' => 'waste_reasons']) }}" target="_blank"
+                           class="text-muted text-decoration-none" title="إدارة أسباب الهدر من شاشة الثوابت">
+                            <i class="bi bi-gear-fill"></i>
+                        </a>
+                    @endcan
+                </label>
                 <select name="reason" class="form-select form-select-sm">
                     <option value="">كل الأسباب</option>
-                    @foreach($reasons as $r)
-                        <option value="{{ $r->value }}" @selected(request('reason') === $r->value)>{{ $r->label() }}</option>
+                    @foreach($reasons as $id => $r)
+                        <option value="{{ $id }}" @selected((string) request('reason') === (string) $id)>{{ $r->label }}</option>
                     @endforeach
                 </select>
             </div>
@@ -167,7 +201,13 @@
                 </thead>
                 <tbody>
                     @foreach($movements as $m)
-                        @php $r = $reasonMap[$m->waste_reason] ?? null; @endphp
+                        @php
+                            // Prefer the relation if loaded (FK id → Lookup row).
+                            // Fall back to the legacy string column matched against the
+                            // code-keyed lookup map for any pre-migration rows.
+                            $lookup = $m->wasteReasonLookup
+                                ?? ($m->waste_reason ? ($reasonsByCode[$m->waste_reason] ?? null) : null);
+                        @endphp
                         <tr>
                             <td>
                                 <div class="fw-semibold fs-13">{{ optional($m->occurred_at)->format('Y-m-d H:i') }}</div>
@@ -175,9 +215,9 @@
                             </td>
                             <td class="fw-semibold">{{ $m->ingredient?->name ?? '—' }}</td>
                             <td>
-                                @if($r)
-                                    <span class="badge bg-{{ $r->color() }}-transparent text-{{ $r->color() }}">
-                                        <i class="bi {{ $r->icon() }} me-1"></i>{{ $r->label() }}
+                                @if($lookup)
+                                    <span class="badge" style="{{ $reasonStyle($lookup) }}">
+                                        <i class="bi {{ $lookup->icon ?: 'bi-tag' }} me-1"></i>{{ $lookup->label }}
                                     </span>
                                 @else
                                     <span class="badge bg-secondary-transparent">{{ $m->waste_reason ?: '—' }}</span>

@@ -79,6 +79,16 @@ class Ingredient extends Model
         return $this->hasMany(RecipeItem::class);
     }
 
+    /**
+     * Per-location stock rows. Each row carries `quantity` and the FK to
+     * `storage_locations`. Used by the index/export to show WHERE the
+     * ingredient lives in the warehouse, not just the total quantity.
+     */
+    public function stocks(): HasMany
+    {
+        return $this->hasMany(IngredientStock::class);
+    }
+
     public function isLowStock(): bool
     {
         return $this->track_stock && $this->current_stock <= $this->reorder_threshold;
@@ -96,6 +106,49 @@ class Ingredient extends Model
     // exists, so dashboards that don't yet pass a branch context keep
     // working unchanged.
     // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * Total tracked stock across every storage location, from the
+     * ingredient_stock truth-table. Use this for the cross-branch view
+     * instead of the denormalized `current_stock` column — InventoryService
+     * keeps the column in sync, but querying the source-of-truth survives
+     * any future drift (legacy seeds, manual SQL, etc.).
+     */
+    public function trackedStock(): float
+    {
+        return (float) IngredientStock::where('ingredient_id', $this->id)->sum('quantity');
+    }
+
+    /**
+     * Inventory value at a specific branch — stock × per-branch weighted
+     * average cost from the active batches sitting in that branch's
+     * storage locations.
+     */
+    public function valueAtBranch(int $branchId): float
+    {
+        return $this->stockAtBranch($branchId) * $this->costAtBranch($branchId);
+    }
+
+    /**
+     * Cross-branch inventory value: SUM of per-branch values rather than
+     * (totalStock × globalCost). The global `cost_per_unit` is a legacy
+     * lifetime average that includes batches already consumed; using it
+     * against current stock can drift wildly from reality. Walking each
+     * branch keeps every kilogram tied to its actual purchase price, so
+     * the "all branches" total equals the sum of the per-branch totals.
+     */
+    public function trackedValue(): float
+    {
+        $branchIds = \App\Models\StorageLocation::where('active', true)
+            ->distinct()
+            ->pluck('branch_id');
+
+        $total = 0.0;
+        foreach ($branchIds as $bid) {
+            $total += $this->valueAtBranch((int) $bid);
+        }
+        return $total;
+    }
 
     /**
      * Total qty of this ingredient sitting in the given branch's storage

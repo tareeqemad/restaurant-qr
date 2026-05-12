@@ -2,15 +2,18 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class CashMovement extends Model
 {
-    use HasFactory;
+    use BelongsToBranch, HasFactory;
 
-    protected $fillable = ['shift_id', 'type', 'amount', 'reason', 'user_id'];
+    // branch_id added May 2026 (migration 2026_05_10_230000) — derive
+    // from shift.branch_id at write time.
+    protected $fillable = ['branch_id', 'shift_id', 'type', 'amount', 'reason', 'user_id'];
 
     protected $casts = [
         'amount' => 'decimal:2',

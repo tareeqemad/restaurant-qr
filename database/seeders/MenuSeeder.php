@@ -75,11 +75,31 @@ class MenuSeeder extends Seeder
             ['sku' => 'ING-014', 'name' => 'ماء', 'name_en' => 'Water', 'base_unit_id' => $ml->id, 'current_stock' => 50000, 'reorder_threshold' => 5000, 'cost_per_unit' => 0.0001],
             ['sku' => 'ING-015', 'name' => 'ليمون', 'name_en' => 'Lemon', 'base_unit_id' => $pcs->id, 'current_stock' => 100, 'reorder_threshold' => 20, 'cost_per_unit' => 0.15],
         ];
+        // Seed stock through ingredient_stock — the per-location truth table
+        // — instead of writing current_stock directly. Otherwise the global
+        // counter is non-zero while no location holds any quantity, and the
+        // index page shows different totals for "all branches" vs a specific
+        // branch (the latter sums ingredient_stock and never sees the seed).
+        $defaultLocId = \App\Models\StorageLocation::where('active', true)
+            ->orderByDesc('is_default')
+            ->orderBy('display_order')
+            ->value('id');
+
         foreach ($ings as $i) {
+            $seedQty = (float) ($i['current_stock'] ?? 0);
+            unset($i['current_stock']);
             $i['supplier_id'] = $supplier->id;
             $i['track_stock'] = true;
             $i['active'] = true;
-            Ingredient::updateOrCreate(['sku' => $i['sku']], $i);
+            $ing = Ingredient::updateOrCreate(['sku' => $i['sku']], $i);
+
+            if ($defaultLocId && $seedQty > 0) {
+                \App\Models\IngredientStock::updateOrCreate(
+                    ['ingredient_id' => $ing->id, 'storage_location_id' => $defaultLocId],
+                    ['quantity' => $seedQty, 'reorder_threshold' => 0],
+                );
+                $ing->update(['current_stock' => $seedQty]);
+            }
         }
 
         // Allergens

@@ -13,7 +13,7 @@ class PermissionSeeder extends Seeder
         $groups = [
             'users' => ['viewAny', 'view', 'create', 'update', 'delete'],
             'roles' => ['viewAny', 'view', 'create', 'update', 'delete'],
-            'tables' => ['viewAny', 'create', 'update', 'delete'],
+            'tables' => ['viewAny', 'create', 'update', 'delete', 'transfer'],
             'categories' => ['viewAny', 'create', 'update', 'delete'],
             'menu_items' => ['viewAny', 'create', 'update', 'delete', 'toggle_availability'],
             'modifiers' => ['viewAny', 'create', 'update', 'delete'],
@@ -27,6 +27,15 @@ class PermissionSeeder extends Seeder
             'waste' => ['viewAny', 'create'],
             'orders' => ['viewAny', 'view', 'create', 'approve', 'cancel', 'edit', 'delete', 'archive'],
             'payments' => ['viewAny', 'create', 'refund'],
+            // Cashier-applied ad-hoc discounts on an open invoice. `apply` is
+            // for the staff at the till; the per-role percent/fixed cap lives
+            // in config/restaurant.php (`discounts.caps`). Owner-level is
+            // uncapped via OrderDiscountService::userCap().
+            'discounts' => ['apply', 'remove'],
+            // Marketing announcements / promo broadcasts to portal customers.
+            // `publish` is gated separately because publishing fans out one
+            // notification per matched customer (potentially thousands).
+            'announcements' => ['viewAny', 'view', 'create', 'update', 'publish', 'delete'],
             'shifts' => ['viewAny', 'open', 'close', 'view_all'],
             'expenses' => ['viewAny', 'view', 'create', 'update', 'approve', 'reject', 'delete'],
             'customers' => ['viewAny', 'view', 'update', 'block', 'delete'],
@@ -87,7 +96,7 @@ class PermissionSeeder extends Seeder
 
         if ($waiter) {
             $waiter->permissions()->sync(Permission::whereIn('name', [
-                'tables.viewAny',
+                'tables.viewAny', 'tables.transfer',
                 'orders.viewAny', 'orders.view', 'orders.create', 'orders.approve', 'orders.cancel', 'orders.edit',
                 'menu_items.viewAny', 'menu_items.toggle_availability',
             ])->pluck('id'));
@@ -115,6 +124,7 @@ class PermissionSeeder extends Seeder
             $cashier->permissions()->sync(Permission::whereIn('name', [
                 'orders.viewAny', 'orders.view', 'orders.create',
                 'payments.viewAny', 'payments.create', 'payments.refund',
+                'discounts.apply', 'discounts.remove',
                 'tables.viewAny',
                 'shifts.open', 'shifts.close',
                 'reports.viewAny',

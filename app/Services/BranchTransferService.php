@@ -171,8 +171,32 @@ class BranchTransferService
         return DB::transaction(function () use ($transfer, $userId) {
             $items = $transfer->items()->with('ingredient')->get();
 
-            BranchContext::forBranch($transfer->to_branch_id, function () use ($transfer, $items, $userId) {
+            // Resolve destination location: per-line override → branch default
+            // → branch's first active location. Without one, the IN movement
+            // would land with NULL storage_location_id and the per-branch
+            // stock view (joined through ingredient_stock) would never see it.
+            $fallbackLocId = StorageLocation::where('branch_id', $transfer->to_branch_id)
+                ->where('active', true)
+                ->orderByDesc('is_default')
+                ->orderBy('display_order')
+                ->value('id');
+
+            if (! $fallbackLocId && $items->contains(fn ($i) => ! $i->to_location_id)) {
+                throw ValidationException::withMessages([
+                    'destination' => "فرع الوجهة «{$transfer->toBranch->name}» لا يملك أي موقع تخزين. أنشئ موقعاً واحداً قبل استلام التحويل.",
+                ]);
+            }
+
+            BranchContext::forBranch($transfer->to_branch_id, function () use ($transfer, $items, $userId, $fallbackLocId) {
                 foreach ($items as $item) {
+                    $locId = $item->to_location_id ?: $fallbackLocId;
+
+                    // Persist the resolved location on the line so the show
+                    // page reflects where stock actually landed.
+                    if (! $item->to_location_id && $locId) {
+                        $item->update(['to_location_id' => $locId]);
+                    }
+
                     $this->inventory->recordMovement(
                         ingredient:        $item->ingredient,
                         type:              'in',
@@ -181,7 +205,7 @@ class BranchTransferService
                         reference:         $item,
                         reason:            "تحويل بين الفروع — {$transfer->number} ← {$transfer->fromBranch->name}",
                         userId:            $userId,
-                        storageLocationId: $item->to_location_id,
+                        storageLocationId: $locId,
                     );
                 }
             });

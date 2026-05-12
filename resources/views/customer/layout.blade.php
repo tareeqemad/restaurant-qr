@@ -46,52 +46,88 @@
 * { -webkit-tap-highlight-color: transparent; }
 html, body { background: var(--bg); color: var(--ink); font-family: 'Tajawal', sans-serif; }
 body { padding-bottom: env(safe-area-inset-bottom); min-height: 100vh; }
+/* ── Topbar — restaurant brand strip on top of the QR menu ─────
+   Refined dark-forest gradient + hand-painted gold accents. The bar
+   carries: brand mark + name on the start side, and a glossy gold
+   "table N" pill plus order-tracking chip on the end. Gives the
+   diner a fast brand impression without competing with the menu. */
 .app-topbar {
     position: sticky;
     top: 0;
     z-index: 50;
     color: #fff;
-    padding: .9rem 1.1rem;
-    padding-top: max(.9rem, env(safe-area-inset-top));
-    background: var(--brand-gradient);
-    box-shadow: 0 6px 22px rgba(15, 45, 34, .22);
-    border-bottom: 1px solid rgba(255, 255, 255, .06);
+    padding: .85rem clamp(.85rem, 2vw, 1.4rem);
+    padding-top: max(.85rem, env(safe-area-inset-top));
+    background:
+        linear-gradient(135deg, #0f4731 0%, #1c5e44 60%, #134d36 100%);
+    box-shadow: 0 8px 26px rgba(15, 45, 34, .28);
+    border-bottom: 1px solid rgba(255, 255, 255, .07);
+    overflow: hidden;
 }
 .app-topbar::before {
-    /* Subtle warm radial highlight on the start side — gives the bar a
-       sense of light/warmth without a hard gold underline. */
+    /* Decorative radial glows — soft gold on the inline-end (where the
+       reading flow starts in RTL = right side) and a subtle white shine
+       on the bottom-start corner. Adds depth without busy textures. */
     content: "";
     position: absolute;
     inset: 0;
     background:
-        radial-gradient(140% 90% at 100% 0%, rgba(184, 135, 42, .22), transparent 55%),
-        radial-gradient(60% 100% at 0% 100%, rgba(255, 255, 255, .08), transparent 70%);
+        radial-gradient(ellipse 60% 80% at 90% -10%, rgba(184, 135, 42, .26), transparent 55%),
+        radial-gradient(ellipse 40% 60% at 5% 110%, rgba(255, 255, 255, .08), transparent 60%);
+    pointer-events: none;
+}
+.app-topbar::after {
+    /* Hairline gold stripe along the bottom edge — the kind of subtle
+       finish you'd find on a luxury menu cover. */
+    content: '';
+    position: absolute;
+    inset-inline: clamp(1.5rem, 8vw, 4rem);
+    bottom: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(184, 135, 42, .55), transparent);
     pointer-events: none;
 }
 .app-topbar > * { position: relative; }
+
+/* Brand cluster: logo + restaurant name */
 .app-topbar h4 {
     margin: 0;
     font-weight: 900;
-    font-size: 1.22rem;
+    font-size: clamp(1.05rem, 2.6vw, 1.25rem);
     line-height: 1.15;
     display: inline-flex;
     align-items: center;
-    gap: .65rem;
+    gap: .7rem;
     letter-spacing: -.015em;
+    color: #fff;
 }
 .logo-icon {
-    width: 42px;
-    height: 42px;
-    flex: 0 0 42px;
+    width: 46px;
+    height: 46px;
+    flex: 0 0 46px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 4px;
-    border-radius: 13px;
-    color: var(--brand-dark);
-    background: linear-gradient(160deg, #ffffff 0%, #f3ebd7 100%);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, .22), inset 0 0 0 1px rgba(184, 135, 42, .18);
+    padding: 5px;
+    border-radius: 14px;
+    background: #fff;
+    box-shadow:
+        0 6px 16px rgba(0, 0, 0, .25),
+        inset 0 0 0 1px rgba(184, 135, 42, .35),
+        inset 0 0 0 4px #fff;
+    position: relative;
+    transition: transform .15s ease;
 }
+.logo-icon::before {
+    /* Faint gold corner accent that hints at gilded artwork */
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 14px;
+    background: linear-gradient(135deg, transparent 60%, rgba(184, 135, 42, .15) 100%);
+    pointer-events: none;
+}
+.logo-icon:hover { transform: scale(1.05) rotate(-2deg); }
 .logo-icon img {
     width: 100%;
     height: 100%;
@@ -99,14 +135,17 @@ body { padding-bottom: env(safe-area-inset-bottom); min-height: 100vh; }
     display: block;
     border-radius: 9px;
 }
+
+/* Brand subtitle = "table X" + (optional) name. Sub-line under h4. */
 .app-topbar .sub {
-    margin-top: .45rem;
+    margin-top: .55rem;
+    margin-inline-start: 56px;     /* indent so it lines up under name, not logo */
     font-size: .78rem;
-    opacity: .96;
+    opacity: .98;
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: .4rem;
+    gap: .45rem;
 }
 /* Topbar chips — they sit on the dark forest-green gradient, so we need
    them to POP. The earlier dark-on-dark and dark-gold-on-dark combos
@@ -114,46 +153,83 @@ body { padding-bottom: env(safe-area-inset-bottom); min-height: 100vh; }
    ink #1c1917 — contrast measures ~9:1 (well above WCAG AAA) and the
    bright amber catches the eye from across the room, which is the whole
    point of these chips for diners and waiters glancing at the QR session. */
+/* Table pill — premium gold gloss. Brightest element on the bar so a
+   waiter at any distance instantly knows which table this QR belongs to. */
 .table-big {
-    background: linear-gradient(180deg, #fcd34d 0%, #f5b224 100%);
+    background: linear-gradient(180deg, #fde68a 0%, #f5b224 50%, #d97706 100%);
     color: #1c1917;
-    padding: 5px 12px;
-    border-radius: 11px;
+    padding: .45rem .9rem;
+    border-radius: 12px;
     font-weight: 900;
-    font-size: .82rem;
+    font-size: .85rem;
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    box-shadow: 0 2px 8px rgba(0,0,0,.25), inset 0 -2px 0 rgba(0,0,0,.08);
-    border: 1px solid rgba(0,0,0,.08);
+    gap: .35rem;
+    box-shadow:
+        0 6px 16px rgba(217, 119, 6, .35),
+        inset 0 1px 0 rgba(255, 255, 255, .55),
+        inset 0 -2px 0 rgba(0, 0, 0, .12);
+    border: 1px solid rgba(217, 119, 6, .35);
+    letter-spacing: 0;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, .35);
 }
-.chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 99px; background: rgba(255,255,255,.95); color: #1c1917; font-size: .75rem; font-weight: 700; text-decoration: none; box-shadow: 0 2px 6px rgba(0,0,0,.18); }
-.chip:hover { background: #ffffff; color: #1c1917; }
-.chip-orders {
-    background: #fbbf24;
-    color: #1c1917;
-    padding: 6px 12px;
-    font-weight: 900;
-    box-shadow: 0 3px 12px rgba(0,0,0,.22), inset 0 -2px 0 rgba(0,0,0,.08);
-    border: 1px solid rgba(0,0,0,.08);
-    animation: pulse-accent 2s infinite;
-}
-.chip-orders:hover { background: #fbbf24; color: #1c1917; transform: translateY(-1px); }
-.chip-badge {
-    background: #ffffff;
-    color: var(--brand-dark);
+.table-big i { font-size: .9rem; }
+
+/* Generic chip — frosted glass on the dark gradient. */
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    padding: .3rem .7rem;
     border-radius: 99px;
-    min-width: 18px;
-    height: 18px;
+    background: rgba(255, 255, 255, .14);
+    backdrop-filter: blur(6px);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, .18);
+    font-size: .76rem;
+    font-weight: 700;
+    text-decoration: none;
+    transition: all .15s ease;
+}
+.chip:hover { background: rgba(255, 255, 255, .22); color: #fff; transform: translateY(-1px); }
+
+/* Order-tracking chip — gold accent, pulses to invite the tap when
+   the diner has live orders in flight. */
+.chip-orders {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    color: #1c1917;
+    padding: .42rem .85rem;
+    font-weight: 800;
+    border: 1px solid rgba(217, 119, 6, .35);
+    box-shadow:
+        0 6px 16px rgba(217, 119, 6, .3),
+        inset 0 1px 0 rgba(255, 255, 255, .35);
+    animation: pulse-accent 2.2s infinite;
+}
+.chip-orders:hover {
+    background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+    color: #1c1917;
+    transform: translateY(-2px);
+    box-shadow: 0 10px 22px rgba(217, 119, 6, .4);
+}
+.chip-badge {
+    background: #fff;
+    color: #134d36;
+    border-radius: 99px;
+    min-width: 20px;
+    height: 20px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: .7rem;
+    font-size: .72rem;
     font-weight: 900;
-    padding: 0 5px;
-    box-shadow: 0 1px 3px rgba(0,0,0,.15);
+    padding: 0 6px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .15);
 }
-@keyframes pulse-accent { 0%, 100% { box-shadow: 0 3px 10px rgba(0,0,0,.15), 0 0 0 0 rgba(184,135,42,.5); } 50% { box-shadow: 0 3px 10px rgba(0,0,0,.15), 0 0 0 8px rgba(184,135,42,0); } }
+@keyframes pulse-accent {
+    0%, 100% { box-shadow: 0 4px 12px rgba(0,0,0,.15), 0 0 0 0 rgba(217, 119, 6, .55); }
+    50%      { box-shadow: 0 4px 12px rgba(0,0,0,.15), 0 0 0 10px rgba(217, 119, 6, 0); }
+}
 
 /* Hero — warm cream with olive-gold accents */
 .hero { background: linear-gradient(180deg, #faf5eb 0%, #fffdf7 100%); padding: 1.5rem 1rem .75rem; text-align: center; border-bottom: 1px solid var(--border); position: relative; overflow: hidden; }
@@ -542,7 +618,9 @@ body { padding-bottom: env(safe-area-inset-bottom); min-height: 100vh; }
 .dish-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; padding-top: 8px; }
 .dish-price { font-weight: 900; color: var(--accent-dark); font-size: 1.1rem; letter-spacing: -.02em; }
 
-.allergens { display: flex; flex-wrap: wrap; gap: 3px; margin: 4px 0; }
+.allergens { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 6px 0; padding: 5px 8px; background: rgba(249, 168, 37, .08); border: 1px solid rgba(249, 168, 37, .25); border-radius: 8px; }
+.allergens-label { display: inline-flex; align-items: center; gap: 4px; font-size: .68rem; font-weight: 700; color: #92400e; width: 100%; margin-bottom: 2px; }
+.allergens-label i { font-size: .75rem; color: #d97706; }
 .allergen-chip { background: var(--gold-soft); color: #92400e; padding: 1px 7px; border-radius: 99px; font-size: .65rem; font-weight: 600; }
 
 .cat-section { padding: 0 1rem; }
@@ -985,22 +1063,25 @@ body { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
     } catch (\Throwable $e) {}
 @endphp
 <div class="app-topbar" id="appTopbar">
-    <div class="d-flex justify-content-between align-items-center">
-        <div>
+    <div class="topbar-row">
+        <div class="topbar-brand">
             <h4>
                 <span class="logo-icon">
                     <img src="{{ $brandLogoUrl }}" alt="{{ $brandName }}" loading="eager">
                 </span>
-                {{ $brandName }}
+                <span class="brand-text">
+                    <span class="brand-text__name">{{ $brandName }}</span>
+                    <span class="brand-text__tag"><i class="bi bi-geo-alt-fill"></i> {{ $session->table?->branch?->name ?: 'فرعنا' }}</span>
+                </span>
             </h4>
-            <div class="sub mt-1">
-                <span class="table-big"><i class="bi bi-grid-3x3-gap"></i> طاولة {{ $session->table->number ?? '—' }}</span>
+            <div class="sub">
+                <span class="table-big"><i class="bi bi-grid-3x3-gap-fill"></i> طاولة {{ $session->table->number ?? '—' }}</span>
                 @if($session->customer_name)
-                    <span class="chip"><i class="bi bi-person"></i> {{ $session->customer_name }}</span>
+                    <span class="chip"><i class="bi bi-person-circle"></i> {{ $session->customer_name }}</span>
                 @endif
             </div>
         </div>
-        <div class="d-flex align-items-center gap-2">
+        <div class="topbar-actions">
             {{-- Currency switcher — hidden by default. Enable via config
                  `restaurant.customer.currency_switcher` when you need
                  multi-currency UX. --}}
@@ -1045,6 +1126,52 @@ body { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
         </div>
     </div>
 </div>
+
+<style>
+    /* ── Topbar layout polish ──────────────────────── */
+    .topbar-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+    }
+    .topbar-brand { min-width: 0; flex-grow: 1; }
+    .topbar-actions {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        flex-shrink: 0;
+        padding-top: 4px;
+    }
+    .brand-text {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        line-height: 1.1;
+    }
+    .brand-text__name {
+        display: block;
+        font-size: clamp(1.1rem, 2.8vw, 1.3rem);
+        font-weight: 900;
+        letter-spacing: -.015em;
+    }
+    .brand-text__tag {
+        display: inline-flex;
+        align-items: center;
+        gap: .2rem;
+        font-size: .68rem;
+        font-weight: 700;
+        opacity: .85;
+        margin-top: 2px;
+        color: rgba(255, 255, 255, .8);
+    }
+    .brand-text__tag i { color: rgba(184, 135, 42, .9); font-size: .7rem; }
+
+    @media (max-width: 480px) {
+        .app-topbar .sub { margin-inline-start: 56px; }
+        .topbar-actions { flex-direction: column-reverse; gap: .35rem; }
+    }
+</style>
 
 <div class="toast-stack" id="toastStack" aria-live="polite" aria-atomic="true">
 @if(session('success'))<div class="flash" data-tone="success"><i class="bi bi-check-circle-fill"></i><span>{{ session('success') }}</span></div>@endif

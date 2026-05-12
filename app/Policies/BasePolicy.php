@@ -8,13 +8,23 @@ use Illuminate\Database\Eloquent\Model;
 abstract class BasePolicy
 {
     /**
-     * Global owner-level bypass + suspended-user kill switch.
+     * Owner-level bypass + suspended-user kill switch.
      *
-     *   - Owner-level (SuperAdmin + Partner) → true (skips every per-method
-     *     check). The two roles are treated identically for business-level
-     *     authorization; system-level UIs gate them separately when needed.
+     *   - Owner-level (SuperAdmin + Partner) → true (skips per-method checks
+     *     for class-level ownership). Defensive state guards still live in
+     *     SERVICES (`StockCountService::finalize` throws if not editable,
+     *     `BillingService::addPayment` throws if invoice locked, etc.) so
+     *     the irreversible mutations are protected even with this bypass.
      *   - Suspended  → false (denies everything outright).
      *   - Otherwise  → null (let the specific method decide).
+     *
+     * NOTE — earlier security review flagged that this can let owners
+     * trigger illegal state transitions (e.g. updating a paid invoice).
+     * The fix is NOT to lock down `before()` (that breaks every legitimate
+     * owner operation, since per-method policies don't currently re-check
+     * `isOwnerLevel`); instead, add the state guard to the SERVICE that
+     * performs the mutation. Policies answer "who can call this?" — services
+     * answer "is this record currently in a state where the call is legal?".
      */
     public function before(User $user, string $ability): ?bool
     {

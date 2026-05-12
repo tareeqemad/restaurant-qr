@@ -113,6 +113,7 @@
             <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-general"><i class="bi bi-building"></i> عام</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-billing"><i class="bi bi-receipt"></i> الفوترة</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-operations"><i class="bi bi-sliders"></i> التشغيل</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-discounts"><i class="bi bi-percent"></i> الخصومات</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-brand"><i class="bi bi-image"></i> الشعار</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-theme"><i class="bi bi-palette"></i> الهوية</a></li>
             <li class="nav-item">
@@ -238,6 +239,20 @@
                                         value="{{ $read('customer_cancel_window_seconds', config('restaurant.order.customer_cancel_window_seconds', 120)) }}" required>
                                     <div class="setting-hint mt-1">0 يعني لا يسمح للزبون بالإلغاء من شاشة QR.</div>
                                 </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">هامش وقت التحضير %</label>
+                                    <div class="input-group">
+                                        <input type="number" min="0" max="200" step="1"
+                                               name="prep_time_buffer_pct" class="form-control"
+                                               value="{{ $read('prep_time_buffer_pct', 20) }}">
+                                        <span class="input-group-text">%</span>
+                                    </div>
+                                    <div class="setting-hint mt-1">
+                                        نسبة إضافية فوق وقت تحضير أطول صنف في الطلب لحساب الوقت المتوقع
+                                        للزبون والمطبخ. مثال: برغر 12 د + هامش 20% = 14.4 د كـ ETA.
+                                        ارفعه لو المطبخ بطيء أو تحت ضغط.
+                                    </div>
+                                </div>
                                 <div class="col-md-4 d-flex align-items-end">
                                     <div class="form-check form-switch">
                                         <input type="hidden" name="customer_currency_switcher" value="0">
@@ -263,6 +278,62 @@
                                         الطلبات تبقى بانتظار اعتماد الجرسون حتى لا يذهب شيء للمطبخ/البار بالخطأ.
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-pane fade" id="tab-discounts">
+                    <div class="settings-card card">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="bi bi-percent text-accent"></i> سقوف الخصم لكل دور</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="alert bg-primary-transparent border-0 mb-3">
+                                <i class="bi bi-info-circle"></i>
+                                هذه السقوف تحدد الحد الأقصى للخصم الذي يقدر الموظف يطبقه على فاتورة من شاشة الكاشير.
+                                <strong>السوبر أدمن والشريك بدون سقف</strong>. لو الموظف حاول خصم أكبر من سقفه، النظام يرفض ويطلب موافقة مدير.
+                                <br>
+                                <small class="text-muted">
+                                    <i class="bi bi-tags"></i>
+                                    لإدارة <strong>تصنيفات أسباب الخصم</strong> (عميل دائم، شكوى، …) من
+                                    <a href="{{ route('admin.lookups.index') }}#group=discount_categories">شاشة الثوابت</a>.
+                                </small>
+                            </div>
+
+                            @php
+                                $caps = config('restaurant.discounts.caps', []);
+                                $currency = \App\Models\Setting::get('currency_symbol', config('restaurant.currency_symbol', '₪'));
+                                $roleLabels = ['cashier' => 'الكاشير', 'waiter' => 'الجرسون', 'manager' => 'مدير الفرع'];
+                            @endphp
+
+                            <div class="row g-3">
+                                @foreach($roleLabels as $role => $label)
+                                    @php $defaults = $caps[$role] ?? ['percent' => 0, 'fixed' => 0]; @endphp
+                                    <div class="col-md-4">
+                                        <div class="card border" style="background:#fafdfa; border-color:#d6eadc !important;">
+                                            <div class="card-body">
+                                                <h6 class="fw-bold mb-3" style="color:#14532d;">
+                                                    <i class="bi bi-person-badge"></i> {{ $label }}
+                                                </h6>
+                                                <div class="mb-3">
+                                                    <label class="form-label small">حد النسبة (%)</label>
+                                                    <input type="number" min="0" max="100" step="0.5"
+                                                           name="discount_cap_{{ $role }}_pct"
+                                                           class="form-control"
+                                                           value="{{ $read('discount_cap_'.$role.'_pct', $defaults['percent']) }}">
+                                                </div>
+                                                <div class="mb-0">
+                                                    <label class="form-label small">حد المبلغ الثابت ({{ $currency }})</label>
+                                                    <input type="number" min="0" step="0.01"
+                                                           name="discount_cap_{{ $role }}_fixed"
+                                                           class="form-control"
+                                                           value="{{ $read('discount_cap_'.$role.'_fixed', $defaults['fixed']) }}">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                @endforeach
                             </div>
                         </div>
                     </div>
@@ -532,7 +603,7 @@
 <script>
     (function () {
         const saveRow = document.getElementById('settingsSaveRow');
-        const mainTabs = ['#tab-general', '#tab-billing', '#tab-operations', '#tab-theme'];
+        const mainTabs = ['#tab-general', '#tab-billing', '#tab-operations', '#tab-discounts', '#tab-theme'];
 
         function syncSaveRow() {
             const active = document.querySelector('.settings-shell .tab-pane.active')?.id;

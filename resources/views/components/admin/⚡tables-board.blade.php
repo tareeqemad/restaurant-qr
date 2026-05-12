@@ -38,6 +38,7 @@ new class extends Component
                 ->with('items.station')
                 ->latest('created_at'),
             'zone',
+            'branch:id,name',
         ])->orderBy('number');
 
         if ($this->search !== '') {
@@ -86,6 +87,16 @@ new class extends Component
     }
 
     #[Computed]
+    public function availableTables()
+    {
+        return Table::where('active', true)
+            ->where('status', 'available')
+            ->whereDoesntHave('activeSession')
+            ->orderBy('number')
+            ->get(['id', 'number', 'name']);
+    }
+
+    #[Computed]
     public function zones()
     {
         $counts = Table::query()
@@ -120,10 +131,62 @@ new class extends Component
     #[On('echo-private:waiters,.table.status_changed')]
     public function refreshFromBroadcast(): void
     {
-        unset($this->tables, $this->stats, $this->zones);
+        unset($this->tables, $this->availableTables, $this->stats, $this->zones);
     }
 }
 ?>
+
+<style>
+    .tb-card { position: relative; }
+    .tb-actions > .tb-transfer-form {
+        flex: 1 1 100%;
+        display: grid;
+        grid-template-columns: minmax(130px, 1fr) auto;
+        gap: .45rem;
+    }
+    .tb-transfer-select {
+        width: 100%;
+        min-height: 38px;
+        border: 1px solid rgba(15, 23, 42, .12);
+        border-radius: 8px;
+        padding: .45rem .65rem;
+        background: #fff;
+        color: #172033;
+        font-size: .82rem;
+        font-weight: 700;
+    }
+    .tb-btn-transfer {
+        color: #8a5a05;
+        background: #fff8e5;
+        border-color: rgba(245, 158, 11, .28);
+    }
+    .tb-btn-transfer:hover {
+        color: #6f4500;
+        background: #ffefbd;
+    }
+    .tb-branch-tag {
+        position: absolute;
+        top: .55rem;
+        inset-inline-start: .55rem;
+        z-index: 2;
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+        padding: .2rem .55rem;
+        background: rgba(15, 71, 49, .92);
+        color: #fff;
+        font-size: 11px;
+        font-weight: 700;
+        border-radius: 999px;
+        backdrop-filter: blur(4px);
+        max-width: 60%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, .12);
+    }
+    .tb-branch-tag i { font-size: 10px; flex-shrink: 0; }
+</style>
 
 <div class="tables-board" wire:poll.visible.15s="refreshFromBroadcast">
     @php
@@ -254,6 +317,7 @@ new class extends Component
 
     @php
         $tables = $this->tables;
+        $availableTransferTables = $this->availableTables;
         $priorityTables = $tables
             ->map(function ($table) {
                 $session = $table->activeSession;
@@ -385,9 +449,22 @@ new class extends Component
                     $zoneColor = $t->zone->color ?? '#667085';
                 @endphp
 
+                @php
+                    // Show branch tag only when the admin is in "all branches"
+                    // mode — within a single branch context every card belongs
+                    // to the same place, so the badge would be noise.
+                    $showBranchTag = \App\Support\BranchContext::current() === null && $t->branch;
+                @endphp
                 <article class="tb-card tb-card--{{ $statusClass }} {{ $session ? 'is-active' : '' }} {{ $needsAttention ? 'needs-attention' : '' }} {{ $readyCount > 0 ? 'has-ready' : '' }}"
                     style="--status-color: {{ $meta['color'] }}; --zone-color: {{ $zoneColor }};">
                     <div class="tb-card-statusbar"></div>
+
+                    @if($showBranchTag)
+                        <span class="tb-branch-tag" title="فرع {{ $t->branch->name }}">
+                            <i class="bi bi-building"></i>
+                            <span>{{ $t->branch->name }}</span>
+                        </span>
+                    @endif
 
                     <div class="tb-card-main">
                         <div class="tb-table-identity">
@@ -477,6 +554,17 @@ new class extends Component
                                         <i class="bi bi-hourglass-split"></i>
                                         جلسة طويلة تحتاج متابعة
                                     </span>
+                                    @if($orderCount === 0)
+                                        <form action="{{ route('admin.tables.close-session', $t) }}" method="POST"
+                                              class="m-0"
+                                              onsubmit="return confirm('إغلاق الجلسة الراكدة على طاولة {{ $t->number }}؟ (لا توجد طلبات عليها)');">
+                                            @csrf
+                                            <button type="submit" class="tb-attention tb-attention--long" style="border:0;cursor:pointer;background:transparent;width:100%;text-align:right;">
+                                                <i class="bi bi-x-circle"></i>
+                                                إغلاق الجلسة الراكدة
+                                            </button>
+                                        </form>
+                                    @endif
                                 @endif
                             </div>
                         @endif
@@ -489,29 +577,54 @@ new class extends Component
                                 <span>تشغيل</span>
                             </a>
                         @endif
+                        @can('transfer', $t)
+                            @if($session && $availableTransferTables->isNotEmpty())
+                                <form action="{{ route('admin.tables.transfer', $t) }}" method="POST"
+                                    class="tb-transfer-form"
+                                    onsubmit="return confirm('نقل جلسة طاولة {{ $t->number }} إلى الطاولة المختارة؟');">
+                                    @csrf
+                                    <select name="target_table_id" class="tb-transfer-select" required aria-label="نقل الجلسة إلى طاولة">
+                                        <option value="">نقل إلى...</option>
+                                        @foreach($availableTransferTables as $availableTable)
+                                            <option value="{{ $availableTable->id }}">
+                                                طاولة {{ $availableTable->number }}{{ $availableTable->name ? ' - '.$availableTable->name : '' }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                    <button type="submit" class="tb-btn tb-btn-transfer" title="نقل الجلسة">
+                                        <i class="bi bi-arrow-left-right"></i>
+                                        <span>نقل</span>
+                                    </button>
+                                </form>
+                            @endif
+                        @endcan
                         <a href="{{ route('admin.tables.qr-print', $t) }}" class="tb-btn" title="طباعة QR">
                             <i class="bi bi-qr-code"></i>
                             <span>QR</span>
                         </a>
-                        <a href="{{ route('admin.tables.edit', $t) }}" class="tb-btn" title="تعديل الطاولة">
-                            <i class="bi bi-pencil-square"></i>
-                            <span>تعديل</span>
-                        </a>
+                        @can('update', $t)
+                            <a href="{{ route('admin.tables.edit', $t) }}" class="tb-btn" title="تعديل الطاولة">
+                                <i class="bi bi-pencil-square"></i>
+                                <span>تعديل</span>
+                            </a>
+                        @endcan
                         @if($session && $orderCount > 0)
                             <a href="{{ route('admin.cashier.show', $session) }}" class="tb-btn tb-btn-primary" title="الكاشير">
                                 <i class="bi bi-cash-stack"></i>
                                 <span>كاشير</span>
                             </a>
                         @endif
-                        <form action="{{ route('admin.tables.destroy', $t) }}" method="POST"
-                            onsubmit="return confirm('تأكيد حذف الطاولة {{ $t->number }}؟')">
-                            @csrf
-                            @method('DELETE')
-                            <button type="submit" class="tb-btn tb-btn-danger" title="حذف الطاولة">
-                                <i class="bi bi-trash"></i>
-                                <span>حذف</span>
-                            </button>
-                        </form>
+                        @can('delete', $t)
+                            <form action="{{ route('admin.tables.destroy', $t) }}" method="POST"
+                                onsubmit="return confirm('تأكيد حذف الطاولة {{ $t->number }}؟')">
+                                @csrf
+                                @method('DELETE')
+                                <button type="submit" class="tb-btn tb-btn-danger" title="حذف الطاولة">
+                                    <i class="bi bi-trash"></i>
+                                    <span>حذف</span>
+                                </button>
+                            </form>
+                        @endcan
                     </div>
                 </article>
             @endforeach

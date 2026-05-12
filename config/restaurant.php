@@ -46,4 +46,20 @@ return [
         // Set to false to allow over-selling (not recommended — demos only).
         'strict_stock' => env('RESTAURANT_STRICT_STOCK', true),
     ],
+
+    // Cashier-applied discounts. Caps are role-keyed defaults; the running
+    // value comes from the Settings table when present (key:
+    // `discount_cap_<role>_pct` / `..._fixed`) so admins can tune them at
+    // runtime from /admin/settings without redeploying. Owner-level
+    // (super_admin/partner) is uncapped — `OrderDiscountService::userCap()`
+    // returns null for them. The `categories` catalog itself lives in the
+    // `lookups` table (group: `discount_categories`).
+    'discounts' => [
+        'caps' => [
+            'cashier' => ['percent' => 10, 'fixed' => 5],
+            'waiter'  => ['percent' => 5,  'fixed' => 3],
+            'manager' => ['percent' => 25, 'fixed' => 50],
+            'admin'   => ['percent' => 100, 'fixed' => 9999],
+        ],
+    ],
 ];

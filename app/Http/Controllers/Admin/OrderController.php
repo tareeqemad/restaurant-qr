@@ -113,6 +113,24 @@ class OrderController extends Controller
             $query->where('total', '<=', (float) $max);
         }
 
+        // Delayed-only filter — show orders where the actual prep time
+        // exceeded the estimate by ≥ 1 minute. Uses TIMESTAMPDIFF for an
+        // index-friendly comparison vs. PHP-side filtering after pagination.
+        // Only meaningful for orders that completed the preparing phase.
+        if ($request->boolean('delayed_only')) {
+            $query->whereNotNull('prep_started_at')
+                  ->whereNotNull('ready_at')
+                  ->whereNotNull('estimated_prep_minutes')
+                  ->where('estimated_prep_minutes', '>', 0)
+                  // Skip rows where ready_at < prep_started_at (the
+                  // order was retroactively re-stamped after completion).
+                  // These would otherwise show up as "extreme delay".
+                  ->where('ready_at', '>=', DB::raw('prep_started_at'))
+                  ->whereRaw(
+                      'CAST(TIMESTAMPDIFF(MINUTE, prep_started_at, ready_at) AS SIGNED) > CAST(estimated_prep_minutes AS SIGNED)'
+                  );
+        }
+
         $sort = $request->get('sort', 'created_at');
         $dir  = $request->get('dir', 'desc') === 'asc' ? 'asc' : 'desc';
         if (in_array($sort, ['created_at', 'total', 'number'], true)) {
@@ -139,6 +157,48 @@ class OrderController extends Controller
               'net'         => (float) (clone $statsBase)->sum(DB::raw('total * (1 - platform_commission_pct / 100)')),
           ];
 
+          // ─── Prep-timing KPIs ─────────────────────────────────────
+          // Only orders that completed the preparing phase have meaningful
+          // numbers. We compute three things in one query:
+          //   - total measured orders (denominator)
+          //   - avg actual prep minutes
+          //   - avg variance vs estimate (positive = late, negative = early)
+          //   - on-time count (variance ≤ 0)
+          // All scoped to the same filtered window so KPIs match the table.
+          // CAST both sides to SIGNED so the subtraction can yield negative
+          // values (early-finished orders). Without the cast MySQL treats the
+          // operands as BIGINT UNSIGNED and any negative delta overflows
+          // with "Numeric value out of range".
+          $timingRow = (clone $statsBase)
+              ->whereNotNull('prep_started_at')
+              ->whereNotNull('ready_at')
+              ->whereNotNull('estimated_prep_minutes')
+              ->where('estimated_prep_minutes', '>', 0)
+              // Same guard as the delayed_only filter — exclude rows where
+              // ready_at predates prep_started_at so a corrupted historical
+              // order doesn't tank the on-time KPI.
+              ->where('ready_at', '>=', DB::raw('prep_started_at'))
+              ->select([
+                  DB::raw('COUNT(*) as total_measured'),
+                  DB::raw('AVG(TIMESTAMPDIFF(MINUTE, prep_started_at, ready_at)) as avg_actual_min'),
+                  DB::raw('AVG(CAST(TIMESTAMPDIFF(MINUTE, prep_started_at, ready_at) AS SIGNED) - CAST(estimated_prep_minutes AS SIGNED)) as avg_delay_min'),
+                  DB::raw('SUM(CASE WHEN CAST(TIMESTAMPDIFF(MINUTE, prep_started_at, ready_at) AS SIGNED) <= CAST(estimated_prep_minutes AS SIGNED) THEN 1 ELSE 0 END) as on_time_count'),
+                  DB::raw('SUM(CASE WHEN CAST(TIMESTAMPDIFF(MINUTE, prep_started_at, ready_at) AS SIGNED) > CAST(estimated_prep_minutes AS SIGNED) THEN 1 ELSE 0 END) as late_count'),
+              ])
+              ->first();
+
+          $measured = (int) ($timingRow->total_measured ?? 0);
+          $timingStats = [
+              'measured'      => $measured,
+              'avg_actual'    => (float) ($timingRow->avg_actual_min ?? 0),
+              'avg_delay'     => (float) ($timingRow->avg_delay_min ?? 0),
+              'on_time'       => (int) ($timingRow->on_time_count ?? 0),
+              'late'          => (int) ($timingRow->late_count ?? 0),
+              'on_time_pct'   => $measured > 0
+                  ? round(((int) $timingRow->on_time_count / $measured) * 100, 1)
+                  : null,
+          ];
+
           $sourceBreakdown = (clone $statsBase)
               ->select('order_source', DB::raw('COUNT(*) as count'), DB::raw('SUM(total) as total'))
               ->groupBy('order_source')
@@ -162,7 +222,9 @@ class OrderController extends Controller
                 'max_total' => $request->get('max_total'),
                 'sort'      => $sort,
                 'dir'       => $dir,
+                'delayed_only' => $request->boolean('delayed_only'),
               ],
+              'timingStats' => $timingStats,
               'statuses' => OrderStatus::cases(),
               'sources'  => OrderSource::cases(),
               'orderTypes' => [

@@ -62,7 +62,16 @@ class MenuController extends Controller
             $rememberedCustomerId = null;
             $rememberedCustomer = null;
 
-            if (! $portalCustomerId && $cookieId = (int) $request->cookie('qr_customer_id')) {
+            // Skip the soft-remember-me path when a STAFF user is signed in
+            // on this browser (admin / waiter / cashier opening the table
+            // URL to QA the customer flow). Without this guard the table
+            // would inherit whoever last scanned from this device, and the
+            // admin would be greeted as a regular — confusing during tests
+            // and wrong in spirit (admin is not a customer).
+            $staffSignedIn = Auth::guard('web')->check();
+
+            if (! $portalCustomerId && ! $staffSignedIn
+                && $cookieId = (int) $request->cookie('qr_customer_id')) {
                 $rememberedCustomer = Customer::where('status', 'active')->find($cookieId);
                 $rememberedCustomerId = $rememberedCustomer?->id;
             }
@@ -124,5 +133,30 @@ class MenuController extends Controller
         return view('customer.menu', compact(
             'categories', 'session', 'cart', 'cartTotal', 'featured', 'portalCustomer'
         ));
+    }
+
+    /**
+     * Dismiss the guest-targeted promo banner for the rest of this session.
+     * Uses the session flag (not a cookie) so it auto-resets the next time
+     * the diner scans a fresh QR — admins still get the conversion chance
+     * on each new visit.
+     *
+     * The id is a plain int from the URL because the banner targets
+     * anonymous sessions; we don't want to require the announcement to
+     * pass branch context here. We sanity-check it exists + is the guests
+     * channel before stamping the flag.
+     */
+    public function dismissGuestPromo(Request $request, int $id)
+    {
+        $exists = \App\Models\Announcement::withoutGlobalScopes()
+            ->where('id', $id)
+            ->where('audience_type', 'guests')
+            ->exists();
+
+        if ($exists) {
+            session()->put('guest_promo_dismissed_'.$id, true);
+        }
+
+        return back();
     }
 }

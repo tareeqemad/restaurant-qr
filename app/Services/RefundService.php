@@ -71,6 +71,9 @@ class RefundService
             $status = $opts['status'] ?? 'completed';
 
             $refund = Refund::create([
+                // Stamp branch_id from the invoice (NOT BranchContext) —
+                // refunds may be processed from a different active branch.
+                'branch_id'    => $invoice->branch_id,
                 'number'       => Refund::generateNumber(),
                 'invoice_id'   => $invoice->id,
                 'payment_id'   => $opts['payment_id'] ?? null,

@@ -10,7 +10,9 @@ use App\Models\Expense;
 use App\Models\Ingredient;
 use App\Models\Lookup;
 use App\Models\MenuItem;
+use App\Models\Announcement;
 use App\Models\Order;
+use App\Models\OrderDiscount;
 use App\Models\Payment;
 use App\Models\PurchaseOrder;
 use App\Models\RecipeItem;
@@ -18,6 +20,7 @@ use App\Models\Refund;
 use App\Models\Reservation;
 use App\Models\Review;
 use App\Models\Role;
+use App\Models\Shift;
 use App\Models\Station;
 use App\Models\StockCount;
 use App\Models\Supplier;
@@ -35,6 +38,8 @@ use App\Policies\ExpensePolicy;
 use App\Policies\InventoryPolicy;
 use App\Policies\LookupPolicy;
 use App\Policies\MenuPolicy;
+use App\Policies\AnnouncementPolicy;
+use App\Policies\OrderDiscountPolicy;
 use App\Policies\OrderPolicy;
 use App\Policies\PaymentPolicy;
 use App\Policies\PurchaseOrderPolicy;
@@ -42,6 +47,7 @@ use App\Policies\RefundPolicy;
 use App\Policies\ReservationPolicy;
 use App\Policies\ReviewPolicy;
 use App\Policies\RolePolicy;
+use App\Policies\ShiftPolicy;
 use App\Policies\StockCountPolicy;
 use App\Policies\SupplierInvoicePolicy;
 use App\Policies\SupplierPolicy;
@@ -74,12 +80,24 @@ class AppServiceProvider extends ServiceProvider
             TrustProxies::at($trustedProxies);
         }
 
+        // Livewire's update endpoint sits outside the `branch` middleware,
+        // so without this any computed property that calls Lookup::for(...)
+        // sees a NULL branch context and returns no rows. Marking
+        // SetActiveBranch as persistent makes Livewire run it on every
+        // wire:click round-trip — keeping zone chips, branch-scoped
+        // dropdowns, etc. stable after the initial page render.
+        \Livewire\Livewire::addPersistentMiddleware([
+            \App\Http\Middleware\SetActiveBranch::class,
+        ]);
+
         Gate::policy(User::class, UserPolicy::class);
         Gate::policy(Role::class, RolePolicy::class);
         Gate::policy(MenuItem::class, MenuPolicy::class);
         Gate::policy(Order::class, OrderPolicy::class);
         Gate::policy(Table::class, TablePolicy::class);
         Gate::policy(Payment::class, PaymentPolicy::class);
+        Gate::policy(OrderDiscount::class, OrderDiscountPolicy::class);
+        Gate::policy(Announcement::class, AnnouncementPolicy::class);
         Gate::policy(Ingredient::class, InventoryPolicy::class);
         Gate::policy(Supplier::class, SupplierPolicy::class);
         Gate::policy(PurchaseOrder::class, PurchaseOrderPolicy::class);
@@ -94,6 +112,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Expense::class, ExpensePolicy::class);
         Gate::policy(Lookup::class, LookupPolicy::class);
         Gate::policy(Customer::class, CustomerPolicy::class);
+        Gate::policy(Shift::class, ShiftPolicy::class);
 
         // Model observers — keep menu-item costs in sync with recipes.
         Ingredient::observe(IngredientObserver::class);

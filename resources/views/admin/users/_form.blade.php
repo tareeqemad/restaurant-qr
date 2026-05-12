@@ -1,4 +1,23 @@
 @csrf
+
+{{-- ─── Quick guide on creating a user ─────────────────────────────
+     Three required steps shown in order. Removed in May 2026 was a
+     two-card panel explaining the difference between "system role"
+     and "per-branch role override" — the override was retired so
+     only one role concept remains, and the panel is now obsolete. --}}
+<div class="user-quick-guide mb-3">
+    <div class="user-quick-guide__icon">
+        <i class="bi bi-lightbulb-fill"></i>
+    </div>
+    <div class="user-quick-guide__body">
+        <strong>كيف تنشئ مستخدماً؟</strong>
+        ١) عبّي بياناته الأساسية ←
+        ٢) اختر <b>هويّته في النظام</b> (كاشير/مدير/شيف…) ←
+        ٣) علّم <b>الفرع/الفروع</b> اللي يعمل فيها.
+        المستخدم يدخل تلقائياً للفرع الأساسي، ويرى فقط الفروع المعيَّن إليها.
+    </div>
+</div>
+
 <div class="row g-3">
     <div class="col-md-6"><label class="form-label">الاسم *</label>
         <input type="text" name="name" value="{{ old('name', $user->name ?? '') }}" class="form-control" required></div>
@@ -11,12 +30,40 @@
     <div class="col-md-4"><label class="form-label">الهاتف</label>
         <input type="text" name="phone" value="{{ old('phone', $user->phone ?? '') }}" class="form-control"></div>
 
-    <div class="col-md-4"><label class="form-label">الدور *</label>
-        <select name="role" class="form-select" required>
+    <div class="col-md-4">
+        <label class="form-label d-flex align-items-center gap-1">
+            الدور <span class="text-danger">*</span>
+            <small class="text-muted ms-1"
+                   title="دور المستخدم في النظام: مدير، كاشير، شيف… يحدد الصلاحيات الافتراضية في كل فروعه.">
+                <i class="bi bi-info-circle"></i>
+            </small>
+        </label>
+        {{-- Empty default placeholder so we never accidentally save with the
+             first role auto-selected (used to default to "super_admin" in the
+             worst case). User MUST consciously pick a role; HTML5 + server-side
+             `required` rule both reject submission with no value. --}}
+        <select name="role"
+                class="form-select @error('role') is-invalid @enderror"
+                required>
+            <option value="" @selected(old('role', $user->role ?? '') === '')>
+                — اختر الدور —
+            </option>
             @foreach($roles as $v => $label)
-                <option value="{{ $v }}" @selected(old('role', $user->role ?? '')===$v)>{{ $label }}</option>
+                <option value="{{ $v }}" @selected(old('role', $user->role ?? '') === $v)>
+                    {{ $label }}
+                </option>
             @endforeach
         </select>
+        @error('role')
+            <div class="invalid-feedback d-block">
+                <i class="bi bi-exclamation-triangle-fill"></i>
+                {{ $message }}
+            </div>
+        @enderror
+        <small class="text-muted d-block mt-1" style="font-size:.72rem">
+            <i class="bi bi-info-circle"></i>
+            مثال: «كاشير» = يقدر يستخدم شاشة الكاشير ويسجل الفواتير في فروعه.
+        </small>
     </div>
     <div class="col-md-4"><label class="form-label">المحطة</label>
         <select name="station_id" class="form-select">
@@ -47,23 +94,51 @@
      don't need a branch (BranchScope skips them), but assigning one is
      still recommended so scoped UIs have a sensible default. --}}
 @php
-    $current        = isset($user) ? $user->branches->keyBy('id') : collect();
-    $oldSelected    = (array) old('branches', $current->keys()->all());
-    $oldRoleMap     = (array) old('branch_roles', $current->mapWithKeys(fn($b) => [$b->id => $b->pivot->role_id])->all());
-    $oldPrimaryId   = (int)   old('primary_branch_id', $current->firstWhere(fn($b) => (bool) $b->pivot->is_primary)?->id ?? ($oldSelected[0] ?? 0));
+    // $oldRoleMap removed — per-branch role overrides were dropped May 2026.
+    $current      = isset($user) ? $user->branches->keyBy('id') : collect();
+    $oldSelected  = (array) old('branches', $current->keys()->all());
+    $oldPrimaryId = (int)   old('primary_branch_id', $current->firstWhere(fn($b) => (bool) $b->pivot->is_primary)?->id ?? ($oldSelected[0] ?? 0));
 @endphp
 
-<div class="branch-assign mt-4">
+@php
+    // Branches are required for everyone except owner-level roles.
+    $selectedRole = old('role', $user->role ?? '');
+    $isOwnerLevelRole = in_array($selectedRole, \App\Enums\UserRole::ownerRoles(), true);
+    $branchesRequired = ! $isOwnerLevelRole;
+@endphp
+
+<div class="branch-assign mt-4 @error('branches') has-error @enderror">
     <div class="branch-assign__head">
         <i class="bi bi-buildings"></i>
-        <div>
-            <div class="branch-assign__title">الفروع المُعيَّن إليها</div>
+        <div class="flex-grow-1">
+            <div class="branch-assign__title">
+                الفروع المُعيَّن إليها
+                @if($branchesRequired)
+                    <span class="text-danger">*</span>
+                @else
+                    <small class="text-muted ms-1">(اختياري للأدوار الإدارية العليا)</small>
+                @endif
+            </div>
             <div class="branch-assign__hint">
-                اختر الفروع التي يعمل فيها هذا المستخدم، وحدِّد الدور الخاص بكل فرع.
+                اختر الفروع التي يعمل فيها هذا المستخدم.
                 علِّم فرعاً واحداً كـ«أساسي» — وهو الذي يفتح تلقائياً عند الدخول.
+                @if($branchesRequired)
+                    <strong class="text-danger d-block mt-1">
+                        <i class="bi bi-exclamation-circle-fill"></i>
+                        اختيار فرع واحد على الأقل إجباري — بدونه لا يستطيع المستخدم الوصول لأي شاشة.
+                    </strong>
+                @endif
             </div>
         </div>
     </div>
+
+    @error('branches')
+        <div class="alert alert-danger d-flex align-items-center gap-2 mb-3"
+             style="border-radius: 12px; padding: .8rem 1rem;">
+            <i class="bi bi-exclamation-triangle-fill fs-18"></i>
+            <span><strong>{{ $message }}</strong></span>
+        </div>
+    @enderror
 
     @if($branches->isEmpty())
         <div class="alert alert-warning mb-0">
@@ -72,25 +147,53 @@
             <a href="{{ route('admin.branches.create') }}">أنشئ فرعاً أولاً</a>.
         </div>
     @else
+        @php
+            // $accessibleBranchIds is the allowlist for this admin. Branches
+            // outside it render as locked (read-only with a 🔒). The server
+            // controller has the same allowlist as defense-in-depth.
+            $accessibleIds = array_map('intval', $accessibleBranchIds ?? []);
+            $hasLocked = collect($branches)->contains(fn ($b) => ! in_array((int) $b->id, $accessibleIds, true));
+        @endphp
+
+        @if($hasLocked)
+            <div class="alert alert-info py-2 mb-3 small">
+                <i class="bi bi-shield-lock-fill"></i>
+                الفروع الموسومة بـ 🔒 خارج نطاق صلاحيتك — لا تستطيع إضافتها أو إزالتها.
+                @if(isset($user) && $user->branches->whereNotIn('id', $accessibleIds)->isNotEmpty())
+                    تُعرض هنا فقط للعلم؛ تعديلاتك تطبَّق على فروعك أنت.
+                @endif
+            </div>
+        @endif
+
         <div class="branch-assign__grid">
             @foreach($branches as $branch)
                 @php
-                    $isChecked  = in_array($branch->id, $oldSelected);
-                    $rowRoleId  = $oldRoleMap[$branch->id] ?? null;
-                    $isPrimary  = $oldPrimaryId === $branch->id;
+                    $isAccessible = in_array((int) $branch->id, $accessibleIds, true);
+                    $isChecked    = in_array($branch->id, $oldSelected);
+                    $isPrimary    = $oldPrimaryId === $branch->id;
                 @endphp
-                <div class="branch-assign__card {{ $isChecked ? 'is-on' : '' }}"
-                     data-branch-card="{{ $branch->id }}">
+                <div class="branch-assign__card {{ $isChecked ? 'is-on' : '' }} {{ $isAccessible ? '' : 'is-locked' }}"
+                     data-branch-card="{{ $branch->id }}"
+                     @if(! $isAccessible) title="خارج نطاق صلاحيتك" @endif>
 
                     <label class="branch-assign__row">
+                        {{-- Disabled checkboxes don't submit, so an out-of-scope
+                             card never sends its branch_id. The server also
+                             filters the array (defense in depth). --}}
                         <input type="checkbox"
                                name="branches[]"
                                value="{{ $branch->id }}"
                                class="branch-assign__check"
                                data-branch-id="{{ $branch->id }}"
-                               @checked($isChecked)>
+                               @checked($isChecked)
+                               @disabled(! $isAccessible)>
                         <span class="branch-assign__row-body">
-                            <span class="branch-assign__name">{{ $branch->name }}</span>
+                            <span class="branch-assign__name">
+                                {{ $branch->name }}
+                                @unless($isAccessible)
+                                    <i class="bi bi-lock-fill text-muted ms-1" title="خارج نطاق صلاحيتك"></i>
+                                @endunless
+                            </span>
                             <span class="branch-assign__meta">
                                 <code>{{ $branch->code }}</code>
                                 @if($branch->city) · {{ $branch->city }} @endif
@@ -98,28 +201,18 @@
                         </span>
                     </label>
 
+                    {{-- The per-branch role dropdown was removed in May 2026
+                         (the team always relied on the global users.role).
+                         Only the "primary branch" radio remains here. --}}
                     <div class="branch-assign__opts">
-                        <div>
-                            <label class="form-label small mb-1">الدور في الفرع</label>
-                            <select name="branch_roles[{{ $branch->id }}]"
-                                    class="form-select form-select-sm">
-                                <option value="">— اختر دور —</option>
-                                @foreach($branchRoles as $role)
-                                    <option value="{{ $role->id }}"
-                                            @selected($rowRoleId == $role->id)>
-                                        {{ $role->label }}{{ $role->branch_id ? '' : ' (قالب عام)' }}
-                                    </option>
-                                @endforeach
-                            </select>
-                        </div>
-
                         <label class="branch-assign__primary">
                             <input type="radio"
                                    name="primary_branch_id"
                                    value="{{ $branch->id }}"
-                                   @checked($isPrimary)>
+                                   @checked($isPrimary)
+                                   @disabled(! $isAccessible)>
                             <i class="bi bi-star-fill"></i>
-                            أساسي
+                            أساسي <small class="text-muted">(الفرع الذي يفتح عند الدخول)</small>
                         </label>
                     </div>
                 </div>
@@ -135,6 +228,85 @@
 
 @push('styles')
 <style>
+    /* ─── Quick guide banner (replaces the old two-card clarifier) ─ */
+    .user-quick-guide {
+        display: flex; gap: .75rem; align-items: flex-start;
+        background: linear-gradient(90deg, #eff6ff 0%, #fff 100%);
+        border: 1px solid #bfdbfe;
+        border-radius: 12px;
+        padding: .75rem 1rem;
+        color: #1e3a8a;
+        font-size: .88rem;
+        line-height: 1.7;
+    }
+    .user-quick-guide__icon i { color: #2563eb; font-size: 1.3rem; }
+    .user-quick-guide__body b { color: #0f172a; }
+
+    /* Legacy roles-help styles kept hidden — the markup is gone but
+       removing these declarations cleanly is its own pass. They're
+       inert (no element uses these classes any more). */
+    .user-roles-help { display: none; }
+    .user-roles-help__head {
+        display: flex; align-items: center; justify-content: space-between;
+        background: linear-gradient(90deg, #eff6ff 0%, #fff 100%);
+        padding: .75rem 1rem;
+        font-weight: 700; cursor: pointer;
+        color: #1e3a8a;
+        user-select: none;
+    }
+    .user-roles-help__head:hover { background: linear-gradient(90deg, #dbeafe 0%, #fff 100%); }
+    .user-roles-help__head i.bi-question-circle-fill { color: #2563eb; }
+    .user-roles-help__caret { color: #64748b; transition: transform .2s ease; }
+    .user-roles-help[open] .user-roles-help__caret { transform: rotate(180deg); }
+    .user-roles-help__body { padding: 1rem; border-top: 1px solid #f1f5f9; }
+    .user-roles-help__card {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 1rem;
+        height: 100%;
+    }
+    .user-roles-help__card h6 {
+        font-weight: 800;
+        color: #0f172a;
+        margin-bottom: .55rem;
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+    }
+    .user-roles-help__card p {
+        font-size: .82rem;
+        color: #475569;
+        margin-bottom: .5rem;
+        line-height: 1.7;
+    }
+    .user-roles-help__card ul {
+        list-style: none; padding: 0; margin: 0;
+        font-size: .76rem; color: #64748b;
+    }
+    .user-roles-help__card ul li {
+        padding: 2px 0;
+        padding-inline-start: 14px;
+        position: relative;
+    }
+    .user-roles-help__card ul li::before {
+        content: '•';
+        position: absolute;
+        inset-inline-start: 0;
+        color: #94a3b8;
+    }
+
+    /* Error state on the branches section — red ring around the whole
+       block so the user can't miss the required-but-empty signal. */
+    .branch-assign.has-error {
+        outline: 2px solid #fecaca;
+        outline-offset: 4px;
+        border-radius: 12px;
+    }
+    .branch-assign.has-error .branch-assign__head {
+        background: linear-gradient(135deg, #fee2e2 0%, #fef2f2 100%) !important;
+    }
+
     .branch-assign__head {
         display: flex; align-items: flex-start; gap: 12px;
         padding: .9rem 1rem;
@@ -174,6 +346,22 @@
         border-color: rgb(var(--accent-rgb));
         box-shadow: 0 4px 14px rgba(var(--accent-rgb), .15);
     }
+    /* Out-of-scope branch — visually muted, disabled inputs already
+       block interaction; this just signals "you can't touch this". */
+    .branch-assign__card.is-locked {
+        opacity: .55;
+        background: repeating-linear-gradient(
+            45deg,
+            #fafafa,
+            #fafafa 8px,
+            #f1f5f9 8px,
+            #f1f5f9 16px
+        );
+        cursor: not-allowed;
+    }
+    .branch-assign__card.is-locked .branch-assign__row,
+    .branch-assign__card.is-locked .branch-assign__opts { cursor: not-allowed; }
+    .branch-assign__card.is-locked .branch-assign__name i.bi-lock-fill { color: #94a3b8; }
 
     .branch-assign__row {
         display: flex; align-items: center; gap: 10px;

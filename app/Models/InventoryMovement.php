@@ -18,6 +18,7 @@ class InventoryMovement extends Model
         'type', 'quantity', 'unit_id', 'quantity_in_base',
         'unit_cost', 'total_cost', 'stock_before', 'stock_after',
         'reference_type', 'reference_id', 'reason', 'waste_reason',
+        'waste_reason_lookup_id',
         'user_id', 'occurred_at',
     ];
 
@@ -66,5 +67,25 @@ class InventoryMovement extends Model
         return $this->waste_reason
             ? \App\Enums\WasteReason::tryFrom($this->waste_reason)
             : null;
+    }
+
+    /**
+     * The Lookup row driving this waste's reason category. New records
+     * always have this populated; legacy rows pre-FK-migration may not,
+     * in which case `waste_reason` (string) is the source of truth.
+     */
+    public function wasteReasonLookup(): BelongsTo
+    {
+        return $this->belongsTo(Lookup::class, 'waste_reason_lookup_id');
+    }
+
+    /**
+     * Best-effort label resolver — prefers the FK (so renames in the
+     * lookups admin take effect) and falls back to the legacy enum string.
+     */
+    public function wasteReasonLabel(): ?string
+    {
+        return $this->wasteReasonLookup?->label
+            ?? $this->wasteReasonEnum()?->label();
     }
 }

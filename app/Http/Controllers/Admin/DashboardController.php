@@ -521,19 +521,26 @@ class DashboardController extends Controller
         ));
     }
 
+    /**
+     * As of May 2026, Payment::branch_id exists and BelongsToBranch
+     * auto-applies the BranchScope. The legacy whereHas('invoice')
+     * subquery was both slow (correlated subquery on every aggregate)
+     * AND redundant. We keep this helper for call-site stability but
+     * it's now a thin pass-through that lets the global scope do its
+     * job.
+     *
+     * NOTE: $branchId param is ignored — BranchContext is the source of
+     * truth. The dashboard controller resolves $branchId once at the top
+     * and that value is what BranchContext was set to by the middleware,
+     * so passing it here would just duplicate the WHERE.
+     */
     private function branchScopedPayments(?int $branchId): Builder
     {
-        return Payment::query()
-            ->when($branchId, fn (Builder $query) =>
-                $query->whereHas('invoice', fn (Builder $invoice) => $invoice->where('branch_id', $branchId))
-            );
+        return Payment::query();
     }
 
     private function branchScopedRefunds(?int $branchId): Builder
     {
-        return Refund::query()
-            ->when($branchId, fn (Builder $query) =>
-                $query->whereHas('invoice', fn (Builder $invoice) => $invoice->where('branch_id', $branchId))
-            );
+        return Refund::query();
     }
 }

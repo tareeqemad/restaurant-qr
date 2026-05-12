@@ -87,8 +87,31 @@
                         <tbody>
                             @foreach($po->items as $idx => $line)
                                 @php
-                                    $qty = (float) old("lines.$idx.quantity", $line->quantity_received ?: $line->quantity_ordered);
-                                    $price = (float) old("lines.$idx.unit_price", $line->unit_price);
+                                    // Default price: the ACTUAL received price the cashier
+                                    // recorded at receipt time — not the original ordered
+                                    // price on the PO line. Suppliers often deliver at a
+                                    // different price than the quote (market fluctuations,
+                                    // discount applied, premium charged) and the supplier
+                                    // invoice must match the cash they actually want.
+                                    //
+                                    // Resolution order:
+                                    //   1. Weighted-average over all receipts for this line
+                                    //      (handles partial receipts at different prices).
+                                    //   2. The most recent receipt's price.
+                                    //   3. Fallback: the PO ordered price (only when nothing
+                                    //      has been received yet — edge case).
+                                    $receipts = $line->receiptItems ?? collect();
+                                    if ($receipts->isNotEmpty()) {
+                                        $totalQty   = (float) $receipts->sum('quantity_received');
+                                        $totalValue = (float) $receipts->sum(fn ($r) => (float) $r->quantity_received * (float) $r->unit_price);
+                                        $receivedPrice = $totalQty > 0
+                                            ? $totalValue / $totalQty
+                                            : (float) $receipts->sortByDesc('id')->first()->unit_price;
+                                    } else {
+                                        $receivedPrice = (float) $line->unit_price;
+                                    }
+                                    $qty   = (float) old("lines.$idx.quantity", $line->quantity_received ?: $line->quantity_ordered);
+                                    $price = (float) old("lines.$idx.unit_price", $receivedPrice);
                                 @endphp
                                 <tr class="invoice-line">
                                     <td>
@@ -105,7 +128,25 @@
                                         </span>
                                     </td>
                                     <td><input type="number" step="0.0001" min="0" name="lines[{{ $idx }}][quantity]" value="{{ $qty }}" class="form-control invoice-qty"></td>
-                                    <td><input type="number" step="0.0001" min="0" name="lines[{{ $idx }}][unit_price]" value="{{ $price }}" class="form-control invoice-price"></td>
+                                    <td>
+                                        <input type="number" step="0.0001" min="0"
+                                               name="lines[{{ $idx }}][unit_price]"
+                                               value="{{ $price }}"
+                                               class="form-control invoice-price">
+                                        @php
+                                            $orderedPrice = (float) $line->unit_price;
+                                            $diff = $price - $orderedPrice;
+                                        @endphp
+                                        @if(abs($diff) > 0.001 && $orderedPrice > 0)
+                                            <small class="d-block mt-1 fs-11 {{ $diff > 0 ? 'text-warning' : 'text-info' }}"
+                                                   title="السعر في الـ PO الأصلي كان {{ number_format($orderedPrice, 4) }}">
+                                                <i class="bi bi-info-circle"></i>
+                                                سعر الاستلام الفعلي
+                                                ({{ $diff > 0 ? '+' : '' }}{{ number_format($diff, 4) }}
+                                                vs الـ PO)
+                                            </small>
+                                        @endif
+                                    </td>
                                     <td><input type="number" step="0.0001" min="0" name="lines[{{ $idx }}][tax_total]" value="{{ old("lines.$idx.tax_total", 0) }}" class="form-control invoice-tax"></td>
                                     <td class="fw-bold invoice-line-total" style="color: var(--primary);">0.00</td>
                                 </tr>

@@ -29,6 +29,12 @@ class TablePolicy extends BasePolicy
             && $this->inUserBranch($user, $table);
     }
 
+    public function transfer(User $user, Table $table): bool
+    {
+        return ($user->hasAnyRole(['admin', 'manager', 'waiter']) || $user->hasPermission('tables.transfer'))
+            && $this->inUserBranch($user, $table);
+    }
+
     public function delete(User $user, Table $table): bool
     {
         return $user->hasAnyRole(['admin', 'manager'])

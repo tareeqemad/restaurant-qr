@@ -669,113 +669,36 @@ class ReportController extends Controller
      */
     public function profitLoss(Request $request)
     {
-        // Default to month-to-date — P&L is a monthly conversation with owners.
+        $report = $this->buildProfitLossReport($request)->compute();
+        return view('admin.reports.profit-loss', ['r' => $report]);
+    }
+
+    public function profitLossExportXlsx(Request $request)
+    {
+        $report = $this->buildProfitLossReport($request)->compute();
+        return app(\App\Exports\ProfitLossXlsx::class)->download($report);
+    }
+
+    public function profitLossExportPdf(Request $request)
+    {
+        $report = $this->buildProfitLossReport($request)->compute();
+        return app(\App\Exports\ProfitLossPdf::class)->download($report);
+    }
+
+    /**
+     * Construct the P&L report service from the current request — the
+     * single entry point used by the screen, the Excel export, and the
+     * PDF export. Defaults to month-to-date because that's the cadence
+     * owners actually have the conversation.
+     */
+    protected function buildProfitLossReport(Request $request): \App\Services\Reports\ProfitLossReport
+    {
         $from = $request->get('from', now()->startOfMonth()->toDateString());
         $to   = $request->get('to',   now()->toDateString());
-        [$start, $end] = [$from.' 00:00:00', $to.' 23:59:59'];
-
-        // Revenue: paid & partially paid invoices
-        $revenue = (float) Invoice::whereBetween('issued_at', [$start, $end])
-            ->whereIn('status', ['paid', 'partially_paid'])
-            ->sum('paid_total');
-
-        // Invoice count + avg ticket
-        $invoiceCount = Invoice::whereBetween('issued_at', [$start, $end])
-            ->whereIn('status', ['paid', 'partially_paid'])
-            ->count();
-
-        // COGS: sum of (quantity × menu_item.cost). When in a branch context
-        // and the user opts in via ?per_branch_cost=1, we re-cost each line
-        // using the BRANCH-SPECIFIC recipe cost (per-branch ingredient cost
-        // → per-branch recipe cost). This is more accurate when branches buy
-        // at different prices, at the cost of a slightly heavier compute.
         $branchId = BranchContext::current();
         $usePerBranchCost = $branchId && $request->boolean('per_branch_cost');
 
-        if ($usePerBranchCost) {
-            $rows = $this->soldItemsQuery($start, $end)
-                ->selectRaw('menu_items.id as menu_item_id, SUM(order_items.quantity) as qty')
-                ->groupBy('menu_items.id')
-                ->get();
-            $itemIds = $rows->pluck('menu_item_id')->all();
-            $items = \App\Models\MenuItem::with('recipeItems.ingredient.baseUnit')
-                ->whereIn('id', $itemIds)
-                ->get()
-                ->keyBy('id');
-            $cogs = 0.0;
-            foreach ($rows as $r) {
-                $item = $items->get($r->menu_item_id);
-                if (! $item) continue;
-                $cogs += (float) $r->qty * $item->costAtBranch($branchId);
-            }
-        } else {
-            $cogs = (float) $this->soldItemsQuery($start, $end)
-                ->selectRaw('SUM(order_items.quantity * menu_items.cost) as cogs')
-                ->value('cogs') ?? 0;
-        }
-
-        // Waste: value of ingredients discarded in range
-        $wasteCost = (float) InventoryMovement::whereBetween('occurred_at', [$start, $end])
-            ->where('type', 'waste')
-            ->sum('total_cost');
-
-        // Purchases (cash out for stock received in range)
-        $purchasesCost = (float) InventoryMovement::whereBetween('occurred_at', [$start, $end])
-            ->where('type', 'in')
-            ->sum('total_cost');
-
-        // Revenue by day (for the sparkline)
-        $revenueByDay = Invoice::whereBetween('issued_at', [$start, $end])
-            ->whereIn('status', ['paid', 'partially_paid'])
-            ->selectRaw('DATE(issued_at) as day, SUM(paid_total) as revenue')
-            ->groupBy('day')
-            ->pluck('revenue', 'day');
-
-        $cogsByDay = $this->soldItemsQuery($start, $end)
-            ->selectRaw('DATE(orders.created_at) as day, SUM(order_items.quantity * menu_items.cost) as cogs')
-            ->groupBy('day')
-            ->pluck('cogs', 'day');
-
-        // Build day-by-day trend — fill all days in range
-        $daysCount = \Carbon\Carbon::parse($from)->diffInDays(\Carbon\Carbon::parse($to)) + 1;
-        $trend = collect();
-        for ($i = 0; $i < $daysCount; $i++) {
-            $d = \Carbon\Carbon::parse($from)->addDays($i)->toDateString();
-            $rev = (float) ($revenueByDay[$d] ?? 0);
-            $cog = (float) ($cogsByDay[$d]    ?? 0);
-            $trend->push([
-                'date'    => $d,
-                'label'   => \Carbon\Carbon::parse($d)->locale('ar')->isoFormat('ddd D/M'),
-                'revenue' => $rev,
-                'cogs'    => $cog,
-                'profit'  => $rev - $cog,
-            ]);
-        }
-
-        // Top profitable items (margin × volume = contribution)
-        $topProfit = $this->soldItemsQuery($start, $end)
-            ->selectRaw('
-                menu_items.name,
-                SUM(order_items.quantity) as qty,
-                SUM(order_items.subtotal) as revenue,
-                SUM(order_items.quantity * menu_items.cost) as cogs,
-                SUM(order_items.subtotal - (order_items.quantity * menu_items.cost)) as profit
-            ')
-            ->groupBy('menu_items.id', 'menu_items.name')
-            ->orderByDesc('profit')
-            ->limit(10)
-            ->get();
-
-        $grossProfit  = $revenue - $cogs;
-        $netOperating = $grossProfit - $wasteCost;
-        $marginPct    = $revenue > 0 ? ($grossProfit / $revenue) * 100 : 0;
-
-        return view('admin.reports.profit-loss', compact(
-            'from', 'to',
-            'revenue', 'cogs', 'grossProfit', 'wasteCost', 'netOperating',
-            'purchasesCost', 'invoiceCount', 'marginPct',
-            'trend', 'topProfit'
-        ));
+        return new \App\Services\Reports\ProfitLossReport($from, $to, $branchId, $usePerBranchCost);
     }
 
     /**
@@ -802,8 +725,18 @@ class ReportController extends Controller
     {
         $this->authorize('viewAny', \App\Models\Ingredient::class);
 
-        $asOf = $request->get('as_of');                  // YYYY-MM-DD or null
+        $asOf   = $request->get('as_of');                  // YYYY-MM-DD or null
         $asOfTs = $asOf ? \Carbon\Carbon::parse($asOf)->endOfDay() : null;
+
+        // Branch-aware: when the user has a specific branch active, we
+        // value ONLY that branch's stock at THAT branch's weighted-average
+        // cost. When viewing "all branches" we sum across every branch
+        // using each branch's own cost (avoids the classic gotcha of
+        // multiplying total qty by a global blended cost).
+        $branchId   = \App\Support\BranchContext::current();
+        $branchName = $branchId
+            ? (\App\Models\Branch::find($branchId)?->name ?? '—')
+            : 'كل الفروع';
 
         $ingredients = \App\Models\Ingredient::with('baseUnit', 'supplier')
             ->where('track_stock', true)
@@ -814,11 +747,16 @@ class ReportController extends Controller
         // For historical mode: aggregate signed movements PER ingredient
         // AFTER the cutoff. We invert their effect to recover the qty as it
         // was at $asOfTs. Cheap because of the (ingredient_id, occurred_at)
-        // index already on the table.
+        // index already on the table. Branch-scoped when active so the
+        // rewind matches the snapshot we're computing for.
         $reverseDeltas = collect();
         if ($asOfTs) {
-            $rows = \App\Models\InventoryMovement::query()
-                ->where('occurred_at', '>', $asOfTs)
+            $rowsQ = \App\Models\InventoryMovement::query()
+                ->where('occurred_at', '>', $asOfTs);
+            if ($branchId) {
+                $rowsQ->where('branch_id', $branchId);
+            }
+            $rows = $rowsQ
                 ->selectRaw("
                     ingredient_id,
                     SUM(CASE
@@ -833,33 +771,44 @@ class ReportController extends Controller
 
         $valuationRows = collect();
         foreach ($ingredients as $ing) {
-            $qty = (float) $ing->current_stock;
-            if ($asOfTs && isset($reverseDeltas[$ing->id])) {
-                // Subtract the "after cutoff" net effect to rewind
-                $qty -= (float) $reverseDeltas[$ing->id]->net_after_cutoff;
+            // Live qty + cost — branch-aware via the helpers on Ingredient
+            // (stockAtBranch / costAtBranch / valueAtBranch / trackedStock).
+            if ($branchId) {
+                $qty      = (float) $ing->stockAtBranch($branchId);
+                $unitCost = (float) $ing->costAtBranch($branchId);
+                $value    = (float) $ing->valueAtBranch($branchId);
+            } else {
+                $qty      = (float) $ing->trackedStock();
+                $value    = (float) $ing->trackedValue();
+                // Blended rate for the all-branches view so cost × qty == value.
+                $unitCost = $qty > 0 ? $value / $qty : (float) $ing->cost_per_unit;
             }
 
-            // Skip rows with no stock at the chosen point
+            // Historical adjustments — rewind the qty by net movements
+            // after the cutoff (already branch-filtered when applicable).
+            if ($asOfTs && isset($reverseDeltas[$ing->id])) {
+                $qty -= (float) $reverseDeltas[$ing->id]->net_after_cutoff;
+            }
             if ($qty <= 0.0001 && ! $asOfTs) {
-                // For live mode, KEEP zero rows — useful to see "we hold none of X"
-                // Only filter out negatives produced by historical rewind anomalies.
                 $qty = max(0, $qty);
             }
 
-            // Cost: live mode uses current cost_per_unit. Historical mode
-            // uses the most recent 'in' movement at-or-before the cutoff.
-            $unitCost = (float) $ing->cost_per_unit;
+            // Historical cost override: use the latest 'in' at-or-before the
+            // cutoff (branch-scoped when active).
             if ($asOfTs) {
-                $hist = \App\Models\InventoryMovement::query()
+                $histQ = \App\Models\InventoryMovement::query()
                     ->where('ingredient_id', $ing->id)
                     ->where('type', 'in')
-                    ->where('occurred_at', '<=', $asOfTs)
-                    ->orderByDesc('occurred_at')
-                    ->value('unit_cost');
-                if ($hist !== null) $unitCost = (float) $hist;
+                    ->where('occurred_at', '<=', $asOfTs);
+                if ($branchId) {
+                    $histQ->where('branch_id', $branchId);
+                }
+                $hist = $histQ->orderByDesc('occurred_at')->value('unit_cost');
+                if ($hist !== null) {
+                    $unitCost = (float) $hist;
+                }
+                $value = $qty * $unitCost;
             }
-
-            $value = $qty * $unitCost;
 
             $valuationRows->push((object) [
                 'ingredient_id' => $ing->id,
@@ -870,7 +819,9 @@ class ReportController extends Controller
                 'qty'           => $qty,
                 'unit_cost'     => $unitCost,
                 'value'         => $value,
-                'is_low_stock'  => $ing->isLowStock(),
+                'is_low_stock'  => $branchId
+                    ? $ing->isLowStockAtBranch($branchId)
+                    : $ing->isLowStock(),
             ]);
         }
 
@@ -905,9 +856,11 @@ class ReportController extends Controller
         $lowStockValue = (float) $sorted->where('is_low_stock', true)->sum('value');
         $rowCount      = $sorted->count();
 
-        // CSV export
-        if ($request->get('export') === 'csv') {
-            return $this->exportValuationCsv($sorted, $asOf);
+        // Excel export — proper xlsx with multiple columns + sheets.
+        if (in_array($request->get('export'), ['xlsx', 'csv'], true)) {
+            return $this->exportValuationXlsx(
+                $sorted, $totalValue, $abcCounts, $abcValues, $asOf, $branchId, $branchName
+            );
         }
 
         return view('admin.reports.stock-valuation', [
@@ -918,37 +871,243 @@ class ReportController extends Controller
             'abcCounts'     => $abcCounts,
             'abcValues'     => $abcValues,
             'asOf'          => $asOf,
+            'branchId'      => $branchId,
+            'branchName'    => $branchName,
         ]);
     }
 
-    protected function exportValuationCsv($rows, ?string $asOf)
-    {
-        $filename = 'stock-valuation-' . ($asOf ?: now()->toDateString()) . '.csv';
-        return response()->streamDownload(function () use ($rows) {
-            $out = fopen('php://output', 'w');
-            // BOM so Excel recognises UTF-8 (Arabic columns)
-            fwrite($out, "\xEF\xBB\xBF");
-            fputcsv($out, [
-                'SKU', 'Ingredient', 'Supplier', 'Unit',
-                'Quantity', 'Unit Cost', 'Total Value',
-                'ABC Class', 'Cumulative %', 'Low Stock?',
+    /**
+     * Multi-sheet xlsx export of the stock-valuation report.
+     *
+     * Why xlsx over CSV: previous CSV with UTF-8 BOM still opened as
+     * Windows-1256 (mojibake) on Arabic Windows Excel. PhpSpreadsheet
+     * writes proper Office Open XML which is UTF-8 by spec.
+     *
+     * Sheets:
+     *   1. ملخص — branch + date + KPIs + ABC summary
+     *   2. تفاصيل — every line with its own column for qty, unit cost,
+     *               value, share %, cumulative %, ABC class, low-stock flag
+     */
+    protected function exportValuationXlsx(
+        $rows,
+        float $totalValue,
+        array $abcCounts,
+        array $abcValues,
+        ?string $asOf,
+        ?int $branchId,
+        string $branchName
+    ) {
+        $currency  = config('restaurant.currency_symbol', '₪');
+        $effDate   = $asOf ?: now()->toDateString();
+        $stamp     = now()->format('Y-m-d_H-i');
+        $branchTag = preg_replace('/[^A-Za-z0-9_-]+/', '_', $branchName);
+        $filename  = "stock-valuation_{$branchTag}_{$effDate}_{$stamp}.xlsx";
+
+        $book = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $book->getProperties()
+            ->setCreator(config('restaurant.name', 'Relax'))
+            ->setTitle('Stock Valuation')
+            ->setSubject('تقرير تقييم المخزون');
+
+        // ─── Sheet 1: Summary ──────────────────────────────────────────
+        $cover = $book->getActiveSheet();
+        $cover->setTitle('ملخص');
+        $cover->setRightToLeft(true);
+
+        $cover->setCellValue('A1', 'تقرير تقييم المخزون');
+        $cover->mergeCells('A1:D1');
+        $cover->getStyle('A1')->applyFromArray([
+            'font'      => ['bold' => true, 'size' => 18, 'color' => ['rgb' => '0F2D22']],
+            'alignment' => ['horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER],
+        ]);
+        $cover->getRowDimension(1)->setRowHeight(36);
+
+        $meta = [
+            ['الفرع',           $branchName],
+            ['التاريخ',         $effDate . ($asOf ? ' (وضع تاريخي)' : ' (الصورة الحالية)')],
+            ['عدد الأصناف',     $rows->count()],
+            ['إجمالي القيمة',   $totalValue],
+            ['تاريخ التقرير',   now()->locale('ar')->isoFormat('D MMMM YYYY · HH:mm')],
+        ];
+        $row = 3;
+        foreach ($meta as $pair) {
+            $cover->setCellValue("A{$row}", $pair[0]);
+            $cover->setCellValue("B{$row}", $pair[1]);
+            $cover->mergeCells("B{$row}:D{$row}");
+            $cover->getStyle("A{$row}")->applyFromArray([
+                'font' => ['bold' => true],
+                'fill' => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => 'EEF6F1']],
             ]);
-            foreach ($rows as $r) {
-                fputcsv($out, [
-                    $r->sku,
-                    $r->name,
-                    $r->supplier ?? '',
-                    $r->unit_code ?? '',
-                    number_format($r->qty, 4, '.', ''),
-                    number_format($r->unit_cost, 4, '.', ''),
-                    number_format($r->value, 2, '.', ''),
-                    $r->abc_class,
-                    number_format($r->cumulative_pct, 2, '.', ''),
-                    $r->is_low_stock ? 'Yes' : 'No',
+            $row++;
+        }
+        $cover->getStyle("B6")->getNumberFormat()->setFormatCode("#,##0.00 \"{$currency}\"");
+
+        // ABC summary
+        $row += 1;
+        $cover->setCellValue("A{$row}", 'تحليل ABC (تحليل باريتو)');
+        $cover->mergeCells("A{$row}:D{$row}");
+        $cover->getStyle("A{$row}")->applyFromArray([
+            'font' => ['bold' => true, 'size' => 13, 'color' => ['rgb' => 'B97818']],
+        ]);
+        $row += 2;
+        $cover->fromArray(['الفئة', 'الوصف', 'عدد الأصناف', 'إجمالي القيمة'], null, "A{$row}");
+        $cover->getStyle("A{$row}:D{$row}")->applyFromArray([
+            'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+            'fill' => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => '1F4733']],
+            'alignment' => ['horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER],
+        ]);
+        $row++;
+
+        $abcRows = [
+            ['A', 'الأهم — أعلى 80% من القيمة (تحتاج أعلى تركيز إداري)', $abcCounts['A'], $abcValues['A']],
+            ['B', 'متوسطة الأهمية — التالي 15%',                         $abcCounts['B'], $abcValues['B']],
+            ['C', 'الأقل أهمية — آخر 5%',                                $abcCounts['C'], $abcValues['C']],
+        ];
+        foreach ($abcRows as $r) {
+            $cover->fromArray($r, null, "A{$row}");
+            $cover->getStyle("D{$row}")->getNumberFormat()->setFormatCode("#,##0.00 \"{$currency}\"");
+            $row++;
+        }
+
+        // Footnote
+        $row += 1;
+        $cover->setCellValue("A{$row}", 'كيف نقرأ هذا التقرير؟');
+        $cover->mergeCells("A{$row}:D{$row}");
+        $cover->getStyle("A{$row}")->applyFromArray([
+            'font' => ['bold' => true, 'color' => ['rgb' => 'B97818']],
+        ]);
+        $row++;
+        $cover->setCellValue("A{$row}",
+            "• «الكمية» × «سعر الوحدة» = «قيمة الصنف» — المال المحبوس في كل مكوّن.\n"
+          . "• «حصة %» = نسبة هذا الصنف من إجمالي قيمة المخزون.\n"
+          . "• «تراكمي %» = مجموع الحصص من أعلى صنف لهذا الصنف. يساعد على رؤية: «أول كم صنف يشكلون 80% من قيمة المخزون؟»\n"
+          . "• «فئة A»: أهم 20% من الأصناف اللي تشكل 80% من القيمة — جردها كل أسبوع.\n"
+          . "• «فئة B»: الـ15% التالية — جردها كل شهر.\n"
+          . "• «فئة C»: آخر 5% — جردها كل ربع سنة."
+        );
+        $cover->mergeCells("A{$row}:D{$row}");
+        $cover->getStyle("A{$row}")->getAlignment()->setWrapText(true)->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP);
+        $cover->getRowDimension($row)->setRowHeight(140);
+
+        foreach (['A', 'B', 'C', 'D'] as $col) $cover->getColumnDimension($col)->setWidth(25);
+
+        // ─── Sheet 2: Details ──────────────────────────────────────────
+        $sheet = $book->createSheet();
+        $sheet->setTitle('تفاصيل');
+        $sheet->setRightToLeft(true);
+
+        $headers = [
+            '#',
+            'SKU',
+            'المكوّن',
+            'المورّد',
+            'الوحدة',
+            'الكمية',
+            "سعر الوحدة ({$currency})",
+            "قيمة الصنف ({$currency})",
+            'حصة %',
+            'تراكمي %',
+            'فئة ABC',
+            'منخفض المخزون؟',
+        ];
+        $sheet->fromArray($headers, null, 'A1');
+        $sheet->getStyle('A1:L1')->applyFromArray([
+            'font'      => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+            'fill'      => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => '1F4733']],
+            'alignment' => ['horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER, 'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER],
+        ]);
+        $sheet->getRowDimension(1)->setRowHeight(28);
+
+        // Tooltips on the trickier columns so the file is self-documenting.
+        $sheet->getComment('I1')->getText()->createTextRun(
+            "حصة هذا الصنف من إجمالي قيمة المخزون = القيمة ÷ الإجمالي × 100"
+        );
+        $sheet->getComment('J1')->getText()->createTextRun(
+            "النسبة المتراكمة من الأعلى قيمة لهذا الصنف.\n"
+          . "مثال: لو القيمة عند 80% فأنت في «نقطة باريتو» — كل ما فوق هذا الصنف يشكل 80% من رأس المال."
+        );
+
+        $row = 2;
+        foreach ($rows as $i => $r) {
+            $sharePct = $totalValue > 0 ? ($r->value / $totalValue) * 100 : 0;
+
+            $sheet->setCellValue("A{$row}", $i + 1);
+            $sheet->setCellValue("B{$row}", $r->sku ?? '');
+            $sheet->setCellValue("C{$row}", $r->name);
+            $sheet->setCellValue("D{$row}", $r->supplier ?? '—');
+            $sheet->setCellValue("E{$row}", $r->unit_code ?? '');
+            $sheet->setCellValue("F{$row}", (float) $r->qty);
+            $sheet->setCellValue("G{$row}", (float) $r->unit_cost);
+            $sheet->setCellValue("H{$row}", (float) $r->value);
+            $sheet->setCellValue("I{$row}", $sharePct / 100);
+            $sheet->setCellValue("J{$row}", ((float) $r->cumulative_pct) / 100);
+            $sheet->setCellValue("K{$row}", $r->abc_class);
+            $sheet->setCellValue("L{$row}", $r->is_low_stock ? 'نعم' : 'لا');
+
+            // Tint by ABC class (subtle background per class) + low-stock highlight
+            $bg = match ($r->abc_class) {
+                'A' => 'FEE2E2',  // light red
+                'B' => 'FEF3C7',  // light amber
+                'C' => 'D1FAE5',  // light green
+                default => 'FFFFFF',
+            };
+            $sheet->getStyle("A{$row}:L{$row}")->getFill()
+                ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                ->getStartColor()->setRGB($bg);
+
+            if ($r->is_low_stock) {
+                $sheet->getStyle("L{$row}")->applyFromArray([
+                    'font' => ['bold' => true, 'color' => ['rgb' => 'B91C1C']],
                 ]);
             }
-            fclose($out);
-        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
+
+            $row++;
+        }
+
+        $lastRow = $row - 1;
+        if ($lastRow >= 2) {
+            // Number formats
+            $sheet->getStyle("F2:F{$lastRow}")->getNumberFormat()->setFormatCode('#,##0.0000');
+            $sheet->getStyle("G2:G{$lastRow}")->getNumberFormat()->setFormatCode("#,##0.0000 \"{$currency}\"");
+            $sheet->getStyle("H2:H{$lastRow}")->getNumberFormat()->setFormatCode("#,##0.00 \"{$currency}\"");
+            $sheet->getStyle("I2:J{$lastRow}")->getNumberFormat()->setFormatCode('0.00%');
+            $sheet->getStyle("K2:L{$lastRow}")->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+
+            // Total row
+            $totalRow = $lastRow + 1;
+            $sheet->setCellValue("A{$totalRow}", 'الإجمالي');
+            $sheet->mergeCells("A{$totalRow}:G{$totalRow}");
+            $sheet->setCellValue("H{$totalRow}", "=SUM(H2:H{$lastRow})");
+            $sheet->getStyle("H{$totalRow}")->getNumberFormat()->setFormatCode("#,##0.00 \"{$currency}\"");
+            $sheet->getStyle("A{$totalRow}:L{$totalRow}")->applyFromArray([
+                'font'    => ['bold' => true, 'size' => 12],
+                'fill'    => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => 'EEF6F1']],
+                'borders' => ['top' => ['borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_MEDIUM, 'color' => ['rgb' => '0F4731']]],
+            ]);
+            $sheet->getStyle("A{$totalRow}")->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_LEFT);
+
+            $sheet->setAutoFilter("A1:L{$lastRow}");
+        }
+
+        // Column widths
+        $sheet->getColumnDimension('A')->setWidth(6);
+        $sheet->getColumnDimension('B')->setWidth(14);
+        $sheet->getColumnDimension('C')->setWidth(28);
+        $sheet->getColumnDimension('D')->setWidth(20);
+        foreach (['E','F','G','H','I','J','K','L'] as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+        $sheet->freezePane('A2');
+
+        $book->setActiveSheetIndex(0);
+
+        return response()->streamDownload(function () use ($book) {
+            $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($book);
+            $writer->setPreCalculateFormulas(false);
+            $writer->save('php://output');
+        }, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
     }
 
     /**

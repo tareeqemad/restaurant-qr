@@ -18,7 +18,10 @@ class StorageLocationController extends Controller
     {
         $this->authorize('viewAny', Ingredient::class);
 
-        $locations = StorageLocation::withCount('ingredientStocks')->orderBy('display_order')->get();
+        $locations = StorageLocation::with('branch:id,name')
+            ->withCount('ingredientStocks')
+            ->orderBy('display_order')
+            ->get();
 
         foreach ($locations as $loc) {
             $loc->stock_value = $loc->stockValue();
@@ -111,15 +114,47 @@ class StorageLocationController extends Controller
     public function transferForm()
     {
         $this->authorize('viewAny', Ingredient::class);
+
+        // Honour the active branch context. When a user has switched into a
+        // branch via the header, only that branch's locations are visible
+        // — same rule as every other admin screen, no special bypass.
+        // Owner-level admins who need cross-branch transfers can switch to
+        // "all branches" (no context) and use the dedicated branch transfer
+        // flow at /admin/branch-transfers/create.
+        $locations = StorageLocation::with('branch:id,name')
+            ->where('active', true)
+            ->orderBy('display_order')->orderBy('name')
+            ->get(['id', 'name', 'branch_id', 'is_default']);
+
+        $ingredients = Ingredient::with('baseUnit')
+            ->where('active', true)
+            ->where('track_stock', true)
+            ->orderBy('name')
+            ->get();
+
+        // Per-location stock map — lets the JS filter the ingredient
+        // dropdown to only those that actually have qty > 0 at the chosen
+        // source, and surface the available quantity inline.
+        $stockByLocation = \DB::table('ingredient_stock')
+            ->select('storage_location_id', 'ingredient_id', 'quantity')
+            ->get()
+            ->groupBy('storage_location_id')
+            ->map(fn ($g) => $g->mapWithKeys(fn ($r) => [$r->ingredient_id => (float) $r->quantity]))
+            ->toArray();
+
         return view('admin.storage-locations.transfer', [
-            'locations'   => StorageLocation::where('active', true)->orderBy('display_order')->get(),
-            'ingredients' => Ingredient::with('baseUnit')->orderBy('name')->get(),
+            'locations'       => $locations,
+            'ingredients'     => $ingredients,
+            'stockByLocation' => $stockByLocation,
         ]);
     }
 
     public function transferStore(Request $request)
     {
-        $this->authorize('viewAny', Ingredient::class);
+        // Hardened (was `viewAny`): inter-location transfers move stock
+        // between physical locations and shouldn't be available to anyone
+        // who can merely view inventory.
+        $this->authorize('manage', Ingredient::class);
 
         $data = $request->validate([
             'ingredient_id' => ['required', 'exists:ingredients,id'],

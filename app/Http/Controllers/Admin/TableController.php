@@ -5,13 +5,16 @@ namespace App\Http\Controllers\Admin;
 use App\Events\TableStatusChanged;
 use App\Helpers\SafeBroadcast;
 use App\Http\Controllers\Controller;
+use App\Models\Scopes\BranchScope;
 use App\Models\Table;
+use App\Services\TableSessionTransferService;
 use App\Support\BranchContext;
 use BaconQrCode\Renderer\ImageRenderer;
 use BaconQrCode\Renderer\Image\SvgImageBackEnd;
 use BaconQrCode\Renderer\RendererStyle\RendererStyle;
 use BaconQrCode\Writer;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class TableController extends Controller
 {
@@ -62,10 +65,80 @@ class TableController extends Controller
         $this->authorize('update', $table);
         $previousStatus = $table->status;
         $table->update($this->valid($request, $table->id));
+
+        // If the admin marks the table available but a stale (orderless)
+        // session is still hanging on it, close that session in the same
+        // breath. Without this the customer-side scan keeps joining the
+        // ghost session forever — the very confusion the user reported.
+        if ($table->status === 'available' && $previousStatus !== 'available') {
+            $session = $table->activeSession;
+            if ($session && $session->orders()->count() === 0) {
+                $session->update([
+                    'status'    => 'closed',
+                    'closed_at' => now(),
+                ]);
+            }
+        }
+
         if ($table->wasChanged('status')) {
             SafeBroadcast::dispatch(new TableStatusChanged($table->refresh(), $previousStatus));
         }
         return redirect()->route('admin.tables.index')->with('success', 'تم التحديث');
+    }
+
+    /**
+     * Force-close the table's active session — used by the "إغلاق الجلسة"
+     * button on the table card when a guest never closed out (24h+ idle).
+     * Refuses to close sessions that still have orders, since those need
+     * the cashier flow to settle first.
+     */
+    public function closeSession(Table $table)
+    {
+        $this->authorize('update', $table);
+
+        $session = $table->activeSession;
+        if (! $session) {
+            return back()->with('error', 'لا توجد جلسة نشطة على هذه الطاولة.');
+        }
+
+        if ($session->orders()->count() > 0) {
+            return back()->with('error', 'الجلسة تحتوي على طلبات — أغلقها من شاشة الكاشير أو ألغِ الطلبات أولاً.');
+        }
+
+        $session->update([
+            'status'    => 'closed',
+            'closed_at' => now(),
+        ]);
+
+        if ($table->status === 'occupied') {
+            $previousStatus = $table->status;
+            $table->update(['status' => 'available']);
+            SafeBroadcast::dispatch(new TableStatusChanged($table->refresh(), $previousStatus));
+        }
+
+        return back()->with('success', "تم إغلاق الجلسة الراكدة لطاولة {$table->number}.");
+    }
+
+    public function transferSession(Request $request, Table $table, TableSessionTransferService $transfers)
+    {
+        $this->authorize('transfer', $table);
+
+        $data = $request->validate([
+            'target_table_id' => ['required', 'integer', Rule::exists('tables', 'id')],
+        ], [], [
+            'target_table_id' => 'الطاولة الجديدة',
+        ]);
+
+        $target = Table::withoutGlobalScope(BranchScope::class)->whereKey($data['target_table_id'])->firstOrFail();
+        $this->authorize('transfer', $target);
+
+        try {
+            $transfers->transfer($table, $target, (int) $request->user()->id);
+
+            return back()->with('success', "تم نقل الجلسة من طاولة {$table->number} إلى طاولة {$target->number}.");
+        } catch (\Throwable $e) {
+            return back()->with('error', $e->getMessage());
+        }
     }
 
     public function destroy(Table $table)

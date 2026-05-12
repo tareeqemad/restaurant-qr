@@ -10,11 +10,16 @@ use Illuminate\Support\Facades\Route;
  */
 
 // Public auth pages
+// throttle:5,1 on login/register limits brute force + bot signups to 5/min/IP.
+// Without this, the digit-only PIN (6 digits, 10⁶ space) would be brute-
+// forceable in seconds against the customer phone column.
 Route::middleware('guest:customer')->group(function () {
     Route::get   ('/login',    [Portal\AuthController::class, 'showLogin'])->name('portal.login');
-    Route::post  ('/login',    [Portal\AuthController::class, 'login']);
+    Route::post  ('/login',    [Portal\AuthController::class, 'login'])
+        ->middleware('throttle:5,1');
     Route::get   ('/register', [Portal\AuthController::class, 'showRegister'])->name('portal.register');
-    Route::post  ('/register', [Portal\AuthController::class, 'register']);
+    Route::post  ('/register', [Portal\AuthController::class, 'register'])
+        ->middleware('throttle:10,1');
 });
 
 // Authenticated portal
@@ -29,6 +34,12 @@ Route::middleware('auth:customer')->group(function () {
     Route::post  ('/reservations',                  [Portal\ReservationController::class, 'store'])->name('portal.reservations.store');
     Route::post  ('/reservations/{reservation}/cancel',
         [Portal\ReservationController::class, 'cancel'])->name('portal.reservations.cancel');
+
+    // Customer notification inbox (announcements + future system messages)
+    Route::get ('/notifications',                 [Portal\NotificationController::class, 'index'])->name('portal.notifications.index');
+    Route::get ('/notifications/unread-count',    [Portal\NotificationController::class, 'unreadCount'])->name('portal.notifications.unread-count');
+    Route::post('/notifications/{id}/read',       [Portal\NotificationController::class, 'markRead'])->name('portal.notifications.read');
+    Route::post('/notifications/read-all',        [Portal\NotificationController::class, 'markAllRead'])->name('portal.notifications.read-all');
 
     // Reviews
     Route::get ('/reviews',                       [Portal\ReviewController::class, 'index'])->name('portal.reviews.index');
