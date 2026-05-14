@@ -7,49 +7,58 @@
     subtitle="مركز قيادة اليوم: المال، التشغيل، المخزون، العملاء، وما يحتاج قراراً الآن"
     :home="false" />
 
-<x-admin.stat-rail :stats="[
-    [
-        'label' => 'صافي اليوم',
-        'value' => \App\Helpers\Money::format($stats['net_operating']),
-        'icon'  => $stats['net_operating'] >= 0 ? 'bi-graph-up-arrow' : 'bi-graph-down-arrow',
-        'color' => $stats['net_operating'] >= 0 ? 'success' : 'danger',
-        'link'  => route('admin.reports.end-of-day'),
-    ],
-    [
-        'label' => 'مبيعات اليوم',
-        'value' => \App\Helpers\Money::format($stats['today_sales']),
-        'icon'  => 'bi-cash-stack',
-        'color' => 'primary',
-        'link'  => route('admin.reports.sales'),
-    ],
-    [
+@php
+    // Stat-rail tiles follow the viewer's permissions: the money tiles
+    // (net / sales) only render for users with financial access, and the
+    // procurement tile only for users who can act on purchasing.
+    $railStats = [];
+    if ($can['financials']) {
+        $railStats[] = [
+            'label' => 'صافي اليوم',
+            'value' => \App\Helpers\Money::format($stats['net_operating']),
+            'icon'  => $stats['net_operating'] >= 0 ? 'bi-graph-up-arrow' : 'bi-graph-down-arrow',
+            'color' => $stats['net_operating'] >= 0 ? 'success' : 'danger',
+            'link'  => route('admin.reports.end-of-day'),
+        ];
+        $railStats[] = [
+            'label' => 'مبيعات اليوم',
+            'value' => \App\Helpers\Money::format($stats['today_sales']),
+            'icon'  => 'bi-cash-stack',
+            'color' => 'primary',
+            'link'  => route('admin.reports.sales'),
+        ];
+    }
+    $railStats[] = [
         'label' => 'إجراءات مفتوحة',
         'value' => $stats['action_count'],
         'icon'  => $stats['critical_actions'] > 0 ? 'bi-exclamation-octagon-fill' : 'bi-list-check',
         'color' => $stats['critical_actions'] > 0 ? 'danger' : 'accent',
-    ],
-    [
+    ];
+    $railStats[] = [
         'label' => 'طلبات نشطة',
         'value' => $stats['active_orders'],
         'icon'  => 'bi-lightning-charge-fill',
         'color' => 'warning',
         'link'  => route('admin.orders.index'),
-    ],
-    [
+    ];
+    $railStats[] = [
         'label' => 'طاولات مشغولة',
         'value' => $stats['occupied_tables'].' / '.$stats['total_tables'],
         'icon'  => 'bi-grid-3x3-gap-fill',
         'color' => 'success',
         'link'  => route('admin.tables.index'),
-    ],
-    [
-        'label' => 'مخزون يحتاج شراء',
-        'value' => $stats['low_stock'],
-        'icon'  => $stats['low_stock'] > 0 ? 'bi-exclamation-triangle-fill' : 'bi-check-circle-fill',
-        'color' => $stats['low_stock'] > 0 ? 'danger' : 'success',
-        'link'  => route('admin.reports.reorder-suggestions'),
-    ],
-]" />
+    ];
+    if ($can['procurement']) {
+        $railStats[] = [
+            'label' => 'مخزون يحتاج شراء',
+            'value' => $stats['low_stock'],
+            'icon'  => $stats['low_stock'] > 0 ? 'bi-exclamation-triangle-fill' : 'bi-check-circle-fill',
+            'color' => $stats['low_stock'] > 0 ? 'danger' : 'success',
+            'link'  => route('admin.reports.reorder-suggestions'),
+        ];
+    }
+@endphp
+<x-admin.stat-rail :stats="$railStats" />
 
 <x-admin.data-panel title="اختصارات تنفيذية" icon="bi-command">
     <div class="dashboard-quick-grid">
@@ -67,6 +76,7 @@
 </x-admin.data-panel>
 
 <div class="row g-3 mb-3">
+    @if($can['financials'])
     <div class="col-xl-8">
         <x-admin.data-panel title="نبض المال" icon="bi-wallet2">
             <x-slot:actions>
@@ -127,8 +137,9 @@
             </div>
         </x-admin.data-panel>
     </div>
+    @endif
 
-    <div class="col-xl-4">
+    <div class="{{ $can['financials'] ? 'col-xl-4' : 'col-xl-12' }}">
         <x-admin.data-panel title="مركز الإجراءات" :count="$actionCenter->count()" icon="bi-exclamation-diamond-fill">
             @if($actionCenter->isEmpty())
                 <x-admin.empty-state icon="bi-check2-circle" message="كل شيء هادئ حالياً" compact />
@@ -192,8 +203,16 @@
 </x-admin.data-panel>
 @endif
 
+@php
+    // Row layout adapts to which side panels the viewer is allowed to see —
+    // so a waiter (no procurement / no customers) gets a full-width
+    // "التشغيل اليومي" instead of one narrow column with dead space.
+    $dashSideCount = ($can['procurement'] ? 1 : 0) + ($can['customers'] ? 1 : 0);
+    $dashDailyOpsCol = $dashSideCount === 2 ? 'col-xl-4' : ($dashSideCount === 1 ? 'col-xl-6' : 'col-xl-12');
+    $dashSideCol = $dashSideCount === 2 ? 'col-xl-4' : 'col-xl-6';
+@endphp
 <div class="row g-3 mb-3">
-    <div class="col-xl-4">
+    <div class="{{ $dashDailyOpsCol }}">
         <x-admin.data-panel title="التشغيل اليومي" icon="bi-activity">
             <div class="dashboard-mini-grid">
                 <a href="{{ route('admin.shifts.index') }}" class="dashboard-mini">
@@ -216,10 +235,12 @@
                     <span>إشغال الطاولات</span>
                     <strong>{{ $dailyOps['table_utilization'] }}%</strong>
                 </a>
+                @if($can['expenses'])
                 <a href="{{ route('admin.expenses.index', ['status' => 'pending_approval']) }}" class="dashboard-mini">
                     <span>مصروفات معلقة</span>
                     <strong>{{ $dailyOps['pending_expenses'] }}</strong>
                 </a>
+                @endif
             </div>
 
             <div class="dashboard-section-label mt-3">حالات طلبات اليوم</div>
@@ -237,7 +258,8 @@
         </x-admin.data-panel>
     </div>
 
-    <div class="col-xl-4">
+    @if($can['procurement'])
+    <div class="{{ $dashSideCol }}">
         <x-admin.data-panel title="المخزون والمشتريات" icon="bi-box-seam-fill">
             <x-slot:actions>
                 <a href="{{ route('admin.inventory.dashboard') }}" class="btn btn-light btn-sm">
@@ -286,8 +308,10 @@
             </div>
         </x-admin.data-panel>
     </div>
+    @endif
 
-    <div class="col-xl-4">
+    @if($can['customers'])
+    <div class="{{ $dashSideCol }}">
         <x-admin.data-panel title="العملاء والحجوزات" icon="bi-person-heart">
             <div class="dashboard-mini-grid">
                 <a href="{{ route('admin.customers.index') }}" class="dashboard-mini">
@@ -333,6 +357,7 @@
             </div>
         </x-admin.data-panel>
     </div>
+    @endif
 </div>
 
 @if($branchSnapshot->isNotEmpty())
@@ -383,6 +408,7 @@
 
 {{-- Sales trend sparkline + hour heatmap --}}
 <div class="row g-3 mb-3">
+    @if($can['financials'])
     <div class="col-xl-8">
         <x-admin.data-panel title="مبيعات آخر 7 أيام" icon="bi-graph-up-arrow">
             <x-slot:actions>
@@ -472,7 +498,9 @@
         </x-admin.data-panel>
     </div>
 
-    <div class="col-xl-4">
+    @endif
+
+    <div class="{{ $can['financials'] ? 'col-xl-4' : 'col-xl-12' }}">
         <x-admin.data-panel title="أوقات الذروة" icon="bi-clock-fill">
             @php $maxHourly = max($hourly->pluck('count')->toArray()) ?: 1; @endphp
             <div class="p-3">
@@ -505,7 +533,7 @@
 </div>
 
 <div class="row g-3">
-    <div class="col-xl-7">
+    <div class="{{ $can['financials'] ? 'col-xl-7' : 'col-xl-12' }}">
         <x-admin.data-panel title="آخر الطلبات" :count="$recentOrders->count()" icon="bi-receipt-cutoff">
             <x-slot:actions>
                 <a href="{{ route('admin.orders.index') }}" class="btn btn-light btn-sm">
@@ -558,6 +586,7 @@
         </x-admin.data-panel>
     </div>
 
+    @if($can['financials'])
     <div class="col-xl-5">
         <x-admin.data-panel title="الأكثر مبيعاً" icon="bi-trophy-fill">
             <x-slot:actions>
@@ -584,10 +613,13 @@
             </div>
         </x-admin.data-panel>
     </div>
+    @endif
 </div>
 
+@if($can['procurement'] || $can['financials'])
 <div class="row g-3 mt-0">
-    <div class="col-xl-6">
+    @if($can['procurement'])
+    <div class="{{ $can['financials'] ? 'col-xl-6' : 'col-xl-12' }}">
         <x-admin.data-panel title="آخر الاستلامات" icon="bi-clipboard2-check" :count="$recentReceipts->count()">
             <div class="dashboard-feed-list">
                 @forelse($recentReceipts as $receipt)
@@ -604,8 +636,10 @@
             </div>
         </x-admin.data-panel>
     </div>
+    @endif
 
-    <div class="col-xl-6">
+    @if($can['financials'])
+    <div class="{{ $can['procurement'] ? 'col-xl-6' : 'col-xl-12' }}">
         <x-admin.data-panel title="روابط تحليل سريعة" icon="bi-compass-fill">
             <div class="dashboard-link-grid">
                 <a href="{{ route('admin.reports.end-of-day') }}"><i class="bi bi-calendar-check-fill"></i> نهاية اليوم</a>
@@ -617,7 +651,9 @@
             </div>
         </x-admin.data-panel>
     </div>
+    @endif
 </div>
+@endif
 @endsection
 
 @push('styles')

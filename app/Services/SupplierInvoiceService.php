@@ -6,6 +6,7 @@ use App\Models\ActivityLog;
 use App\Models\PurchaseOrderItem;
 use App\Models\Shift;
 use App\Models\SupplierInvoice;
+use App\Models\SupplierInvoiceItem;
 use App\Models\SupplierPayment;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -64,6 +65,20 @@ class SupplierInvoiceService
                     ? PurchaseOrderItem::with('ingredient', 'unit')->whereIn('id', $poItemIds)->get()->keyBy('id')
                     : collect();
 
+                // How much of each PO line has ALREADY been billed on earlier
+                // (non-cancelled) invoices. The variance must compare this
+                // invoice against the *still-uninvoiced* received quantity —
+                // not the cumulative PO receipt total, which would make every
+                // invoice after the first show a bogus negative variance when
+                // a PO is received and billed in instalments.
+                $alreadyInvoiced = $poItemIds
+                    ? SupplierInvoiceItem::whereIn('purchase_order_item_id', $poItemIds)
+                        ->whereHas('supplierInvoice', fn ($q) => $q->where('status', '!=', 'cancelled'))
+                        ->groupBy('purchase_order_item_id')
+                        ->selectRaw('purchase_order_item_id, SUM(quantity) as qty')
+                        ->pluck('qty', 'purchase_order_item_id')
+                    : collect();
+
                 foreach ($lines as $line) {
                     $poItem = ! empty($line['purchase_order_item_id'])
                         ? $poItems->get((int) $line['purchase_order_item_id'])
@@ -74,8 +89,11 @@ class SupplierInvoiceService
                     $lineSubtotal = round($qty * $unitPrice, 4);
                     $lineTax = (float) ($line['tax_total'] ?? 0);
                     $lineTotal = $lineSubtotal + $lineTax;
-                    $receivedQty = $poItem ? (float) $poItem->quantity_received : null;
-                    $receivedTotal = $poItem ? $receivedQty * (float) $poItem->unit_price : null;
+                    $invoicedSoFar = $poItem ? (float) ($alreadyInvoiced[$poItem->id] ?? 0) : 0.0;
+                    $receivedQty = $poItem
+                        ? max(0, (float) $poItem->quantity_received - $invoicedSoFar)
+                        : null;
+                    $receivedTotal = $receivedQty !== null ? $receivedQty * (float) $poItem->unit_price : null;
 
                     $invoice->items()->create([
                         'purchase_order_item_id' => $poItem?->id,

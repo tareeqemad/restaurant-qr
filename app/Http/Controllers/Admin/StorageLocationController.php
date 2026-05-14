@@ -106,6 +106,11 @@ class StorageLocationController extends Controller
         if ($storageLocation->ingredientStocks()->where('quantity', '>', 0)->exists()) {
             return back()->with('error', 'لا يمكن حذف موقع فيه مخزون. انقل المخزون لموقع آخر أولاً.');
         }
+        // The guard above guarantees every remaining row is zero. Drop them
+        // so we don't leave ingredient_stock rows pointing at a deleted
+        // location — orphans like that linger in per-ingredient stock lists
+        // and (historically) left current_stock out of sync with reality.
+        $storageLocation->ingredientStocks()->delete();
         $storageLocation->delete();
         return redirect()->route('admin.storage-locations.index')->with('success', 'تم حذف الموقع');
     }

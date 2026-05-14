@@ -111,12 +111,19 @@ return new class extends Migration
     public function down(): void
     {
         foreach ($this->tables as [$table, , , $dateCol]) {
+            // Drop the foreign key (and its column) FIRST. MySQL keeps the
+            // composite (branch_id, *) index alive to back the FK, so
+            // dropping the index while the constraint still exists fails
+            // with "Cannot drop index … needed in a foreign key constraint".
+            // Dropping the column also drops any index that includes it, so
+            // the explicit dropIndex below is just a defensive no-op after
+            // this for the normal path.
+            if (Schema::hasColumn($table, 'branch_id')) {
+                Schema::table($table, fn (Blueprint $t) => $t->dropConstrainedForeignId('branch_id'));
+            }
             $idxName = "{$table}_branch_{$dateCol}_idx";
             if ($this->hasIndex($table, $idxName)) {
                 Schema::table($table, fn (Blueprint $t) => $t->dropIndex($idxName));
-            }
-            if (Schema::hasColumn($table, 'branch_id')) {
-                Schema::table($table, fn (Blueprint $t) => $t->dropConstrainedForeignId('branch_id'));
             }
         }
     }

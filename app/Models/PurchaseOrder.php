@@ -127,6 +127,24 @@ class PurchaseOrder extends Model
         return ! in_array($this->status, ['received', 'cancelled'], true);
     }
 
+    /**
+     * Value of goods actually received so far, priced at the PO line price.
+     * Requires `items` to be loaded. Used by the index list to show
+     * received-vs-outstanding at a glance without opening each PO.
+     */
+    public function receivedValue(): float
+    {
+        return (float) $this->items->sum(
+            fn ($line) => (float) $line->quantity_received * (float) $line->unit_price
+        );
+    }
+
+    /** Value still outstanding on the PO (total minus what's been received). */
+    public function outstandingValue(): float
+    {
+        return max(0, (float) $this->total - $this->receivedValue());
+    }
+
     public function statusLabel(): string
     {
         return match ($this->status) {

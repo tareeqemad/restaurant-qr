@@ -128,6 +128,17 @@ Route::middleware(['auth', 'admin', 'branch'])->group(function () {
         [Admin\VendorPriceController::class, 'forSupplier'])->name('vendor-prices.supplier');
 
     // Purchase Orders
+    // A missing PO id (deleted, or a hand-typed URL) would otherwise hit the
+    // generic 404 page, which doesn't tell the user *what* was missing. Bind
+    // the param explicitly so every PO route — show, edit, receive, approve,
+    // … — bounces back to the list with a clear Arabic message instead.
+    Route::bind('purchase_order', function ($value) {
+        return \App\Models\PurchaseOrder::find($value)
+            ?? throw new \Illuminate\Http\Exceptions\HttpResponseException(
+                redirect()->route('admin.purchase-orders.index')
+                    ->with('error', "أمر الشراء رقم #{$value} غير موجود أو تم حذفه.")
+            );
+    });
     Route::resource('purchase-orders', Admin\PurchaseOrderController::class);
     Route::post('purchase-orders/{purchase_order}/approve', [Admin\PurchaseOrderController::class, 'approve'])->name('purchase-orders.approve');
     Route::post('purchase-orders/{purchase_order}/send',    [Admin\PurchaseOrderController::class, 'send'])->name('purchase-orders.send');

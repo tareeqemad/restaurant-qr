@@ -129,12 +129,11 @@
     <div class="form-section">
         <div class="form-section-head">
             <i class="bi bi-building"></i>
-            <span>الفروع التي يخدمها هذا المورّد</span>
+            <span>الفروع التي يخدمها هذا المورّد <span class="req">*</span></span>
         </div>
         <div class="alert alert-info py-2 mb-2" style="font-size: 13px;">
             <i class="bi bi-info-circle"></i>
-            اختر الفروع التي يخدمها هذا المورّد فقط. لو تركتها فارغة، سيُربط بالفرع الحالي تلقائياً.
-            موظفو الفرع لن يروا هذا المورّد إلا إذا كان مرتبطاً بفرعهم.
+            اختر فرعاً واحداً على الأقل. موظفو الفرع لن يروا هذا المورّد إلا إذا كان مرتبطاً بفرعهم.
         </div>
         <div class="row g-2">
             @foreach($branches as $branch)

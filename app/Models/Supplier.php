@@ -31,7 +31,8 @@ class Supplier extends Model
 
     /**
      * Branches this supplier serves. Many-to-many via `branch_supplier`.
-     * If empty, the supplier is considered "global" (legacy/no restriction).
+     * Every supplier must be linked to at least one branch — the create/
+     * edit flow enforces this, so there are no "global" suppliers.
      */
     public function branches(): BelongsToMany
     {
@@ -40,9 +41,7 @@ class Supplier extends Model
     }
 
     /**
-     * Scope: only suppliers that serve the given branch (or have no branch
-     * restriction at all — backwards-compat with installs predating the
-     * branch_supplier pivot).
+     * Scope: only suppliers explicitly linked to the given branch.
      *
      *   Supplier::servingBranch(1)->get();
      *
@@ -50,12 +49,6 @@ class Supplier extends Model
      */
     public function scopeServingBranch(Builder $query, int $branchId): Builder
     {
-        return $query->where(function ($q) use ($branchId) {
-            $q->whereHas('branches', fn ($b) => $b->where('branches.id', $branchId))
-              // Defensive: also include suppliers with NO branch links so
-              // a fresh-from-the-DB supplier doesn't disappear from any
-              // branch's dropdown until an admin assigns it.
-              ->orWhereDoesntHave('branches');
-        });
+        return $query->whereHas('branches', fn ($b) => $b->where('branches.id', $branchId));
     }
 }

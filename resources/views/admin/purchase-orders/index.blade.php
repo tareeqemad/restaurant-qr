@@ -67,6 +67,8 @@
                     <th>المورد</th>
                     <th>البنود</th>
                     <th>الإجمالي</th>
+                    <th>المستلم فعلياً</th>
+                    <th>المتبقي</th>
                     <th>الحالة</th>
                     <th>تاريخ</th>
                     <th></th>
@@ -83,6 +85,13 @@
                         <td>{{ $po->supplier?->name ?? '—' }}</td>
                         <td><span class="badge bg-secondary">{{ $po->items->count() }} بند</span></td>
                         <td class="fw-bold" style="color:var(--primary);">{{ \App\Helpers\Money::format($po->total) }}</td>
+                        @php $receivedValue = $po->receivedValue(); $outstandingValue = $po->outstandingValue(); @endphp
+                        <td class="fw-bold {{ $receivedValue > 0 ? 'text-success' : 'text-muted' }}">
+                            {{ \App\Helpers\Money::format($receivedValue) }}
+                        </td>
+                        <td class="fw-bold {{ $outstandingValue > 0.01 ? 'text-warning' : 'text-success' }}">
+                            {{ \App\Helpers\Money::format($outstandingValue) }}
+                        </td>
                         <td><span class="badge bg-{{ $po->statusColor() }}">{{ $po->statusLabel() }}</span></td>
                         <td class="text-muted small">
                             {{ $po->created_at->format('Y-m-d') }}
@@ -102,7 +111,7 @@
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="7">
+                    <tr><td colspan="9">
                         <x-admin.empty-state
                             icon="bi-truck"
                             title="ما في أوامر شراء بعد"

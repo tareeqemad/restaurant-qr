@@ -13,15 +13,17 @@ class SupplierController extends Controller
     {
         $this->authorize('viewAny', Supplier::class);
 
-        $q = Supplier::query()->with('branches:id,name')->withCount('ingredients');
-
-        // Branch-aware: branch users see only their suppliers; owner-level sees all.
+        // Branch-aware: branch users see only their branch's suppliers;
+        // owner-level sees all.
         $user = auth()->user();
+        $branchId = null;
         if ($user && ! $user->isOwnerLevel()) {
             $branchId = \App\Support\BranchContext::current()
                 ?? optional($user->primaryBranch())->id;
-            if ($branchId) $q->servingBranch($branchId);
         }
+
+        $q = Supplier::query()->with('branches:id,name')->withCount('ingredients');
+        if ($branchId) $q->servingBranch($branchId);
 
         if ($s = $request->get('search')) {
             $q->where(function ($qq) use ($s) {
@@ -34,11 +36,18 @@ class SupplierController extends Controller
 
         $suppliers = $q->orderBy('name')->paginate(20)->withQueryString();
 
+        // Stats must honour the same branch scope as the list — otherwise a
+        // branch user sees a global count in the rail that contradicts the
+        // filtered table below it.
+        $scoped = fn () => $branchId
+            ? Supplier::query()->servingBranch($branchId)
+            : Supplier::query();
+
         $stats = [
-            'total'    => Supplier::count(),
-            'active'   => Supplier::where('active', true)->count(),
-            'inactive' => Supplier::where('active', false)->count(),
-            'linked'   => Supplier::has('ingredients')->count(),
+            'total'    => $scoped()->count(),
+            'active'   => $scoped()->where('active', true)->count(),
+            'inactive' => $scoped()->where('active', false)->count(),
+            'linked'   => $scoped()->has('ingredients')->count(),
         ];
 
         return view('admin.suppliers.index', compact('suppliers', 'stats'));
@@ -166,9 +175,12 @@ class SupplierController extends Controller
     protected function validatedBranchIds(Request $request): array
     {
         return $request->validate([
-            'branch_ids'   => ['nullable', 'array'],
+            'branch_ids'   => ['required', 'array', 'min:1'],
             'branch_ids.*' => ['integer', 'exists:branches,id'],
-        ])['branch_ids'] ?? [];
+        ], [
+            'branch_ids.required' => 'يجب ربط المورد بفرع واحد على الأقل.',
+            'branch_ids.min'      => 'يجب ربط المورد بفرع واحد على الأقل.',
+        ])['branch_ids'];
     }
 
     /**

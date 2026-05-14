@@ -5,6 +5,7 @@ use App\Enums\OrderStatus;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\TableSession;
+use App\Services\InventoryService;
 use App\Services\OrderService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Livewire\Attributes\Computed;
@@ -133,6 +134,28 @@ new class extends Component
         ];
     }
 
+    /**
+     * Stock shortages across the pending column, keyed by order id. Lets the
+     * board warn the waiter *before* they hit "اعتماد" — and point at the
+     * exact lines to cancel — instead of failing the whole approve later.
+     * Only orders with an actual shortage appear in the map.
+     *
+     * @return array<int, array{issues: array, short_item_ids: int[]}>
+     */
+    #[Computed]
+    public function stockReports(): array
+    {
+        $reports = [];
+        foreach ($this->groups['pending'] as $order) {
+            $report = app(InventoryService::class)->orderStockReport($order);
+            if (! empty($report['issues'])) {
+                $reports[$order->id] = $report;
+            }
+        }
+
+        return $reports;
+    }
+
     public function approveOrder(int $orderId): void
     {
         $order = Order::with('items')->findOrFail($orderId);
@@ -142,6 +165,29 @@ new class extends Component
             app(OrderService::class)->approve($order, auth()->id());
             $this->clearComputed();
             session()->flash('success', 'تم اعتماد الطلب وإرساله للمطبخ والبار.');
+        } catch (Throwable $e) {
+            session()->flash('error', $e->getMessage());
+        }
+    }
+
+    /**
+     * Cancel a single pending line — the waiter's escape hatch when an item
+     * can't be fulfilled (out-of-stock ingredient). Pending items haven't
+     * deducted stock yet, so this just removes the line and re-totals.
+     */
+    public function cancelItem(int $itemId): void
+    {
+        $item = OrderItem::with('order')->findOrFail($itemId);
+        $this->authorize('cancel', $item->order);
+
+        try {
+            app(OrderService::class)->cancelItem(
+                $item,
+                auth()->id(),
+                'نقص في المكونات — أُلغي من لوحة الجرسون'
+            );
+            $this->clearComputed();
+            session()->flash('success', 'تم إلغاء الصنف "'.$item->name_snapshot.'".');
         } catch (Throwable $e) {
             session()->flash('error', $e->getMessage());
         }
@@ -295,7 +341,7 @@ new class extends Component
 
     private function clearComputed(): void
     {
-        unset($this->groups, $this->stats, $this->peakTasks);
+        unset($this->groups, $this->stats, $this->peakTasks, $this->stockReports);
     }
 }
 ?>
@@ -312,6 +358,7 @@ new class extends Component
         $groups = $this->groups;
         $stats = $this->stats;
         $peakTasks = $this->peakTasks;
+        $stockReports = $this->stockReports;
         $columns = [
             'pending' => [
                 'title' => 'قبول الطلبات',
@@ -419,11 +466,51 @@ new class extends Component
                         $isWarm = $task['kind'] === 'ready'
                             && ($task['ready_urgency'] ?? 'green') === 'amber';
                     @endphp
+                    @php
+                        $taskReport = $task['kind'] === 'pending'
+                            ? ($stockReports[$task['order']->id] ?? null)
+                            : null;
+                        $taskShortItems = $taskReport
+                            ? $task['order']->items->whereIn('id', $taskReport['short_item_ids'])
+                            : collect();
+                    @endphp
                     <article class="waiter-peak-task waiter-peak-task--{{ $task['kind'] }} {{ $isHot ? 'is-hot' : '' }} {{ $isWarm ? 'is-warm' : '' }}">
                         <div class="waiter-peak-task-main">
                             <span class="waiter-peak-label">{{ $task['label'] }}</span>
                             <strong>{{ $task['title'] }}</strong>
                             <small>{{ $task['subtitle'] }}</small>
+
+                            @if($taskReport)
+                                <div class="waiter-stock-warning">
+                                    <div class="waiter-stock-warning-head">
+                                        <i class="bi bi-exclamation-triangle-fill"></i>
+                                        مكوّنات ناقصة — راجِع قبل الاعتماد
+                                    </div>
+                                    <div class="waiter-stock-issues">
+                                        @foreach($taskReport['issues'] as $issue)
+                                            <span class="waiter-stock-issue-chip">
+                                                {{ $issue['ingredient'] }}:
+                                                متاح {{ rtrim(rtrim(number_format($issue['available'], 2), '0'), '.') }}
+                                                / مطلوب {{ rtrim(rtrim(number_format($issue['required'], 2), '0'), '.') }}
+                                            </span>
+                                        @endforeach
+                                    </div>
+                                    @foreach($taskShortItems as $shortItem)
+                                        <div class="waiter-stock-short-item">
+                                            <span>
+                                                <i class="bi bi-x-octagon-fill text-danger"></i>
+                                                {{ $shortItem->name_snapshot }}
+                                            </span>
+                                            <button type="button"
+                                                    wire:click="cancelItem({{ $shortItem->id }})"
+                                                    wire:confirm="إلغاء الصنف &quot;{{ $shortItem->name_snapshot }}&quot; من الطلب؟"
+                                                    class="waiter-stock-cancel-btn">
+                                                <i class="bi bi-x-circle"></i> إلغاء الصنف
+                                            </button>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            @endif
                         </div>
                         <span class="waiter-age {{ $isHot ? 'is-hot' : '' }} {{ $isWarm ? 'is-warm' : '' }}">
                             {{ $task['age_min'] < 1 ? 'الآن' : $task['age_min'].' د' }}
@@ -541,6 +628,8 @@ new class extends Component
                                 $guestName = $order->customer?->name ?: ($session?->customer?->name ?: ($session?->customer_name ?: $order->customer_name));
                                 $waiterName = $session?->assignedWaiter?->name ?: $order->approver?->name;
                                 $originName = $order->table ? 'طاولة '.$order->table->number : $order->sourceLabel();
+                                $orderReport = $key === 'pending' ? ($stockReports[$order->id] ?? null) : null;
+                                $shortItemIds = $orderReport['short_item_ids'] ?? [];
                             @endphp
 
                             <article class="waiter-order {{ $isUrgent ? 'is-urgent' : '' }}">
@@ -584,14 +673,33 @@ new class extends Component
                                     </div>
                                 @endif
 
+                                @if($orderReport)
+                                    <div class="waiter-stock-warning">
+                                        <div class="waiter-stock-warning-head">
+                                            <i class="bi bi-exclamation-triangle-fill"></i>
+                                            مكوّنات ناقصة — لا يمكن تحضير الأصناف المعلَّمة. ألغِها قبل الاعتماد.
+                                        </div>
+                                        <div class="waiter-stock-issues">
+                                            @foreach($orderReport['issues'] as $issue)
+                                                <span class="waiter-stock-issue-chip">
+                                                    {{ $issue['ingredient'] }}:
+                                                    متاح {{ rtrim(rtrim(number_format($issue['available'], 2), '0'), '.') }}
+                                                    / مطلوب {{ rtrim(rtrim(number_format($issue['required'], 2), '0'), '.') }}
+                                                </span>
+                                            @endforeach
+                                        </div>
+                                    </div>
+                                @endif
+
                                 <div class="waiter-items">
                                     @foreach($order->items as $item)
                                         @php
                                             $qty = rtrim(rtrim(number_format((float) $item->quantity, 2), '0'), '.');
                                             $itemReady = $item->status === OrderItemStatus::Ready->value;
                                             $itemServed = $item->status === OrderItemStatus::Served->value;
+                                            $itemShort = in_array($item->id, $shortItemIds, true);
                                         @endphp
-                                        <div class="waiter-item waiter-item--{{ str_replace('_', '-', $item->status) }} {{ $itemReady ? 'is-ready-to-serve' : '' }}">
+                                        <div class="waiter-item waiter-item--{{ str_replace('_', '-', $item->status) }} {{ $itemReady ? 'is-ready-to-serve' : '' }} {{ $itemShort ? 'is-short' : '' }}">
                                             <div class="waiter-item-main">
                                                 <span class="waiter-item-qty">x{{ $qty }}</span>
                                                 <span class="waiter-item-name">{{ $item->name_snapshot }}</span>
@@ -599,7 +707,14 @@ new class extends Component
                                             <span class="waiter-station" style="--station-color: {{ $item->station->color ?? '#667085' }};">
                                                 {{ $item->station?->name ?? 'بدون محطة' }}
                                             </span>
-                                            @if($itemReady)
+                                            @if($itemShort)
+                                                <button type="button"
+                                                        wire:click="cancelItem({{ $item->id }})"
+                                                        wire:confirm="إلغاء الصنف &quot;{{ $item->name_snapshot }}&quot; من الطلب؟"
+                                                        class="waiter-stock-cancel-btn">
+                                                    <i class="bi bi-x-circle"></i> إلغاء
+                                                </button>
+                                            @elseif($itemReady)
                                                 <button type="button" wire:click="serveItem({{ $item->id }})" class="waiter-serve-btn">
                                                     <i class="bi bi-check2"></i>
                                                     قدّم

@@ -38,62 +38,77 @@ class DashboardController extends Controller
         $branchId = BranchContext::current();
         $user = auth()->user();
 
-        $todayInvoiceQuery = Invoice::whereDate('issued_at', $today)
-            ->whereIn('status', ['paid', 'partially_paid']);
-        $todayInvoiceCount = (clone $todayInvoiceQuery)->count();
-        $todaySales = (float) (clone $todayInvoiceQuery)->sum('paid_total');
-
-        $todayPaymentsQuery = $this->branchScopedPayments($branchId)
-            ->whereDate('paid_at', $today);
-        $todayPayments = (float) (clone $todayPaymentsQuery)->sum('amount');
-
-        $paymentMethodLabels = [
-            'cash' => 'نقدي',
-            'card' => 'بطاقة',
-            'transfer' => 'تحويل',
-            'bank_transfer' => 'تحويل بنكي',
-            'cheque' => 'شيك',
-            'app' => 'محفظة',
-            'credit' => 'آجل',
-            'other' => 'أخرى',
+        // Dashboard panels follow the viewer's permissions — floor staff
+        // (waiter/chef/bartender) don't carry reports/procurement access, so
+        // the money panels never render (and aren't even computed) for them.
+        // Owner-level bypasses every check via User::hasPermission().
+        $can = [
+            'financials'  => (bool) $user?->hasPermission('reports.viewAny'),
+            'procurement' => (bool) $user?->hasPermission('purchase_orders.viewAny'),
+            'expenses'    => (bool) $user?->hasPermission('expenses.viewAny'),
+            'customers'   => (bool) $user?->hasPermission('customers.viewAny'),
         ];
 
-        $paymentMethods = (clone $todayPaymentsQuery)
-            ->select('method', DB::raw('SUM(amount) as total'), DB::raw('COUNT(*) as count'))
-            ->groupBy('method')
-            ->orderByDesc('total')
-            ->get()
-            ->map(fn ($row) => [
-                'method' => $row->method,
-                'label' => $paymentMethodLabels[$row->method] ?? $row->method,
-                'total' => (float) $row->total,
-                'count' => (int) $row->count,
-            ]);
+        $financialPulse = [];
+        $todaySales = 0.0;
+        if ($can['financials']) {
+            $todayInvoiceQuery = Invoice::whereDate('issued_at', $today)
+                ->whereIn('status', ['paid', 'partially_paid']);
+            $todayInvoiceCount = (clone $todayInvoiceQuery)->count();
+            $todaySales = (float) (clone $todayInvoiceQuery)->sum('paid_total');
 
-        $todayRefundsQuery = $this->branchScopedRefunds($branchId)
-            ->where('status', 'completed')
-            ->whereDate('refunded_at', $today);
-        $todayRefunds = (float) (clone $todayRefundsQuery)->sum('amount');
-        $todayRefundsCount = (clone $todayRefundsQuery)->count();
+            $todayPaymentsQuery = $this->branchScopedPayments($branchId)
+                ->whereDate('paid_at', $today);
+            $todayPayments = (float) (clone $todayPaymentsQuery)->sum('amount');
 
-        $todayExpensesQuery = Expense::approved()->whereDate('expense_date', $today);
-        $todayExpenses = (float) (clone $todayExpensesQuery)->sum('amount');
+            $paymentMethodLabels = [
+                'cash' => 'نقدي',
+                'card' => 'بطاقة',
+                'transfer' => 'تحويل',
+                'bank_transfer' => 'تحويل بنكي',
+                'cheque' => 'شيك',
+                'app' => 'محفظة',
+                'credit' => 'آجل',
+                'other' => 'أخرى',
+            ];
 
-        $financialPulse = [
-            'gross_sales' => $todaySales,
-            'payments' => $todayPayments,
-            'refunds' => $todayRefunds,
-            'expenses' => $todayExpenses,
-            'net_operating' => $todaySales - $todayRefunds - $todayExpenses,
-            'cash_after_outflows' => $todayPayments - $todayRefunds - $todayExpenses,
-            'invoice_count' => $todayInvoiceCount,
-            'average_invoice' => $todayInvoiceCount > 0 ? $todaySales / $todayInvoiceCount : 0,
-            'open_balance' => (float) Invoice::where('balance', '>', 0)
-                ->whereNotIn('status', ['paid', 'cancelled'])
-                ->sum('balance'),
-            'refunds_count' => $todayRefundsCount,
-            'payment_methods' => $paymentMethods,
-        ];
+            $paymentMethods = (clone $todayPaymentsQuery)
+                ->select('method', DB::raw('SUM(amount) as total'), DB::raw('COUNT(*) as count'))
+                ->groupBy('method')
+                ->orderByDesc('total')
+                ->get()
+                ->map(fn ($row) => [
+                    'method' => $row->method,
+                    'label' => $paymentMethodLabels[$row->method] ?? $row->method,
+                    'total' => (float) $row->total,
+                    'count' => (int) $row->count,
+                ]);
+
+            $todayRefundsQuery = $this->branchScopedRefunds($branchId)
+                ->where('status', 'completed')
+                ->whereDate('refunded_at', $today);
+            $todayRefunds = (float) (clone $todayRefundsQuery)->sum('amount');
+            $todayRefundsCount = (clone $todayRefundsQuery)->count();
+
+            $todayExpensesQuery = Expense::approved()->whereDate('expense_date', $today);
+            $todayExpenses = (float) (clone $todayExpensesQuery)->sum('amount');
+
+            $financialPulse = [
+                'gross_sales' => $todaySales,
+                'payments' => $todayPayments,
+                'refunds' => $todayRefunds,
+                'expenses' => $todayExpenses,
+                'net_operating' => $todaySales - $todayRefunds - $todayExpenses,
+                'cash_after_outflows' => $todayPayments - $todayRefunds - $todayExpenses,
+                'invoice_count' => $todayInvoiceCount,
+                'average_invoice' => $todayInvoiceCount > 0 ? $todaySales / $todayInvoiceCount : 0,
+                'open_balance' => (float) Invoice::where('balance', '>', 0)
+                    ->whereNotIn('status', ['paid', 'cancelled'])
+                    ->sum('balance'),
+                'refunds_count' => $todayRefundsCount,
+                'payment_methods' => $paymentMethods,
+            ];
+        }
 
         $pendingOrders = Order::where('status', OrderStatus::Pending->value)->count();
         $activeOrders = Order::whereIn('status', OrderStatus::active())->count();
@@ -165,6 +180,7 @@ class DashboardController extends Controller
                 'route' => route('admin.orders.index', ['status' => 'pending']),
                 'icon' => 'bi-hourglass-split',
                 'severity' => 'warning',
+                'permission' => 'orders.viewAny',
             ],
             [
                 'title' => 'أوامر شراء تحتاج اعتماد',
@@ -173,6 +189,7 @@ class DashboardController extends Controller
                 'route' => route('admin.purchase-orders.index', ['status' => 'draft']),
                 'icon' => 'bi-clipboard-check',
                 'severity' => 'warning',
+                'permission' => 'purchase_orders.viewAny',
             ],
             [
                 'title' => 'فواتير موردين متأخرة',
@@ -183,6 +200,7 @@ class DashboardController extends Controller
                 'route' => route('admin.supplier-invoices.index', ['overdue' => 1]),
                 'icon' => 'bi-cash-coin',
                 'severity' => 'critical',
+                'permission' => 'supplier_invoices.viewAny',
             ],
             [
                 'title' => 'حجوزات بانتظار التأكيد',
@@ -191,6 +209,7 @@ class DashboardController extends Controller
                 'route' => route('admin.reservations.index', ['status' => ReservationStatus::Pending->value]),
                 'icon' => 'bi-calendar-event-fill',
                 'severity' => 'warning',
+                'permission' => null,
             ],
             [
                 'title' => 'تقييمات منخفضة',
@@ -199,6 +218,7 @@ class DashboardController extends Controller
                 'route' => route('admin.reviews.index', ['rating' => 2]),
                 'icon' => 'bi-star-half',
                 'severity' => 'critical',
+                'permission' => null,
             ],
             [
                 'title' => 'مخزون يحتاج شراء',
@@ -207,6 +227,7 @@ class DashboardController extends Controller
                 'route' => route('admin.reports.reorder-suggestions'),
                 'icon' => 'bi-cart-plus-fill',
                 'severity' => $outOfStock > 0 ? 'critical' : 'warning',
+                'permission' => 'inventory.viewAny',
             ],
             [
                 'title' => 'فروقات فاتورة/استلام',
@@ -215,6 +236,7 @@ class DashboardController extends Controller
                 'route' => route('admin.inventory.dashboard'),
                 'icon' => 'bi-slash-circle-fill',
                 'severity' => 'warning',
+                'permission' => 'supplier_invoices.viewAny',
             ],
             [
                 'title' => 'استردادات معلقة',
@@ -223,6 +245,7 @@ class DashboardController extends Controller
                 'route' => route('admin.refunds.index', ['status' => 'pending']),
                 'icon' => 'bi-arrow-counterclockwise',
                 'severity' => 'info',
+                'permission' => 'payments.refund',
             ],
             [
                 'title' => 'مصروفات بانتظار الاعتماد',
@@ -231,8 +254,14 @@ class DashboardController extends Controller
                 'route' => route('admin.expenses.index', ['status' => 'pending_approval']),
                 'icon' => 'bi-receipt-cutoff',
                 'severity' => 'info',
+                'permission' => 'expenses.viewAny',
             ],
-        ])->filter(fn ($item) => (int) $item['count'] > 0)->values();
+        ])
+            ->filter(fn ($item) => (int) $item['count'] > 0)
+            // Hide rows the viewer can't act on — a waiter shouldn't see a
+            // "فواتير موردين متأخرة" card linking to a screen they can't open.
+            ->filter(fn ($item) => empty($item['permission']) || ($user?->hasPermission($item['permission']) ?? false))
+            ->values();
 
         $criticalActions = $actionCenter
             ->where('severity', 'critical')
@@ -244,7 +273,7 @@ class DashboardController extends Controller
             'active_orders'   => $activeOrders,
             'today_orders'    => $todayOrders,
             'today_sales'     => $todaySales,
-            'net_operating'   => $financialPulse['net_operating'],
+            'net_operating'   => $financialPulse['net_operating'] ?? 0,
             'occupied_tables' => $occupiedTables,
             'total_tables'    => $totalTables,
             'low_stock'       => $lowStock + $outOfStock,
@@ -432,13 +461,14 @@ class DashboardController extends Controller
             });
         }
 
-        $quickActions = [
+        $quickActions = collect([
             [
                 'label' => 'الكاشير',
                 'hint' => 'إصدار ودفع الفواتير',
                 'icon' => 'bi-cash-register',
                 'route' => route('admin.cashier.index'),
                 'color' => 'primary',
+                'permission' => 'payments.create',
             ],
             [
                 'label' => 'طلبات الصالة',
@@ -446,6 +476,7 @@ class DashboardController extends Controller
                 'icon' => 'bi-receipt',
                 'route' => route('admin.orders.index'),
                 'color' => 'success',
+                'permission' => 'orders.viewAny',
             ],
             [
                 'label' => 'أمر شراء',
@@ -453,6 +484,7 @@ class DashboardController extends Controller
                 'icon' => 'bi-bag-plus-fill',
                 'route' => route('admin.purchase-orders.create'),
                 'color' => 'warning',
+                'permission' => 'purchase_orders.create',
             ],
             [
                 'label' => 'فاتورة مورد',
@@ -460,6 +492,7 @@ class DashboardController extends Controller
                 'icon' => 'bi-file-earmark-text-fill',
                 'route' => route('admin.supplier-invoices.create'),
                 'color' => 'accent',
+                'permission' => 'supplier_invoices.create',
             ],
             [
                 'label' => 'مصروف جديد',
@@ -467,6 +500,7 @@ class DashboardController extends Controller
                 'icon' => 'bi-receipt-cutoff',
                 'route' => route('admin.expenses.create'),
                 'color' => 'danger',
+                'permission' => 'expenses.create',
             ],
             [
                 'label' => 'الحجوزات',
@@ -474,6 +508,7 @@ class DashboardController extends Controller
                 'icon' => 'bi-calendar-event-fill',
                 'route' => route('admin.reservations.index'),
                 'color' => 'primary',
+                'permission' => null,
             ],
             [
                 'label' => 'مخزون ومشتريات',
@@ -481,6 +516,7 @@ class DashboardController extends Controller
                 'icon' => 'bi-box-seam-fill',
                 'route' => route('admin.inventory.dashboard'),
                 'color' => 'success',
+                'permission' => 'inventory.viewAny',
             ],
             [
                 'label' => 'التقارير',
@@ -488,6 +524,7 @@ class DashboardController extends Controller
                 'icon' => 'bi-graph-up-arrow',
                 'route' => route('admin.reports.index'),
                 'color' => 'accent',
+                'permission' => 'reports.viewAny',
             ],
             [
                 'label' => 'جرد جديد',
@@ -495,13 +532,19 @@ class DashboardController extends Controller
                 'icon' => 'bi-clipboard2-check-fill',
                 'route' => route('admin.stock-counts.create'),
                 'color' => 'muted',
+                'permission' => 'stock_counts.create',
             ],
-        ];
+        ])
+            // A waiter's dashboard shouldn't link to screens they can't open.
+            ->filter(fn ($action) => empty($action['permission']) || ($user?->hasPermission($action['permission']) ?? false))
+            ->values()
+            ->all();
 
         // Operational alerts — expiry, AP, low stock, stale count, pending orders...
         $alerts = app(AlertsService::class)->dashboardSnapshot();
 
         return view('admin.dashboard.index', compact(
+            'can',
             'stats',
             'financialPulse',
             'actionCenter',

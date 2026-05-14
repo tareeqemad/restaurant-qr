@@ -389,6 +389,7 @@ class InventoryService
             if ($a['ingredient']->track_stock && $a['qty'] > (float) $a['ingredient']->current_stock) {
                 $issues[] = [
                     'ingredient' => $a['ingredient']->name,
+                    'ingredient_id' => $a['ingredient']->id,
                     'required' => $a['qty'],
                     'available' => (float) $a['ingredient']->current_stock,
                 ];
@@ -396,6 +397,48 @@ class InventoryService
         }
 
         return $issues;
+    }
+
+    /**
+     * Stock report for a pending order, shaped for the waiter board:
+     *   - `issues`: short ingredients (name + id + required/available)
+     *   - `short_item_ids`: order_item ids whose recipe depends on a short
+     *     ingredient, so the board can flag exactly which lines to cancel.
+     *
+     * Note `short_item_ids` is a heuristic — ingredients are shared across
+     * lines, so cancelling one flagged item may free enough stock for
+     * another. It's a "look here first" hint for the waiter, not a solver.
+     *
+     * @return array{issues: array, short_item_ids: int[]}
+     */
+    public function orderStockReport(\App\Models\Order $order): array
+    {
+        $issues = $this->validateStockForOrder($order);
+        if (empty($issues)) {
+            return ['issues' => [], 'short_item_ids' => []];
+        }
+
+        $shortIngredientIds = collect($issues)->pluck('ingredient_id')->filter()->all();
+
+        $items = $order->items()
+            ->where('status', \App\Enums\OrderItemStatus::Pending->value)
+            ->with('menuItem.recipeItems', 'modifiers.modifier.recipeItems')
+            ->get();
+
+        $shortItemIds = [];
+        foreach ($items as $oi) {
+            $recipeIngredientIds = collect($oi->menuItem?->recipeItems?->pluck('ingredient_id') ?? []);
+            foreach ($oi->modifiers as $mod) {
+                $recipeIngredientIds = $recipeIngredientIds->merge(
+                    $mod->modifier?->recipeItems?->pluck('ingredient_id') ?? []
+                );
+            }
+            if ($recipeIngredientIds->intersect($shortIngredientIds)->isNotEmpty()) {
+                $shortItemIds[] = $oi->id;
+            }
+        }
+
+        return ['issues' => $issues, 'short_item_ids' => $shortItemIds];
     }
 
     /**

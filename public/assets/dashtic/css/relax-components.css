@@ -6811,6 +6811,79 @@ body {
     justify-content: flex-end;
 }
 
+/* ── Stock-shortage warning ───────────────────────────────────────────
+   Surfaced on pending orders when an item's recipe needs an ingredient
+   the branch is short on. Lets the waiter cancel the unfulfillable line
+   from the board instead of failing the whole approve later. */
+.waiter-stock-warning {
+    margin-top: .45rem;
+    padding: .5rem .55rem;
+    border-radius: 7px;
+    background: #fef2f2;
+    border: 1px solid rgba(239, 68, 68, .35);
+    display: grid;
+    gap: .35rem;
+}
+.waiter-stock-warning-head {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    color: #b91c1c;
+    font-size: .74rem;
+    font-weight: 950;
+}
+.waiter-stock-issues {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .25rem;
+}
+.waiter-stock-issue-chip {
+    font-size: .68rem;
+    font-weight: 850;
+    padding: .12rem .42rem;
+    border-radius: 999px;
+    background: rgba(239, 68, 68, .12);
+    color: #b91c1c;
+}
+.waiter-stock-short-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    padding: .3rem .2rem .3rem .45rem;
+    border-radius: 6px;
+    background: #fff;
+    border: 1px solid rgba(239, 68, 68, .2);
+    font-size: .78rem;
+    font-weight: 800;
+    color: var(--relax-heading);
+}
+.waiter-stock-cancel-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+    padding: .26rem .58rem;
+    border-radius: 999px;
+    border: 1px solid rgba(220, 38, 38, .4);
+    background: rgba(220, 38, 38, .1);
+    color: #b91c1c;
+    font-size: .72rem;
+    font-weight: 900;
+    cursor: pointer;
+    transition: all .15s ease;
+}
+.waiter-stock-cancel-btn:hover {
+    background: #dc2626;
+    color: #fff;
+    border-color: #dc2626;
+}
+/* Pending line whose recipe depends on a short ingredient. */
+.waiter-item.is-short {
+    background: #fef2f2;
+    box-shadow: inset 2px 0 0 #dc2626;
+}
+
 .waiter-lane {
     min-height: 360px;
     max-height: calc(100vh - 280px);

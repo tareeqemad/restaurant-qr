@@ -33,13 +33,23 @@ return new class extends Migration
 
     public function down(): void
     {
+        // Defensive: the later migration 2026_05_09_140000 is a more robust
+        // rewrite of this one and operates on the same `category_lookup_id`
+        // column. On a full rollback its down() runs first and already drops
+        // the FK + restores `category`, so by the time we get here the
+        // column may be gone and `category` may be back. Guard both steps so
+        // this migration is a clean no-op in that case instead of crashing
+        // with "Can't DROP FOREIGN KEY ... check that it exists".
         Schema::table('order_discounts', function (Blueprint $table) {
-            $table->dropForeign(['category_lookup_id']);
-            $table->dropColumn('category_lookup_id');
+            if (Schema::hasColumn('order_discounts', 'category_lookup_id')) {
+                $table->dropConstrainedForeignId('category_lookup_id');
+            }
         });
 
         Schema::table('order_discounts', function (Blueprint $table) {
-            $table->string('category', 32)->nullable()->after('amount');
+            if (! Schema::hasColumn('order_discounts', 'category')) {
+                $table->string('category', 32)->nullable()->after('amount');
+            }
         });
     }
 };
