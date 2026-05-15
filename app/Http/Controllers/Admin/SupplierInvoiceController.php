@@ -8,6 +8,7 @@ use App\Models\Supplier;
 use App\Models\SupplierInvoice;
 use App\Services\SupplierInvoiceService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Storage;
 
 class SupplierInvoiceController extends Controller
@@ -18,17 +19,84 @@ class SupplierInvoiceController extends Controller
     {
         $this->authorize('viewAny', SupplierInvoice::class);
 
-        $q = SupplierInvoice::with(['supplier', 'purchaseOrder'])->latest('invoice_date');
-        if ($s = $request->get('status'))   $q->where('status', $s);
-        if ($s = $request->get('search'))   $q->where('number', 'like', "%$s%");
-        if ($sid = $request->get('supplier_id')) $q->where('supplier_id', $sid);
-        if ($d = $request->get('from'))     $q->whereDate('invoice_date', '>=', $d);
-        if ($d = $request->get('to'))       $q->whereDate('invoice_date', '<=', $d);
-        if ($request->filled('overdue'))    $q->where('status', '!=', 'paid')
-                                              ->where('status', '!=', 'cancelled')
-                                              ->whereDate('due_date', '<', now());
+        $filters = $request->validate([
+            'search'     => ['nullable', 'string', 'max:80'],
+            'supplier_id'=> ['nullable', 'integer', 'exists:suppliers,id'],
+            'scope'      => ['nullable', Rule::in([
+                'all',
+                'open',
+                'overdue',
+                'due_week',
+                'this_month',
+                'unpaid',
+                'partially_paid',
+                'paid',
+                'cancelled',
+            ])],
+            'status'     => ['nullable', Rule::in(['unpaid', 'partially_paid', 'paid', 'cancelled'])],
+            'overdue'    => ['nullable'],
+            'date_field' => ['nullable', Rule::in(['invoice_date', 'due_date', 'created_at'])],
+            'from'       => ['nullable', 'date'],
+            'to'         => ['nullable', 'date'],
+        ]);
 
+        $filters['scope'] = $filters['scope']
+            ?? ($request->filled('overdue') ? 'overdue' : ($filters['status'] ?? 'all'));
+        $filters['date_field'] = $filters['date_field'] ?? 'invoice_date';
+
+        if (! empty($filters['from']) && ! empty($filters['to']) && $filters['from'] > $filters['to']) {
+            [$filters['from'], $filters['to']] = [$filters['to'], $filters['from']];
+        }
+
+        $q = SupplierInvoice::with(['supplier', 'purchaseOrder'])
+            ->orderByDesc($filters['date_field'])
+            ->orderByDesc('id');
+
+        if ($search = trim((string) ($filters['search'] ?? ''))) {
+            $q->where(function ($query) use ($search) {
+                $query->where('number', 'like', "%{$search}%")
+                    ->orWhereHas('purchaseOrder', fn ($po) => $po->where('number', 'like', "%{$search}%"));
+            });
+        }
+
+        if (! empty($filters['supplier_id'])) {
+            $q->where('supplier_id', $filters['supplier_id']);
+        }
+
+        match ($filters['scope']) {
+            'open' => $q->whereNotIn('status', ['paid', 'cancelled']),
+            'overdue' => $q->whereNotIn('status', ['paid', 'cancelled'])
+                ->whereDate('due_date', '<', today()),
+            'due_week' => $q->whereNotIn('status', ['paid', 'cancelled'])
+                ->whereBetween('due_date', [today()->toDateString(), today()->addDays(7)->toDateString()]),
+            'this_month' => $q->whereMonth('invoice_date', today()->month)
+                ->whereYear('invoice_date', today()->year)
+                ->where('status', '!=', 'cancelled'),
+            'unpaid', 'partially_paid', 'paid', 'cancelled' => $q->where('status', $filters['scope']),
+            default => null,
+        };
+
+        $dateField = $filters['date_field'];
+        if (! empty($filters['from'])) {
+            $q->whereDate($dateField, '>=', $filters['from']);
+        }
+        if (! empty($filters['to'])) {
+            $q->whereDate($dateField, '<=', $filters['to']);
+        }
+
+        $filteredQuery = clone $q;
         $invoices = $q->paginate(20)->withQueryString();
+
+        $filteredStats = [
+            'count'   => (clone $filteredQuery)->count(),
+            'total'   => (float) (clone $filteredQuery)->sum('total'),
+            'paid'    => (float) (clone $filteredQuery)->sum('paid_total'),
+            'balance' => (float) (clone $filteredQuery)->sum('balance'),
+            'overdue' => (clone $filteredQuery)
+                ->whereNotIn('status', ['paid', 'cancelled'])
+                ->whereDate('due_date', '<', today())
+                ->count(),
+        ];
 
         $stats = [
             'total_ap'     => (float) SupplierInvoice::whereNotIn('status', ['cancelled'])->sum('balance'),
@@ -44,9 +112,11 @@ class SupplierInvoiceController extends Controller
         ];
 
         return view('admin.supplier-invoices.index', [
-            'invoices'  => $invoices,
-            'stats'     => $stats,
-            'suppliers' => Supplier::where('active', true)->orderBy('name')->get(),
+            'invoices'      => $invoices,
+            'stats'         => $stats,
+            'filteredStats' => $filteredStats,
+            'filters'       => $filters,
+            'suppliers'     => Supplier::where('active', true)->orderBy('name')->get(),
         ]);
     }
 
