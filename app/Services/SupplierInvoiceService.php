@@ -8,6 +8,7 @@ use App\Models\Shift;
 use App\Models\SupplierInvoice;
 use App\Models\SupplierInvoiceItem;
 use App\Models\SupplierPayment;
+use App\Services\Accounting\AccountingService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -120,6 +121,8 @@ class SupplierInvoiceService
                 $invoice
             );
 
+            app(AccountingService::class)->recordSupplierInvoiceCreated($invoice);
+
             return $invoice->fresh('supplier', 'items');
         });
     }
@@ -164,6 +167,8 @@ class SupplierInvoiceService
                 $payment
             );
 
+            app(AccountingService::class)->recordSupplierPayment($payment);
+
             return $payment;
         });
     }
@@ -183,6 +188,8 @@ class SupplierInvoiceService
                 'notes'        => trim(($invoice->notes ?? '').' | إلغاء: '.$reason),
             ]);
             ActivityLog::log('supplier_invoice.cancelled', "إلغاء فاتورة مورد {$invoice->number}: {$reason}", $invoice);
+            app(AccountingService::class)->reverseSupplierInvoiceCreated($invoice, $userId, $reason);
+
             return $invoice->fresh();
         });
     }

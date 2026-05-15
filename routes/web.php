@@ -2,10 +2,21 @@
 
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\BrandAssetController;
+use App\Http\Controllers\OptimizedAssetController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => redirect()->route('login'));
 Route::get('/brand-assets/{key}', BrandAssetController::class)->name('brand.asset');
+Route::get('/optimized-assets/{path}', OptimizedAssetController::class)
+    ->where('path', '.*')
+    ->withoutMiddleware([
+        \Illuminate\Cookie\Middleware\EncryptCookies::class,
+        \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
+        \Illuminate\Session\Middleware\StartSession::class,
+        \Illuminate\View\Middleware\ShareErrorsFromSession::class,
+        \Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class,
+    ])
+    ->name('optimized.asset');
 
 Route::get('/login', [LoginController::class, 'show'])->name('login');
 

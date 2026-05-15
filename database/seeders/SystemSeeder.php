@@ -28,6 +28,7 @@ class SystemSeeder extends Seeder
             RoleSeeder::class,
             PermissionSeeder::class,
             CurrencySeeder::class,
+            AccountingSeeder::class,
             UnitSeeder::class,
             AllergenSeeder::class,
             DiscountCategorySeeder::class,

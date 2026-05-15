@@ -7,6 +7,7 @@ use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Refund;
 use App\Models\Shift;
+use App\Services\Accounting\AccountingService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -91,6 +92,7 @@ class RefundService
             // Only completed refunds affect the ledger. Pending ones are reservations.
             if ($status === 'completed') {
                 $invoice->increment('refunded_total', $amount);
+                app(AccountingService::class)->recordRefundCompleted($refund);
             }
 
             ActivityLog::log(
@@ -145,6 +147,7 @@ class RefundService
 
             // Now affect the ledger
             Invoice::whereKey($refund->invoice_id)->increment('refunded_total', $refund->amount);
+            app(AccountingService::class)->recordRefundCompleted($refund);
 
             ActivityLog::log('refund.completed', "إتمام استرداد {$refund->number}", $refund);
             return $refund->fresh();

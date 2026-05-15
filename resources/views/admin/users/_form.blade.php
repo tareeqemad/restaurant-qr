@@ -221,7 +221,7 @@
     @endif
 </div>
 
-<div class="d-flex gap-2 mt-4">
+<div class="form-actions">
     <button class="btn btn-primary"><i class="bi bi-save me-1"></i> حفظ</button>
     <a href="{{ route('admin.users.index') }}" class="btn btn-light">إلغاء</a>
 </div>

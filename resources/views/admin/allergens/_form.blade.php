@@ -7,5 +7,5 @@
     <div class="col-md-2"><label class="form-label">أيقونة</label><input name="icon" value="{{ old('icon', $a?->icon ?? '🥜') }}" class="form-control"></div>
     <div class="col-md-3"><label class="form-label">الترتيب</label><input type="number" name="display_order" value="{{ old('display_order', $a?->display_order ?? 0) }}" class="form-control"></div>
     <div class="col-md-9"><label class="form-label">الوصف</label><input name="description" value="{{ old('description', $a?->description) }}" class="form-control"></div>
-    <div class="col-12"><button class="btn btn-primary">حفظ</button><a href="{{ route('admin.allergens.index') }}" class="btn btn-light">إلغاء</a></div>
+    <div class="col-12 form-actions"><button class="btn btn-primary">حفظ</button><a href="{{ route('admin.allergens.index') }}" class="btn btn-light">إلغاء</a></div>
 </div>

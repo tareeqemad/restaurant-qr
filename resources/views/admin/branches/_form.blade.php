@@ -86,7 +86,7 @@
 
 </div>
 
-<div class="d-flex justify-content-end gap-2 mt-4">
+<div class="form-actions">
     <a href="{{ route('admin.branches.index') }}" class="btn btn-light">إلغاء</a>
     <button class="btn btn-primary">
         <i class="bi bi-check-circle-fill"></i> حفظ

@@ -78,7 +78,7 @@
                                       placeholder="مثلاً: زبون VIP، يفضّل الطاولة الزاوية…">{{ $reservation->internal_notes }}</textarea>
                         </div>
                     </div>
-                    <div class="d-flex justify-content-end gap-2 mt-3">
+                    <div class="form-actions">
                         <a href="{{ route('admin.reservations.index') }}" class="btn btn-light">رجوع</a>
                         <button class="btn btn-primary"><i class="bi bi-save me-1"></i> حفظ</button>
                     </div>

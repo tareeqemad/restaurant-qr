@@ -1,11 +1,15 @@
+@php
+    $theme = \App\Support\ThemePalette::current();
+    $siteName = \App\Models\Setting::get('site_name', config('restaurant.name', 'Relax'));
+@endphp
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <meta name="theme-color" content="#1B5E20">
-    <title>@yield('title', 'بوابة الزبون') · {{ config('restaurant.name') }}</title>
+    <meta name="theme-color" content="{{ $theme['primary'] }}">
+    <title>@yield('title', 'بوابة الزبون') · {{ $siteName }}</title>
     <link rel="icon" href="{{ \App\Helpers\Brand::faviconUrl() }}">
     <link href="{{ asset('assets/dashtic/icon-fonts/bootstrap-icons/icons/font/bootstrap-icons.css') }}" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -13,9 +17,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
     <style>
         :root {
-            --green-primary: #2E7D32;
-            --green-dark:    #1B5E20;
-            --green-soft:    #43A047;
+            --green-primary: {{ $theme['primary'] }};
+            --green-dark:    {{ $theme['dark'] }};
+            --green-soft:    {{ $theme['primary_light'] }};
             --gold:          #F9A825;
             --ink:           #1F2937;
             --ink-2:         #374151;
@@ -25,14 +29,15 @@
             --cream:         #FAF7F2;
             --paper:         #FFFFFF;
         }
+        @include('partials.theme-vars', ['theme' => $theme])
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         html, body { margin: 0; padding: 0; }
         body {
             font-family: 'Tajawal', system-ui, sans-serif;
             color: var(--ink);
             background:
-                radial-gradient(circle at 90% -10%, rgba(67,160,71,.10), transparent 55%),
-                radial-gradient(circle at 0% 100%, rgba(200,230,201,.30), transparent 55%),
+                radial-gradient(circle at 90% -10%, rgba(var(--primary-rgb), .10), transparent 55%),
+                radial-gradient(circle at 0% 100%, rgba(var(--primary-rgb), .18), transparent 55%),
                 linear-gradient(135deg, #FFFFFF 0%, #FAF7F2 100%);
             min-height: 100vh;
         }
@@ -61,7 +66,7 @@
             transition: background .12s;
         }
         .pf-link:hover { background: #f3f4f6; color: var(--ink); }
-        .pf-link.is-active { color: var(--green-dark); background: rgba(46,125,50,.08); }
+        .pf-link.is-active { color: var(--green-dark); background: rgba(var(--primary-rgb), .08); }
         .pf-logout {
             background: transparent; border: 0;
             font: inherit; cursor: pointer;
@@ -79,7 +84,26 @@
             padding: 22px;
             box-shadow: 0 1px 3px rgba(15,23,42,.04), 0 4px 12px rgba(15,23,42,.04);
         }
+        .pf-section {
+            background: #fff;
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            padding: 22px;
+            box-shadow: 0 1px 3px rgba(15,23,42,.04), 0 4px 12px rgba(15,23,42,.04);
+            min-width: 0;
+        }
+        .pf-section--centered {
+            text-align: center;
+            padding: 34px 24px;
+        }
+        .pf-card:has(.pf-btn) { overflow: visible; }
+        .pf-section:has(.pf-btn) { overflow: visible; }
         .pf-card + .pf-card { margin-top: 14px; }
+        .pf-card + .pf-section,
+        .pf-section + .pf-card,
+        .pf-section + .pf-section {
+            margin-top: 14px;
+        }
 
         .pf-title {
             font-size: 1.15rem; font-weight: 800; margin: 0 0 4px;
@@ -106,8 +130,19 @@
         .pf-input:focus {
             outline: none;
             background: #fff;
-            border-color: rgba(46,125,50,.7);
-            box-shadow: 0 0 0 4px rgba(46,125,50,.12);
+            border-color: rgba(var(--primary-rgb), .7);
+            box-shadow: 0 0 0 4px rgba(var(--primary-rgb), .12);
+        }
+        select.pf-input:not([multiple]):not([size]) {
+            appearance: none;
+            -webkit-appearance: none;
+            background-image:
+                linear-gradient(45deg, transparent 50%, rgb(var(--primary-rgb)) 50%),
+                linear-gradient(135deg, rgb(var(--primary-rgb)) 50%, transparent 50%);
+            background-repeat: no-repeat;
+            background-size: .42rem .42rem, .42rem .42rem;
+            background-position: left 1rem center, left .72rem center;
+            padding-inline-start: 2.35rem;
         }
         .pf-input.has-error { border-color: #dc2626; box-shadow: 0 0 0 4px rgba(220,38,38,.12); }
         .pf-error { color: #b91c1c; font-size: .78rem; font-weight: 600; margin-top: 4px; }
@@ -115,20 +150,25 @@
         .pf-btn {
             display: inline-flex; align-items: center; justify-content: center;
             gap: 8px;
+            max-width: 100%;
             background: linear-gradient(135deg, var(--green-primary), var(--green-dark));
             color: #fff; border: 0;
             border-radius: 10px;
             padding: 12px 20px;
             font-weight: 800; font-size: .95rem;
+            line-height: 1.25;
             font-family: inherit;
             cursor: pointer;
+            white-space: normal;
             box-shadow:
-                0 4px 14px -4px rgba(46,125,50,.45),
+                0 4px 14px -4px rgba(var(--primary-rgb), .45),
                 inset 0 1px 0 rgba(255,255,255,.18),
                 inset 0 -2px 0 rgba(249,168,37,.30);
             transition: transform .15s, filter .15s;
             text-decoration: none;
+            text-align: center;
         }
+        .pf-btn i, .pf-btn svg { flex: 0 0 auto; }
         .pf-btn:hover { transform: translateY(-1px); filter: brightness(1.05); }
         .pf-btn--block { width: 100%; }
         .pf-btn--ghost {
@@ -141,6 +181,26 @@
             box-shadow: none;
         }
         .pf-btn--danger:hover { background: #fef2f2; }
+        .pf-btn--primary {
+            background: linear-gradient(135deg, var(--green-primary), var(--green-dark));
+            color: #fff;
+        }
+        .pf-btn--light {
+            background: #fff;
+            color: var(--ink-2);
+            border: 1px solid var(--line);
+            box-shadow: none;
+        }
+        .pf-btn--light:hover {
+            background: #f9fafb;
+            border-color: #d1d5db;
+        }
+        .pf-btn--sm {
+            min-height: 34px;
+            padding: 7px 14px;
+            border-radius: 8px;
+            font-size: .84rem;
+        }
 
         .pf-link-bare { color: var(--green-dark); font-weight: 700; text-decoration: none; }
         .pf-link-bare:hover { text-decoration: underline; }
@@ -179,7 +239,7 @@
             flex-shrink: 0;
             min-width: 56px;
             text-align: center;
-            background: rgba(46,125,50,.08);
+            background: rgba(var(--primary-rgb), .08);
             border-radius: 10px;
             padding: 8px 10px;
         }
@@ -254,6 +314,14 @@
             margin: 0;
         }
         .pf-hero__cta { flex-shrink: 0; }
+        .pf-card .d-flex:has(.pf-btn),
+        .pf-section .d-flex:has(.pf-btn),
+        .pf-hero__cta,
+        .pf-section-head:has(.pf-btn) {
+            flex-wrap: wrap;
+            gap: 10px;
+            min-width: 0;
+        }
 
         /* Improved section header — clearer gap from sibling content */
         .pf-section-head {
@@ -311,6 +379,13 @@
             .pf-hero { flex-direction: column; align-items: stretch; }
             .pf-hero__cta { width: 100%; }
             .pf-hero__cta .pf-btn { width: 100%; }
+            .pf-card .d-flex:has(.pf-btn) .pf-btn,
+            .pf-card .d-flex:has(.pf-btn) form,
+            .pf-section .d-flex:has(.pf-btn) .pf-btn,
+            .pf-section .d-flex:has(.pf-btn) form {
+                width: 100%;
+                flex: 1 1 100%;
+            }
         }
 
         /* ─── Hamburger menu (mobile only) ───────────────────────────
@@ -355,7 +430,7 @@
         .pf-drawer.is-open { transform: translateX(0) !important; }
 
         .pf-drawer__head {
-            background: linear-gradient(135deg, #0f2d22 0%, #1f4733 100%);
+            background: linear-gradient(135deg, var(--dark) 0%, var(--primary) 100%);
             color: #fff;
             padding: 22px 20px 20px;
             position: relative;
@@ -416,12 +491,12 @@
             color: var(--green-dark);
         }
         .pf-drawer__link.is-active {
-            background: rgba(46,125,50,.08);
+            background: rgba(var(--primary-rgb), .08);
             color: var(--green-dark);
-            border-color: rgba(46,125,50,.18);
+            border-color: rgba(var(--primary-rgb), .18);
         }
         .pf-drawer__link.is-active i {
-            background: linear-gradient(135deg, #2E7D32, #1B5E20);
+            background: linear-gradient(135deg, var(--green-primary), var(--green-dark));
             color: #fff;
         }
         .pf-drawer__badge {
@@ -484,8 +559,8 @@
             transition: all .15s;
             flex-shrink: 0;
         }
-        .pf-bell:hover { background: rgba(46,125,50,.08); color: var(--green-dark); }
-        .pf-bell.is-active { background: rgba(46,125,50,.10); color: var(--green-dark); }
+        .pf-bell:hover { background: rgba(var(--primary-rgb), .08); color: var(--green-dark); }
+        .pf-bell.is-active { background: rgba(var(--primary-rgb), .10); color: var(--green-dark); }
         .pf-bell i { font-size: 1.05rem; }
         .pf-bell__count {
             position: absolute;
@@ -509,7 +584,7 @@
             .pf-bell__count { animation: none; }
         }
     </style>
-    @include('partials.runtime-theme')
+    @include('partials.runtime-theme', ['theme' => $theme])
     @stack('styles')
 </head>
 <body>
@@ -527,8 +602,8 @@
                     <i class="bi bi-list"></i>
                 </button>
                 <a href="{{ route('portal.dashboard') }}" class="pf-brand">
-                    <img src="{{ \App\Helpers\Brand::logoUrl() }}" alt="{{ config('restaurant.name') }}">
-                    <span>{{ config('restaurant.name') }}</span>
+                    <img src="{{ \App\Helpers\Brand::logoUrl() }}" alt="{{ $siteName }}">
+                    <span>{{ $siteName }}</span>
                 </a>
                 <div class="pf-spacer"></div>
                 <a href="{{ route('portal.dashboard') }}"
@@ -575,7 +650,7 @@
                 </button>
                 <div class="pf-drawer__brand">
                     <img src="{{ \App\Helpers\Brand::logoUrl() }}" alt="">
-                    <span>{{ config('restaurant.name') }}</span>
+                    <span>{{ $siteName }}</span>
                 </div>
                 @if($customer)
                     <div class="pf-drawer__user">
@@ -662,6 +737,7 @@
         @yield('content')
     </main>
 
+    <script src="{{ asset('assets/dashtic/js/relax-submit-lock.js') }}?v={{ filemtime(public_path('assets/dashtic/js/relax-submit-lock.js')) }}"></script>
     @stack('scripts')
 </body>
 </html>

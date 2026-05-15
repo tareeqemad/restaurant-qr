@@ -1,11 +1,15 @@
+@php
+    $theme = \App\Support\ThemePalette::current();
+    $siteName = \App\Models\Setting::get('site_name', config('restaurant.name', 'Relax'));
+@endphp
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <meta name="theme-color" content="#1B5E20">
-    <title>تسجيل الدخول · {{ config('restaurant.name') }}</title>
+    <meta name="theme-color" content="{{ $theme['primary'] }}">
+    <title>تسجيل الدخول · {{ $siteName }}</title>
     <link rel="icon" href="{{ \App\Helpers\Brand::faviconUrl() }}">
     <link href="{{ asset('assets/dashtic/icon-fonts/bootstrap-icons/icons/font/bootstrap-icons.css') }}" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -13,10 +17,10 @@
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
     <style>
         :root {
-            --green-primary: #2E7D32;
-            --green-dark:    #1B5E20;
-            --green-soft:    #43A047;
-            --green-mint:    #C8E6C9;
+            --green-primary: {{ $theme['primary'] }};
+            --green-dark:    {{ $theme['dark'] }};
+            --green-soft:    {{ $theme['primary_light'] }};
+            --green-mint:    {{ $theme['primary_soft'] }};
             --gold:          #F9A825;
             --ink:           #1F2937;
             --ink-2:         #374151;
@@ -29,6 +33,7 @@
             --danger-border: #FECACA;
             --danger-fg:     #991B1B;
         }
+        @include('partials.theme-vars', ['theme' => $theme])
 
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         html, body { margin: 0; padding: 0; height: 100%; }
@@ -38,8 +43,8 @@
             line-height: 1.5;
             -webkit-font-smoothing: antialiased;
             background:
-                radial-gradient(circle at 80% 10%, rgba(67,160,71,.10), transparent 55%),
-                radial-gradient(circle at 10% 90%, rgba(200,230,201,.30), transparent 55%),
+                radial-gradient(circle at 80% 10%, rgba(var(--primary-rgb), .10), transparent 55%),
+                radial-gradient(circle at 10% 90%, rgba(var(--primary-rgb), .18), transparent 55%),
                 linear-gradient(135deg, #FFFFFF 0%, #FAF7F2 100%);
             min-height: 100vh;
             overflow: hidden;
@@ -56,15 +61,15 @@
             will-change: transform;
             animation: blobFloat 18s ease-in-out infinite;
         }
-        .blob-1 { top: -120px; right: -80px;  width: 480px; height: 480px; background: rgba(67,160,71,.22); animation-delay: 0s; }
-        .blob-2 { bottom: -160px; left: -60px; width: 520px; height: 520px; background: rgba(46,125,50,.16); animation-delay: -6s; }
-        .blob-3 { top: 35%; left: 40%;        width: 420px; height: 420px; background: rgba(200,230,201,.28); animation-delay: -12s; }
+        .blob-1 { top: -120px; right: -80px;  width: 480px; height: 480px; background: rgba(var(--primary-rgb), .22); animation-delay: 0s; }
+        .blob-2 { bottom: -160px; left: -60px; width: 520px; height: 520px; background: rgba(var(--primary-rgb), .16); animation-delay: -6s; }
+        .blob-3 { top: 35%; left: 40%;        width: 420px; height: 420px; background: rgba(var(--primary-rgb), .18); animation-delay: -12s; }
 
         /* Dotted grid overlay */
         .dot-grid {
             position: fixed;
             inset: 0;
-            background-image: radial-gradient(rgba(46,125,50,.12) 1px, transparent 1px);
+            background-image: radial-gradient(rgba(var(--primary-rgb), .12) 1px, transparent 1px);
             background-size: 22px 22px;
             -webkit-mask-image: radial-gradient(ellipse at center, black 25%, transparent 75%);
             mask-image: radial-gradient(ellipse at center, black 25%, transparent 75%);
@@ -105,8 +110,8 @@
             gap: .5rem;
             padding: .55rem 1rem;
             border-radius: 99px;
-            background: rgba(46,125,50,.10);
-            border: 1px solid rgba(46,125,50,.25);
+            background: rgba(var(--primary-rgb), .10);
+            border: 1px solid rgba(var(--primary-rgb), .25);
             color: var(--green-dark);
             font-size: .82rem; font-weight: 700;
             width: fit-content;
@@ -159,13 +164,13 @@
         }
         .feature:hover {
             transform: translateY(-4px);
-            border-color: rgba(46,125,50,.3);
-            box-shadow: 0 14px 30px rgba(46,125,50,.12);
+            border-color: rgba(var(--primary-rgb), .3);
+            box-shadow: 0 14px 30px rgba(var(--primary-rgb), .12);
         }
         .feature-icon {
             width: 44px; height: 44px;
             border-radius: 12px;
-            background: rgba(46,125,50,.14);
+            background: rgba(var(--primary-rgb), .14);
             color: var(--green-primary);
             display: inline-flex;
             align-items: center; justify-content: center;
@@ -205,7 +210,7 @@
         .card-glow {
             position: absolute;
             inset: -20px;
-            background: radial-gradient(circle, rgba(46,125,50,.35), transparent 65%);
+            background: radial-gradient(circle, rgba(var(--primary-rgb), .35), transparent 65%);
             filter: blur(28px);
             border-radius: 32px;
             z-index: -1;
@@ -221,7 +226,7 @@
             padding: 2rem;
             box-shadow:
                 0 30px 60px -20px rgba(31,41,55,.18),
-                0 12px 28px -12px rgba(46,125,50,.10);
+                0 12px 28px -12px rgba(var(--primary-rgb), .10);
         }
 
         .auth-title {
@@ -242,7 +247,7 @@
             width: 144px; height: 144px;
             margin: 0 auto 1.5rem;
             object-fit: contain;
-            filter: drop-shadow(0 12px 24px rgba(46,125,50,.18));
+            filter: drop-shadow(0 12px 24px rgba(var(--primary-rgb), .18));
             /* Visual-only scale — keeps the card layout untouched */
             transform: scale(1.4);
             transform-origin: center;
@@ -276,8 +281,8 @@
         .input-control:focus {
             outline: none;
             background: var(--paper);
-            border-color: rgba(46,125,50,.9);
-            box-shadow: 0 0 0 4px rgba(46,125,50,.14);
+            border-color: rgba(var(--primary-rgb), .9);
+            box-shadow: 0 0 0 4px rgba(var(--primary-rgb), .14);
         }
         [x-cloak] { display: none !important; }
         .icon-leading,
@@ -326,14 +331,14 @@
             gap: .65rem;
             margin: .25rem 0 1.1rem;
             padding: .7rem .85rem;
-            background: rgba(46,125,50,.045);
-            border: 1px solid rgba(46,125,50,.14);
+            background: rgba(var(--primary-rgb), .045);
+            border: 1px solid rgba(var(--primary-rgb), .14);
             border-radius: 12px;
             cursor: pointer;
             transition: background .15s, border-color .15s;
             user-select: none;
         }
-        .remember-row:hover { background: rgba(46,125,50,.075); border-color: rgba(46,125,50,.25); }
+        .remember-row:hover { background: rgba(var(--primary-rgb), .075); border-color: rgba(var(--primary-rgb), .25); }
         .remember-row input[type="checkbox"] {
             width: 16px; height: 16px;
             margin: 3px 0 0;
@@ -363,7 +368,7 @@
             gap: .5rem;
             margin-top: .5rem;
             box-shadow:
-                0 12px 28px -8px rgba(46,125,50,.50),
+                0 12px 28px -8px rgba(var(--primary-rgb), .50),
                 inset 0 1px 0 rgba(255,255,255,.25),
                 inset 0 -2px 0 rgba(249,168,37,.40);
             transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
@@ -498,7 +503,7 @@
             .auth-logo { width: 120px; height: 120px; }
         }
     </style>
-    @include('partials.runtime-theme')
+    @include('partials.runtime-theme', ['theme' => $theme])
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
 </head>
 <body x-data="{ showPassword: false, capsLock: false, submitting: false, forgotOpen: false }">
@@ -542,7 +547,7 @@
 
             <div class="hero-foot">
                 <span>الإصدار 2026.1</span>
-                <span>© {{ date('Y') }} {{ config('restaurant.name') }} · جميع الحقوق محفوظة</span>
+                <span>© {{ date('Y') }} {{ $siteName }} · جميع الحقوق محفوظة</span>
             </div>
         </section>
 
@@ -560,7 +565,7 @@
                         {{-- Brand::logoUrl() already returns the dynamic monogram fallback when no
                              custom logo is uploaded — no need for an explicit hasCustomLogo branch. --}}
                         <img src="{{ \App\Helpers\Brand::logoUrl() }}"
-                             alt="{{ \App\Models\Setting::get('site_name', config('restaurant.name')) }}"
+                             alt="{{ $siteName }}"
                              class="auth-logo">
 
                         @if($errors->any())
@@ -668,5 +673,6 @@
             </div>
         </section>
     </main>
+    <script src="{{ asset('assets/dashtic/js/relax-submit-lock.js') }}?v={{ filemtime(public_path('assets/dashtic/js/relax-submit-lock.js')) }}"></script>
 </body>
 </html>

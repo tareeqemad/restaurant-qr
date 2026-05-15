@@ -87,6 +87,7 @@
         const form = e.target;
         if (! form || form.tagName !== 'FORM') return;
         if (form.dataset.confirmHandled === '1') return; // already approved
+        const submitter = e.submitter && e.submitter.form === form ? e.submitter : null;
 
         let message = form.dataset.confirm || null;
 
@@ -111,7 +112,12 @@
             // Some forms use buttons of name="…"; requestSubmit preserves
             // which button was clicked when supported.
             if (typeof form.requestSubmit === 'function') {
-                form.requestSubmit();
+                try {
+                    if (submitter) form.requestSubmit(submitter);
+                    else form.requestSubmit();
+                } catch (error) {
+                    form.submit();
+                }
             } else {
                 form.submit();
             }

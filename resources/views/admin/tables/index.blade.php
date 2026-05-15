@@ -12,7 +12,7 @@
                 <i class="bi bi-grid-3x3-gap-fill"></i>
                 إدارة الصالة
             </span>
-            <h2>مخطط الطاولات</h2>
+            <h2>تشغيل الطاولات</h2>
         </div>
 
         <a href="{{ route('admin.tables.create') }}" class="btn btn-primary tables-page-action">

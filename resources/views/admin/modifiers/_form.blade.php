@@ -26,7 +26,7 @@
         <button type="button" class="btn btn-sm btn-light" onclick="addModRow()"><i class="bi bi-plus"></i> خيار جديد</button>
     </div>
 
-    <div class="col-12"><button class="btn btn-primary">حفظ</button><a href="{{ route('admin.modifiers.index') }}" class="btn btn-light">إلغاء</a></div>
+    <div class="col-12 form-actions"><button class="btn btn-primary">حفظ</button><a href="{{ route('admin.modifiers.index') }}" class="btn btn-light">إلغاء</a></div>
 </div>
 @push('scripts')
 <script>

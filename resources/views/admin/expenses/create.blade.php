@@ -23,7 +23,7 @@
 
         <hr class="my-4">
 
-        <div class="d-flex gap-2 justify-content-end">
+        <div class="form-actions">
             <a href="{{ route('admin.expenses.index') }}" class="btn btn-light">إلغاء</a>
             <button class="btn btn-primary" @disabled(! $hasActiveBranch || $categories->isEmpty())>
                 <i class="bi bi-save"></i> حفظ — بانتظار الاعتماد

@@ -156,7 +156,7 @@
             </x-admin.data-panel>
 
             {{-- Submit --}}
-            <div class="d-flex justify-content-end gap-2">
+            <div class="form-actions">
                 <a href="{{ route('admin.dashboard') }}" class="btn btn-light">
                     <i class="bi bi-x-circle"></i> إلغاء
                 </a>

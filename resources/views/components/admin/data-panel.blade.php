@@ -35,12 +35,12 @@
     'compact' => false,
 ])
 
-<div {{ $attributes->merge(['class' => 'card custom-card']) }}>
+<div {{ $attributes->merge(['class' => 'card custom-card data-panel']) }}>
 
     @if($title || isset($actions))
-        <div class="card-header">
+        <div class="card-header data-panel-header">
             @if($title)
-                <h3 class="card-title mb-0 d-inline-flex align-items-center gap-2">
+                <h3 class="card-title data-panel-title mb-0 d-inline-flex align-items-center gap-2">
                     @if($icon)
                         <i class="bi {{ $icon }} text-accent"></i>
                     @endif
@@ -52,7 +52,7 @@
             @endif
 
             @isset($actions)
-                <div class="card-options">
+                <div class="card-options data-panel-actions">
                     {{ $actions }}
                 </div>
             @endisset
@@ -60,7 +60,7 @@
     @endif
 
     @isset($filters)
-        <div class="card-body border-block-end bg-light p-3">
+        <div class="card-body data-panel-filters border-block-end bg-light p-3">
             {{ $filters }}
         </div>
     @endisset

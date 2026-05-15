@@ -8,12 +8,6 @@
   if (localStorage.dashticrtl) {
     let html = document.querySelector("html");
     html.setAttribute("dir", "rtl");
-    document
-      .querySelector("#style")
-      ?.setAttribute(
-        "href",
-        "/assets/dashtic/libs/bootstrap/css/bootstrap.rtl.min.css"
-      );
   }
   if (localStorage.getItem("dashticlayout") == "horizontal") {
     document

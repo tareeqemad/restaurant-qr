@@ -209,10 +209,10 @@ new class extends Component
                 <i class="bi bi-broadcast-pin"></i>
                 الصالة الآن
             </span>
-            <h2>مخطط الطاولات التشغيلي</h2>
+            <h2>حالة الصالة الآن</h2>
             <p>
-                {{ $stats['available'] }} متاحة، {{ $stats['occupied'] }} مشغولة،
-                {{ $stats['pending_orders'] }} طلب ينتظر الجرسون،
+                {{ $stats['available'] }} متاحة · {{ $stats['occupied'] }} مشغولة ·
+                {{ $stats['pending_orders'] }} طلب ينتظر الجرسون ·
                 {{ $stats['ready_orders'] }} جاهز للتقديم
             </p>
         </div>

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\Payment;
 use App\Models\Shift;
+use App\Services\Accounting\AccountingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -57,6 +58,7 @@ class ShiftController extends Controller
                     $shift,
                     ['cash_opening' => (float) $data['cash_opening']]
                 );
+
             });
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
@@ -123,6 +125,8 @@ class ShiftController extends Controller
                         'cash_variance' => $variance,
                     ]
                 );
+
+                app(AccountingService::class)->recordShiftClosed($shift->fresh());
             });
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());

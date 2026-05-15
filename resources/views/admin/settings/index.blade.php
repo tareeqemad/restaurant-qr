@@ -4,8 +4,10 @@
 @php
     use App\Helpers\Brand;
     use App\Models\Setting;
+    use App\Support\ThemePalette;
 
-    $theme = config('restaurant.theme', []);
+    $themeDefaults = config('restaurant.theme', []);
+    $theme = ThemePalette::current();
     $read = fn (string $key, mixed $default = null) => old($key, Setting::get($key, $default));
     $checked = fn (string $key, mixed $default = false) => (bool) Setting::get($key, $default);
     $canEditSettings = auth()->user()->hasAnyRole(['super_admin', 'admin']);
@@ -80,8 +82,64 @@
         box-shadow: inset 0 0 0 1px rgba(0,0,0,.1);
     }
     .color-input {
-        height: 44px;
-        padding: .25rem;
+        position: absolute;
+        inset: 0;
+        width: 100% !important;
+        min-width: 0;
+        height: 100%;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        cursor: pointer;
+        opacity: 0;
+    }
+    .theme-color-pick {
+        position: relative;
+        flex: 0 0 56px;
+        width: 56px;
+        height: 38px;
+        margin: 0;
+        border-radius: 8px;
+        overflow: hidden;
+        cursor: pointer;
+    }
+    .theme-color-swatch {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border-radius: 8px;
+        background: var(--primary);
+        box-shadow: inset 0 0 0 1px rgba(0,0,0,.12);
+    }
+    .theme-color-pick:focus-within .theme-color-swatch {
+        box-shadow: inset 0 0 0 1px rgba(0,0,0,.16), 0 0 0 3px rgba(var(--primary-rgb), .14);
+    }
+    .theme-color-control {
+        min-height: 50px;
+        display: flex;
+        align-items: center;
+        gap: .65rem;
+        padding: .45rem;
+        border: 1px solid rgba(var(--primary-rgb), .14);
+        border-radius: 10px;
+        background: #fff;
+        transition: border-color .15s, box-shadow .15s;
+    }
+    .theme-color-control:focus-within {
+        border-color: rgba(var(--primary-rgb), .45);
+        box-shadow: 0 0 0 4px rgba(var(--primary-rgb), .1);
+    }
+    .theme-color-code {
+        direction: ltr;
+        unicode-bidi: plaintext;
+        flex: 1;
+        min-width: 0;
+        padding-inline: .25rem;
+        color: var(--relax-heading, #10241b);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        font-size: .88rem;
+        font-weight: 800;
+        text-align: left;
     }
 </style>
 @endpush
@@ -359,32 +417,65 @@
                                 <button type="button" class="theme-preset" data-preset='{"theme_primary":"#7f1d1d","theme_dark":"#450a0a","theme_header":"#7f1d1d","theme_accent":"#f59e0b","theme_menu":"#fff7ed"}'>
                                     <span class="swatch" style="background:#7f1d1d"></span><span class="swatch" style="background:#f59e0b"></span> دافئ
                                 </button>
+                                <button type="button" class="theme-preset" data-preset='{"theme_primary":"#1d4ed8","theme_dark":"#0f172a","theme_header":"#1e40af","theme_accent":"#06b6d4","theme_menu":"#eff6ff"}'>
+                                    <span class="swatch" style="background:#1d4ed8"></span><span class="swatch" style="background:#06b6d4"></span> أزرق
+                                </button>
                             </div>
                             <div class="row g-3">
                                 <div class="col-md-4">
                                     <label class="form-label">الأساسي</label>
-                                    <input type="color" name="theme_primary" class="form-control form-control-color color-input w-100"
-                                        value="{{ $read('theme_primary', $theme['primary'] ?? '#164c37') }}">
+                                    <div class="theme-color-control">
+                                        <label class="theme-color-pick" aria-label="اختيار اللون الأساسي">
+                                            <span class="theme-color-swatch" data-theme-color-swatch="theme_primary"></span>
+                                            <input type="color" name="theme_primary" class="form-control form-control-color color-input"
+                                                data-theme-color value="{{ $read('theme_primary', $themeDefaults['primary'] ?? '#164c37') }}">
+                                        </label>
+                                        <span class="theme-color-code" data-theme-color-code="theme_primary"></span>
+                                    </div>
                                 </div>
                                 <div class="col-md-4">
                                     <label class="form-label">الغامق</label>
-                                    <input type="color" name="theme_dark" class="form-control form-control-color color-input w-100"
-                                        value="{{ $read('theme_dark', $theme['dark'] ?? '#0f2d22') }}">
+                                    <div class="theme-color-control">
+                                        <label class="theme-color-pick" aria-label="اختيار اللون الغامق">
+                                            <span class="theme-color-swatch" data-theme-color-swatch="theme_dark"></span>
+                                            <input type="color" name="theme_dark" class="form-control form-control-color color-input"
+                                                data-theme-color value="{{ $read('theme_dark', $themeDefaults['dark'] ?? '#0f2d22') }}">
+                                        </label>
+                                        <span class="theme-color-code" data-theme-color-code="theme_dark"></span>
+                                    </div>
                                 </div>
                                 <div class="col-md-4">
                                     <label class="form-label">الهيدر</label>
-                                    <input type="color" name="theme_header" class="form-control form-control-color color-input w-100"
-                                        value="{{ $read('theme_header', $theme['header'] ?? '#164c37') }}">
+                                    <div class="theme-color-control">
+                                        <label class="theme-color-pick" aria-label="اختيار لون الهيدر">
+                                            <span class="theme-color-swatch" data-theme-color-swatch="theme_header"></span>
+                                            <input type="color" name="theme_header" class="form-control form-control-color color-input"
+                                                data-theme-color value="{{ $read('theme_header', $themeDefaults['header'] ?? '#164c37') }}">
+                                        </label>
+                                        <span class="theme-color-code" data-theme-color-code="theme_header"></span>
+                                    </div>
                                 </div>
                                 <div class="col-md-4">
                                     <label class="form-label">التمييز</label>
-                                    <input type="color" name="theme_accent" class="form-control form-control-color color-input w-100"
-                                        value="{{ $read('theme_accent', $theme['accent'] ?? '#b97818') }}">
+                                    <div class="theme-color-control">
+                                        <label class="theme-color-pick" aria-label="اختيار لون التمييز">
+                                            <span class="theme-color-swatch" data-theme-color-swatch="theme_accent"></span>
+                                            <input type="color" name="theme_accent" class="form-control form-control-color color-input"
+                                                data-theme-color value="{{ $read('theme_accent', $themeDefaults['accent'] ?? '#b97818') }}">
+                                        </label>
+                                        <span class="theme-color-code" data-theme-color-code="theme_accent"></span>
+                                    </div>
                                 </div>
                                 <div class="col-md-4">
                                     <label class="form-label">خلفية المنيو الجانبي</label>
-                                    <input type="color" name="theme_menu" class="form-control form-control-color color-input w-100"
-                                        value="{{ $read('theme_menu', $theme['menu'] ?? '#f7f8f5') }}">
+                                    <div class="theme-color-control">
+                                        <label class="theme-color-pick" aria-label="اختيار خلفية المنيو الجانبي">
+                                            <span class="theme-color-swatch" data-theme-color-swatch="theme_menu"></span>
+                                            <input type="color" name="theme_menu" class="form-control form-control-color color-input"
+                                                data-theme-color value="{{ $read('theme_menu', $themeDefaults['menu'] ?? '#f7f8f5') }}">
+                                        </label>
+                                        <span class="theme-color-code" data-theme-color-code="theme_menu"></span>
+                                    </div>
                                 </div>
                                 <div class="col-md-2">
                                     <label class="form-label">نمط الهيدر</label>
@@ -602,13 +693,154 @@
 
 <script>
     (function () {
+        function initSettingsPage() {
         const saveRow = document.getElementById('settingsSaveRow');
         const mainTabs = ['#tab-general', '#tab-billing', '#tab-operations', '#tab-discounts', '#tab-theme'];
+        const root = document.documentElement;
+        const colorFields = {
+            theme_primary: '#164c37',
+            theme_dark: '#0f2d22',
+            theme_header: '#164c37',
+            theme_accent: '#b97818',
+            theme_menu: '#f7f8f5',
+        };
 
         function syncSaveRow() {
             const active = document.querySelector('.settings-shell .tab-pane.active')?.id;
             if (!saveRow) return;
             saveRow.style.display = mainTabs.includes('#' + active) ? '' : 'none';
+        }
+
+        function normalizeHex(value, fallback) {
+            let hex = String(value || '').trim().replace('#', '');
+            if (hex.length === 3) {
+                hex = hex.split('').map((part) => part + part).join('');
+            }
+            return /^[0-9a-f]{6}$/i.test(hex) ? '#' + hex.toLowerCase() : fallback;
+        }
+
+        function hexToRgb(value) {
+            const hex = normalizeHex(value, '#000000').slice(1);
+            return [
+                parseInt(hex.slice(0, 2), 16),
+                parseInt(hex.slice(2, 4), 16),
+                parseInt(hex.slice(4, 6), 16),
+            ].join(', ');
+        }
+
+        function mix(color, withColor, amount) {
+            const from = normalizeHex(color, '#000000').slice(1);
+            const to = normalizeHex(withColor, '#ffffff').slice(1);
+            const ratio = Math.max(0, Math.min(1, amount));
+            const channel = (offset) => {
+                const a = parseInt(from.slice(offset, offset + 2), 16);
+                const b = parseInt(to.slice(offset, offset + 2), 16);
+                return Math.max(0, Math.min(255, Math.round(a + ((b - a) * ratio))));
+            };
+            return '#' + [0, 2, 4].map((offset) => channel(offset).toString(16).padStart(2, '0')).join('');
+        }
+
+        function darken(color, factor = .68) {
+            const hex = normalizeHex(color, '#805113').slice(1);
+            const channel = (offset) => Math.max(0, Math.min(255, Math.round(parseInt(hex.slice(offset, offset + 2), 16) * factor)));
+            return '#' + [0, 2, 4].map((offset) => channel(offset).toString(16).padStart(2, '0')).join('');
+        }
+
+        function colorValue(name) {
+            const input = document.querySelector(`[name="${name}"]`);
+            return normalizeHex(input?.value, colorFields[name]);
+        }
+
+        function setVar(name, value) {
+            root.style.setProperty(name, value);
+        }
+
+        function syncColorCodes() {
+            Object.keys(colorFields).forEach((name) => {
+                const value = colorValue(name);
+                const label = document.querySelector(`[data-theme-color-code="${name}"]`);
+                if (label) label.textContent = value.toUpperCase();
+                const swatch = document.querySelector(`[data-theme-color-swatch="${name}"]`);
+                if (swatch) swatch.style.backgroundColor = value;
+            });
+        }
+
+        function applyThemePreview() {
+            const primary = colorValue('theme_primary');
+            const dark = colorValue('theme_dark');
+            const header = colorValue('theme_header');
+            const accent = colorValue('theme_accent');
+            const menu = colorValue('theme_menu');
+            const primaryRgb = hexToRgb(primary);
+            const darkRgb = hexToRgb(dark);
+            const headerRgb = hexToRgb(header);
+            const accentRgb = hexToRgb(accent);
+            const menuRgb = hexToRgb(menu);
+            const primaryLight = mix(primary, '#ffffff', .24);
+            const primarySoft = mix(primary, '#ffffff', .86);
+            const accentDark = darken(accent);
+            const accentSoft = mix(accent, '#ffffff', .82);
+
+            setVar('--primary', primary);
+            setVar('--primary-rgb', primaryRgb);
+            setVar('--primary-color', `rgb(${primaryRgb})`);
+            setVar('--primary-border', `rgb(${primaryRgb})`);
+            setVar('--primary005', `rgba(${primaryRgb}, 0.05)`);
+            for (let i = 1; i <= 9; i += 1) {
+                setVar(`--primary0${i}`, `rgba(${primaryRgb}, 0.${i})`);
+            }
+
+            setVar('--dark', dark);
+            setVar('--dark-rgb', darkRgb);
+            setVar('--header', header);
+            setVar('--header-rgb', headerRgb);
+            setVar('--accent', accent);
+            setVar('--accent-rgb', accentRgb);
+            setVar('--accent-dark', accentDark);
+            setVar('--accent-soft', accentSoft);
+            setVar('--menu', menu);
+            setVar('--menu-rgb', menuRgb);
+
+            setVar('--green-primary', primary);
+            setVar('--green-dark', dark);
+            setVar('--green-soft', primaryLight);
+            setVar('--green-mint', primarySoft);
+            setVar('--gold', accent);
+            setVar('--brand', primary);
+            setVar('--brand-dark', dark);
+            setVar('--brand-light', primaryLight);
+            setVar('--brand-soft', primarySoft);
+            setVar('--gold-soft', accentSoft);
+            setVar('--success', primary);
+            setVar('--warning', accent);
+            setVar('--info', primary);
+            setVar('--brand-gradient', `linear-gradient(135deg, ${primary} 0%, ${dark} 100%)`);
+            setVar('--brand-gradient-y', `linear-gradient(135deg, ${primary} 0%, ${accent} 100%)`);
+            setVar('--gold-gradient', `linear-gradient(135deg, ${accent} 0%, ${accentDark} 100%)`);
+            setVar('--forest', primary);
+            setVar('--forest-deep', dark);
+            setVar('--forest-dark', dark);
+            setVar('--gold-light', `rgba(${accentRgb}, 0.58)`);
+            setVar('--cream', menu);
+            setVar('--bg', menu);
+            setVar('--border', `rgba(${primaryRgb}, 0.14)`);
+            setVar('--line', `rgba(${primaryRgb}, 0.14)`);
+
+            setVar('--menu-bg', menu);
+            setVar('--menu-prime-color', `rgb(${primaryRgb})`);
+            setVar('--menu-border-color', `rgba(${primaryRgb}, 0.12)`);
+            setVar('--header-bg', header);
+            setVar('--header-bg2', `rgba(${headerRgb}, 0.5)`);
+            setVar('--header-prime-color', 'rgba(255, 255, 255, 0.88)');
+            setVar('--header-border-color', 'rgba(255, 255, 255, 0.14)');
+
+            const headerStyle = document.querySelector('[name="theme_header_style"]')?.value || 'color';
+            const menuStyle = document.querySelector('[name="theme_menu_style"]')?.value || 'brand';
+            root.setAttribute('data-header-styles', headerStyle);
+            root.setAttribute('data-relax-menu-style', menuStyle);
+            root.setAttribute('data-menu-styles', menuStyle === 'brand' ? 'light' : menuStyle);
+            document.querySelector('meta[name="theme-color"]')?.setAttribute('content', primary);
+            syncColorCodes();
         }
 
         document.querySelectorAll('.settings-shell [data-bs-toggle="tab"]').forEach((tab) => {
@@ -628,10 +860,27 @@
                 const preset = JSON.parse(button.dataset.preset || '{}');
                 Object.entries(preset).forEach(([name, value]) => {
                     const input = document.querySelector(`[name="${name}"]`);
-                    if (input) input.value = value;
+                    if (input) {
+                        input.value = normalizeHex(value, input.value || colorFields[name] || '#000000');
+                    }
                 });
+                applyThemePreview();
             });
         });
+
+        document.querySelectorAll('[data-theme-color], [name="theme_header_style"], [name="theme_menu_style"]').forEach((input) => {
+            input.addEventListener('input', applyThemePreview);
+            input.addEventListener('change', applyThemePreview);
+        });
+
+        applyThemePreview();
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initSettingsPage);
+        } else {
+            initSettingsPage();
+        }
     })();
 </script>
 @endsection

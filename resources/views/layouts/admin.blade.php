@@ -1,67 +1,14 @@
 @php
     $settings = \App\Models\Setting::class;
-    $themeDefaults = config('restaurant.theme', []);
+    $theme = \App\Support\ThemePalette::current();
     $siteName = $settings::get('site_name', config('restaurant.name', 'Relax'));
-    // Theme colors — admin can override via /admin/settings
-    $normalizeHex = function ($color, string $fallback): string {
-        $hex = ltrim((string) $color, '#');
-        if (strlen($hex) === 3) {
-            $hex = $hex[0].$hex[0].$hex[1].$hex[1].$hex[2].$hex[2];
-        }
-
-        return strlen($hex) === 6 && ctype_xdigit($hex) ? '#'.strtolower($hex) : $fallback;
-    };
-
-    $hexToRgb = function (string $color, string $fallback): string {
-        $hex = ltrim($color, '#');
-        if (strlen($hex) === 3) $hex = $hex[0].$hex[0].$hex[1].$hex[1].$hex[2].$hex[2];
-        if (strlen($hex) === 6 && ctype_xdigit($hex)) {
-            return hexdec(substr($hex,0,2)).", ".hexdec(substr($hex,2,2)).", ".hexdec(substr($hex,4,2));
-        }
-        return $fallback;
-    };
-    $darkenHex = function (string $color, float $factor = 0.68): string {
-        $hex = ltrim($color, '#');
-        if (strlen($hex) !== 6 || ! ctype_xdigit($hex)) {
-            return '#805113';
-        }
-
-        $channel = function (string $value) use ($factor): int {
-            return max(0, min(255, (int) round(hexdec($value) * $factor)));
-        };
-
-        return sprintf(
-            '#%02x%02x%02x',
-            $channel(substr($hex, 0, 2)),
-            $channel(substr($hex, 2, 2)),
-            $channel(substr($hex, 4, 2))
-        );
-    };
-
-    $primaryDefault = $themeDefaults['primary'] ?? '#164c37';
-    $darkDefault = $themeDefaults['dark'] ?? '#0f2d22';
-    $headerDefault = $themeDefaults['header'] ?? $primaryDefault;
-    $accentDefault = $themeDefaults['accent'] ?? '#b97818';
-    $menuDefault = $themeDefaults['menu'] ?? '#f7f8f5';
-
-    $primaryColor = $normalizeHex($settings::get('theme_primary', $primaryDefault), $primaryDefault);
-    $darkColor = $normalizeHex($settings::get('theme_dark', $darkDefault), $darkDefault);
-    $headerColor = $normalizeHex($settings::get('theme_header', $headerDefault), $headerDefault);
-    $accentColor = $normalizeHex($settings::get('theme_accent', $accentDefault), $accentDefault);
-    $menuColor = $normalizeHex($settings::get('theme_menu', $menuDefault), $menuDefault);
-
-    $primaryRgb = $hexToRgb($primaryColor, '22, 76, 55');
-    $darkRgb = $hexToRgb($darkColor, '15, 45, 34');
-    $headerRgb = $hexToRgb($headerColor, '22, 76, 55');
-    $accentRgb = $hexToRgb($accentColor, '185, 120, 24');
-    $accentDark = $darkenHex($accentColor);
-
-    $headerStyle = $settings::get('theme_header_style', $themeDefaults['header_style'] ?? 'color');
-    $headerStyle = in_array($headerStyle, ['light', 'dark', 'color'], true) ? $headerStyle : 'color';
-
-    $menuStyle = $settings::get('theme_menu_style', $themeDefaults['menu_style'] ?? 'brand');
-    $menuStyle = in_array($menuStyle, ['brand', 'light', 'dark'], true) ? $menuStyle : 'brand';
-    $dashticMenuStyle = $menuStyle === 'brand' ? 'light' : $menuStyle;
+    $headerStyle = $theme['header_style'];
+    $menuStyle = $theme['menu_style'];
+    $dashticMenuStyle = $theme['dashtic_menu_style'];
+    $optimizedAsset = fn (string $path): string => route('optimized.asset', [
+        'path' => $path,
+        'v' => filemtime(public_path($path)),
+    ]);
 @endphp
 <!DOCTYPE html>
 {{-- Admin navigation is intentionally horizontal, matching the desired
@@ -84,11 +31,31 @@
     <title>@yield('title', 'لوحة التحكم') - {{ $siteName }}</title>
 
     <link rel="icon" href="{{ \App\Helpers\Brand::faviconUrl() }}" type="image/x-icon">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 
-    {{-- === Dashtic core assets (order matches Dashtic's index.html exactly) === --}}
+    <style>
+        #loader {
+            position: fixed;
+            inset: 0;
+            z-index: 99999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgb(var(--body-bg-rgb, 250, 245, 235));
+        }
 
-    <!-- Choices JS (early, as per template) -->
-    <script src="{{ asset('assets/dashtic/libs/choices.js/public/assets/scripts/choices.min.js') }}"></script>
+        #loader.d-none {
+            display: none !important;
+        }
+
+        #loader img {
+            width: 3rem;
+            height: 3rem;
+        }
+    </style>
+
+    {{-- === Dashtic core assets: keep render-blocking CSS before template JS. === --}}
 
     {{-- Dashtic stores switcher choices in localStorage. Since this app has no
          switcher UI, stale demo values must not override our horizontal menu. --}}
@@ -96,6 +63,8 @@
         try {
             [
                 'dashticlayout',
+                'dashticrtl',
+                'dashticltr',
                 'dashticnavstyles',
                 'dashticverticalstyles',
                 'dashticmenufixed',
@@ -103,22 +72,37 @@
                 'dashticheaderfixed',
                 'dashticheaderscrollable',
                 'dashticboxed',
-                'dashticclassic'
+                'dashticfullwidth',
+                'dashticclassic',
+                'dashticregular',
+                'dashticdarktheme',
+                'dashticlighttheme',
+                'dashticMenu',
+                'dashticHeader',
+                'primaryRGB',
+                'bodyBgRGB',
+                'bodylightRGB',
+                'dashticbgColor',
+                'dashticheaderbg',
+                'dashticmenubg',
+                'dashticbgwhite',
+                'bgtheme',
+                'bgimg',
+                'loaderEnable'
             ].forEach((key) => localStorage.removeItem(key));
         } catch (e) {}
     </script>
 
-    <!-- Main Theme Js -->
-    <script src="{{ asset('assets/dashtic/js/main.js') }}"></script>
-
     <!-- Bootstrap RTL -->
-    <link id="style" href="{{ asset('assets/dashtic/libs/bootstrap/css/bootstrap.rtl.min.css') }}" rel="stylesheet">
+    <link id="style" href="{{ $optimizedAsset('assets/dashtic/libs/bootstrap/css/bootstrap.rtl.min.css') }}" rel="stylesheet">
 
     <!-- Style Css -->
-    <link href="{{ asset('assets/dashtic/css/styles.min.css') }}" rel="stylesheet">
+    <link href="{{ $optimizedAsset('assets/dashtic/css/styles.min.css') }}" rel="stylesheet">
 
     <!-- Icons Css -->
-    <link href="{{ asset('assets/dashtic/css/icons.css') }}" rel="stylesheet">
+    <link href="{{ asset('assets/dashtic/icon-fonts/RemixIcons/fonts/remixicon.css') }}" rel="stylesheet">
+    <link href="{{ asset('assets/dashtic/icon-fonts/feather/feather.css') }}" rel="stylesheet">
+    <link href="{{ asset('assets/dashtic/icon-fonts/bootstrap-icons/icons/font/bootstrap-icons.css') }}" rel="stylesheet">
 
     <!-- Node Waves Css -->
     <link href="{{ asset('assets/dashtic/libs/node-waves/waves.min.css') }}" rel="stylesheet">
@@ -133,50 +117,17 @@
     {{-- Minimal brand + our custom components. Loaded AFTER Dashtic base
          so our rules win when they touch the same classes. --}}
     <link rel="stylesheet" href="{{ asset('assets/dashtic/css/relax-brand.css') }}?v={{ filemtime(public_path('assets/dashtic/css/relax-brand.css')) }}">
-    <link rel="stylesheet" href="{{ asset('assets/dashtic/css/relax-components.css') }}?v={{ filemtime(public_path('assets/dashtic/css/relax-components.css')) }}">
+    <link rel="stylesheet" href="{{ $optimizedAsset('assets/dashtic/css/relax-components.css') }}">
 
     {{-- Runtime theme override. It is intentionally loaded after Relax CSS so
          dashboard settings win over the compiled default palette. --}}
     <style>
-        :root {
-            --primary: {{ $primaryColor }};
-            --primary-rgb: {{ $primaryRgb }};
-            --primary-color: rgb(var(--primary-rgb));
-            --primary-border: rgb(var(--primary-rgb));
-            --primary005: rgba(var(--primary-rgb), 0.05);
-            --primary01: rgba(var(--primary-rgb), 0.1);
-            --primary02: rgba(var(--primary-rgb), 0.2);
-            --primary03: rgba(var(--primary-rgb), 0.3);
-            --primary04: rgba(var(--primary-rgb), 0.4);
-            --primary05: rgba(var(--primary-rgb), 0.5);
-            --primary06: rgba(var(--primary-rgb), 0.6);
-            --primary07: rgba(var(--primary-rgb), 0.7);
-            --primary08: rgba(var(--primary-rgb), 0.8);
-            --primary09: rgba(var(--primary-rgb), 0.9);
-            --dark: {{ $darkColor }};
-            --dark-rgb: {{ $darkRgb }};
-            --accent: {{ $accentColor }};
-            --accent-rgb: {{ $accentRgb }};
-            --accent-dark: {{ $accentDark }};
-            --menu: {{ $menuColor }};
-        }
-
-        [data-relax-menu-style="brand"] {
-            --menu-bg: {{ $menuColor }};
-            --menu-prime-color: rgb(var(--primary-rgb));
-            --menu-border-color: rgba(var(--primary-rgb), 0.12);
-        }
-
-        [data-header-styles="color"] {
-            --header-bg: {{ $headerColor }};
-            --header-bg2: rgba({{ $headerRgb }}, 0.5);
-            --header-prime-color: rgba(255, 255, 255, 0.88);
-            --header-border-color: rgba(255, 255, 255, 0.14);
-        }
+        @include('partials.theme-vars', ['theme' => $theme])
     </style>
 
-    {{-- Arabic typography --}}
-    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&family=Cinzel:wght@600;700&display=swap" rel="stylesheet">
+    {{-- Arabic typography: load after first paint; do not block dashboard CSS. --}}
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&family=Cinzel:wght@600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&family=Cinzel:wght@600;700&display=swap" rel="stylesheet"></noscript>
 
     @stack('head-scripts')
     @vite(['resources/js/app.js'])
@@ -218,15 +169,17 @@
          If you later switch to Reverb, restore this block + the JS in the
          inline script section below. --}}
 
-    {{-- === Dashtic core scripts (order matches their index.html) === --}}
+    {{-- === Dashtic core scripts === --}}
     <script src="{{ asset('assets/dashtic/libs/jquery/jquery.min.js') }}"></script>
     <script src="{{ asset('assets/dashtic/libs/@popperjs/core/umd/popper.min.js') }}"></script>
     <script src="{{ asset('assets/dashtic/libs/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
-    <script src="{{ asset('assets/dashtic/js/defaultmenu.min.js') }}"></script>
+    <script src="{{ asset('assets/dashtic/js/main.js') }}?v={{ filemtime(public_path('assets/dashtic/js/main.js')) }}"></script>
+    <script src="{{ asset('assets/dashtic/js/defaultmenu.min.js') }}?v={{ filemtime(public_path('assets/dashtic/js/defaultmenu.min.js')) }}"></script>
     <script src="{{ asset('assets/dashtic/libs/node-waves/waves.min.js') }}"></script>
     <script src="{{ asset('assets/dashtic/js/sticky.js') }}"></script>
     <script src="{{ asset('assets/dashtic/libs/simplebar/simplebar.min.js') }}"></script>
     <script src="{{ asset('assets/dashtic/js/simplebar.js') }}"></script>
+    <script src="{{ asset('assets/dashtic/libs/choices.js/public/assets/scripts/choices.min.js') }}"></script>
     <script src="{{ asset('assets/dashtic/libs/flatpickr/flatpickr.min.js') }}"></script>
     @if(file_exists(public_path('assets/dashtic/libs/flatpickr/l10n/ar.js')))
         <script src="{{ asset('assets/dashtic/libs/flatpickr/l10n/ar.js') }}"></script>
@@ -262,6 +215,8 @@
     {{-- SweetAlert2-driven toast + form-confirm interceptor. Must come AFTER
          the Swal CDN — the partial gates its IIFE on window.Swal. --}}
     @include('admin.partials.toast')
+
+    <script src="{{ asset('assets/dashtic/js/relax-submit-lock.js') }}?v={{ filemtime(public_path('assets/dashtic/js/relax-submit-lock.js')) }}"></script>
 
     {{-- Global notification sound helper --}}
     <audio id="notify-sound" src="data:audio/wav;base64,UklGRl9vAAAXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQ=="></audio>

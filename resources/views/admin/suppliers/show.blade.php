@@ -2,18 +2,18 @@
 @section('title', $supplier->name)
 
 @section('content')
-<x-admin.breadcrumb title="{{ $supplier->name }}" icon="bi-truck" />
-
-<div class="d-flex justify-content-end mb-3 gap-2">
-    <a href="{{ route('admin.vendor-prices.supplier', $supplier) }}" class="btn btn-info">
-        <i class="bi bi-graph-up-arrow me-1"></i>
-        تاريخ الأسعار من هذا المورّد
-    </a>
-    <a href="{{ route('admin.vendor-prices.compare') }}" class="btn btn-outline-info">
-        <i class="bi bi-arrows-collapse me-1"></i>
-        مقارنة المورّدين
-    </a>
-</div>
+<x-admin.breadcrumb title="{{ $supplier->name }}" icon="bi-truck">
+    <x-slot:actions>
+        <a href="{{ route('admin.vendor-prices.supplier', $supplier) }}" class="btn btn-info">
+            <i class="bi bi-graph-up-arrow me-1"></i>
+            تاريخ الأسعار من هذا المورّد
+        </a>
+        <a href="{{ route('admin.vendor-prices.compare') }}" class="btn btn-outline-info">
+            <i class="bi bi-arrows-collapse me-1"></i>
+            مقارنة المورّدين
+        </a>
+    </x-slot:actions>
+</x-admin.breadcrumb>
 
 <x-admin.stat-rail :stats="[
     ['label' => 'عدد المكونات', 'value' => $totals['ingredient_count'], 'icon' => 'bi-boxes',                'color' => 'primary'],

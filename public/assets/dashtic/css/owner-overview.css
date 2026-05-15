@@ -1,0 +1,436 @@
+/* Owner overview page styles. Loaded in the head to avoid FOUC. */
+.owner-overview {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+    }
+
+    .owner-hero,
+    .owner-panel,
+    .owner-card,
+    .owner-action,
+    .owner-hero-stat {
+        background: #fff;
+        border: 1px solid rgba(15, 45, 34, .1);
+        border-radius: 8px;
+        box-shadow: 0 10px 24px rgba(15, 45, 34, .05);
+    }
+
+    .owner-hero {
+        display: grid;
+        grid-template-columns: minmax(260px, .9fr) 1.4fr;
+        gap: 1rem;
+        padding: 1.25rem;
+        align-items: stretch;
+    }
+
+    .owner-kicker {
+        color: var(--accent-dark);
+        font-size: .78rem;
+        font-weight: 900;
+    }
+
+    .owner-hero-main h2 {
+        margin: .25rem 0;
+        color: var(--primary);
+        font-size: 2.2rem;
+        font-weight: 900;
+        letter-spacing: 0;
+    }
+
+    .owner-hero-main p {
+        color: #6b7280;
+        margin: 0;
+        max-width: 520px;
+    }
+
+    .owner-hero-grid,
+    .owner-action-grid,
+    .owner-card-grid {
+        display: grid;
+        gap: .75rem;
+    }
+
+    .owner-hero-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .owner-hero-stat {
+        padding: .9rem;
+        color: #1f2937;
+        min-height: 94px;
+    }
+
+    .owner-hero-stat:hover {
+        color: var(--primary);
+        border-color: rgba(var(--primary-rgb), .25);
+    }
+
+    .owner-hero-stat span,
+    .owner-action-body span,
+    .owner-card-metrics span,
+    .owner-risk-list span {
+        display: block;
+        color: #6b7280;
+        font-size: .78rem;
+        font-weight: 800;
+    }
+
+    .owner-hero-stat strong {
+        display: block;
+        margin-top: .35rem;
+        color: var(--primary);
+        font-size: 1.25rem;
+        font-weight: 900;
+        letter-spacing: 0;
+    }
+
+    .owner-hero-stat.is-hot strong {
+        color: #dc2626;
+    }
+
+    .owner-action-grid {
+        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    }
+
+    .owner-action {
+        display: flex;
+        align-items: center;
+        gap: .75rem;
+        padding: .85rem;
+        color: #1f2937;
+        min-height: 78px;
+    }
+
+    .owner-action:hover {
+        color: var(--primary);
+        border-color: rgba(var(--primary-rgb), .25);
+    }
+
+    .owner-action-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        flex: 0 0 40px;
+        border-radius: 8px;
+        background: rgba(var(--primary-rgb), .08);
+        color: var(--primary);
+        font-size: 1.05rem;
+    }
+
+    .owner-action-body {
+        min-width: 0;
+        flex: 1;
+    }
+
+    .owner-action-body strong {
+        display: block;
+        color: #111827;
+        font-size: 1.05rem;
+        font-weight: 900;
+        letter-spacing: 0;
+    }
+
+    .owner-action--danger .owner-action-icon,
+    .owner-action--danger .owner-action-body strong {
+        color: #dc2626;
+        background: rgba(220, 38, 38, .08);
+    }
+
+    .owner-action--warning .owner-action-icon,
+    .owner-action--warning .owner-action-body strong {
+        color: #b45309;
+        background: rgba(180, 83, 9, .1);
+    }
+
+    .owner-action--ok .owner-action-icon,
+    .owner-action--ok .owner-action-body strong {
+        color: #16a34a;
+        background: rgba(22, 163, 74, .1);
+    }
+
+    .owner-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.8fr) minmax(300px, .8fr);
+        gap: 1rem;
+        align-items: start;
+    }
+
+    .owner-panel {
+        padding: 1rem;
+    }
+
+    .owner-panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: .85rem;
+    }
+
+    .owner-panel-head h3 {
+        margin: .1rem 0 0;
+        color: #111827;
+        font-size: 1rem;
+        font-weight: 900;
+    }
+
+    .owner-table thead th {
+        color: #6b7280;
+        font-size: .78rem;
+        font-weight: 900;
+    }
+
+    .owner-branch-name {
+        color: #111827;
+        font-weight: 900;
+    }
+
+    .owner-attention {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        color: #16a34a;
+        background: rgba(22, 163, 74, .1);
+        font-weight: 900;
+    }
+
+    .owner-attention.is-hot {
+        color: #dc2626;
+        background: rgba(220, 38, 38, .1);
+    }
+
+    .owner-main {
+        /* Stack the comparison table and the per-branch cards in the
+           main column so the cards fill the empty space below the table
+           instead of breaking onto a new full-width row at the bottom. */
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        min-width: 0;
+    }
+
+    .owner-side {
+        display: grid;
+        gap: 1rem;
+    }
+
+    .owner-bars {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: .5rem;
+        height: 190px;
+        align-items: end;
+    }
+
+    .owner-bar {
+        height: 160px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-end;
+        gap: .4rem;
+    }
+
+    .owner-bar-fill {
+        display: block;
+        width: 100%;
+        max-width: 30px;
+        min-height: 8px;
+        border-radius: 8px 8px 3px 3px;
+        background: linear-gradient(180deg, var(--accent), var(--primary));
+    }
+
+    .owner-bar small {
+        color: #6b7280;
+        font-weight: 800;
+    }
+
+    .owner-rank-list,
+    .owner-risk-list {
+        display: grid;
+        gap: .55rem;
+    }
+
+    .owner-rank {
+        margin: 0;
+    }
+
+    .owner-rank button,
+    .owner-risk-list a {
+        width: 100%;
+        border: 1px solid rgba(15, 45, 34, .08);
+        border-radius: 8px;
+        background: rgba(248, 250, 252, .8);
+        padding: .65rem;
+        display: flex;
+        align-items: center;
+        gap: .6rem;
+        color: #1f2937;
+        text-align: start;
+    }
+
+    .owner-rank button:hover,
+    .owner-risk-list a:hover {
+        color: var(--primary);
+        border-color: rgba(var(--primary-rgb), .25);
+    }
+
+    .owner-rank-no {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: rgba(var(--accent-rgb), .15);
+        color: var(--accent-dark);
+        font-weight: 900;
+    }
+
+    .owner-rank-name {
+        flex: 1;
+        min-width: 0;
+        font-weight: 900;
+    }
+
+    .owner-risk-list a {
+        justify-content: space-between;
+    }
+
+    .owner-risk-list strong {
+        color: var(--primary);
+        font-weight: 900;
+        letter-spacing: 0;
+    }
+
+    .owner-card-grid {
+        /* auto-fit (not auto-fill) so a small number of branches stretches
+           to fill the row instead of leaving phantom empty columns and
+           wasted space on one side of the page. */
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    }
+
+    .owner-card {
+        padding: 1rem;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .owner-card::before {
+        content: '';
+        position: absolute;
+        inset: 0 0 auto 0;
+        height: 3px;
+        background: linear-gradient(90deg, hsl(var(--hue) 55% 45%), hsl(var(--hue) 60% 35%));
+    }
+
+    .owner-card.is-warn::before {
+        background: linear-gradient(90deg, #f59e0b, #ef4444);
+    }
+
+    .owner-card-head {
+        display: flex;
+        align-items: center;
+        gap: .75rem;
+        margin-bottom: .85rem;
+    }
+
+    .owner-card-avatar {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        color: #fff;
+        background: linear-gradient(135deg, hsl(var(--hue) 50% 52%), hsl(var(--hue) 55% 38%));
+        font-weight: 900;
+    }
+
+    .owner-card-head h3 {
+        margin: 0;
+        color: #111827;
+        font-size: 1rem;
+        font-weight: 900;
+    }
+
+    .owner-card-head span:not(.owner-card-avatar):not(.owner-live-dot) {
+        color: #6b7280;
+        font-size: .75rem;
+    }
+
+    .owner-live-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #22c55e;
+        box-shadow: 0 0 0 4px rgba(34, 197, 94, .16);
+        margin-inline-start: auto;
+    }
+
+    .owner-card-metrics {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: .55rem;
+    }
+
+    .owner-card-metrics div {
+        padding: .65rem;
+        border-radius: 8px;
+        background: rgba(248, 250, 252, .9);
+        border: 1px solid rgba(15, 45, 34, .06);
+    }
+
+    .owner-card-metrics strong {
+        display: block;
+        margin-top: .2rem;
+        color: var(--primary);
+        font-weight: 900;
+        letter-spacing: 0;
+    }
+
+    .owner-card-alert {
+        margin: .85rem 0;
+        padding: .65rem;
+        border-radius: 8px;
+        color: #166534;
+        background: #f0fdf4;
+        border: 1px solid #bbf7d0;
+        font-weight: 900;
+    }
+
+    .owner-card-alert.is-hot {
+        color: #b45309;
+        background: #fff7ed;
+        border-color: #fed7aa;
+    }
+
+    @media (max-width: 1199.98px) {
+        .owner-hero,
+        .owner-layout {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media (max-width: 767.98px) {
+        .owner-hero-grid {
+            grid-template-columns: 1fr 1fr;
+        }
+
+        .owner-hero-main h2 {
+            font-size: 1.7rem;
+        }
+    }
+
+    @media (max-width: 575.98px) {
+        .owner-hero-grid,
+        .owner-card-grid {
+            grid-template-columns: 1fr;
+        }
+    }

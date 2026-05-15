@@ -229,7 +229,9 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:8000/menu/XegsLHMImteEuFzni1HmbIRk)",
       "mcp__Claude_Preview__preview_start",
       "Bash(xargs -I {} grep -l \"invoices\" database/migrations/{})",
-      "Bash(php -l app/Services/DemoResetService.php app/Http/Controllers/Admin/SystemController.php app/Console/Commands/InstallApp.php database/seeders/SystemSeeder.php database/seeders/DemoSeeder.php)"
+      "Bash(php -l app/Services/DemoResetService.php app/Http/Controllers/Admin/SystemController.php app/Console/Commands/InstallApp.php database/seeders/SystemSeeder.php database/seeders/DemoSeeder.php)",
+      "Bash(curl -s -c storage/_cj.txt http://127.0.0.1:8000/login -o storage/_login.html -w \"login page: %{http_code}\\\\n\")",
+      "Bash(C:/xampp/php/php.exe -r ' *)"
     ]
   }
 }

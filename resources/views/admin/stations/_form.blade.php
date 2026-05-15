@@ -20,5 +20,5 @@
     </div>
     <div class="col-md-3"><label class="form-label">الترتيب</label><input type="number" name="display_order" value="{{ old('display_order', $s?->display_order ?? 0) }}" class="form-control"></div>
     <div class="col-md-3 d-flex align-items-end"><div class="form-check"><input type="hidden" name="active" value="0"><input type="checkbox" name="active" value="1" class="form-check-input" @checked(old('active', $s?->active ?? true))><label class="form-check-label">نشطة</label></div></div>
-    <div class="col-12"><button class="btn btn-primary">حفظ</button><a href="{{ route('admin.stations.index') }}" class="btn btn-light">إلغاء</a></div>
+    <div class="col-12 form-actions"><button class="btn btn-primary">حفظ</button><a href="{{ route('admin.stations.index') }}" class="btn btn-light">إلغاء</a></div>
 </div>

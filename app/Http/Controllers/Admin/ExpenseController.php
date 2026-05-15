@@ -9,6 +9,7 @@ use App\Models\Expense;
 use App\Models\Lookup;
 use App\Models\Shift;
 use App\Models\Supplier;
+use App\Services\Accounting\AccountingService;
 use App\Support\BranchContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -259,6 +260,8 @@ class ExpenseController extends Controller
                     ]);
                 }
             }
+
+            app(AccountingService::class)->recordExpenseApproved($expense->fresh());
         });
 
         $tail = $expense->cash_movement_id

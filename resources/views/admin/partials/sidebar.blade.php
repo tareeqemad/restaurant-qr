@@ -265,11 +265,13 @@
                     $canShifts   = $u && $u->can('viewAny', \App\Models\Shift::class);
                     $canRefunds  = $u && $u->can('viewAny', \App\Models\Refund::class);
                     $canExpenses = $u && $u->can('viewAny', \App\Models\Expense::class);
-                    $showAccounts = $canCashier || $canShifts || $canRefunds || $canExpenses;
+                    $canAccounting = $u && $u->hasAnyRole(['super_admin','admin','manager']);
+                    $showAccounts = $canCashier || $canShifts || $canRefunds || $canExpenses || $canAccounting;
                     $accountsOpen = request()->routeIs('admin.cashier.*')
                                  || request()->routeIs('admin.shifts.*')
                                  || request()->routeIs('admin.refunds.*')
-                                 || request()->routeIs('admin.expenses.*');
+                                 || request()->routeIs('admin.expenses.*')
+                                 || request()->routeIs('admin.accounting.*');
 
                     // Cached count from SidebarBadges (computed once per request).
                     $pendingExpenses = $canExpenses ? $sidebarBadges['pending_expenses'] : 0;
@@ -287,6 +289,10 @@
                     <ul class="slide-menu child2">
                         @if($canCashier)
                             <li class="slide"><a href="{{ route('admin.cashier.index') }}" class="side-menu__item {{ $isActive('admin.cashier.*') }}"><i class="bi bi-cash-stack submenu-icon"></i>الكاشير</a></li>
+                        @endif
+                        @if($canAccounting)
+                            <li class="slide"><a href="{{ route('admin.accounting.trial-balance') }}" class="side-menu__item {{ $isActive('admin.accounting.trial-balance') }}"><i class="bi bi-columns-gap submenu-icon"></i>ميزان المراجعة</a></li>
+                            <li class="slide"><a href="{{ route('admin.accounting.journal') }}" class="side-menu__item {{ $isActive('admin.accounting.journal') }}"><i class="bi bi-journal-text submenu-icon"></i>القيود اليومية</a></li>
                         @endif
                         @if($canShifts)
                             <li class="slide">

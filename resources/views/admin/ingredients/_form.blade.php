@@ -195,7 +195,7 @@
     @endif
 
     <div class="col-12"><label class="form-label">ملاحظات</label><textarea name="notes" class="form-control" rows="2">{{ old('notes', $ing?->notes) }}</textarea></div>
-    <div class="col-12"><button class="btn btn-primary">حفظ</button><a href="{{ route('admin.ingredients.index') }}" class="btn btn-light">إلغاء</a></div>
+    <div class="col-12 form-actions"><button class="btn btn-primary">حفظ</button><a href="{{ route('admin.ingredients.index') }}" class="btn btn-light">إلغاء</a></div>
 </div>
 
 @if($isCreate)

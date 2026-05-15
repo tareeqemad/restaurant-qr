@@ -43,9 +43,16 @@ function checkOptions() {}
         const loader = document.getElementById("loader");
         if (loader) loader.classList.add("d-none");
     }
-    window.addEventListener("load", hideLoader);
-    // Safety net in case load event already fired / slow images
-    setTimeout(hideLoader, 1200);
+    if (document.readyState === "complete") {
+        hideLoader();
+    } else {
+        window.addEventListener("load", hideLoader, { once: true });
+        // Do not hide early while render-blocking CSS is still being parsed.
+        setTimeout(() => {
+            if (document.readyState === "complete") hideLoader();
+        }, 2500);
+        setTimeout(hideLoader, 8000);
+    }
 
     /* ─── Bootstrap tooltips & popovers ─── */
     document.addEventListener("DOMContentLoaded", function () {

@@ -292,6 +292,12 @@ Route::middleware(['auth', 'admin', 'branch'])->group(function () {
         Route::get('sales-by-platform',     [Admin\ReportController::class, 'salesByPlatform'])->name('sales-by-platform');
     });
 
+    // Accounting review
+    Route::prefix('accounting')->name('accounting.')->group(function () {
+        Route::get('journal', [Admin\AccountingController::class, 'journal'])->name('journal');
+        Route::get('trial-balance', [Admin\AccountingController::class, 'trialBalance'])->name('trial-balance');
+    });
+
     // Currencies (multi-currency display)
     Route::get   ('currencies',              [Admin\CurrencyController::class, 'index'])->name('currencies.index');
     Route::post  ('currencies',              [Admin\CurrencyController::class, 'store'])->name('currencies.store');

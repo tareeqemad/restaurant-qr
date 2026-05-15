@@ -12,6 +12,7 @@ use App\Models\Invoice;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\TableSession;
+use App\Services\Accounting\AccountingService;
 use Illuminate\Support\Facades\DB;
 
 class BillingService
@@ -77,6 +78,8 @@ class BillingService
                 'total' => (float) $invoice->total,
                 'orders_count' => $orders->count(),
             ]);
+
+            app(AccountingService::class)->recordInvoiceIssued($invoice);
 
             // Zero-total invoice (fully comped / discounted) — nothing to
             // collect. Auto-mark paid + close the session so the table is
@@ -156,6 +159,8 @@ class BillingService
                 'order_id' => $order->id,
                 'source' => $order->order_source,
             ]);
+
+            app(AccountingService::class)->recordInvoiceIssued($invoice);
 
             if (Money::round((float) $order->total) <= 0.001) {
                 $invoice->update([
@@ -248,42 +253,60 @@ class BillingService
                 'method' => $method,
             ]);
 
+            app(AccountingService::class)->recordPaymentReceived($payment);
+
             return $payment;
         });
     }
 
     public function writeOffInvoice(Invoice $invoice, int $userId, string $reason): Invoice
     {
-        $invoice->update([
-            'status' => 'unpaid_writeoff',
-            'notes' => trim(($invoice->notes ?? '')."\n[شطب] ".$reason),
-        ]);
-        if ($invoice->table_session_id) {
-            $this->closeOrdersAndSession($invoice);
-        }
-        ActivityLog::log('invoice.writeoff', "شطب فاتورة {$invoice->number}: {$reason}", $invoice);
-        return $invoice->refresh();
-    }
+        return DB::transaction(function () use ($invoice, $userId, $reason) {
+            $invoice = Invoice::whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            $writeoffAmount = Money::round((float) $invoice->balance);
 
+            $invoice->update([
+                'status' => 'unpaid_writeoff',
+                'balance' => 0,
+                'notes' => trim(($invoice->notes ?? '')."\n[writeoff] ".$reason),
+            ]);
+
+            if ($invoice->table_session_id) {
+                $this->closeOrdersAndSession($invoice);
+            }
+
+            ActivityLog::log('invoice.writeoff', "Write off invoice {$invoice->number}: {$reason}", $invoice);
+            app(AccountingService::class)->recordInvoiceWriteoff($invoice, $writeoffAmount, $userId, $reason);
+
+            return $invoice->refresh();
+        });
+    }
     public function cancelInvoice(Invoice $invoice, int $userId, string $reason): Invoice
     {
-        if ($invoice->payments()->exists()) {
-            throw new \RuntimeException('لا يمكن إلغاء فاتورة فيها دفعات. اعمل استرداد أولاً.');
-        }
-        $invoice->update([
-            'status' => 'cancelled',
-            'cancelled_at' => now(),
-            'notes' => trim(($invoice->notes ?? '')."\n[إلغاء] ".$reason),
-        ]);
-        ActivityLog::log('invoice.cancelled', "إلغاء فاتورة {$invoice->number}: {$reason}", $invoice);
-        $invoice->tableSession?->update([
-            'bill_requested_at' => null,
-            'bill_request_note' => null,
-        ]);
+        return DB::transaction(function () use ($invoice, $userId, $reason) {
+            $invoice = Invoice::whereKey($invoice->id)->lockForUpdate()->firstOrFail();
 
-        return $invoice->refresh();
+            if ($invoice->payments()->exists()) {
+                throw new \RuntimeException('Cannot cancel an invoice that already has payments. Create a refund first.');
+            }
+
+            $invoice->update([
+                'status' => 'cancelled',
+                'cancelled_at' => now(),
+                'notes' => trim(($invoice->notes ?? '')."\n[cancel] ".$reason),
+            ]);
+
+            ActivityLog::log('invoice.cancelled', "Cancel invoice {$invoice->number}: {$reason}", $invoice);
+            $invoice->tableSession?->update([
+                'bill_requested_at' => null,
+                'bill_request_note' => null,
+            ]);
+
+            app(AccountingService::class)->reverseInvoiceIssued($invoice, $userId, $reason);
+
+            return $invoice->refresh();
+        });
     }
-
     public function splitInvoice(Invoice $invoice, array $splits): Invoice
     {
         if ($invoice->payments()->exists()) {

@@ -440,7 +440,7 @@
                 </div>
             </div>
             <div class="col-md-5">
-                <div class="d-flex justify-content-end align-items-center gap-2 h-100">
+                <div class="form-actions mt-0 h-100 align-items-end">
                     <a href="{{ route('admin.branch-transfers.index') }}" class="btn btn-light">
                         <i class="bi bi-arrow-right"></i> إلغاء
                     </a>

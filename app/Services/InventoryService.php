@@ -307,6 +307,8 @@ class InventoryService
                 'occurred_at' => now(),
             ]);
 
+            app(\App\Services\Accounting\AccountingService::class)->recordInventoryMovement($mv);
+
             // Edge-trigger: notify only when stock CROSSES the threshold,
             // never on every subsequent deduction that stays below. This
             // keeps the inbox clean — one alert per "you should reorder"

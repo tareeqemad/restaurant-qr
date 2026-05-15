@@ -16,5 +16,5 @@
         <input type="number" step="0.0000001" name="factor_to_base" value="{{ old('factor_to_base', $u?->factor_to_base ?? 1) }}" class="form-control" required>
         <small class="text-muted">مثال: kg → 1000, g → 1</small></div>
     <div class="col-md-4 d-flex align-items-end"><div class="form-check"><input type="hidden" name="is_base" value="0"><input type="checkbox" name="is_base" value="1" class="form-check-input" @checked(old('is_base', $u?->is_base))><label class="form-check-label">وحدة أساسية</label></div></div>
-    <div class="col-12"><button class="btn btn-primary">حفظ</button><a href="{{ route('admin.units.index') }}" class="btn btn-light">إلغاء</a></div>
+    <div class="col-12 form-actions"><button class="btn btn-primary">حفظ</button><a href="{{ route('admin.units.index') }}" class="btn btn-light">إلغاء</a></div>
 </div>

@@ -1,6 +1,10 @@
 @extends('layouts.admin')
 @section('title', 'لمحة على فروعي')
 
+@push('styles')
+    <link rel="stylesheet" href="{{ route('optimized.asset', ['path' => 'assets/dashtic/css/owner-overview.css', 'v' => filemtime(public_path('assets/dashtic/css/owner-overview.css'))]) }}">
+@endpush
+
 @section('content')
 <x-admin.breadcrumb
     title="لمحة على فروعي"

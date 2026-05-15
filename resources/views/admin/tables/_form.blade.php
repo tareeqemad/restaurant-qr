@@ -64,7 +64,7 @@
         </div>
     </div>
 
-    <div class="col-12 pt-2">
+    <div class="col-12 form-actions">
         <button class="btn btn-primary"><i class="bi bi-check-circle-fill"></i> حفظ</button>
         <a href="{{ route('admin.tables.index') }}" class="btn btn-light">إلغاء</a>
     </div>

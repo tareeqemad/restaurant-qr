@@ -285,7 +285,7 @@
                 </template>
             </div>
             <div class="col-md-5">
-                <div class="d-flex justify-content-end gap-2 h-100 align-items-end">
+                <div class="form-actions mt-0 h-100 align-items-end">
                     <a href="{{ route('admin.storage-locations.index') }}" class="btn btn-light">
                         <i class="bi bi-arrow-right"></i> إلغاء
                     </a>
