@@ -245,7 +245,7 @@ new class extends Component
             </button>
         </div>
         <div class="card-body p-0">
-            <div class="table-responsive">
+            <div class="table-responsive po-lines-table-wrap">
                 <table class="table align-middle mb-0">
                     <thead class="bg-light">
                         <tr>
@@ -272,8 +272,7 @@ new class extends Component
                                                @input="line._q = $event.target.value; line._open = true"
                                                @keydown.escape="line._open = false"
                                                placeholder="ابحث أو اختر مكوناً…">
-                                        <div class="po-combo-list" x-show="line._open" x-cloak
-                                             style="max-height: 260px; overflow-y: auto;">
+                                        <div class="po-combo-list" x-show="line._open" x-cloak>
                                             <template x-for="ing in filteredIngredients(line._q ?? '')" :key="ing.id">
                                                 <div class="po-combo-item"
                                                      :class="line.ingredient_id === ing.id ? 'is-active' : ''"
@@ -489,13 +488,36 @@ window.poLineBuilder = function (config) {
     position: absolute;
     inset-inline-start: 0;
     inset-inline-end: 0;
-    top: calc(100% + 4px);
-    z-index: 1050;
+    top: auto;
+    bottom: calc(100% + 4px);
+    z-index: 1100;
+    max-height: 180px;
+    overflow-y: auto;
     background: #fff;
     border: 1px solid var(--border, #dfe7df);
     border-radius: 10px;
     box-shadow: 0 12px 28px rgba(15, 71, 49, .12);
-    overflow: hidden;
+}
+@media (min-width: 992px) {
+    .po-lines-table-wrap {
+        overflow: visible;
+    }
+    .po-lines-table-wrap table,
+    .po-lines-table-wrap tbody,
+    .po-lines-table-wrap tr,
+    .po-lines-table-wrap td {
+        overflow: visible;
+    }
+}
+@media (max-width: 991.98px) {
+    .po-lines-table-wrap {
+        padding-bottom: 9rem;
+    }
+    .po-combo-list {
+        top: calc(100% + 4px);
+        bottom: auto;
+        max-height: 190px;
+    }
 }
 .po-combo-item {
     padding: .45rem .75rem;
