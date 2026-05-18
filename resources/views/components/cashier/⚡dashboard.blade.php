@@ -2413,11 +2413,21 @@ new class extends Component
                 window.__cxSoundEnabled = this.enabled;
                 window.__refreshAudioBanner?.();
                 this.checkChanges();
-                document.addEventListener('livewire:morph.updated', () => {
-                    // Re-sync enabled from window in case another component
-                    // changed it (or our own state was reset by morph).
+
+                // MutationObserver on the bill-stat dataset attributes —
+                // Livewire v4 dropped the morph.updated event, so we react
+                // to DOM changes directly.
+                if (this._observer) this._observer.disconnect();
+                this._observer = new MutationObserver(() => {
                     this.enabled = window.__cxSoundEnabled !== false;
                     this.checkChanges();
+                });
+                this._observer.observe(this.$root, {
+                    attributes: true,
+                    attributeFilter: [
+                        'data-bill-total', 'data-bill-amber',
+                        'data-bill-red', 'data-remote-unpaid',
+                    ],
                 });
             },
             snapshot() {

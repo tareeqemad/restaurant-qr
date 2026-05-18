@@ -482,17 +482,22 @@ new class extends Component
                 // visibility so it can prompt the chef to tap once.
                 window.__kbSoundEnabled = this.enabled;
                 window.__refreshAudioBanner?.();
-
-                // The component re-mounts (not just morphs) whenever wire:key
-                // changes — and wire:key includes the active count. So init()
-                // itself becomes the natural place to compare prev vs current
-                // and beep. The morph listener is a backup for the rare case
-                // where Livewire morphs without changing wire:key.
                 this.checkChanges();
 
-                document.addEventListener('livewire:morph.updated', () => {
+                // Livewire v4 dropped the `livewire:morph.updated` event used
+                // by v2/v3, so we can't hook morphs directly. Watching the
+                // data-* attributes on the component root is version-proof:
+                // every render writes the latest counts there, and we react
+                // immediately whether Livewire morphs, remounts, or even if
+                // some other code updates the dataset.
+                if (this._observer) this._observer.disconnect();
+                this._observer = new MutationObserver(() => {
                     this.enabled = window.__kbSoundEnabled !== false;
                     this.checkChanges();
+                });
+                this._observer.observe(this.$root, {
+                    attributes: true,
+                    attributeFilter: ['data-active-count', 'data-red-count'],
                 });
             },
             readActive() { return parseInt(this.$root.dataset.activeCount || '0', 10); },

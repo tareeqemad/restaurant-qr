@@ -786,12 +786,21 @@ new class extends Component
             init() {
                 window.__wbSoundEnabled = this.enabled;
                 window.__refreshAudioBanner?.();
-                // Compare on mount — wire:key changes on every new order so
-                // init() is the most reliable trigger point.
                 this.checkChanges();
-                document.addEventListener('livewire:morph.updated', () => {
+
+                // Watch data-* attributes directly (Livewire v4 dropped
+                // the morph.updated event we used to rely on).
+                if (this._observer) this._observer.disconnect();
+                this._observer = new MutationObserver(() => {
                     this.enabled = window.__wbSoundEnabled !== false;
                     this.checkChanges();
+                });
+                this._observer.observe(this.$root, {
+                    attributes: true,
+                    attributeFilter: [
+                        'data-pending-count', 'data-ready-count',
+                        'data-ready-cold', 'data-ready-hot', 'data-billing-count',
+                    ],
                 });
             },
             snapshot() {
