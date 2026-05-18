@@ -271,8 +271,9 @@ class OrderController extends Controller
     {
         $this->authorize('approve', $order);
         $data = $request->validate([
-            'order_source'             => ['required', 'in:dine_in,talabat,careem,uber_eats,phone,other'],
+            'order_source'             => ['required', 'in:'.implode(',', \App\Enums\OrderSource::options())],
             'external_reference'       => ['nullable', 'string', 'max:80'],
+            'delivery_receiver'        => ['nullable', 'string', 'max:120'],
             'platform_commission_pct'  => ['nullable', 'numeric', 'min:0', 'max:100'],
         ]);
         $order->update($data);

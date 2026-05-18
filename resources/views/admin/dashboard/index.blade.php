@@ -81,7 +81,7 @@
         <x-admin.data-panel title="نبض المال" icon="bi-wallet2">
             <x-slot:actions>
                 <a href="{{ route('admin.reports.profit-loss') }}" class="btn btn-light btn-sm">
-                    <i class="bi bi-graph-up-arrow"></i> الأرباح والخسائر
+                    <i class="bi bi-graph-up-arrow"></i> تفاصيل الصندوق
                 </a>
             </x-slot:actions>
 
@@ -260,7 +260,7 @@
 
     @if($can['procurement'])
     <div class="{{ $dashSideCol }}">
-        <x-admin.data-panel title="المخزون والمشتريات" icon="bi-box-seam-fill">
+        <x-admin.data-panel title="المخزون والمشتريات" icon="bi-box-seam">
             <x-slot:actions>
                 <a href="{{ route('admin.inventory.dashboard') }}" class="btn btn-light btn-sm">
                     <i class="bi bi-speedometer2"></i> لوحة المخزون

@@ -7,7 +7,7 @@
 
 @section('content')
 <x-admin.breadcrumb title="مصروف جديد" icon="bi-cash-coin"
-    :crumbs="[['label' => 'المصروفات', 'url' => route('admin.expenses.index')]]" />
+    :crumbs="[['label' => 'المصروفات التشغيلية', 'url' => route('admin.expenses.index')]]" />
 
 <x-admin.data-panel title="تسجيل مصروف جديد" icon="bi-plus-circle">
     @unless($hasActiveBranch)

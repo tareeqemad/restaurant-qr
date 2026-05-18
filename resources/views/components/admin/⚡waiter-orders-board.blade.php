@@ -782,13 +782,15 @@ new class extends Component
      */
     function waiterSound() {
         return {
-            enabled: window.__wbSoundEnabled === true,
+            enabled: window.__wbSoundEnabled !== false,
             init() {
-                if (typeof window.__wbPrev !== 'object') {
-                    window.__wbPrev = this.snapshot();
-                }
+                window.__wbSoundEnabled = this.enabled;
+                window.__refreshAudioBanner?.();
+                // Compare on mount — wire:key changes on every new order so
+                // init() is the most reliable trigger point.
+                this.checkChanges();
                 document.addEventListener('livewire:morph.updated', () => {
-                    this.enabled = window.__wbSoundEnabled === true;
+                    this.enabled = window.__wbSoundEnabled !== false;
                     this.checkChanges();
                 });
             },
@@ -805,24 +807,20 @@ new class extends Component
             toggleSound() {
                 this.enabled = !this.enabled;
                 window.__wbSoundEnabled = this.enabled;
+                window.__refreshAudioBanner?.();
                 if (this.enabled) this.unlockAudio();
             },
             unlockAudio() {
-                try {
-                    if (!window.__kbAudioCtx) {
-                        const Ctx = window.AudioContext || window.webkitAudioContext;
-                        window.__kbAudioCtx = new Ctx();
-                    }
-                    const ctx = window.__kbAudioCtx;
-                    if (ctx.state === 'suspended') ctx.resume();
-                    const buf = ctx.createBuffer(1, 1, 22050);
-                    const src = ctx.createBufferSource();
-                    src.buffer = buf; src.connect(ctx.destination); src.start(0);
-                } catch (e) { /* noop */ }
+                window.unlockAudioCtx?.();
             },
             checkChanges() {
                 const cur = this.snapshot();
-                const prev = window.__wbPrev || cur;
+                // First mount → record baseline, don't beep.
+                if (typeof window.__wbPrev !== 'object') {
+                    window.__wbPrev = cur;
+                    return;
+                }
+                const prev = window.__wbPrev;
                 if (this.enabled) {
                     // New ready ticket = "come pick this up". Highest UX value.
                     if (cur.ready > prev.ready)         this.playPickup();
@@ -838,8 +836,8 @@ new class extends Component
                 window.__wbPrev = cur;
             },
             beep(frequency, duration, type = 'sine', volume = 0.25) {
-                const ctx = window.__kbAudioCtx;
-                if (!ctx) return;
+                const ctx = window.__audioCtx;
+                if (!ctx || ctx.state !== 'running') return;
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
                 osc.type = type;

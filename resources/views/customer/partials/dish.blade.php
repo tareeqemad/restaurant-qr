@@ -1,10 +1,22 @@
 @php
+    // Ingredient names from the recipe — only those with an ingredient row
+    // (defensive: a recipe line could exist whose ingredient was deleted).
+    // Optional lines are still listed so the diner can see everything the
+    // dish "may contain", which matches how the kitchen prep card reads.
+    $ingredients = $item->relationLoaded('recipeItems')
+        ? $item->recipeItems
+            ->map(fn ($r) => $r->ingredient?->name)
+            ->filter()
+            ->values()
+        : collect();
+
     $payload = [
         'id' => $item->id,
         'name' => $item->name,
         'description' => $item->description,
         'price' => (float) $item->price,
         'image' => $item->imageUrl(),
+        'ingredients' => $ingredients->all(),
         'has_modifiers' => $item->modifierGroups->count() > 0,
         'modifier_groups' => $item->modifierGroups->map(fn($g) => [
             'id' => $g->id,
@@ -24,6 +36,7 @@
         $item->name,
         $item->description,
         $item->allergens->pluck('name')->join(' '),
+        $ingredients->join(' '),
     ])->filter()->join(' '));
 @endphp
 <div class="dish {{ $item->is_available ? '' : 'is-unavailable' }} {{ $hasModifiers ? 'has-mods' : '' }}"
@@ -54,6 +67,15 @@
         <h6 class="dish-name">{{ $item->name }}</h6>
         @if($item->description)
             <p class="dish-desc">{{ $item->description }}</p>
+        @endif
+        @if($ingredients->isNotEmpty())
+            {{-- One-line ingredient list. Clamped to two lines via CSS so a
+                 long recipe never blows the card height; the full list lives
+                 in the item sheet that opens on tap. --}}
+            <p class="dish-ingredients" title="مكوّنات الطبق">
+                <i class="bi bi-basket2-fill" aria-hidden="true"></i>
+                <span>{{ $ingredients->join('، ') }}</span>
+            </p>
         @endif
         @if($item->allergens->count())
             <div class="allergens" role="group" aria-label="مسببات حساسية">

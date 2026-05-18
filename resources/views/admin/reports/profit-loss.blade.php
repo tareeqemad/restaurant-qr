@@ -1,5 +1,5 @@
 @extends('layouts.admin')
-@section('title', 'تقرير الأرباح والخسائر')
+@section('title', 'تفاصيل الصندوق')
 
 @php
     use App\Helpers\Money;
@@ -20,7 +20,7 @@
 
 @section('content')
 <x-admin.breadcrumb
-    title="تقرير الأرباح والخسائر"
+    title="تفاصيل الصندوق"
     icon="bi-graph-up-arrow"
     subtitle="الصورة المالية الكاملة — كل الأرقام التي يحتاجها المدير في شاشة واحدة"
     :crumbs="[['label' => 'التقارير', 'url' => route('admin.reports.index')]]" />

@@ -4,7 +4,7 @@
 @section('content')
 <x-admin.breadcrumb
     title="شاشة {{ $station->name }}"
-    icon="{{ $station->icon ?: 'bi-fire' }}"
+    icon="{{ $station->icon ?: 'ri-fire-fill' }}"
     subtitle="عرض الطلبات الحية للمحطة — مصمم للسرعة وكثافة الطلبات" />
 
 <livewire:admin.kitchen-board

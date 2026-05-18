@@ -47,12 +47,13 @@ new class extends Component
     public string $itemSearch = '';
     public string $selectedCategoryId = '';
     public string $orderType = 'takeaway';
-    public string $orderSource = 'phone';
+    public string $orderSource = 'other';
     public string $customerName = '';
     public string $customerPhone = '';
     public string $deliveryAddress = '';
     public string $deliveryFee = '0';
     public string $externalReference = '';
+    public string $deliveryReceiver = '';
     public string $platformCommissionPct = '0';
     public string $orderNotes = '';
     public bool $sendToKitchen = true;
@@ -88,7 +89,7 @@ new class extends Component
         $this->authorize('viewAny', Payment::class);
 
         $this->selectedSessionId = $session;
-        $this->platformCommissionPct = (string) (OrderSource::tryFrom($this->orderSource)?->defaultCommission() ?? 0);
+        $this->platformCommissionPct = '0';
     }
 
     // ─── Computed (reactive) ──────────────────────────────────────────
@@ -293,15 +294,9 @@ new class extends Component
             $warnings[] = 'عنوان التوصيل ناقص';
         }
 
-        if (in_array($this->orderSource, ['talabat', 'careem', 'uber_eats'], true)
-            && trim($this->externalReference) === '') {
-            $warnings[] = 'مرجع المنصة ناقص';
-        }
-
-        if (in_array($this->orderSource, ['phone', 'talabat', 'careem', 'uber_eats'], true)
-            && trim($this->customerPhone) === ''
-            && trim($this->externalReference) === '') {
-            $warnings[] = 'أدخل هاتف أو مرجع للطلب';
+        if ($this->orderSource === 'phone'
+            && trim($this->customerPhone) === '') {
+            $warnings[] = 'أدخل هاتف الزبون';
         }
 
         if ($selectedLines === 0) {
@@ -430,10 +425,11 @@ new class extends Component
 
     public function updatedOrderSource(string $value): void
     {
-        $this->platformCommissionPct = (string) (OrderSource::tryFrom($value)?->defaultCommission() ?? 0);
+        $this->platformCommissionPct = '0';
+        $this->externalReference = '';
 
-        if (! in_array($value, ['talabat', 'careem', 'uber_eats'], true)) {
-            $this->externalReference = '';
+        if ($value !== 'delivery') {
+            $this->deliveryReceiver = '';
         }
 
         if ($value === 'other' && $this->orderType === 'takeaway') {
@@ -471,16 +467,14 @@ new class extends Component
 
     public function setOrderSource(string $source): void
     {
-        if (! in_array($source, ['other', 'phone', 'talabat', 'careem', 'uber_eats'], true)) {
+        if (! in_array($source, ['other', 'phone', 'delivery'], true)) {
             return;
         }
-
-        $isPlatform = in_array($source, ['talabat', 'careem', 'uber_eats'], true);
 
         $this->orderSource = $source;
         $this->issueInvoiceAfterCreate = $source !== 'phone';
 
-        if ($isPlatform && $this->orderType !== 'delivery') {
+        if ($source === 'delivery' && $this->orderType !== 'delivery') {
             $this->orderType = 'delivery';
             $this->updatedOrderType('delivery');
         }
@@ -559,12 +553,12 @@ new class extends Component
     {
         $this->reset([
             'itemSearch', 'selectedCategoryId', 'customerName', 'customerPhone', 'deliveryAddress',
-            'externalReference', 'orderNotes',
+            'externalReference', 'deliveryReceiver', 'orderNotes',
         ]);
         $this->orderType = 'takeaway';
         $this->orderSource = 'other';
         $this->deliveryFee = '0';
-        $this->platformCommissionPct = (string) (OrderSource::Other->defaultCommission());
+        $this->platformCommissionPct = '0';
         $this->sendToKitchen = true;
         $this->issueInvoiceAfterCreate = true;
         $this->newOrderItems = [
@@ -633,13 +627,12 @@ new class extends Component
 
         $this->validate([
             'orderType' => ['required', 'in:takeaway,delivery'],
-            'orderSource' => ['required', 'in:'.implode(',', OrderSource::options())],
+            'orderSource' => ['required', 'in:other,phone,delivery'],
             'customerName' => ['nullable', 'string', 'max:120'],
             'customerPhone' => ['nullable', 'string', 'max:32'],
             'deliveryAddress' => ['nullable', 'string', 'max:500'],
             'deliveryFee' => ['nullable', 'numeric', 'min:0'],
-            'externalReference' => ['nullable', 'string', 'max:80'],
-            'platformCommissionPct' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'deliveryReceiver' => ['nullable', 'string', 'max:120'],
             'orderNotes' => ['nullable', 'string', 'max:500'],
         ], attributes: [
             'orderType' => 'نوع الطلب',
@@ -648,6 +641,7 @@ new class extends Component
             'customerPhone' => 'هاتف الزبون',
             'deliveryAddress' => 'عنوان التوصيل',
             'deliveryFee' => 'رسوم التوصيل',
+            'deliveryReceiver' => 'الجهة المستلمة',
         ]);
 
         if ($this->orderType === 'delivery' && trim($this->deliveryAddress) === '') {
@@ -655,10 +649,8 @@ new class extends Component
             return;
         }
 
-        if (in_array($this->orderSource, ['phone', 'talabat', 'careem', 'uber_eats'], true)
-            && trim($this->customerPhone) === ''
-            && trim($this->externalReference) === '') {
-            $this->addError('customerPhone', 'أدخل رقم هاتف أو رقم مرجعي للطلب.');
+        if ($this->orderSource === 'phone' && trim($this->customerPhone) === '') {
+            $this->addError('customerPhone', 'أدخل رقم هاتف الزبون.');
             return;
         }
 
@@ -691,6 +683,7 @@ new class extends Component
                     'delivery_address' => trim($this->deliveryAddress) ?: null,
                     'delivery_fee' => (float) $this->deliveryFee,
                     'external_reference' => trim($this->externalReference) ?: null,
+                    'delivery_receiver' => trim($this->deliveryReceiver) ?: null,
                     'platform_commission_pct' => $this->platformCommissionPct,
                 ],
                 createdByUserId: auth()->id(),
@@ -1276,15 +1269,11 @@ new class extends Component
         <div class="cx-compose">
             <div class="cx-compose-main">
                 @php
-                    $platformSources = ['talabat', 'careem', 'uber_eats'];
-                    $isPlatformSource = in_array($orderSource, $platformSources, true);
-                    $needsCustomerContact = $orderSource === 'phone' || $isPlatformSource || $orderType === 'delivery';
+                    $needsCustomerContact = $orderSource === 'phone' || $orderType === 'delivery';
                     $sourceChoices = [
-                        'other' => ['bi-lightning-charge-fill', 'مباشر'],
-                        'phone' => ['bi-telephone-fill', 'تلفون'],
-                        'talabat' => ['bi-bag-fill', 'طلبات'],
-                        'careem' => ['bi-scooter', 'كريم'],
-                        'uber_eats' => ['bi-truck', 'Uber'],
+                        'other'    => ['bi-lightning-charge-fill', 'مباشر'],
+                        'phone'    => ['bi-telephone-fill', 'اتصال هاتفي'],
+                        'delivery' => ['bi-truck', 'دليفري'],
                     ];
                 @endphp
 
@@ -1312,7 +1301,7 @@ new class extends Component
                         </div>
                         <div class="cx-choice-field">
                             <span>مصدر الطلب</span>
-                            <div class="cx-source-grid">
+                            <div class="cx-source-grid cx-source-grid-3">
                                 @foreach($sourceChoices as $sourceValue => [$sourceIcon, $sourceLabel])
                                     <button type="button"
                                         wire:click="setOrderSource('{{ $sourceValue }}')"
@@ -1323,6 +1312,16 @@ new class extends Component
                                 @endforeach
                             </div>
                         </div>
+                        @if($orderSource === 'delivery')
+                            <label class="cx-field cx-field-wide">
+                                <span>الجهة المستلمة</span>
+                                <input type="text"
+                                       wire:model.blur="deliveryReceiver"
+                                       class="form-control"
+                                       placeholder="اسم المستلم أو شركة التوصيل">
+                                @error('deliveryReceiver') <small class="text-danger">{{ $message }}</small> @enderror
+                            </label>
+                        @endif
                         <div class="cx-order-context cx-field-wide">
                             <i class="bi {{ $orderType === 'delivery' ? 'bi-truck' : 'bi-bag-check' }}"></i>
                             <span>
@@ -1351,16 +1350,6 @@ new class extends Component
                             <label class="cx-field">
                                 <span>رسوم التوصيل</span>
                                 <input type="number" step="0.01" min="0" wire:model.blur="deliveryFee" class="form-control">
-                            </label>
-                        @endif
-                        @if($isPlatformSource)
-                            <label class="cx-field">
-                                <span>مرجع المنصة</span>
-                                <input type="text" wire:model.blur="externalReference" class="form-control" placeholder="#12345">
-                            </label>
-                            <label class="cx-field">
-                                <span>عمولة المنصة %</span>
-                                <input type="number" step="0.01" min="0" max="100" wire:model.blur="platformCommissionPct" class="form-control">
                             </label>
                         @endif
                         <label class="cx-field cx-field-wide">
@@ -2416,15 +2405,18 @@ new class extends Component
             // Mirror to window so the value survives Livewire morphs that
             // re-init this component, and so the kitchen/waiter screens
             // can read it too if they share the same browser tab.
-            enabled: window.__cxSoundEnabled === true,
+            enabled: window.__cxSoundEnabled !== false,
             init() {
                 if (typeof window.__cxPrev !== 'object') {
                     window.__cxPrev = this.snapshot();
                 }
+                window.__cxSoundEnabled = this.enabled;
+                window.__refreshAudioBanner?.();
+                this.checkChanges();
                 document.addEventListener('livewire:morph.updated', () => {
                     // Re-sync enabled from window in case another component
                     // changed it (or our own state was reset by morph).
-                    this.enabled = window.__cxSoundEnabled === true;
+                    this.enabled = window.__cxSoundEnabled !== false;
                     this.checkChanges();
                 });
             },
@@ -2440,24 +2432,20 @@ new class extends Component
             toggleSound() {
                 this.enabled = !this.enabled;
                 window.__cxSoundEnabled = this.enabled;
+                window.__refreshAudioBanner?.();
                 if (this.enabled) this.unlockAudio();
             },
             unlockAudio() {
-                try {
-                    if (!window.__kbAudioCtx) {
-                        const Ctx = window.AudioContext || window.webkitAudioContext;
-                        window.__kbAudioCtx = new Ctx();
-                    }
-                    const ctx = window.__kbAudioCtx;
-                    if (ctx.state === 'suspended') ctx.resume();
-                    const buf = ctx.createBuffer(1, 1, 22050);
-                    const src = ctx.createBufferSource();
-                    src.buffer = buf; src.connect(ctx.destination); src.start(0);
-                } catch (e) { /* noop */ }
+                window.unlockAudioCtx?.();
             },
             checkChanges() {
                 const cur = this.snapshot();
-                const prev = window.__cxPrev || cur;
+                // First mount → baseline only, no beep on page load.
+                if (typeof window.__cxPrev !== 'object') {
+                    window.__cxPrev = cur;
+                    return;
+                }
+                const prev = window.__cxPrev;
                 if (this.enabled) {
                     // Red bumped → a bill request just crossed 8 min, food/customer waiting.
                     if (cur.red > prev.red)            this.playWarning();
@@ -2471,8 +2459,8 @@ new class extends Component
                 window.__cxPrev = cur;
             },
             beep(frequency, duration, type = 'sine', volume = 0.25) {
-                const ctx = window.__kbAudioCtx;
-                if (!ctx) return;
+                const ctx = window.__audioCtx;
+                if (!ctx || ctx.state !== 'running') return;
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
                 osc.type = type;

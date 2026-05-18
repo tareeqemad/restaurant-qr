@@ -2962,9 +2962,23 @@ body {
     .cx-menu-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 767.98px) {
-    .cx-mode-tabs { align-items: stretch; }
-    .cx-mode-tab { flex: 1 0 auto; }
-    .cx-mode-tab-primary { margin-inline-start: 0; }
+    .cx-mode-tabs {
+        flex-wrap: wrap;
+        align-items: stretch;
+        overflow-x: visible;
+    }
+    .cx-mode-tab {
+        flex: 1 1 calc(50% - .25rem);
+        min-width: 0;
+        padding: .55rem .55rem;
+        font-size: .85rem;
+    }
+    /* Primary "new order" button drops to its own full-width row. */
+    .cx-mode-tab-primary {
+        flex: 1 1 100%;
+        margin-inline-start: 0;
+        order: 99;
+    }
     .cx-form-grid,
     .cx-order-line-grid { grid-template-columns: 1fr; }
     .cx-choice-row { grid-template-columns: 1fr; }
@@ -5271,7 +5285,9 @@ body {
         gap: .3rem;
         flex: 1 1 auto;
         justify-content: flex-end;
-        overflow: hidden;
+        /* overflow: hidden was clipping dropdowns (branch switcher,
+           profile, attendance) on mobile. min-width:0 on the flex
+           children is enough to prevent layout overflow. */
     }
 
     .app-header .header-content-left {

@@ -15,7 +15,7 @@ class PurchaseReceivedNotification extends BaseNotification
 
     public function typeKey(): string { return 'purchase.received'; }
     public function severity(): string { return $this->partial ? 'info' : 'success'; }
-    public function icon(): string    { return 'bi-box-seam-fill'; }
+    public function icon(): string    { return 'bi-box-seam'; }
 
     public function title(): string
     {

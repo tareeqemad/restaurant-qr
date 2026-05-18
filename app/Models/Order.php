@@ -18,7 +18,7 @@ class Order extends Model
     protected $fillable = [
         'number', 'table_id', 'table_session_id', 'customer_id', 'customer_name', 'customer_phone',
         'customer_address_id', 'order_type', 'status',
-        'order_source', 'external_reference', 'platform_commission_pct',
+        'order_source', 'external_reference', 'delivery_receiver', 'platform_commission_pct',
         'created_by_user_id', 'approved_by_user_id', 'cancelled_by_user_id',
         'customer_notes', 'delivery_address', 'internal_notes', 'cancelled_reason',
         'subtotal', 'discount_total', 'tax_total', 'service_total', 'delivery_fee', 'tip', 'total',

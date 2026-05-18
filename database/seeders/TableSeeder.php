@@ -8,10 +8,9 @@ use App\Models\Table;
 use Illuminate\Database\Seeder;
 
 /**
- * Seeds the 12 tables of the Khan Yunis main branch + its indoor/outdoor
- * zones. Gaza branch starts EMPTY by design — the owner builds it from
- * scratch (or via the menu/tables copy tools) so the seed reflects how a
- * real second-branch onboarding would look.
+ * Seeds the 12 tables of the Khan Yunis main branch. The indoor/outdoor
+ * zones are GLOBAL (shared across branches) — see App\Models\Lookup
+ * PER_BRANCH_GROUPS, which deliberately excludes "zones".
  */
 class TableSeeder extends Seeder
 {
@@ -19,16 +18,14 @@ class TableSeeder extends Seeder
     {
         $branch = Branch::where('code', 'main-khan-yunis')->firstOrFail();
 
-        // Per-branch zone lookups — Khan Yunis gets the standard
-        // indoor/outdoor pair. Gaza will define its own ("طاولات تحت" /
-        // "طاولات فوق") through the admin UI later.
+        // Zone lookups are shared across branches.
         $indoor = Lookup::updateOrCreate(
-            ['group' => 'zones', 'branch_id' => $branch->id, 'code' => 'indoor'],
+            ['group' => 'zones', 'branch_id' => null, 'code' => 'indoor'],
             ['label' => 'داخلي', 'color' => '#1f4733', 'display_order' => 1, 'is_active' => true, 'is_system' => true]
         );
 
         $outdoor = Lookup::updateOrCreate(
-            ['group' => 'zones', 'branch_id' => $branch->id, 'code' => 'outdoor'],
+            ['group' => 'zones', 'branch_id' => null, 'code' => 'outdoor'],
             ['label' => 'خارجي', 'color' => '#b8872a', 'display_order' => 2, 'is_active' => true, 'is_system' => true]
         );
 

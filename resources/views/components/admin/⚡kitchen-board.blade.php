@@ -25,10 +25,11 @@ new class extends Component
     public string $stationName;
     public string $stationColor = '#1f4733';
 
-    /** Sound starts off because browsers block autoplay until the user
-     *  interacts with the page. Chef hits "تفعيل الصوت" once at shift start
-     *  and the AudioContext gets unlocked. */
-    public bool $soundEnabled = false;
+    /** Sound on by default. AudioContext is unlocked on the first user
+     *  gesture anywhere on the page (see kitchenSound() init below) so the
+     *  chef does not have to opt in. They can still mute via the toolbar
+     *  button, and that choice persists in the tab. */
+    public bool $soundEnabled = true;
 
     #[Url(as: 'sort', except: 'time')]
     public string $sortBy = 'time';     // 'time' | 'urgency' | 'table'
@@ -475,14 +476,22 @@ new class extends Component
         return {
             // Reactive Alpine prop (so :class re-renders); window is the
             // cross-component source of truth that survives morphs.
-            enabled: window.__kbSoundEnabled === true,
+            enabled: window.__kbSoundEnabled !== false,
             init() {
-                if (typeof window.__kbPrevActive !== 'number') {
-                    window.__kbPrevActive = this.readActive();
-                    window.__kbPrevRed    = this.readRed();
-                }
+                // Persist the default-on choice + refresh the global banner
+                // visibility so it can prompt the chef to tap once.
+                window.__kbSoundEnabled = this.enabled;
+                window.__refreshAudioBanner?.();
+
+                // The component re-mounts (not just morphs) whenever wire:key
+                // changes — and wire:key includes the active count. So init()
+                // itself becomes the natural place to compare prev vs current
+                // and beep. The morph listener is a backup for the rare case
+                // where Livewire morphs without changing wire:key.
+                this.checkChanges();
+
                 document.addEventListener('livewire:morph.updated', () => {
-                    this.enabled = window.__kbSoundEnabled === true;
+                    this.enabled = window.__kbSoundEnabled !== false;
                     this.checkChanges();
                 });
             },
@@ -491,25 +500,24 @@ new class extends Component
             toggleSound() {
                 this.enabled = !this.enabled;
                 window.__kbSoundEnabled = this.enabled;
+                window.__refreshAudioBanner?.();
                 if (this.enabled) this.unlockAudio();
             },
             unlockAudio() {
-                try {
-                    if (!window.__kbAudioCtx) {
-                        const Ctx = window.AudioContext || window.webkitAudioContext;
-                        window.__kbAudioCtx = new Ctx();
-                    }
-                    const ctx = window.__kbAudioCtx;
-                    if (ctx.state === 'suspended') ctx.resume();
-                    // Play a tiny silent buffer to fully unlock on iOS Safari.
-                    const buf = ctx.createBuffer(1, 1, 22050);
-                    const src = ctx.createBufferSource();
-                    src.buffer = buf; src.connect(ctx.destination); src.start(0);
-                } catch (e) { /* AudioContext unavailable — fail quietly */ }
+                // Delegate to the layout's global unlocker so kitchen, waiter,
+                // cashier, and the toast helper all share one AudioContext.
+                window.unlockAudioCtx?.();
             },
             checkChanges() {
                 const active = this.readActive();
                 const red = this.readRed();
+                // First render of the tab — just record the baseline, don't
+                // beep on page load (would be noise on every navigation).
+                if (typeof window.__kbPrevActive !== 'number') {
+                    window.__kbPrevActive = active;
+                    window.__kbPrevRed = red;
+                    return;
+                }
                 if (this.enabled) {
                     if (active > window.__kbPrevActive) this.playNewOrder();
                     else if (red > window.__kbPrevRed)  this.playWarning();
@@ -518,8 +526,8 @@ new class extends Component
                 window.__kbPrevRed = red;
             },
             beep(frequency, duration, type = 'sine', volume = 0.25) {
-                const ctx = window.__kbAudioCtx;
-                if (!ctx) return;
+                const ctx = window.__audioCtx;
+                if (!ctx || ctx.state !== 'running') return;
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
                 osc.type = type;

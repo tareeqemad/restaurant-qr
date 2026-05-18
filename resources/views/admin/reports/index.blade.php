@@ -12,7 +12,7 @@
             'tone' => 'primary',
         ],
         [
-            'title' => 'الأرباح والخسائر',
+            'title' => 'تفاصيل الصندوق',
             'desc' => 'قراءة الربح الحقيقي بعد تكلفة المبيعات والهدر، مع أكثر الأصناف ربحية.',
             'icon' => 'bi-graph-up-arrow',
             'href' => route('admin.reports.profit-loss', compact('from', 'to')),

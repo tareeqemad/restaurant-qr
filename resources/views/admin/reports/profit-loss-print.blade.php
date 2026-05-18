@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>تقرير الأرباح والخسائر — {{ $brand['name'] }}</title>
+<title>تفاصيل الصندوق — {{ $brand['name'] }}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Amiri:wght@400;700&display=swap" rel="stylesheet">
@@ -406,7 +406,7 @@
 {{-- ═══════════════ ACTION BAR (hidden on print) ═══════════════ --}}
 <div class="action-bar">
     <div class="action-bar__title">
-        تقرير الأرباح والخسائر · {{ $brand['name'] }}
+        تفاصيل الصندوق · {{ $brand['name'] }}
         <small>اضغط زر "اطبع" أدناه أو استخدم Ctrl/⌘ + P · لحفظه PDF اختر "حفظ بصيغة PDF" من نافذة الطباعة</small>
     </div>
     <button class="btn btn--primary" onclick="window.print()">
@@ -426,7 +426,7 @@
     <div class="brand__row">
         <div class="brand__logo">{{ mb_substr($brand['name'], 0, 1) }}</div>
         <div class="brand__head">
-            <span class="brand__eyebrow">تقرير الأرباح والخسائر</span>
+            <span class="brand__eyebrow">تفاصيل الصندوق</span>
             <h1>{{ $brand['name'] }}</h1>
             <div class="brand__sub">
                 @if($brand['legal']){{ $brand['legal'] }}@endif

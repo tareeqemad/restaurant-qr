@@ -106,7 +106,8 @@ class MenuController extends Controller
         $session->loadMissing(['table.branch', 'customer']);
 
         $categories = Category::where('active', true)
-            ->with(['menuItems' => fn($q) => $q->where('is_available', true)->orderBy('display_order')->with('allergens', 'modifierGroups.modifiers')])
+            ->with(['menuItems' => fn($q) => $q->where('is_available', true)->orderBy('display_order')
+                ->with('allergens', 'modifierGroups.modifiers', 'recipeItems.ingredient')])
             ->orderBy('display_order')
             ->get()
             ->filter(fn($c) => $c->menuItems->count() > 0)
@@ -114,7 +115,7 @@ class MenuController extends Controller
 
         $featured = MenuItem::where('is_available', true)
             ->where('is_featured', true)
-            ->with('category', 'allergens', 'modifierGroups.modifiers')
+            ->with('category', 'allergens', 'modifierGroups.modifiers', 'recipeItems.ingredient')
             ->limit(6)
             ->get();
 

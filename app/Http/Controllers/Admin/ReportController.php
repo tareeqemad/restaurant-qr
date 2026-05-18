@@ -167,7 +167,7 @@ class ReportController extends Controller
                 'tone' => 'danger',
                 'icon' => 'bi-exclamation-triangle-fill',
                 'title' => 'هامش الربح منخفض',
-                'body' => 'الهامش الحالي '.number_format($marginPct, 1).'%؛ راجع تكلفة الوصفات والأسعار في تقرير الأرباح والخسائر.',
+                'body' => 'الهامش الحالي '.number_format($marginPct, 1).'%؛ راجع تكلفة الوصفات والأسعار في شاشة تفاصيل الصندوق.',
                 'link' => route('admin.reports.profit-loss', compact('from', 'to')),
             ]);
         }

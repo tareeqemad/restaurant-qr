@@ -88,7 +88,7 @@ class Permissions
         'lookups'        => ['label' => 'إدارة الثوابت',      'icon' => 'bi-list-ul',              'order' => 4],
 
         'ingredients'    => ['label' => 'المكوّنات',          'icon' => 'bi-basket-fill',          'order' => 30],
-        'inventory'      => ['label' => 'المخزون',            'icon' => 'bi-box-seam-fill',        'order' => 31],
+        'inventory'      => ['label' => 'المخزون',            'icon' => 'bi-box-seam',        'order' => 31],
         'storage_locations' => ['label' => 'مواقع التخزين',       'icon' => 'bi-boxes',              'order' => 32],
         'stock_counts'   => ['label' => 'الجرد',              'icon' => 'bi-clipboard2-check',     'order' => 33],
         'waste'          => ['label' => 'الهدر والتالف',       'icon' => 'bi-trash3-fill',          'order' => 34],

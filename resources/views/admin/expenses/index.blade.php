@@ -1,5 +1,5 @@
 @extends('layouts.admin')
-@section('title', 'المصروفات')
+@section('title', 'المصروفات التشغيلية')
 
 @php
     $cur = \App\Models\Setting::get('currency_symbol', config('restaurant.currency_symbol', 'د.أ'));
@@ -8,7 +8,7 @@
 @endphp
 
 @section('content')
-<x-admin.breadcrumb title="المصروفات" icon="bi-cash-coin"
+<x-admin.breadcrumb title="المصروفات التشغيلية" icon="bi-cash-coin"
     subtitle="سجل جميع المصروفات للفرع — اعتماد، رفض، وربط تلقائي بدرج الكاشير" />
 
 <x-admin.stat-rail :stats="[
@@ -40,8 +40,13 @@
 </div>
 @endif
 
-<x-admin.data-panel title="سجل المصروفات" :count="$expenses->total()" icon="bi-cash-coin">
+<x-admin.data-panel title="سجل المصروفات التشغيلية" :count="$expenses->total()" icon="bi-cash-coin">
     <x-slot:actions>
+        <a href="{{ route('admin.expenses.index', array_merge(request()->query(), ['export' => 'xlsx'])) }}"
+           class="btn btn-success"
+           title="تصدير النتائج الحالية إلى ملف Excel">
+            <i class="bi bi-file-earmark-excel-fill"></i> تصدير Excel
+        </a>
         @can('viewAny', \App\Models\Lookup::class)
             <a href="{{ route('admin.lookups.index', ['group' => 'expense_categories']) }}" class="btn btn-light">
                 <i class="bi bi-tags"></i> تصنيفات المصروفات

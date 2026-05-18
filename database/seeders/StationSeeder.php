@@ -30,10 +30,11 @@ class StationSeeder extends Seeder
     protected function seedStations(): void
     {
         $stations = [
-            ['code' => 'kitchen', 'name' => 'المطبخ', 'name_en' => 'Kitchen', 'color' => '#ef4444', 'icon' => 'bi-fire', 'display_order' => 1],
+            // Icons use RemixIcons (ri-*) for glyphs missing from the installed Bootstrap Icons font.
+            ['code' => 'kitchen', 'name' => 'المطبخ', 'name_en' => 'Kitchen', 'color' => '#ef4444', 'icon' => 'ri-fire-fill', 'display_order' => 1],
             ['code' => 'bar', 'name' => 'البار', 'name_en' => 'Bar', 'color' => '#3b82f6', 'icon' => 'bi-cup-straw', 'display_order' => 2],
-            ['code' => 'dessert', 'name' => 'قسم الحلويات', 'name_en' => 'Dessert', 'color' => '#ec4899', 'icon' => 'bi-cake2', 'display_order' => 3],
-            ['code' => 'grill', 'name' => 'المشاوي', 'name_en' => 'Grill', 'color' => '#dc2626', 'icon' => 'bi-fire', 'display_order' => 4],
+            ['code' => 'dessert', 'name' => 'قسم الحلويات', 'name_en' => 'Dessert', 'color' => '#ec4899', 'icon' => 'ri-cake-2-fill', 'display_order' => 3],
+            ['code' => 'grill', 'name' => 'المشاوي', 'name_en' => 'Grill', 'color' => '#dc2626', 'icon' => 'ri-fire-fill', 'display_order' => 4],
         ];
 
         foreach ($stations as $s) {

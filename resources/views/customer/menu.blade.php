@@ -327,6 +327,21 @@
 
                     <p class="text-muted small mb-3" x-text="selectedItem.description" x-show="selectedItem.description"></p>
 
+                    {{-- Full ingredient list inside the sheet — no clamp here,
+                         the customer asked for details so we let them read all. --}}
+                    <div class="item-sheet-ingredients mb-3"
+                         x-show="selectedItem.ingredients && selectedItem.ingredients.length">
+                        <div class="section-label">
+                            <span><i class="bi bi-basket2-fill"></i> مكوّنات الطبق</span>
+                            <span class="hint" x-text="(selectedItem.ingredients || []).length + ' عناصر'"></span>
+                        </div>
+                        <div class="ingredient-chips">
+                            <template x-for="ing in (selectedItem.ingredients || [])" :key="ing">
+                                <span class="ingredient-chip" x-text="ing"></span>
+                            </template>
+                        </div>
+                    </div>
+
                     <template x-for="group in selectedItem.modifier_groups" :key="group.id">
                         <div class="mb-3">
                             <div class="section-label">
@@ -1223,8 +1238,61 @@ body > main {
     min-height: 2.1em;
 }
 
+/* ─── Ingredients line on the card ────────────────────────────────
+   One subtle inline strip below the description. Two-line clamp so
+   long recipes never stretch the card; the full list lives in the
+   item sheet that opens on tap. */
+.qr-menu-page .dish-ingredients {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin: .35rem 0 .25rem;
+    padding-inline-start: 1.15rem;
+    position: relative;
+    font-size: .74rem;
+    line-height: 1.35;
+    color: #6b7568;
+    word-break: break-word;
+}
+
+.qr-menu-page .dish-ingredients > i {
+    position: absolute;
+    inset-inline-start: 0;
+    top: 2px;
+    color: var(--brand-primary, #1f4733);
+    opacity: .7;
+    font-size: .82rem;
+}
+
+.qr-menu-page .dish-ingredients > span {
+    display: inline;
+}
+
 .qr-menu-page .dish-price {
     color: var(--brand-dark);
+}
+
+/* ─── Ingredients block inside the item sheet ─────────────────── */
+.item-sheet-ingredients .ingredient-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35rem;
+    margin-top: .5rem;
+}
+
+.item-sheet-ingredients .ingredient-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: .28rem .65rem;
+    border-radius: 999px;
+    background: #f1f5ee;
+    border: 1px solid rgba(31, 71, 51, .12);
+    color: #2c3a30;
+    font-size: .78rem;
+    font-weight: 600;
+    line-height: 1.1;
+    white-space: nowrap;
 }
 
 .qr-menu-page .dish-add-fab,
@@ -1917,6 +1985,15 @@ body > main {
 
     .qr-menu-page .dish-desc {
         display: none;
+    }
+
+    /* Keep ingredients visible on mobile but limit to a single line so
+       the card stays uniform — full list still available in the sheet. */
+    .qr-menu-page .dish-ingredients {
+        -webkit-line-clamp: 1;
+        font-size: .7rem;
+        margin-top: .25rem;
+        margin-bottom: .15rem;
     }
 
     .qr-menu-page .dish-price {

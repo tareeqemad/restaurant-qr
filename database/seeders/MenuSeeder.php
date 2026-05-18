@@ -42,12 +42,12 @@ class MenuSeeder extends Seeder
         // Categories
         $cats = [
             ['slug' => 'appetizers', 'name' => 'المقبلات', 'name_en' => 'Appetizers', 'icon' => 'bi-egg-fried', 'color' => '#f59e0b', 'default_station_id' => $kitchen?->id, 'display_order' => 1],
-            ['slug' => 'main-courses', 'name' => 'الأطباق الرئيسية', 'name_en' => 'Main Courses', 'icon' => 'bi-fire', 'color' => '#ef4444', 'default_station_id' => $kitchen?->id, 'display_order' => 2],
-            ['slug' => 'grill', 'name' => 'المشاوي', 'name_en' => 'Grill', 'icon' => 'bi-fire', 'color' => '#dc2626', 'default_station_id' => $kitchen?->id, 'display_order' => 3],
+            ['slug' => 'main-courses', 'name' => 'الأطباق الرئيسية', 'name_en' => 'Main Courses', 'icon' => 'ri-fire-fill', 'color' => '#ef4444', 'default_station_id' => $kitchen?->id, 'display_order' => 2],
+            ['slug' => 'grill', 'name' => 'المشاوي', 'name_en' => 'Grill', 'icon' => 'ri-fire-fill', 'color' => '#dc2626', 'default_station_id' => $kitchen?->id, 'display_order' => 3],
             ['slug' => 'sandwiches', 'name' => 'السندويشات', 'name_en' => 'Sandwiches', 'icon' => 'bi-basket', 'color' => '#a855f7', 'default_station_id' => $kitchen?->id, 'display_order' => 4],
             ['slug' => 'salads', 'name' => 'السلطات', 'name_en' => 'Salads', 'icon' => 'bi-flower2', 'color' => '#22c55e', 'default_station_id' => $kitchen?->id, 'display_order' => 5],
             ['slug' => 'drinks', 'name' => 'المشروبات', 'name_en' => 'Drinks', 'icon' => 'bi-cup-straw', 'color' => '#3b82f6', 'default_station_id' => $bar?->id, 'display_order' => 6],
-            ['slug' => 'desserts', 'name' => 'الحلويات', 'name_en' => 'Desserts', 'icon' => 'bi-cake2', 'color' => '#ec4899', 'default_station_id' => $dessert?->id, 'display_order' => 7],
+            ['slug' => 'desserts', 'name' => 'الحلويات', 'name_en' => 'Desserts', 'icon' => 'ri-cake-2-fill', 'color' => '#ec4899', 'default_station_id' => $dessert?->id, 'display_order' => 7],
         ];
 
         foreach ($cats as $c) {

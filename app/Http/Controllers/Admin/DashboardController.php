@@ -513,7 +513,7 @@ class DashboardController extends Controller
             [
                 'label' => 'مخزون ومشتريات',
                 'hint' => 'النواقص والاستلامات',
-                'icon' => 'bi-box-seam-fill',
+                'icon' => 'bi-box-seam',
                 'route' => route('admin.inventory.dashboard'),
                 'color' => 'success',
                 'permission' => 'inventory.viewAny',

@@ -187,7 +187,7 @@ class OrderService
      * @param array{
      *   customer_name?:?string, customer_phone?:?string, customer_address_id?:?int, customer_notes?:?string,
      *   delivery_address?:?string, delivery_fee?:float|string|null,
-     *   external_reference?:?string, platform_commission_pct?:float|string|null,
+     *   external_reference?:?string, delivery_receiver?:?string, platform_commission_pct?:float|string|null,
      *   scheduled_for?:?string
      * } $opts
      */
@@ -231,6 +231,7 @@ class OrderService
                     'order_type'              => $type,
                     'order_source'            => $orderSource->value,
                     'external_reference'      => $opts['external_reference'] ?? null,
+                    'delivery_receiver'       => $opts['delivery_receiver'] ?? null,
                     'platform_commission_pct' => (float) $commission,
                     'status'                  => OrderStatus::Pending->value,
                     'created_by_user_id'      => $createdByUserId,

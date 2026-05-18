@@ -3,7 +3,7 @@
 
 @section('content')
 <x-admin.breadcrumb :title="'تعديل '.$expense->expense_number" icon="bi-cash-coin"
-    :crumbs="[['label' => 'المصروفات', 'url' => route('admin.expenses.index')]]" />
+    :crumbs="[['label' => 'المصروفات التشغيلية', 'url' => route('admin.expenses.index')]]" />
 
 <x-admin.data-panel :title="'تعديل المصروف '.$expense->expense_number" icon="bi-pencil-square">
     <form method="POST" action="{{ route('admin.expenses.update', $expense) }}" enctype="multipart/form-data">

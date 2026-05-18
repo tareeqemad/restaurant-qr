@@ -218,12 +218,134 @@
 
     <script src="{{ asset('assets/dashtic/js/relax-submit-lock.js') }}?v={{ filemtime(public_path('assets/dashtic/js/relax-submit-lock.js')) }}"></script>
 
-    {{-- Global notification sound helper --}}
-    <audio id="notify-sound" src="data:audio/wav;base64,UklGRl9vAAAXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQ=="></audio>
+    {{-- Global audio system — single AudioContext on `window.__audioCtx`
+         shared across kitchen/waiter/cashier components. Browsers block
+         AudioContext until the user gestures; we attach a permanent
+         document-wide gesture listener that keeps trying to resume() and
+         show/hide the unlock banner accordingly. --}}
+    <div id="audio-unlock-banner" class="audio-unlock-banner d-none" role="button" tabindex="0">
+        <i class="bi bi-volume-up-fill"></i>
+        <span>اضغط لتفعيل التنبيهات الصوتية</span>
+    </div>
+    <style>
+        .audio-unlock-banner {
+            position: fixed;
+            inset-block-start: 64px;
+            inset-inline-end: 16px;
+            z-index: 1090;
+            display: inline-flex;
+            align-items: center;
+            gap: .55rem;
+            padding: .55rem 1rem;
+            border-radius: 999px;
+            background: linear-gradient(135deg, #b97818, #d18a23);
+            color: #fff;
+            font-weight: 800;
+            font-size: .82rem;
+            box-shadow: 0 10px 24px rgba(185, 120, 24, .35);
+            cursor: pointer;
+            animation: audio-unlock-pulse 2s ease-in-out infinite;
+        }
+        .audio-unlock-banner > i { font-size: 1rem; }
+        .audio-unlock-banner.d-none { display: none !important; }
+        @keyframes audio-unlock-pulse {
+            0%, 100% { transform: scale(1); }
+            50%      { transform: scale(1.04); }
+        }
+    </style>
     <script>
-        window.playNotify = function() {
-            try { const a = document.getElementById('notify-sound'); if (a) { a.currentTime = 0; a.play().catch(()=>{}); } } catch(e) {}
-        };
+        (function () {
+            const ensureCtx = () => {
+                if (!window.__audioCtx) {
+                    const C = window.AudioContext || window.webkitAudioContext;
+                    if (!C) return null;
+                    window.__audioCtx = new C();
+                }
+                return window.__audioCtx;
+            };
+
+            const banner = () => document.getElementById('audio-unlock-banner');
+
+            const updateBanner = () => {
+                const b = banner();
+                if (!b) return;
+                const c = window.__audioCtx;
+                // Show only if SOME component asks for sound but the context
+                // is suspended/missing. The "wants sound" check looks at any
+                // of the per-component flags — they default to true, so a
+                // chef who never touched a toggle still gets the prompt.
+                const wantsSound = window.__kbSoundEnabled !== false
+                                || window.__wbSoundEnabled !== false
+                                || window.__cxSoundEnabled !== false;
+                const locked = !c || c.state !== 'running';
+                b.classList.toggle('d-none', !(wantsSound && locked));
+            };
+
+            // Aliases kept for backwards compat with components that still
+            // reference window.__kbAudioCtx — they'll all share the same ctx.
+            const linkAliases = () => {
+                window.__kbAudioCtx = window.__audioCtx;
+                window.__wbAudioCtx = window.__audioCtx;
+                window.__cxAudioCtx = window.__audioCtx;
+            };
+
+            window.unlockAudioCtx = function () {
+                const c = ensureCtx();
+                if (!c) return null;
+                if (c.state === 'suspended') {
+                    c.resume().then(updateBanner).catch(() => updateBanner());
+                }
+                // Tiny silent buffer — fully unlocks iOS Safari which needs
+                // a buffer start within the gesture handler, not just resume.
+                try {
+                    const buf = c.createBuffer(1, 1, 22050);
+                    const src = c.createBufferSource();
+                    src.buffer = buf; src.connect(c.destination); src.start(0);
+                } catch (e) {}
+                linkAliases();
+                updateBanner();
+                return c;
+            };
+
+            // ANY gesture anywhere unlocks. We keep listening (not once) in
+            // case a context gets garbage-collected or the browser re-suspends
+            // it after a long idle period.
+            ['pointerdown', 'keydown', 'touchstart', 'click'].forEach(ev =>
+                window.addEventListener(ev, window.unlockAudioCtx, { passive: true, capture: true })
+            );
+
+            // The banner is itself a gesture target — clicking it satisfies
+            // the autoplay policy AND hides the prompt.
+            document.addEventListener('DOMContentLoaded', () => {
+                banner()?.addEventListener('click', window.unlockAudioCtx);
+                updateBanner();
+            });
+
+            // Re-check banner state when components flip their own flags.
+            window.__refreshAudioBanner = updateBanner;
+            setInterval(updateBanner, 3000);
+
+            // Two-tone chime, shared by toast notifications.
+            window.playNotify = function () {
+                const c = window.__audioCtx;
+                if (!c || c.state !== 'running') return;
+                const now = c.currentTime;
+                const gain = c.createGain();
+                gain.gain.setValueAtTime(0.0001, now);
+                gain.gain.exponentialRampToValueAtTime(0.18, now + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.5);
+                gain.connect(c.destination);
+
+                [880, 1320].forEach((freq, i) => {
+                    const osc = c.createOscillator();
+                    osc.type = 'sine';
+                    osc.frequency.value = freq;
+                    osc.connect(gain);
+                    osc.start(now + i * 0.12);
+                    osc.stop(now + i * 0.12 + 0.18);
+                });
+            };
+        })();
         // window.showNotification is registered by admin.partials.toast (uses SweetAlert2).
 
         @php $u = auth()->user(); @endphp

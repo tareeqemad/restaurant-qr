@@ -3,7 +3,6 @@
 
 @section('content')
 <x-admin.breadcrumb title="تحديد مصدر الطلب" icon="bi-truck"
-    subtitle="من أي منصة توصيل جاء هذا الطلب"
     :crumbs="[
         ['label' => 'الطلبات', 'url' => route('admin.orders.index')],
         ['label' => $order->number, 'url' => route('admin.orders.show', $order)],
@@ -51,19 +50,16 @@
                         </div>
                         <div class="row g-3">
                             <div class="col-md-6">
-                                <label class="form-label">رقم المرجع من المنصة</label>
-                                <input type="text" name="external_reference" value="{{ $order->external_reference }}"
-                                    class="form-control" dir="ltr" placeholder="#TAL-123456">
-                                <small class="text-muted">رقم الطلب كما يظهر في تطبيق المنصة</small>
+                                <label class="form-label">الجهة المستلمة</label>
+                                <input type="text" name="delivery_receiver" value="{{ $order->delivery_receiver }}"
+                                    class="form-control" placeholder="اسم المستلم أو شركة التوصيل">
+                                <small class="text-muted">اختياري — للطلبات التي يستلمها طرف ثالث</small>
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label">نسبة العمولة %</label>
-                                <div class="input-group">
-                                    <input type="number" step="0.1" min="0" max="100" name="platform_commission_pct"
-                                        value="{{ $order->platform_commission_pct }}" class="form-control" id="commission-input">
-                                    <span class="input-group-text">%</span>
-                                </div>
-                                <small class="text-muted">ستُخصم من إجمالي الطلب لحساب صافي الإيراد</small>
+                                <label class="form-label">رقم مرجعي (اختياري)</label>
+                                <input type="text" name="external_reference" value="{{ $order->external_reference }}"
+                                    class="form-control" dir="ltr" placeholder="#REF-12345">
+                                <small class="text-muted">للاستخدام الداخلي</small>
                             </div>
                         </div>
                     </div>

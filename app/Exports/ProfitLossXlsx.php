@@ -38,7 +38,7 @@ class ProfitLossXlsx
         $book->getProperties()
             ->setCreator(config('restaurant.name', 'Relax'))
             ->setTitle('Profit & Loss')
-            ->setSubject('تقرير الأرباح والخسائر');
+            ->setSubject('تفاصيل الصندوق');
 
         $this->buildSummarySheet($book->getActiveSheet(), $r);
         $this->buildIncomeStatement($book->createSheet(), $r);
@@ -75,7 +75,7 @@ class ProfitLossXlsx
             ? (Branch::find($r['period']['branch_id'])?->name ?? '—')
             : 'كل الفروع';
 
-        $sheet->setCellValue('A1', 'تقرير الأرباح والخسائر');
+        $sheet->setCellValue('A1', 'تفاصيل الصندوق');
         $sheet->mergeCells('A1:D1');
         $sheet->getStyle('A1')->applyFromArray([
             'font' => ['bold' => true, 'size' => 18, 'color' => ['rgb' => $this->brandGreen]],

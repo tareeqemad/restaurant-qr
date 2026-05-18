@@ -250,7 +250,7 @@
                             <li class="slide">
                                 <a href="{{ route('admin.station.show', $station->code) }}"
                                    class="side-menu__item {{ $isThisStation ? 'active' : '' }}">
-                                    <i class="bi {{ $station->icon ?: 'bi-fire' }} submenu-icon"></i>{{ $station->name }}
+                                    <i class="{{ $station->icon ?: 'ri-fire-fill' }} submenu-icon"></i>{{ $station->name }}
                                 </a>
                             </li>
                         @endforeach
@@ -304,7 +304,7 @@
                         @if($canExpenses)
                             <li class="slide">
                                 <a href="{{ route('admin.expenses.index') }}" class="side-menu__item {{ $isActive('admin.expenses.*') }}">
-                                    <i class="bi bi-credit-card-fill submenu-icon"></i>المصروفات
+                                    <i class="bi bi-credit-card-fill submenu-icon"></i>المصروفات التشغيلية
                                     @if($pendingExpenses > 0)
                                         <span class="badge bg-warning ms-auto">{{ $pendingExpenses }}</span>
                                     @endif
@@ -374,7 +374,7 @@
                         <li class="slide"><a href="{{ route('admin.batches.index') }}" class="side-menu__item {{ $isActive('admin.batches.*') }}"><i class="bi bi-calendar-x submenu-icon"></i>الدفعات والصلاحية</a></li>
                         <li class="slide"><a href="{{ route('admin.stock-counts.index') }}" class="side-menu__item {{ $isActive('admin.stock-counts.*') }}"><i class="bi bi-clipboard-check-fill submenu-icon"></i>الجرد الدوري</a></li>
                         <li class="slide"><a href="{{ route('admin.waste.index') }}" class="side-menu__item {{ $isActive('admin.waste.*') }}"><i class="bi bi-trash3-fill submenu-icon"></i>الهدر</a></li>
-                        <li class="slide"><a href="{{ route('admin.branch-transfers.index') }}" class="side-menu__item {{ $isActive('admin.branch-transfers.*') }}"><i class="bi bi-arrow-left-right-square submenu-icon"></i>التحويلات بين الفروع</a></li>
+                        <li class="slide"><a href="{{ route('admin.branch-transfers.index') }}" class="side-menu__item {{ $isActive('admin.branch-transfers.*') }}"><i class="bi bi-arrow-left-right submenu-icon"></i>التحويلات بين الفروع</a></li>
                     </ul>
                 </li>
                 @endif
@@ -390,7 +390,7 @@
                     <ul class="slide-menu child1">
                         <li class="slide"><a href="{{ route('admin.reports.index') }}" class="side-menu__item {{ $isActive('admin.reports.index') }}"><i class="bi bi-speedometer2 submenu-icon"></i>لوحة التقارير</a></li>
                         <li class="slide"><a href="{{ route('admin.reports.end-of-day') }}" class="side-menu__item {{ $isActive('admin.reports.end-of-day') }}"><i class="bi bi-calendar-check-fill submenu-icon"></i>نهاية اليوم</a></li>
-                        <li class="slide"><a href="{{ route('admin.reports.profit-loss') }}" class="side-menu__item {{ $isActive('admin.reports.profit-loss') }}"><i class="bi bi-graph-up-arrow submenu-icon"></i>الأرباح والخسائر</a></li>
+                        <li class="slide"><a href="{{ route('admin.reports.profit-loss') }}" class="side-menu__item {{ $isActive('admin.reports.profit-loss') }}"><i class="bi bi-graph-up-arrow submenu-icon"></i>تفاصيل الصندوق</a></li>
                         <li class="slide"><a href="{{ route('admin.reports.menu-engineering') }}" class="side-menu__item {{ $isActive('admin.reports.menu-engineering') }}"><i class="bi bi-diagram-3-fill submenu-icon"></i>هندسة المنيو</a></li>
                         <li class="slide"><a href="{{ route('admin.reports.reorder-suggestions') }}" class="side-menu__item {{ $isActive('admin.reports.reorder-suggestions') }}"><i class="bi bi-cart-plus-fill submenu-icon"></i>اقتراحات الشراء</a></li>
                         <li class="slide"><a href="{{ route('admin.reports.stock-valuation') }}" class="side-menu__item {{ $isActive('admin.reports.stock-valuation') }}"><i class="bi bi-cash-stack submenu-icon"></i>تقييم المخزون</a></li>
@@ -400,7 +400,7 @@
                         <li class="slide"><a href="{{ route('admin.reports.sales-by-platform') }}" class="side-menu__item {{ $isActive('admin.reports.sales-by-platform') }}"><i class="bi bi-bag-check-fill submenu-icon"></i>مبيعات حسب المنصة</a></li>
                         <li class="slide"><a href="{{ route('admin.reports.sales') }}" class="side-menu__item {{ $isActive('admin.reports.sales') }}"><i class="bi bi-bar-chart-line-fill submenu-icon"></i>المبيعات اليومية</a></li>
                         <li class="slide"><a href="{{ route('admin.reports.items') }}" class="side-menu__item {{ $isActive('admin.reports.items') }}"><i class="bi bi-trophy-fill submenu-icon"></i>أكثر الأصناف مبيعاً</a></li>
-                        <li class="slide"><a href="{{ route('admin.reports.inventory') }}" class="side-menu__item {{ $isActive('admin.reports.inventory') }}"><i class="bi bi-box-seam-fill submenu-icon"></i>استهلاك المخزن</a></li>
+                        <li class="slide"><a href="{{ route('admin.reports.inventory') }}" class="side-menu__item {{ $isActive('admin.reports.inventory') }}"><i class="bi bi-box-seam submenu-icon"></i>استهلاك المخزن</a></li>
                         <li class="slide"><a href="{{ route('admin.reports.shifts') }}" class="side-menu__item {{ $isActive('admin.reports.shifts') }}"><i class="bi bi-clock-history submenu-icon"></i>الورديات</a></li>
                     </ul>
                 </li>

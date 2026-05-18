@@ -52,8 +52,14 @@
 <div {{ $attributes->merge(['class' => 'page-header']) }}>
     <div class="relax-page-main">
         @if($icon)
+            @php
+                // Accept icons from any included font (bi-*, ri-*, fe-*). For
+                // legacy callers that pass just "fire" without a prefix we
+                // still assume Bootstrap Icons.
+                $iconClass = str_contains($icon, '-') ? $icon : ('bi-'.$icon);
+            @endphp
             <span class="relax-page-icon" aria-hidden="true">
-                <i class="bi {{ $icon }}"></i>
+                <i class="{{ $iconClass }}"></i>
             </span>
         @endif
 

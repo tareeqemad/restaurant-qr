@@ -2,8 +2,7 @@
 @section('title', 'الكاشير')
 
 @section('content')
-<x-admin.breadcrumb title="الكاشير" icon="bi-cash-stack"
-    subtitle="واجهة سريعة لإدارة الفواتير والدفع — بدون إعادة تحميل الصفحة" />
+<x-admin.breadcrumb title="الكاشير" icon="bi-cash-stack" />
 
 <livewire:cashier.dashboard />
 

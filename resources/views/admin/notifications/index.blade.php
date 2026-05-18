@@ -13,7 +13,7 @@
         'refund.issued'         => ['استرداد',           'bi-arrow-counterclockwise'],
         'attendance.late'       => ['تأخر حضور',         'bi-alarm-fill'],
         'shift.closed'          => ['إغلاق وردية',       'bi-cash-stack'],
-        'purchase.received'     => ['استلام مشتريات',    'bi-box-seam-fill'],
+        'purchase.received'     => ['استلام مشتريات',    'bi-box-seam'],
         'bill.requested'        => ['طلب فاتورة',        'bi-receipt-cutoff'],
         'branch_transfer.sent'      => ['تحويل قادم بين الفروع', 'bi-truck'],
         'branch_transfer.received'  => ['وصل تحويل بين الفروع',  'bi-check-circle-fill'],

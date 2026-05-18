@@ -197,7 +197,7 @@ class RealRestaurantMenuSeeder extends Seeder
             // ═════════════════════════════════════ 3. المشاوي
             [
                 'name' => 'المشاوي', 'name_en' => 'Grill', 'slug' => 'grill',
-                'icon' => 'bi-fire', 'color' => '#b91c1c',
+                'icon' => 'ri-fire-fill', 'color' => '#b91c1c',
                 'image' => 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=600&q=80',
                 'station_id' => $kitchenId,
                 'items' => [
@@ -366,7 +366,7 @@ class RealRestaurantMenuSeeder extends Seeder
             // ═════════════════════════════════════ 7. الحلويات
             [
                 'name' => 'الحلويات', 'name_en' => 'Desserts', 'slug' => 'desserts',
-                'icon' => 'bi-cake2', 'color' => '#ec4899',
+                'icon' => 'ri-cake-2-fill', 'color' => '#ec4899',
                 'image' => 'https://images.unsplash.com/photo-1488477181946-6428a0291777?w=600&q=80',
                 'station_id' => $kitchenId,
                 'items' => [
