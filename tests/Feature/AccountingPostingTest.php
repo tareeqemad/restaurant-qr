@@ -210,6 +210,47 @@ class AccountingPostingTest extends TestCase
         $this->assertLineAmount($wasteEntry, AccountingService::INVENTORY, 'credit', 3);
     }
 
+    /**
+     * Visa/card payments settle instantly to the restaurant's bank account.
+     * Confirms AccountingService routes method='card' to 1010 (Bank) and
+     * NOT the legacy 1020 (Card Clearing) account — which is now inactive
+     * per the 2026_05_19_120000 migration.
+     */
+    public function test_card_payment_posts_directly_to_bank_account_not_clearing(): void
+    {
+        $invoice = Invoice::create([
+            'branch_id'        => $this->branch->id,
+            'table_session_id' => $this->session->id,
+            'subtotal'         => 80,
+            'tax_total'        => 0,
+            'service_total'    => 0,
+            'total'            => 80,
+            'balance'          => 80,
+            'status'           => 'issued',
+            'issued_at'        => now(),
+        ]);
+
+        $payment = \App\Models\Payment::create([
+            'branch_id'           => $this->branch->id,
+            'invoice_id'          => $invoice->id,
+            'method'              => 'card',
+            'amount'              => 80,
+            'received_by_user_id' => $this->cashier->id,
+            'paid_at'             => now(),
+        ]);
+
+        $entry = app(AccountingService::class)->recordPaymentReceived($payment);
+
+        $this->assertEntryBalances($entry->load('lines.account'));
+        // The whole 80 should land on Bank 1010, not Card Clearing 1020.
+        $this->assertLineAmount($entry, AccountingService::BANK, 'debit', 80);
+        $cardClearingLine = $entry->lines->first(
+            fn ($line) => $line->account?->code === AccountingService::CARD_CLEARING,
+        );
+        $this->assertNull($cardClearingLine,
+            'Card payments must NOT touch the (now inactive) 1020 clearing account.');
+    }
+
     public function test_shift_cash_variance_creates_accounting_entry(): void
     {
         $shift = Shift::create([

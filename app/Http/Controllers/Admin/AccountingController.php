@@ -63,9 +63,15 @@ class AccountingController extends Controller
         $filters = $request->validate([
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],
+            // `1` = hide active accounts with zero movement (default — the
+            // common case: a chart of 20+ accounts where only 6 actually
+            // moved this period). `0` shows the full chart for auditors
+            // who want to confirm coverage.
+            'show_empty' => ['nullable', 'boolean'],
         ]);
 
         [$from, $to] = $this->dateRange($filters['from'] ?? null, $filters['to'] ?? null);
+        $showEmpty = $request->boolean('show_empty');
 
         $lineQuery = JournalLine::query()
             ->join('journal_entries', 'journal_entries.id', '=', 'journal_lines.journal_entry_id')
@@ -83,41 +89,61 @@ class AccountingController extends Controller
             ->get()
             ->keyBy('account_id');
 
-        $accounts = Account::query()
-            ->where('is_active', true)
-            ->orderBy('code')
-            ->get()
-            ->map(function (Account $account) use ($movements) {
-                $movement = $movements->get($account->id);
-                $debit = round((float) ($movement?->debit ?? 0), 4);
-                $credit = round((float) ($movement?->credit ?? 0), 4);
-                $net = round($debit - $credit, 4);
+        // Two pools: active accounts (always considered for display),
+        // and inactive accounts that HAVE activity (so the totals still
+        // match what's in the journal — silently dropping an inactive
+        // account that someone posted to would unbalance the trial).
+        $activeAccounts = Account::query()->where('is_active', true)->get();
+        $inactiveWithMovement = Account::query()
+            ->where('is_active', false)
+            ->whereIn('id', $movements->keys())
+            ->get();
+        $allAccounts = $activeAccounts->concat($inactiveWithMovement)
+            ->sortBy('code')
+            ->values();
 
-                $account->movement_debit = $debit;
-                $account->movement_credit = $credit;
-                $account->balance_debit = max($net, 0);
-                $account->balance_credit = max(-$net, 0);
+        $accounts = $allAccounts->map(function (Account $account) use ($movements) {
+            $movement = $movements->get($account->id);
+            $debit = round((float) ($movement?->debit ?? 0), 4);
+            $credit = round((float) ($movement?->credit ?? 0), 4);
+            $net = round($debit - $credit, 4);
 
-                return $account;
-            });
+            $account->movement_debit = $debit;
+            $account->movement_credit = $credit;
+            $account->balance_debit = max($net, 0);
+            $account->balance_credit = max(-$net, 0);
+            $account->is_zero = abs($debit) < 0.0001 && abs($credit) < 0.0001;
 
+            return $account;
+        });
+
+        // Totals are computed BEFORE the empty-row filter so the bottom
+        // row always matches the journal — hiding visual zeros must not
+        // change the math.
         $totalMovementDebit = round((float) $accounts->sum('movement_debit'), 4);
         $totalMovementCredit = round((float) $accounts->sum('movement_credit'), 4);
         $totalBalanceDebit = round((float) $accounts->sum('balance_debit'), 4);
         $totalBalanceCredit = round((float) $accounts->sum('balance_credit'), 4);
 
+        $visibleAccounts = $showEmpty
+            ? $accounts
+            : $accounts->filter(fn ($a) => ! $a->is_zero)->values();
+
         return view('admin.accounting.trial-balance', [
-            'accounts' => $accounts,
-            'activeAccountsCount' => $accounts->filter(fn ($account) => $account->movement_debit > 0 || $account->movement_credit > 0)->count(),
-            'from' => $from,
-            'to' => $to,
-            'typeLabels' => $this->typeLabels(),
+            'accounts'            => $visibleAccounts,
+            'totalAccountsInChart'=> $accounts->count(),
+            'hiddenZeroCount'     => $accounts->count() - $visibleAccounts->count(),
+            'activeAccountsCount' => $accounts->filter(fn ($a) => ! $a->is_zero)->count(),
+            'from'                => $from,
+            'to'                  => $to,
+            'showEmpty'           => $showEmpty,
+            'typeLabels'          => $this->typeLabels(),
             'normalBalanceLabels' => ['debit' => 'مدين', 'credit' => 'دائن'],
-            'totalMovementDebit' => $totalMovementDebit,
+            'totalMovementDebit'  => $totalMovementDebit,
             'totalMovementCredit' => $totalMovementCredit,
-            'totalBalanceDebit' => $totalBalanceDebit,
-            'totalBalanceCredit' => $totalBalanceCredit,
-            'isBalanced' => abs($totalBalanceDebit - $totalBalanceCredit) < 0.01,
+            'totalBalanceDebit'   => $totalBalanceDebit,
+            'totalBalanceCredit'  => $totalBalanceCredit,
+            'isBalanced'          => abs($totalBalanceDebit - $totalBalanceCredit) < 0.01,
         ]);
     }
 

@@ -67,7 +67,7 @@ class CashierController extends Controller
         $this->authorize('create', Payment::class);
         $data = $request->validate([
             'amount' => ['required', 'numeric', 'min:0.01'],
-            'method' => ['required', 'in:cash,card,transfer,app,credit'],
+            'method' => ['required', 'in:cash,card,transfer'],
             'reference' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string'],
         ]);
@@ -85,6 +85,31 @@ class CashierController extends Controller
         $data = $request->validate(['reason' => ['required', 'string']]);
         $this->billing->writeOffInvoice($invoice, auth()->id(), $data['reason']);
         return back()->with('success', 'تم شطب الفاتورة');
+    }
+
+    /**
+     * Park the remaining balance as a debt on the customer's account.
+     * Closes the session/table but keeps the invoice open with
+     * `balance > 0` and `settled_on_account_at` set — the customer-debt
+     * ledger queries (and dashboard widget) pick it up from there.
+     *
+     * Refuses (via BillingService) if the invoice has no customer linked,
+     * has zero payments collected, or would exceed the customer's credit
+     * ceiling. Notes are optional but encouraged so the next cashier can
+     * see context next time the customer comes back to pay.
+     */
+    public function settleOnAccount(Request $request, Invoice $invoice)
+    {
+        $this->authorize('create', Payment::class);
+        $data = $request->validate(['notes' => ['nullable', 'string', 'max:500']]);
+
+        try {
+            $this->billing->settleOnAccount($invoice, auth()->id(), $data['notes'] ?? null);
+            return redirect()->route('admin.cashier.index')
+                ->with('success', "تم تأجيل المتبقي كدين على الزبون. أُغلقت الجلسة.");
+        } catch (\Throwable $e) {
+            return back()->with('error', $e->getMessage());
+        }
     }
 
     public function cancel(Request $request, Invoice $invoice)
@@ -119,7 +144,7 @@ class CashierController extends Controller
             'splits' => ['required', 'array', 'min:2'],
             'splits.*.label' => ['nullable', 'string', 'max:255'],
             'splits.*.amount' => ['required', 'numeric', 'min:0.01'],
-            'splits.*.method' => ['required', 'in:cash,card,transfer,app,credit'],
+            'splits.*.method' => ['required', 'in:cash,card,transfer'],
         ]);
         try {
             $this->billing->splitInvoice($invoice, $data['splits']);

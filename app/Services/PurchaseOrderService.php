@@ -214,7 +214,19 @@ class PurchaseOrderService
                 $baseUnit    = $ingredient->base_unit_id;
 
                 // Convert qty to base unit
-                $qtyBase = UnitConverter::convert($qtyReceived, $orderedUnit, $baseUnit);
+                $qtyBaseRaw = UnitConverter::convert($qtyReceived, $orderedUnit, $baseUnit);
+
+                // Yield adjustment for raw ingredients: 5kg whole chicken
+                // at 70% yield = 3.5kg usable lands on the shelf and the
+                // effective cost grosses up by 1/0.7. The supplier still
+                // gets paid for 5kg, so receipt totals don't change — only
+                // the stocked quantity and per-base-unit cost do.
+                $yieldPct = (float) ($ingredient->yield_pct ?? 100);
+                if ($yieldPct <= 0 || $yieldPct > 100) {
+                    $yieldPct = 100;
+                }
+                $yieldFactor = $yieldPct / 100;
+                $qtyBase = round($qtyBaseRaw * $yieldFactor, 4);
 
                 // Unit cost in BASE unit (price paid / factor). Use the
                 // actual receipt price when the user overrode it — otherwise
@@ -223,6 +235,10 @@ class PurchaseOrderService
                 $baseUnitCost = $oneOrderedUnitInBase > 0
                     ? $actualUnitPrice / $oneOrderedUnitInBase
                     : $actualUnitPrice;
+                // Yield-adjust the cost so $/usable kg reflects reality.
+                if ($yieldFactor < 1) {
+                    $baseUnitCost = round($baseUnitCost / $yieldFactor, 6);
+                }
 
                 if (! $receipt) {
                     $receipt = PurchaseReceipt::create([

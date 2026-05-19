@@ -37,6 +37,7 @@ class SettingController extends Controller
             'customer_cancel_window_seconds' => ['required', 'integer', 'min:0', 'max:900'],
             'session_ttl_minutes' => ['required', 'integer', 'min:30', 'max:1440'],
             'strict_stock' => ['sometimes', 'boolean'],
+            'inventory_deduction_stage' => ['sometimes', 'in:approve,preparing,ready,served'],
             // Theme color settings
             'theme_primary' => ['nullable', 'regex:/^#[0-9a-fA-F]{6}$/'],
             'theme_dark' => ['nullable', 'regex:/^#[0-9a-fA-F]{6}$/'],
@@ -75,6 +76,7 @@ class SettingController extends Controller
             'customer_cancel_window_seconds' => ['customer', 'int'],
             'session_ttl_minutes' => ['customer', 'int'],
             'strict_stock' => ['inventory', 'bool'],
+            'inventory_deduction_stage' => ['inventory', 'string'],
             'theme_primary' => ['theme', 'string'],
             'theme_dark' => ['theme', 'string'],
             'theme_header' => ['theme', 'string'],

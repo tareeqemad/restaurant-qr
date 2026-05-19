@@ -45,6 +45,16 @@ return [
         // would go negative. Throws a detailed error listing the shortages.
         // Set to false to allow over-selling (not recommended — demos only).
         'strict_stock' => env('RESTAURANT_STRICT_STOCK', true),
+
+        // At which workflow stage do we physically decrement stock?
+        //   'approve'   — waiter accepts the ticket (default, original behavior)
+        //   'preparing' — chef/barista actually starts cooking (matches reality)
+        //   'ready'     — item finished and ready to pick up
+        //   'served'    — item delivered to the customer
+        // A safety net at invoice settlement guarantees deduction regardless,
+        // so picking a later stage just spares us deduct→return churn on
+        // orders that get cancelled before the kitchen touches them.
+        'deduction_stage' => env('RESTAURANT_DEDUCTION_STAGE', 'approve'),
     ],
 
     // Cashier-applied discounts. Caps are role-keyed defaults; the running

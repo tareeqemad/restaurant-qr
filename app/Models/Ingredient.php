@@ -16,6 +16,11 @@ class Ingredient extends Model
         'sku', 'name', 'name_en', 'base_unit_id', 'supplier_id',
         'current_stock', 'reorder_threshold', 'cost_per_unit',
         'track_stock', 'active', 'notes',
+        // Composite ingredient — expanded recursively at deduction time
+        // (sub-recipe stored in recipe_items via parent_ingredient_id).
+        'is_composite', 'composite_yield',
+        // Trim/yield ratio for raw receiving: usable = received × pct%.
+        'yield_pct',
     ];
 
     /**
@@ -57,6 +62,9 @@ class Ingredient extends Model
         'cost_per_unit' => 'decimal:4',
         'track_stock' => 'boolean',
         'active' => 'boolean',
+        'is_composite' => 'boolean',
+        'composite_yield' => 'decimal:4',
+        'yield_pct' => 'decimal:2',
     ];
 
     public function baseUnit(): BelongsTo
@@ -77,6 +85,35 @@ class Ingredient extends Model
     public function recipeItems(): HasMany
     {
         return $this->hasMany(RecipeItem::class);
+    }
+
+    /**
+     * Sub-recipe lines that produce this composite ingredient. Empty for
+     * raw (non-composite) ingredients. Used by InventoryService to
+     * recursively expand composites into their raw inputs.
+     */
+    public function subRecipe(): HasMany
+    {
+        return $this->hasMany(RecipeItem::class, 'parent_ingredient_id');
+    }
+
+    /**
+     * Effective per-unit cost — for composite ingredients, falls back to
+     * the sum of sub-recipe costs ÷ yield. For raw ingredients with a
+     * yield_pct (<100), grosses up the paid cost so a 5kg purchase that
+     * yields only 3.5kg usable shows the true $/kg of usable product.
+     */
+    public function effectiveCostPerUnit(): float
+    {
+        $base = (float) $this->cost_per_unit;
+
+        // Yield-adjusted raw cost: $10/kg paid for chicken with 70% yield
+        // = $14.29/kg of usable meat.
+        if (! $this->is_composite && $this->yield_pct !== null && (float) $this->yield_pct > 0 && (float) $this->yield_pct < 100) {
+            $base = $base / ((float) $this->yield_pct / 100);
+        }
+
+        return round($base, 4);
     }
 
     /**

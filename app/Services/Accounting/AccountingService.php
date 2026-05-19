@@ -579,7 +579,14 @@ class AccountingService
 
     private function account(string $code): Account
     {
-        $this->accounts ??= Account::where('is_active', true)->get()->keyBy('code');
+        // Load EVERY account, not just active ones. `is_active` controls
+        // visibility in the chart editor and trial balance — it must NOT
+        // gate the accounting service itself. Features whose accounts have
+        // been administratively deactivated (e.g. shift variance after the
+        // operator opts out) still post correctly, and the trial balance
+        // separately surfaces any inactive account that ends up with a
+        // non-zero balance so the books stay mathematically complete.
+        $this->accounts ??= Account::all()->keyBy('code');
 
         $account = $this->accounts->get($code);
         if (! $account) {
@@ -591,27 +598,36 @@ class AccountingService
 
     private function cashAccountForMethod(?string $method): string
     {
+        // No clearing accounts in this restaurant's flow — card/transfer
+        // both settle to the bank immediately and there are no platform
+        // fees to defer. Legacy 'app' / 'credit' / 'credit_note' values
+        // still resolve to the historical clearing accounts so old
+        // journal lines reconcile against their original codes; the
+        // active UI never produces them anymore (see CashierController
+        // validation: cash|card|transfer only).
         return match ($method) {
-            'cash' => self::CASH,
-            'card' => self::CARD_CLEARING,
-            'app' => self::WALLET_CLEARING,
-            'credit' => self::CUSTOMER_CREDIT_CLEARING,
-            'transfer', 'bank_transfer', 'cheque' => self::BANK,
-            'credit_note' => self::CUSTOMER_CREDIT_CLEARING,
-            default => self::BANK,
+            'cash'                                 => self::CASH,
+            'card', 'transfer', 'bank_transfer',
+            'cheque'                               => self::BANK,
+            'app'                                  => self::WALLET_CLEARING,           // legacy
+            'credit', 'credit_note'                => self::CUSTOMER_CREDIT_CLEARING,  // legacy
+            default                                => self::BANK,
         };
     }
 
     private function paymentMethodLabel(?string $method): string
     {
+        // Labels appear in journal-line descriptions. Card now reads
+        // "البنك (فيزا)" so the accountant sees at a glance that the
+        // line landed in 1010 even though the diner paid by card.
         return match ($method) {
             'cash' => 'الصندوق',
-            'card' => 'بطاقات الدفع',
-            'app' => 'محفظة إلكترونية',
-            'credit' => 'بيع آجل',
+            'card' => 'البنك (فيزا)',
             'transfer', 'bank_transfer' => 'تحويل بنكي',
             'cheque' => 'شيك',
-            'credit_note' => 'إشعار دائن',
+            'app' => 'محفظة إلكترونية',           // legacy
+            'credit' => 'بيع آجل',                 // legacy
+            'credit_note' => 'إشعار دائن',         // legacy
             default => $method ?: 'غير محدد',
         };
     }

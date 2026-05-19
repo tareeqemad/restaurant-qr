@@ -299,6 +299,143 @@ class ReportController extends Controller
         return view('admin.reports.inventory', compact('rows', 'from', 'to'));
     }
 
+    /**
+     * Theoretical vs Actual consumption.
+     *
+     * Theoretical = what SHOULD have been consumed based on recipes ×
+     * sold quantities (sum across all approved order items in the
+     * period). Composite ingredients are recursively expanded so the
+     * comparison is always against raw inputs.
+     *
+     * Actual = what WAS actually consumed (sum of inventory_movements
+     * with type='out' AND reference_type=OrderItem in the period).
+     *
+     * Variance = Actual − Theoretical.
+     *   Positive → kitchen used MORE than the recipes call for. Possible
+     *              over-portioning, theft, spoilage, or recipe under-spec.
+     *   Negative → kitchen used LESS. Possible recipe over-spec or short
+     *              pouring.
+     *   Zero    → recipes match reality. Healthy.
+     *
+     * Waste (`type='waste'`) is reported alongside as a separate column
+     * so the operator sees how much of the variance is explained by
+     * documented spoilage vs. mystery loss.
+     */
+    public function consumptionVariance(Request $request)
+    {
+        [$from, $to, $start, $end] = $this->dateRange($request);
+
+        // ── 1. Theoretical: walk every sold order item × its recipe ──
+        // Expand composites via InventoryService::expandIngredient (the
+        // same logic the live deduction uses, so theoretical and actual
+        // share the same understanding of what a recipe means).
+        $soldItems = \App\Models\OrderItem::query()
+            ->whereIn('status', ['approved', 'preparing', 'ready', 'served'])
+            ->whereHas('order', fn ($q) => $q
+                ->whereBetween('approved_at', [$start, $end])
+                ->whereNotIn('status', ['cancelled']))
+            ->with(['menuItem.recipeItems.ingredient.baseUnit',
+                    'menuItem.recipeItems.unit',
+                    'modifiers.modifier.recipeItems.ingredient.baseUnit',
+                    'modifiers.modifier.recipeItems.unit'])
+            ->get();
+
+        $inv = app(\App\Services\InventoryService::class);
+        $theoretical = [];   // ingredient_id => qty_base
+        foreach ($soldItems as $oi) {
+            if (! $oi->menuItem) continue;
+            $modifierIds = $oi->modifiers->pluck('modifier_id')->filter()->all();
+            $lines = $inv->previewDeductionForItem(
+                $oi->menuItem,
+                (float) $oi->quantity,
+                $modifierIds,
+            );
+            foreach ($lines as $ln) {
+                $iid = $ln['ingredient_id'];
+                $theoretical[$iid] = ($theoretical[$iid] ?? 0) + (float) $ln['quantity_in_base'];
+            }
+        }
+
+        // ── 2. Actual + Waste — straight aggregates from inventory_movements ─
+        $movementAgg = InventoryMovement::query()
+            ->whereBetween('occurred_at', [$start, $end])
+            ->whereIn('type', ['out', 'waste'])
+            ->select('ingredient_id', 'type',
+                DB::raw('SUM(quantity_in_base) as qty'),
+                DB::raw('SUM(total_cost) as total_cost'))
+            ->groupBy('ingredient_id', 'type')
+            ->get();
+
+        $actual = [];        // ingredient_id => qty consumed via orders
+        $waste  = [];        // ingredient_id => qty written off as waste
+        $actualCost = [];
+        $wasteCost  = [];
+
+        foreach ($movementAgg as $row) {
+            if ($row->type === 'out') {
+                $actual[$row->ingredient_id] = (float) $row->qty;
+                $actualCost[$row->ingredient_id] = (float) $row->total_cost;
+            } else {
+                $waste[$row->ingredient_id]  = (float) $row->qty;
+                $wasteCost[$row->ingredient_id]  = (float) $row->total_cost;
+            }
+        }
+
+        // ── 3. Stitch together — every ingredient that shows up in
+        // either side gets a row. Sort by variance-cost descending so
+        // the biggest leaks float to the top.
+        $ingredientIds = array_unique(array_merge(
+            array_keys($theoretical),
+            array_keys($actual),
+            array_keys($waste),
+        ));
+        $ingredients = \App\Models\Ingredient::with('baseUnit')
+            ->whereIn('id', $ingredientIds)
+            ->get()->keyBy('id');
+
+        $rows = [];
+        foreach ($ingredientIds as $iid) {
+            $ing = $ingredients->get($iid);
+            if (! $ing) continue;
+
+            $theoQty = round((float) ($theoretical[$iid] ?? 0), 4);
+            $actQty  = round((float) ($actual[$iid] ?? 0), 4);
+            $wQty    = round((float) ($waste[$iid] ?? 0), 4);
+            $variance = round($actQty - $theoQty, 4);
+            $variancePct = $theoQty > 0 ? round(($variance / $theoQty) * 100, 1) : null;
+            $varianceCost = round($variance * (float) $ing->cost_per_unit, 2);
+
+            $rows[] = [
+                'ingredient'    => $ing,
+                'theoretical'   => $theoQty,
+                'actual'        => $actQty,
+                'waste'         => $wQty,
+                'variance'      => $variance,
+                'variance_pct'  => $variancePct,
+                'variance_cost' => $varianceCost,
+                'unit_code'     => $ing->baseUnit?->code ?? '',
+            ];
+        }
+
+        // Sort by absolute variance cost — surface the biggest dollar
+        // gaps (in either direction) first.
+        usort($rows, fn ($a, $b) => abs($b['variance_cost']) <=> abs($a['variance_cost']));
+
+        $summary = [
+            'total_theoretical_cost' => array_sum(array_map(
+                fn ($r) => $r['theoretical'] * (float) $r['ingredient']->cost_per_unit,
+                $rows,
+            )),
+            'total_actual_cost'      => array_sum($actualCost),
+            'total_waste_cost'       => array_sum($wasteCost),
+            'total_variance_cost'    => array_sum(array_column($rows, 'variance_cost')),
+            'orders_in_range'        => $soldItems->pluck('order_id')->unique()->count(),
+            'items_in_range'         => $soldItems->count(),
+        ];
+
+        return view('admin.reports.consumption-variance', compact('rows', 'summary', 'from', 'to'));
+    }
+
     public function shifts(Request $request)
     {
         $shifts = Shift::with('user')

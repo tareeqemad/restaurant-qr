@@ -10,6 +10,20 @@
     :crumbs="[['label' => 'الحسابات', 'url' => route('admin.cashier.index')]]"
 />
 
+{{-- Plain-language explainer — accountants of all backgrounds open this
+     page and the abstract "balanced/unbalanced" label means nothing
+     without context. Two sentences in clear Arabic save the support ping. --}}
+<div class="alert alert-info d-flex align-items-start gap-3 mb-3">
+    <i class="bi bi-info-circle-fill fs-4 mt-1"></i>
+    <div>
+        <strong class="d-block mb-1">شو وظيفة هذه الصفحة؟</strong>
+        هذا تقرير مراجعة محاسبية يثبت أن مجموع <strong>المدين</strong> = مجموع <strong>الدائن</strong> في كل
+        القيود اليومية. إذا الميزان <span class="text-success">متوازن</span> = الكتب سليمة محاسبياً.
+        لو بدك تشوف <strong>الأرباح/الخسائر</strong> أو <strong>دفتر الديون</strong> فاستخدم التقارير المخصصة بدلاً
+        من هذه الصفحة.
+    </div>
+</div>
+
 <div class="row g-3 mb-3">
     <div class="col-md-3">
         <div class="accounting-metric">
@@ -48,18 +62,28 @@
                 <label class="form-label small text-muted fw-bold">إلى تاريخ</label>
                 <input type="date" name="to" value="{{ $to }}" class="form-control">
             </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <div class="form-check form-switch">
+                    <input type="hidden" name="show_empty" value="0">
+                    <input type="checkbox" id="show_empty" name="show_empty" value="1" class="form-check-input"
+                           @checked($showEmpty)>
+                    <label for="show_empty" class="form-check-label fw-bold">إظهار الحسابات الفارغة</label>
+                </div>
+            </div>
             <div class="col-md-3 d-grid">
                 <button class="btn btn-primary">
-                    <i class="bi bi-search"></i>
-                    استعلام
+                    <i class="bi bi-search"></i> استعلام
                 </button>
             </div>
-            <div class="col-md-3 d-grid">
-                <a href="{{ route('admin.accounting.trial-balance') }}" class="btn btn-light">
-                    <i class="bi bi-arrow-counterclockwise"></i>
-                    كل القيود حتى اليوم
-                </a>
-            </div>
+            @if($hiddenZeroCount > 0 && ! $showEmpty)
+                <div class="col-12">
+                    <small class="text-muted">
+                        <i class="bi bi-eye-slash"></i>
+                        تم إخفاء <strong>{{ $hiddenZeroCount }}</strong> حساب بدون حركة في هذه الفترة.
+                        فعّل "إظهار الحسابات الفارغة" أعلاه لعرضها جميعاً.
+                    </small>
+                </div>
+            @endif
         </form>
     </x-slot:filters>
 
@@ -85,13 +109,21 @@
                 </tr>
             </thead>
             <tbody>
-                @foreach($accounts as $account)
+                @forelse($accounts as $account)
                     @php
-                        $hasMovement = $account->movement_debit > 0 || $account->movement_credit > 0;
+                        $hasMovement = ! $account->is_zero;
                     @endphp
                     <tr class="{{ $hasMovement ? '' : 'text-muted' }}">
                         <td class="fw-bold text-primary">{{ $account->code }}</td>
-                        <td class="fw-bold">{{ $account->name }}</td>
+                        <td class="fw-bold">
+                            {{ $account->name }}
+                            @if(! $account->is_active)
+                                <span class="badge bg-warning text-dark ms-1"
+                                      title="هذا الحساب معطّل من شجرة الحسابات لكن له حركة في هذه الفترة">
+                                    معطّل
+                                </span>
+                            @endif
+                        </td>
                         <td>{{ $typeLabels[$account->type] ?? $account->type }}</td>
                         <td>{{ $normalBalanceLabels[$account->normal_balance] ?? $account->normal_balance }}</td>
                         <td class="text-end">{{ \App\Helpers\Money::format($account->movement_debit) }}</td>
@@ -99,7 +131,14 @@
                         <td class="text-end fw-bold">{{ \App\Helpers\Money::format($account->balance_debit) }}</td>
                         <td class="text-end fw-bold">{{ \App\Helpers\Money::format($account->balance_credit) }}</td>
                     </tr>
-                @endforeach
+                @empty
+                    <tr>
+                        <td colspan="8" class="text-center text-muted py-4">
+                            <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                            لا توجد حركات محاسبية في هذه الفترة.
+                        </td>
+                    </tr>
+                @endforelse
             </tbody>
             <tfoot class="bg-light fw-bold">
                 <tr>

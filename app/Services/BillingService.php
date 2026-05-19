@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\OrderItemStatus;
 use App\Enums\OrderStatus;
 use App\Events\InvoicePaid;
 use App\Events\TableStatusChanged;
@@ -17,6 +18,53 @@ use Illuminate\Support\Facades\DB;
 
 class BillingService
 {
+    public function __construct(
+        protected ?OrderService $orders = null,
+        protected ?InventoryService $inventory = null,
+    ) {
+        $this->orders = $this->orders ?? app(OrderService::class);
+        $this->inventory = $this->inventory ?? app(InventoryService::class);
+    }
+
+    /**
+     * Last-line guarantee that any non-cancelled item attached to the
+     * invoice has had its ingredients deducted. With the configurable
+     * `inventory.deduction_stage` setting, items may legitimately reach
+     * invoice time still un-deducted (e.g. stage = served but waiter never
+     * pressed "served" before billing). `ensureDeducted` is idempotent —
+     * items already deducted at an earlier hook are skipped, so this is
+     * safe to run regardless of the configured stage.
+     */
+    protected function settleStockForOrders(iterable $orders): void
+    {
+        foreach ($orders as $order) {
+            if ($order->status === OrderStatus::Cancelled->value) continue;
+            foreach ($order->items as $item) {
+                if ($item->status === OrderItemStatus::Cancelled->value) continue;
+                $this->inventory->ensureDeducted($item);
+            }
+        }
+    }
+
+    /**
+     * Approve any pending orders before the invoice locks the session.
+     *
+     * The waiter-approval step is the single place where ingredients come
+     * off the shelf. If the cashier issues an invoice on a session that
+     * still has pending orders (customer ordered → never approved →
+     * cashier billed straight to pay), those orders would close without
+     * a stock deduction ever firing. Calling approve() here keeps the
+     * existing flow (stock validation, FIFO batch trace, KDS broadcast,
+     * activity log) and just removes the requirement that a waiter
+     * physically taps the button first.
+     */
+    protected function approvePendingOrders($pendingOrders, int $userId): void
+    {
+        foreach ($pendingOrders as $pending) {
+            $this->orders->approve($pending, $userId);
+        }
+    }
+
     public function issueInvoice(TableSession $session, int $userId): Invoice
     {
         return DB::transaction(function () use ($session, $userId) {
@@ -34,13 +82,21 @@ class BillingService
                 return $existingInvoice;
             }
 
+            $pendingOrders = $session->orders()
+                ->where('status', OrderStatus::Pending->value)
+                ->get();
+            $this->approvePendingOrders($pendingOrders, $userId);
+
             $orders = $session->orders()
                 ->where('status', '!=', OrderStatus::Cancelled->value)
+                ->with('items')
                 ->get();
 
             if ($orders->isEmpty()) {
                 throw new \RuntimeException('لا توجد طلبات نشطة للفوترة');
             }
+
+            $this->settleStockForOrders($orders);
 
             $subtotal = (float) $orders->sum('subtotal');
             $discountTotal = (float) $orders->sum('discount_total');
@@ -129,6 +185,13 @@ class BillingService
             if ($order->items->isEmpty()) {
                 throw new \RuntimeException('لا توجد أصناف داخل هذا الطلب.');
             }
+
+            if ($order->status === OrderStatus::Pending->value) {
+                $this->approvePendingOrders(collect([$order]), $userId);
+                $order = $order->refresh()->load('items');
+            }
+
+            $this->settleStockForOrders([$order]);
 
             $invoice = Invoice::create([
                 'branch_id' => $order->branch_id,
@@ -257,6 +320,184 @@ class BillingService
 
             return $payment;
         });
+    }
+
+    /**
+     * Park a partially-paid invoice on the customer's debt ledger and free
+     * the table. The invoice keeps its `balance > 0` and `partially_paid`
+     * status (so payments still flow through `addPayment` unchanged); the
+     * `settled_on_account_at` timestamp is what flags it as a real debt
+     * vs. a still-active checkout in progress.
+     *
+     * Pre-conditions enforced inside the transaction:
+     *   - Customer must be linked (refuse to create anonymous debts).
+     *   - At least one payment must already exist (avoid letting a full
+     *     ticket get parked on credit with zero cash collected — that's
+     *     the writeOff path, not this one).
+     *   - Customer's credit_limit, if set, must accommodate the new
+     *     outstanding total. We compute the customer's total debt AFTER
+     *     this settlement and compare to the cap.
+     *
+     * Activity log + manager notification fire AFTER commit so a rollback
+     * never leaves orphan audit traces.
+     */
+    public function settleOnAccount(Invoice $invoice, int $userId, ?string $notes = null): Invoice
+    {
+        $invoice = DB::transaction(function () use ($invoice, $userId, $notes) {
+            $invoice = Invoice::whereKey($invoice->id)
+                ->with('customer')
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if (in_array($invoice->status, ['paid', 'cancelled', 'unpaid_writeoff'], true)) {
+                throw new \RuntimeException('لا يمكن تأجيل فاتورة مغلقة أو ملغاة.');
+            }
+
+            if (! $invoice->customer_id) {
+                throw new \RuntimeException('لا يمكن تسجيل دين بدون زبون مرتبط بالفاتورة. اربط زبوناً للجلسة أولاً.');
+            }
+
+            $balance = Money::round((float) $invoice->balance);
+            if ($balance <= 0.001) {
+                throw new \RuntimeException('لا يوجد رصيد متبقٍ ليُسجَّل كدين على هذه الفاتورة.');
+            }
+
+            $paidTotal = (float) $invoice->payments()->sum('amount');
+            if ($paidTotal <= 0.001) {
+                throw new \RuntimeException('لا يمكن تأجيل الفاتورة كاملة كدين — سجّل أولاً ولو دفعة جزئية، أو استخدم شطب الفاتورة (write-off).');
+            }
+
+            $customer = $invoice->customer;
+            $existingDebt = $customer->outstandingDebt();      // excludes this invoice (still no flag)
+            $newTotal = $existingDebt + $balance;
+            if ($customer->credit_limit !== null && $newTotal - (float) $customer->credit_limit > 0.01) {
+                throw new \RuntimeException(sprintf(
+                    'تجاوز الحد الائتماني للزبون. الحد %s، الدين بعد هذه الفاتورة %s.',
+                    number_format((float) $customer->credit_limit, 2),
+                    number_format($newTotal, 2),
+                ));
+            }
+
+            $invoice->update([
+                'settled_on_account_at'         => now(),
+                'settled_on_account_by_user_id' => $userId,
+                'notes' => trim(($invoice->notes ?? '')
+                          . ($notes ? "\n[on-account] {$notes}" : "\n[on-account] " . 'حُوِّل المتبقي إلى دين الزبون')),
+            ]);
+
+            if ($invoice->table_session_id) {
+                $this->closeOrdersAndSession($invoice);
+            }
+
+            ActivityLog::log(
+                'invoice.settled_on_account',
+                "تأجيل دين فاتورة {$invoice->number} على الزبون {$customer->name} بمبلغ ".number_format($balance, 2),
+                $invoice,
+                [
+                    'customer_id'     => $customer->id,
+                    'balance_carried' => (float) $balance,
+                    'new_total_debt'  => $newTotal,
+                    'credit_limit'    => $customer->credit_limit,
+                ],
+            );
+
+            return $invoice->refresh();
+        });
+
+        // Manager notification after commit — separate to keep
+        // the transaction lean and to avoid orphan toasts if it rolls back.
+        $customer = $invoice->customer()->first();
+        if ($customer) {
+            app(NotifyService::class)->customerDebtChanged($customer, $invoice);
+        }
+
+        return $invoice;
+    }
+
+    /**
+     * Apply a single payment intelligently across a customer's open debts
+     * + (optionally) the current visit's invoice. Oldest debts go first —
+     * standard FIFO — so a debt invoice from January closes before one from
+     * April. Anything left over is applied to `$primaryInvoice` (the one
+     * the cashier is checking out right now). Stops cleanly when the
+     * amount is exhausted; never tries to "overpay" any single invoice.
+     *
+     * Returns an itemised allocation array `{ invoice_id, amount }` so the
+     * receipt / activity log can show the diner exactly how their money
+     * was split.
+     *
+     * Pre-condition: `$primaryInvoice` (if given) must already exist and
+     * belong to `$customer` — caller's job to validate, this method does
+     * not invent invoices.
+     */
+    public function payCustomerDebt(
+        \App\Models\Customer $customer,
+        float $amount,
+        string $method,
+        int $userId,
+        ?Invoice $primaryInvoice = null,
+        ?string $reference = null,
+        ?string $notes = null,
+    ): array {
+        $amount = Money::round($amount);
+        if ($amount <= 0.001) {
+            throw new \RuntimeException('قيمة الدفعة يجب أن تكون أكبر من صفر.');
+        }
+
+        $allocations = [];
+
+        // Drain the oldest open debts first, then the primary (current
+        // visit) invoice. Lock each invoice row so concurrent cashier
+        // sessions can't both apply the same payment dollar.
+        $debtInvoices = $customer->invoices()
+            ->whereNotNull('settled_on_account_at')
+            ->where('balance', '>', 0)
+            ->whereNotIn('status', ['cancelled', 'unpaid_writeoff'])
+            ->orderBy('settled_on_account_at')
+            ->pluck('id');
+
+        $queue = $debtInvoices->toArray();
+        if ($primaryInvoice) {
+            $queue[] = $primaryInvoice->id;
+        }
+        // De-dupe in case the primary is also a debt (cashier reopened it
+        // to add more money).
+        $queue = array_values(array_unique($queue));
+
+        $remaining = $amount;
+        foreach ($queue as $invoiceId) {
+            if ($remaining <= 0.001) break;
+
+            $inv = Invoice::whereKey($invoiceId)->lockForUpdate()->first();
+            if (! $inv) continue;
+            if (in_array($inv->status, ['paid', 'cancelled', 'unpaid_writeoff'], true)) continue;
+
+            $invBalance = Money::round((float) $inv->balance);
+            if ($invBalance <= 0.001) continue;
+
+            $apply = min($remaining, $invBalance);
+            $this->addPayment($inv, $apply, $method, $userId, $reference, $notes);
+            $allocations[] = ['invoice_id' => $inv->id, 'invoice_number' => $inv->number, 'amount' => $apply];
+            $remaining = Money::round($remaining - $apply);
+        }
+
+        if ($remaining > 0.001) {
+            throw new \RuntimeException(sprintf(
+                'المبلغ المدفوع أكبر من إجمالي المستحق. المتبقّي بدون توزيع: %s. خفّض المبلغ.',
+                number_format($remaining, 2),
+            ));
+        }
+
+        ActivityLog::log(
+            'customer.debt_payment',
+            "دفعة من الزبون {$customer->name} بقيمة ".number_format($amount, 2)." موزّعة على ".count($allocations)." فاتورة",
+            $customer,
+            ['method' => $method, 'allocations' => $allocations],
+        );
+
+        app(NotifyService::class)->customerDebtChanged($customer->refresh());
+
+        return $allocations;
     }
 
     public function writeOffInvoice(Invoice $invoice, int $userId, string $reason): Invoice

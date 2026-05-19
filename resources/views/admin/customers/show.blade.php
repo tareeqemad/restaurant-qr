@@ -105,6 +105,39 @@
 
     {{-- ─── Right column: branches + history ─────────────────────── --}}
     <div class="col-lg-8">
+        {{-- Debt summary panel — surfaces an open balance before anything
+             else so cashier/manager opening this page sees the action item.
+             Hidden entirely when the customer has zero outstanding to keep
+             the page calm for the 95% case. --}}
+        @php $cdebt = $customer->outstandingDebt(); @endphp
+        @if($cdebt > 0.001 || $customer->credit_limit !== null)
+            <div class="card mb-3 {{ $cdebt > 0 ? 'border-danger' : '' }}" style="border-radius:14px;">
+                <div class="card-body d-flex align-items-center justify-content-between">
+                    <div>
+                        <h6 class="mb-1">
+                            <i class="bi bi-wallet2 text-danger"></i> الديون المفتوحة
+                        </h6>
+                        @if($cdebt > 0.001)
+                            <div class="fs-4 fw-bold text-danger">{{ \App\Helpers\Money::format($cdebt) }}</div>
+                            <small class="text-muted">عبر {{ $customer->openDebtInvoices()->count() }} فاتورة</small>
+                        @else
+                            <span class="text-success">لا ديون مفتوحة 👌</span>
+                        @endif
+                        @if($customer->credit_limit !== null)
+                            <div class="mt-1">
+                                <small class="text-muted">الحد الائتماني:</small>
+                                <strong>{{ \App\Helpers\Money::format((float) $customer->credit_limit) }}</strong>
+                            </div>
+                        @endif
+                    </div>
+                    <a href="{{ route('admin.customers.debts.show', $customer) }}"
+                       class="btn btn-{{ $cdebt > 0 ? 'danger' : 'outline-secondary' }}">
+                        <i class="bi bi-wallet"></i> سجل الديون
+                    </a>
+                </div>
+            </div>
+        @endif
+
         {{-- Branches visited --}}
         <div class="card mb-3" style="border-radius: 14px;">
             <div class="card-header" style="border-bottom: 1px solid #f3f4f6;">

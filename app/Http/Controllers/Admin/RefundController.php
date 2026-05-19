@@ -80,7 +80,7 @@ class RefundController extends Controller
 
         $data = $request->validate([
             'amount'     => ['required', 'numeric', 'min:0.01'],
-            'method'     => ['required', Rule::in(array_keys(Refund::METHODS))],
+            'method'     => ['required', Rule::in(Refund::ACTIVE_METHODS)],
             'reason'     => ['required', 'string', 'max:500'],
             'reference'  => ['nullable', 'string', 'max:100'],
             'notes'      => ['nullable', 'string', 'max:1000'],

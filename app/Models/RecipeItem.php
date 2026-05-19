@@ -10,7 +10,11 @@ class RecipeItem extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['menu_item_id', 'ingredient_id', 'quantity', 'unit_id', 'is_optional', 'notes'];
+    protected $fillable = [
+        'menu_item_id', 'parent_ingredient_id',
+        'ingredient_id', 'quantity', 'unit_id',
+        'is_optional', 'notes',
+    ];
 
     protected $casts = [
         'quantity' => 'decimal:4',
@@ -20,6 +24,16 @@ class RecipeItem extends Model
     public function menuItem(): BelongsTo
     {
         return $this->belongsTo(MenuItem::class);
+    }
+
+    /**
+     * The composite ingredient this line is part of, when the row
+     * represents a sub-recipe instead of a menu-item recipe. Mutually
+     * exclusive with menu_item_id (enforced by the service layer).
+     */
+    public function parentIngredient(): BelongsTo
+    {
+        return $this->belongsTo(Ingredient::class, 'parent_ingredient_id');
     }
 
     public function ingredient(): BelongsTo

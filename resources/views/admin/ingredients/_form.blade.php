@@ -178,9 +178,51 @@
     <div class="col-md-4"><label class="form-label">التكلفة/وحدة *</label><input type="number" step="0.0001" name="cost_per_unit" value="{{ old('cost_per_unit', $ing?->cost_per_unit ?? 0) }}" class="form-control" required></div>
 
     <div class="col-md-4"><label class="form-label">حد الطلب *</label><input type="number" step="0.0001" name="reorder_threshold" value="{{ old('reorder_threshold', $ing?->reorder_threshold ?? 0) }}" class="form-control" required></div>
-    <div class="col-md-8 d-flex align-items-end gap-3">
+
+    <div class="col-md-4">
+        <label class="form-label">
+            نسبة الاستفادة %
+            <small class="text-muted">(اختياري)</small>
+        </label>
+        <div class="input-group">
+            <input type="number" step="0.01" min="0.01" max="100" name="yield_pct"
+                   value="{{ old('yield_pct', $ing?->yield_pct) }}"
+                   placeholder="100"
+                   class="form-control">
+            <span class="input-group-text">%</span>
+        </div>
+        <small class="text-muted d-block mt-1">
+            لو من كل 1kg تجلب 700g صالح بعد التنظيف، اكتب 70. اتركه فاضي = استفادة 100%.
+        </small>
+    </div>
+
+    <div class="col-md-8 d-flex align-items-end gap-3 flex-wrap">
         <div class="form-check"><input type="hidden" name="track_stock" value="0"><input type="checkbox" name="track_stock" value="1" class="form-check-input" @checked(old('track_stock', $ing?->track_stock ?? true))><label class="form-check-label">تتبع المخزون</label></div>
         <div class="form-check"><input type="hidden" name="active" value="0"><input type="checkbox" name="active" value="1" class="form-check-input" @checked(old('active', $ing?->active ?? true))><label class="form-check-label">فعال</label></div>
+        <div class="form-check"
+             title="مكوّن مركّب: مكوّن له وصفة فرعية يُحلَّل تلقائياً عند الخصم. مثال: صلصة طحينة = 200g طحينة + 100ml ماء + 1 ليمون → 280g.">
+            <input type="hidden" name="is_composite" value="0">
+            <input type="checkbox" name="is_composite" value="1" class="form-check-input" id="is_composite_check"
+                   @checked(old('is_composite', $ing?->is_composite ?? false))>
+            <label class="form-check-label" for="is_composite_check">
+                <i class="bi bi-diagram-3"></i>
+                مكوّن مركّب (له وصفة فرعية)
+            </label>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <label class="form-label">
+            ناتج الوصفة الفرعية
+            <small class="text-muted">(للمركّب فقط)</small>
+        </label>
+        <input type="number" step="0.0001" min="0.0001" name="composite_yield"
+               value="{{ old('composite_yield', $ing?->composite_yield) }}"
+               placeholder="مثلاً 280"
+               class="form-control">
+        <small class="text-muted d-block mt-1">
+            الكمية الناتجة من تنفيذ الوصفة كاملة، بالوحدة الأساسية للمكوّن.
+        </small>
     </div>
 
     @if(! $isCreate)

@@ -73,6 +73,14 @@ Route::middleware(['auth', 'admin', 'branch'])->group(function () {
     // Customers — global directory (no branch_id; the show page groups
     // their reservations/reviews by branch)
     Route::get   ('customers',                    [Admin\CustomerController::class, 'index'])->name('customers.index');
+
+    // Customer debt ledger — declared BEFORE /customers/{customer} so the
+    // literal `debts` path isn't swallowed by the wildcard model binding.
+    Route::get ('customers/debts',                          [Admin\CustomerDebtController::class, 'index'])->name('customers.debts.index');
+    Route::get ('customers/debts/{customer}',               [Admin\CustomerDebtController::class, 'show'])->name('customers.debts.show');
+    Route::post('customers/debts/{customer}/payment',       [Admin\CustomerDebtController::class, 'recordPayment'])->name('customers.debts.payment');
+    Route::post('customers/debts/{customer}/credit-limit',  [Admin\CustomerDebtController::class, 'updateCreditLimit'])->name('customers.debts.credit_limit');
+
     Route::get   ('customers/{customer}',         [Admin\CustomerController::class, 'show'])->name('customers.show');
     Route::put   ('customers/{customer}',         [Admin\CustomerController::class, 'update'])->name('customers.update');
     Route::post  ('customers/{customer}/block',   [Admin\CustomerController::class, 'block'])->name('customers.block');
@@ -115,6 +123,7 @@ Route::middleware(['auth', 'admin', 'branch'])->group(function () {
     // Ingredients
     Route::resource('ingredients', Admin\IngredientController::class);
     Route::post('ingredients/{ingredient}/adjust', [Admin\IngredientController::class, 'adjust'])->name('ingredients.adjust');
+    Route::post('ingredients/{ingredient}/sub-recipe', [Admin\IngredientController::class, 'updateSubRecipe'])->name('ingredients.sub_recipe.update');
 
     // Suppliers
     Route::resource('suppliers', Admin\SupplierController::class);
@@ -236,6 +245,7 @@ Route::middleware(['auth', 'admin', 'branch'])->group(function () {
     Route::post('cashier/invoice/{invoice}/pay', [Admin\CashierController::class, 'pay'])->name('cashier.pay');
     Route::post('cashier/invoice/{invoice}/writeoff', [Admin\CashierController::class, 'writeoff'])->name('cashier.writeoff');
     Route::post('cashier/invoice/{invoice}/cancel', [Admin\CashierController::class, 'cancel'])->name('cashier.cancel');
+    Route::post('cashier/invoice/{invoice}/settle-on-account', [Admin\CashierController::class, 'settleOnAccount'])->name('cashier.settle_on_account');
     Route::post('cashier/invoice/{invoice}/split', [Admin\CashierController::class, 'split'])->name('cashier.split');
     Route::post('cashier/invoice/{invoice}/split/{split}/pay', [Admin\CashierController::class, 'paySplit'])->name('cashier.split.pay');
     Route::delete('cashier/invoice/{invoice}/splits', [Admin\CashierController::class, 'clearSplits'])->name('cashier.split.clear');
@@ -278,6 +288,7 @@ Route::middleware(['auth', 'admin', 'branch'])->group(function () {
         Route::get('sales',        [Admin\ReportController::class, 'sales'])->name('sales');
         Route::get('items',        [Admin\ReportController::class, 'items'])->name('items');
         Route::get('inventory',    [Admin\ReportController::class, 'inventory'])->name('inventory');
+        Route::get('consumption-variance', [Admin\ReportController::class, 'consumptionVariance'])->name('consumption-variance');
         Route::get('shifts',       [Admin\ReportController::class, 'shifts'])->name('shifts');
         Route::get('end-of-day',            [Admin\ReportController::class, 'endOfDay'])->name('end-of-day');
         Route::get('profit-loss',           [Admin\ReportController::class, 'profitLoss'])->name('profit-loss');

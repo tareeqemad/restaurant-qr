@@ -329,7 +329,21 @@
                                         <div class="setting-hint">مهم جداً للمطبخ والبار. إيقافه مناسب للديمو فقط.</div>
                                     </div>
                                 </div>
-                                <div class="col-md-8">
+                                @php($currentStage = $read('inventory_deduction_stage', config('restaurant.inventory.deduction_stage', 'approve')))
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold">لحظة خصم المكونات من المخزن</label>
+                                    <select name="inventory_deduction_stage" class="form-select">
+                                        <option value="approve"   @selected($currentStage === 'approve')>عند اعتماد الجرسون للطلب</option>
+                                        <option value="preparing" @selected($currentStage === 'preparing')>عند بدء المطبخ/البار التحضير</option>
+                                        <option value="ready"     @selected($currentStage === 'ready')>عند جاهزية الصنف</option>
+                                        <option value="served"    @selected($currentStage === 'served')>عند تسليم الصنف للزبون</option>
+                                    </select>
+                                    <div class="setting-hint mt-1">
+                                        إذا أُلغي الصنف قبل وصوله للحظة المختارة، ما يتم خصم المكونات أصلاً (بدون حركة "خصم ثم إرجاع").
+                                        شبكة أمان عند إصدار الفاتورة تضمن خصم كل صنف غير ملغى مهما كان المختار.
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
                                     <div class="alert bg-primary-transparent border-0 mb-0">
                                         <i class="bi bi-info-circle"></i>
                                         خيار الاعتماد التلقائي للطلبات غير معروض هنا لأنه غير مناسب حالياً مع مسار الجرسون.

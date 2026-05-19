@@ -42,6 +42,20 @@ class OrderService
     }
 
     /**
+     * The lifecycle stage at which stock is decremented. Read once per
+     * request so the same value drives approve / startPreparing /
+     * markItemReady / markItemServed without four trips to the cache.
+     */
+    public function inventoryDeductionStage(): string
+    {
+        $stage = (string) Setting::get('inventory_deduction_stage', config('restaurant.inventory.deduction_stage', 'approve'));
+
+        return in_array($stage, ['approve', 'preparing', 'ready', 'served'], true)
+            ? $stage
+            : 'approve';
+    }
+
+    /**
      * Create an order from customer cart.
      * Cart shape: [ ['menu_item_id' => int, 'quantity' => float, 'modifier_ids' => [int,...], 'notes' => string], ... ]
      */
@@ -420,13 +434,16 @@ class OrderService
 
             $previous = $order->status;
             $items = $order->items()->where('status', OrderItemStatus::Pending->value)->get();
+            $deductNow = $this->inventoryDeductionStage() === 'approve';
 
             foreach ($items as $oi) {
                 $oi->update([
                     'status' => OrderItemStatus::Approved->value,
                     'approved_at' => now(),
                 ]);
-                $this->inventory->deductForOrderItem($oi);
+                if ($deductNow) {
+                    $this->inventory->ensureDeducted($oi);
+                }
             }
 
             $order->update([
@@ -575,6 +592,9 @@ class OrderService
             'prep_started_at' => now(),
             'prepared_by_user_id' => $userId,
         ]);
+        if ($this->inventoryDeductionStage() === 'preparing') {
+            $this->inventory->ensureDeducted($item);
+        }
         $this->syncOrderStatus($item->order);
         $this->broadcastItemChange($item, $previous);
         return $item->refresh();
@@ -587,6 +607,9 @@ class OrderService
             'status' => OrderItemStatus::Ready->value,
             'ready_at' => now(),
         ]);
+        if ($this->inventoryDeductionStage() === 'ready') {
+            $this->inventory->ensureDeducted($item);
+        }
         $this->syncOrderStatus($item->order);
         $this->broadcastItemChange($item, $previous);
         return $item->refresh();
@@ -600,6 +623,9 @@ class OrderService
             'served_at' => now(),
             'served_by_user_id' => $userId,
         ]);
+        if ($this->inventoryDeductionStage() === 'served') {
+            $this->inventory->ensureDeducted($item);
+        }
         $this->syncOrderStatus($item->order);
         $this->broadcastItemChange($item, $previous);
         return $item->refresh();

@@ -73,13 +73,20 @@ class Refund extends Model
     }
 
     public const METHODS = [
-        'cash'     => 'نقدي',
-        'card'     => 'بطاقة',
-        'transfer' => 'تحويل',
-        'app'      => 'محفظة',
-        'credit'   => 'آجل',
+        'cash'     => 'نقدا',
+        'card'     => 'فيزا',
+        'transfer' => 'تحويل بنكي',
         'other'    => 'أخرى',
+        // Legacy values still resolve to a label for historical refunds
+        // (see AccountingService::cashAccountForMethod for the account
+        // mapping). New refunds can't be created with these because the
+        // validation array is built from the keys above.
+        'app'      => 'محفظة (قديم)',
+        'credit'   => 'آجل (قديم)',
     ];
+
+    /** Methods the UI is allowed to offer for NEW refunds. */
+    public const ACTIVE_METHODS = ['cash', 'card', 'transfer', 'other'];
 
     public static function generateNumber(): string
     {

@@ -52,6 +52,13 @@ class DemoSeeder extends Seeder
             // truncates menu_items + categories — it would wipe the cards.
             RealRestaurantMenuSeeder::class,
 
+            // RealRestaurantMenuSeeder clears recipe_items but doesn't
+            // create new ones (it only seeds menu_items). RecipesSeeder
+            // pairs every item with a sensible default recipe + tops up
+            // ingredient stock so the demo's inventory-deduction flow
+            // has something to consume. Safe to re-run on its own.
+            RecipesSeeder::class,
+
             // Internet (Wi-Fi) cards — 1h / 2h / 3h. Seeded for EVERY branch
             // (Khan Yunis + Gaza) so the second branch has something on its
             // menu out of the box, even before the owner copies / builds a

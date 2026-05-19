@@ -41,6 +41,32 @@
             <livewire:admin.cashier-customer-link :session-id="$session->id" />
         </div></div>
 
+        {{-- Existing-debt banner — only when the session has a linked
+             customer AND they already owe us from prior visits. Lets the
+             cashier ask "are you also settling your old debt?" before
+             the diner pulls out cash. --}}
+        @php
+            $sessionCustomer = $session->customer;
+            $existingDebt = $sessionCustomer?->outstandingDebt() ?? 0;
+        @endphp
+        @if($sessionCustomer && $existingDebt > 0.001)
+            <div class="alert alert-warning d-flex align-items-start gap-2 mb-3">
+                <i class="bi bi-exclamation-triangle-fill fs-4 text-warning"></i>
+                <div class="flex-grow-1">
+                    <strong class="d-block">دين قديم على هذا الزبون</strong>
+                    <small>{{ $sessionCustomer->name }} عليه
+                        <strong class="text-danger">{{ \App\Helpers\Money::format($existingDebt) }}</strong>
+                        من زيارات سابقة. اعرض عليه التسديد الآن.</small>
+                    <div class="mt-2">
+                        <a href="{{ route('admin.customers.debts.show', $sessionCustomer) }}"
+                           class="btn btn-sm btn-outline-dark" target="_blank">
+                            <i class="bi bi-wallet"></i> فتح سجل ديونه
+                        </a>
+                    </div>
+                </div>
+            </div>
+        @endif
+
         @if(! $session->invoice)
             <div class="card"><div class="card-body">
                 <h5 class="fw-bold mb-3">ملخص الفاتورة</h5>
@@ -83,12 +109,77 @@
                         <div class="mb-2"><label class="form-label">المبلغ</label><input type="number" step="0.01" name="amount" value="{{ $inv->balance }}" class="form-control" required></div>
                         <div class="mb-2"><label class="form-label">طريقة الدفع</label>
                             <select name="method" class="form-select" required>
-                                <option value="cash">كاش</option><option value="card">كارد</option><option value="transfer">حوالة</option><option value="app">تطبيق</option><option value="credit">دين</option>
+                                <option value="cash">نقدا</option><option value="card">فيزا</option><option value="transfer">تحويل بنكي</option>
                             </select>
                         </div>
                         <div class="mb-2"><input name="reference" class="form-control" placeholder="رقم المرجع (اختياري)"></div>
                         <button class="btn btn-success w-100"><i class="bi bi-cash"></i> تسجيل الدفعة</button>
                     </form>
+
+                    {{-- Settle on Account — separate flow that closes the
+                         session and parks the balance on the customer's
+                         ledger. Only offered when a customer is linked
+                         and at least one payment has been recorded
+                         (BillingService::settleOnAccount enforces both;
+                         the UI mirrors that to avoid a useless button). --}}
+                    @if($inv->customer_id && (float) $inv->paid_total > 0.001)
+                        <button type="button" class="btn btn-warning w-100 mt-2"
+                                data-bs-toggle="modal" data-bs-target="#settleOnAccount">
+                            <i class="bi bi-journal-text"></i>
+                            تأجيل المتبقي ({{ \App\Helpers\Money::format($inv->balance) }}) كدين
+                        </button>
+                        <div class="modal fade" id="settleOnAccount"><div class="modal-dialog"><div class="modal-content">
+                            <form action="{{ route('admin.cashier.settle_on_account', $inv) }}" method="POST">@csrf
+                                <div class="modal-header">
+                                    <h5><i class="bi bi-journal-text"></i> تأجيل المتبقي كدين</h5>
+                                    <button class="btn-close" data-bs-dismiss="modal"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <div class="alert alert-info small">
+                                        <strong>الزبون:</strong> {{ $inv->customer->name ?? '—' }}<br>
+                                        <strong>المبلغ المؤجل:</strong> {{ \App\Helpers\Money::format($inv->balance) }}<br>
+                                        <strong>دينه السابق:</strong>
+                                        @php $prev = $inv->customer ? ($inv->customer->outstandingDebt() - (float)$inv->balance) : 0; @endphp
+                                        {{ \App\Helpers\Money::format(max(0, $prev)) }}<br>
+                                        <strong>إجمالي الدين بعد التأجيل:</strong>
+                                        <span class="text-danger">{{ \App\Helpers\Money::format($inv->customer ? $inv->customer->outstandingDebt() + (float)$inv->balance - max(0, $prev) : (float)$inv->balance) }}</span>
+                                    </div>
+                                    @if($inv->customer && $inv->customer->credit_limit !== null)
+                                        @php
+                                            $limit = (float) $inv->customer->credit_limit;
+                                            $newTotal = ($inv->customer->outstandingDebt() - (float)$inv->balance) + (float)$inv->balance;
+                                            $wouldExceed = $newTotal - $limit > 0.01;
+                                        @endphp
+                                        <div class="alert {{ $wouldExceed ? 'alert-danger' : 'alert-light' }} small">
+                                            <strong>الحد الائتماني:</strong> {{ \App\Helpers\Money::format($limit) }}
+                                            @if($wouldExceed)
+                                                <br><i class="bi bi-x-octagon-fill"></i> يتجاوز الحد — لن تُقبل العملية. ارفع الحد أولاً أو حصّل نقداً.
+                                            @endif
+                                        </div>
+                                    @endif
+                                    <label class="form-label">ملاحظة (اختياري)</label>
+                                    <textarea name="notes" class="form-control" rows="2"
+                                              placeholder="مثلاً: وعد الزبون بالتسديد الأسبوع القادم"></textarea>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">تراجع</button>
+                                    <button class="btn btn-warning">
+                                        <i class="bi bi-check2"></i> تأكيد تأجيل المتبقي
+                                    </button>
+                                </div>
+                            </form>
+                        </div></div></div>
+                    @elseif((float) $inv->paid_total <= 0.001 && (float) $inv->balance > 0 && $inv->customer_id)
+                        <div class="alert alert-light border mt-2 small mb-0">
+                            <i class="bi bi-info-circle"></i>
+                            لتأجيل المتبقي كدين، سجّل أولاً ولو دفعة جزئية. لشطب الفاتورة بالكامل استخدم زر "شطب".
+                        </div>
+                    @elseif((float) $inv->balance > 0 && ! $inv->customer_id)
+                        <div class="alert alert-light border mt-2 small mb-0">
+                            <i class="bi bi-info-circle"></i>
+                            لتأجيل المتبقي كدين، اربط زبوناً بالجلسة أولاً (من اللوحة فوق).
+                        </div>
+                    @endif
                 @endif
 
                 <div class="mt-3 d-flex gap-2">
@@ -151,11 +242,9 @@
                                             <div class="mb-2">
                                                 <label class="form-label">طريقة الاسترداد <span class="text-danger">*</span></label>
                                                 <select name="method" class="form-select" required>
-                                                    <option value="cash">نقدي</option>
-                                                    <option value="card">بطاقة (إعادة للمستخدم)</option>
-                                                    <option value="transfer">تحويل</option>
-                                                    <option value="app">محفظة</option>
-                                                    <option value="credit">إضافة لرصيد الزبون</option>
+                                                    <option value="cash">نقدا</option>
+                                                    <option value="card">فيزا (إعادة للمستخدم)</option>
+                                                    <option value="transfer">تحويل بنكي</option>
                                                     <option value="other">أخرى</option>
                                                 </select>
                                             </div>
@@ -262,7 +351,7 @@
                                 <td><input name="splits[${i}][label]" class="form-control" value="${label ?? ('الشخص '+(i+1))}"></td>
                                 <td><input type="number" step="0.01" min="0" name="splits[${i}][amount]" class="form-control split-amt" value="${amount}" onchange="updateSplitSum()"></td>
                                 <td><select name="splits[${i}][method]" class="form-select">
-                                    <option value="cash">كاش</option><option value="card">كارد</option><option value="transfer">حوالة</option><option value="app">تطبيق</option><option value="credit">دين</option>
+                                    <option value="cash">نقدا</option><option value="card">فيزا</option><option value="transfer">تحويل بنكي</option>
                                 </select></td>
                                 <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove(); updateSplitSum();"><i class="bi bi-x"></i></button></td>
                             </tr>`;

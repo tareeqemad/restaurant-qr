@@ -163,6 +163,39 @@ class DashboardController extends Controller
             ->whereDate('expiry_date', '<=', now()->addDays(7)->toDateString())
             ->count();
 
+        // Customer debt snapshot — feeds the action-center row + the
+        // dedicated panel further down. Branch-aware via the invoices
+        // relation (which already carries branch_id).
+        $customerDebtQuery = Invoice::query()
+            ->whereNotNull('settled_on_account_at')
+            ->whereNotNull('customer_id')
+            ->where('balance', '>', 0)
+            ->whereNotIn('status', ['cancelled', 'unpaid_writeoff']);
+        if ($branchId) {
+            $customerDebtQuery->where('branch_id', $branchId);
+        }
+        $customerDebtStats = (clone $customerDebtQuery)
+            ->selectRaw('
+                COUNT(DISTINCT customer_id) as customers_owing,
+                COUNT(*) as open_invoices,
+                COALESCE(SUM(balance), 0) as total_debt
+            ')
+            ->first();
+
+        $topDebtors = (clone $customerDebtQuery)
+            ->select('customer_id', DB::raw('SUM(balance) as debt'), DB::raw('COUNT(*) as invoice_count'))
+            ->groupBy('customer_id')
+            ->orderByDesc('debt')
+            ->limit(5)
+            ->get();
+        if ($topDebtors->isNotEmpty()) {
+            $topCustomers = Customer::whereIn('id', $topDebtors->pluck('customer_id'))->get()->keyBy('id');
+            $topDebtors = $topDebtors->map(function ($r) use ($topCustomers) {
+                $r->customer = $topCustomers[$r->customer_id] ?? null;
+                return $r;
+            })->filter(fn ($r) => $r->customer);
+        }
+
         $invoiceVariancesQuery = SupplierInvoiceItem::where(function ($query) {
             $query->whereRaw('ABS(COALESCE(variance_qty, 0)) > 0.0001')
                 ->orWhereRaw('ABS(COALESCE(variance_total, 0)) > 0.01');
@@ -255,6 +288,17 @@ class DashboardController extends Controller
                 'icon' => 'bi-receipt-cutoff',
                 'severity' => 'info',
                 'permission' => 'expenses.viewAny',
+            ],
+            [
+                'title' => 'ديون زبائن مفتوحة',
+                'count' => (int) ($customerDebtStats->customers_owing ?? 0),
+                'description' => ($customerDebtStats?->total_debt ?? 0) > 0
+                    ? 'إجمالي الدين: '.\App\Helpers\Money::format((float) $customerDebtStats->total_debt)
+                    : 'زبائن لم يسددوا كامل فواتيرهم بعد.',
+                'route' => route('admin.customers.debts.index'),
+                'icon' => 'bi-wallet2',
+                'severity' => 'warning',
+                'permission' => null,
             ],
         ])
             ->filter(fn ($item) => (int) $item['count'] > 0)
@@ -560,7 +604,9 @@ class DashboardController extends Controller
             'topItems',
             'trend',
             'hourly',
-            'alerts'
+            'alerts',
+            'customerDebtStats',
+            'topDebtors',
         ));
     }
 

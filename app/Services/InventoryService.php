@@ -24,6 +24,13 @@ class InventoryService
     /**
      * Compute stock deduction lines for a cart item (before committing).
      * Returns array of [ingredient_id, qty_in_base, unit_cost, will_be_negative]
+     *
+     * Composite-ingredient expansion: if a recipe line points at a
+     * composite ingredient (one with `is_composite=true` and a stored
+     * sub-recipe), it is recursively replaced by its raw inputs scaled
+     * by `requested_qty / composite_yield`. Cycles are guarded against
+     * via a `seen` set so a misconfigured A→B→A composite throws
+     * instead of stack-overflowing.
      */
     public function previewDeductionForItem(MenuItem $item, float $quantity, array $modifierIds = []): array
     {
@@ -32,32 +39,116 @@ class InventoryService
         foreach ($item->recipeItems as $recipe) {
             $ingredient = $recipe->ingredient;
             $qtyBase = UnitConverter::convert((float) $recipe->quantity, $recipe->unit_id, $ingredient->base_unit_id) * $quantity;
-            $lines[] = [
-                'ingredient_id' => $ingredient->id,
-                'ingredient' => $ingredient,
-                'quantity_in_base' => $qtyBase,
-                'unit_cost' => (float) $ingredient->cost_per_unit,
-                'current_stock' => (float) $ingredient->current_stock,
-                'will_be_negative' => $ingredient->track_stock && ((float) $ingredient->current_stock - $qtyBase) < 0,
-            ];
+            $lines = array_merge($lines, $this->expandIngredient($ingredient, $qtyBase));
         }
 
         foreach (Modifier::with('recipeItems.ingredient')->findMany($modifierIds) as $modifier) {
             foreach ($modifier->recipeItems as $recipe) {
                 $ingredient = $recipe->ingredient;
                 $qtyBase = UnitConverter::convert((float) $recipe->quantity, $recipe->unit_id, $ingredient->base_unit_id) * $quantity;
-                $lines[] = [
-                    'ingredient_id' => $ingredient->id,
-                    'ingredient' => $ingredient,
-                    'quantity_in_base' => $qtyBase,
-                    'unit_cost' => (float) $ingredient->cost_per_unit,
-                    'current_stock' => (float) $ingredient->current_stock,
-                    'will_be_negative' => $ingredient->track_stock && ((float) $ingredient->current_stock - $qtyBase) < 0,
-                ];
+                $lines = array_merge($lines, $this->expandIngredient($ingredient, $qtyBase));
             }
         }
 
         return $lines;
+    }
+
+    /**
+     * Expand a single (ingredient, qty) demand into one or more deduction
+     * lines, recursing through composite sub-recipes until only raw
+     * (non-composite) ingredients remain.
+     *
+     * Composite math: if 200g sugar + 100ml water → 280g sauce, and the
+     * caller wants 30g of sauce, each sub-line is scaled by 30/280:
+     *   sugar  = 200 × 30/280 ≈ 21.43g
+     *   water  = 100 × 30/280 ≈ 10.71ml
+     *
+     * @param array<int,true> $seen  Ingredient IDs already expanded on this
+     *                               call-chain (cycle guard).
+     * @return array<int,array{ingredient_id:int,ingredient:Ingredient,quantity_in_base:float,unit_cost:float,current_stock:float,will_be_negative:bool}>
+     */
+    protected function expandIngredient(Ingredient $ingredient, float $qtyBase, array $seen = []): array
+    {
+        // Cycle guard: A composite that references itself (directly or
+        // through a chain) would loop forever. Refuse with a clear error
+        // so the misconfiguration surfaces at preview time, not after a
+        // ticket is half-deducted.
+        if (isset($seen[$ingredient->id])) {
+            throw new \RuntimeException(
+                "وصفة مركّبة تحوي حلقة مرجعية على المكون «{$ingredient->name}»."
+            );
+        }
+
+        // Non-composite (or composite with no sub-recipe defined yet) —
+        // deduct directly.
+        if (! $ingredient->is_composite || ! $ingredient->subRecipe()->exists()) {
+            return [[
+                'ingredient_id'    => $ingredient->id,
+                'ingredient'       => $ingredient,
+                'quantity_in_base' => $qtyBase,
+                'unit_cost'        => (float) $ingredient->cost_per_unit,
+                'current_stock'    => (float) $ingredient->current_stock,
+                'will_be_negative' => $ingredient->track_stock
+                                      && ((float) $ingredient->current_stock - $qtyBase) < 0,
+            ]];
+        }
+
+        $yield = (float) ($ingredient->composite_yield ?? 0);
+        if ($yield <= 0) {
+            // Composite flagged but yield not configured → can't scale.
+            // Fall back to raw deduction so the system never silently
+            // skips the line.
+            return [[
+                'ingredient_id'    => $ingredient->id,
+                'ingredient'       => $ingredient,
+                'quantity_in_base' => $qtyBase,
+                'unit_cost'        => (float) $ingredient->cost_per_unit,
+                'current_stock'    => (float) $ingredient->current_stock,
+                'will_be_negative' => $ingredient->track_stock
+                                      && ((float) $ingredient->current_stock - $qtyBase) < 0,
+            ]];
+        }
+
+        $scale = $qtyBase / $yield;
+        $seen[$ingredient->id] = true;
+        $expanded = [];
+
+        foreach ($ingredient->subRecipe()->with('ingredient', 'unit')->get() as $line) {
+            $child = $line->ingredient;
+            $childQtyBase = UnitConverter::convert(
+                (float) $line->quantity,
+                $line->unit_id,
+                $child->base_unit_id,
+            ) * $scale;
+
+            $expanded = array_merge(
+                $expanded,
+                $this->expandIngredient($child, $childQtyBase, $seen),
+            );
+        }
+
+        return $expanded;
+    }
+
+    /**
+     * Idempotently deduct stock for an OrderItem. Safe to call from multiple
+     * lifecycle hooks (approve → preparing → ready → served → invoice close)
+     * because each call checks whether an `out` movement already exists for
+     * this exact order_item and skips if so. The configured
+     * `inventory.deduction_stage` decides which hook actually fires it; this
+     * method just ensures "exactly once" semantics.
+     */
+    public function ensureDeducted(OrderItem $orderItem): bool
+    {
+        $alreadyDeducted = InventoryMovement::where('reference_type', OrderItem::class)
+            ->where('reference_id', $orderItem->id)
+            ->where('type', 'out')
+            ->exists();
+
+        if ($alreadyDeducted) return false;
+
+        $this->deductForOrderItem($orderItem);
+        return true;
     }
 
     /**

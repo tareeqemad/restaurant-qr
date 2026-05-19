@@ -19,6 +19,9 @@ class Invoice extends Model
         'total', 'paid_total', 'refunded_total', 'balance', 'status',
         'customer_name', 'customer_phone', 'notes',
         'issued_at', 'paid_at', 'cancelled_at',
+        // Debt-ledger flags — set by BillingService::settleOnAccount when
+        // a partially-paid invoice is parked on the customer's account.
+        'settled_on_account_at', 'settled_on_account_by_user_id',
     ];
 
     protected $casts = [
@@ -35,6 +38,7 @@ class Invoice extends Model
         'issued_at' => 'datetime',
         'paid_at' => 'datetime',
         'cancelled_at' => 'datetime',
+        'settled_on_account_at' => 'datetime',
     ];
 
     protected static function booted(): void

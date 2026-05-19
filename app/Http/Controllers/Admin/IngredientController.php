@@ -545,6 +545,55 @@ class IngredientController extends Controller
             'track_stock' => ['sometimes', 'boolean'],
             'active' => ['sometimes', 'boolean'],
             'notes' => ['nullable', 'string'],
+            // Yield ratio: optional. Null/blank = 100% (no trim loss).
+            'yield_pct' => ['nullable', 'numeric', 'min:0.01', 'max:100'],
+            // Composite-ingredient flags.
+            'is_composite' => ['sometimes', 'boolean'],
+            'composite_yield' => ['nullable', 'numeric', 'min:0.0001'],
         ]);
+    }
+
+    /**
+     * Replace the sub-recipe of a composite ingredient. Posted as
+     * `lines[] = ['ingredient_id', 'quantity', 'unit_id']`. Existing
+     * rows for this composite are deleted then re-inserted — simpler
+     * than a diff, and recipe lines are short-lived enough that an
+     * overwrite is fine.
+     */
+    public function updateSubRecipe(Request $request, Ingredient $ingredient)
+    {
+        $this->authorize('update', $ingredient);
+
+        abort_unless($ingredient->is_composite, 422, 'هذا المكون ليس مركّباً — فعّل "مركّب" أولاً.');
+
+        $data = $request->validate([
+            'lines'                 => ['nullable', 'array'],
+            'lines.*.ingredient_id' => ['required_with:lines', 'exists:ingredients,id'],
+            'lines.*.quantity'      => ['required_with:lines', 'numeric', 'min:0.0001'],
+            'lines.*.unit_id'       => ['required_with:lines', 'exists:units,id'],
+        ]);
+
+        // Cycle prevention: a composite cannot list itself anywhere in
+        // its tree. We do the immediate-child check here; the deeper
+        // recursion safety lives in InventoryService::expandIngredient.
+        foreach ($data['lines'] ?? [] as $line) {
+            if ((int) $line['ingredient_id'] === (int) $ingredient->id) {
+                return back()->with('error', 'لا يمكن للمكوّن المركّب أن يحوي نفسه كمكوّن فرعي.');
+            }
+        }
+
+        \DB::transaction(function () use ($ingredient, $data) {
+            $ingredient->subRecipe()->delete();
+            foreach ($data['lines'] ?? [] as $line) {
+                \App\Models\RecipeItem::create([
+                    'parent_ingredient_id' => $ingredient->id,
+                    'ingredient_id'        => (int) $line['ingredient_id'],
+                    'quantity'             => (float) $line['quantity'],
+                    'unit_id'              => (int) $line['unit_id'],
+                ]);
+            }
+        });
+
+        return back()->with('success', 'تم حفظ الوصفة الفرعية.');
     }
 }

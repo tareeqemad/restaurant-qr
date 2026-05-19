@@ -10,6 +10,7 @@ use App\Notifications\BaseNotification;
 use App\Notifications\BillRequestedNotification;
 use App\Notifications\BranchTransferReceivedNotification;
 use App\Notifications\BranchTransferSentNotification;
+use App\Notifications\CustomerDebtAlertNotification;
 use App\Notifications\LowStockNotification;
 use App\Notifications\NewOrderNotification;
 use App\Notifications\NewReservationNotification;
@@ -105,6 +106,46 @@ class NotifyService
             UserRole::Cashier->value,
         ]);
         $this->send($audience, new RefundIssuedNotification($refund));
+    }
+
+    /**
+     * A customer's outstanding debt changed — either grew (settled a new
+     * invoice on account) or shrunk (paid down). Managers + admins get
+     * pinged when:
+     *   - The debt newly crossed the customer's `credit_limit`, OR
+     *   - The debt grew past a threshold the restaurant cares about
+     *     (currently the same credit_limit value — null limit ⇒ no alert).
+     *
+     * Triggering inside the service (vs. always firing) keeps the bell
+     * inbox quiet on normal small balances and loud only when human
+     * judgment is actually needed.
+     */
+    public function customerDebtChanged(\App\Models\Customer $customer, ?\App\Models\Invoice $invoice = null): void
+    {
+        $customer->refresh();
+        $outstanding = $customer->outstandingDebt();
+        $limit = $customer->credit_limit !== null ? (float) $customer->credit_limit : null;
+
+        // Skip the bell when there's no ceiling to compare against, or the
+        // customer is comfortably under it. Restaurant owners that DO want
+        // to monitor general balances can use the dashboard widget — this
+        // alert is reserved for the "needs attention now" case.
+        if ($limit === null || $outstanding < $limit - 0.01) {
+            return;
+        }
+
+        $branchId = $invoice?->branch_id ?? $customer->default_branch_id;
+        $audience = $this->branchUsersWithRoles($branchId, [
+            UserRole::Admin->value,
+            UserRole::Manager->value,
+        ]);
+
+        $this->send($audience, new CustomerDebtAlertNotification(
+            customer:    $customer,
+            outstanding: $outstanding,
+            creditLimit: $limit,
+            invoice:     $invoice,
+        ));
     }
 
     /**

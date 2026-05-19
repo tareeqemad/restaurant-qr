@@ -80,7 +80,11 @@ new class extends Component
     {
         // Eager-load menuItem so the card can show each item's
         // prep_time_minutes badge (and color it red if elapsed > prep_time).
-        $rows = OrderItem::with(['order.table', 'modifiers', 'menuItem:id,prep_time_minutes'])
+        // `order.customer` is needed so the card can show name/phone for
+        // takeaway/delivery tickets without an N+1 (`customer_name` on the
+        // order itself is the canonical snapshot; the relation is the
+        // fallback when the cashier didn't enter a guest record).
+        $rows = OrderItem::with(['order.table', 'order.customer', 'modifiers', 'menuItem:id,prep_time_minutes'])
             ->where('station_id', $this->stationId)
             ->whereIn('status', [
                 OrderItemStatus::Approved->value,
@@ -433,14 +437,23 @@ new class extends Component
             </header>
             <div class="kb-ready-list">
                 @foreach($ready as $card)
-                    <div class="kb-ready-card kb-urg-{{ $card['urgency'] }}">
+                    @php
+                        $ro = $card['order'];
+                        $roExternal = $ro->isExternal();
+                        $roName = trim((string) ($ro->customer_name ?: $ro->customer?->name ?: ''));
+                    @endphp
+                    <div class="kb-ready-card kb-urg-{{ $card['urgency'] }} {{ $roExternal ? 'kb-ready-card--external' : '' }}"
+                         @if($roExternal) style="--source-color: {{ $ro->sourceColor() }};" @endif>
                         <div class="kb-ready-table">
-                            @if($card['order']->table)
+                            @if($ro->table)
                                 <small>طاولة</small>
-                                <strong>{{ $card['order']->table->number }}</strong>
+                                <strong>{{ $ro->table->number }}</strong>
                             @else
-                                <small>{{ $card['order']->sourceLabel() }}</small>
-                                <strong>{{ $card['order']->order_type === 'delivery' ? 'DLV' : 'TOGO' }}</strong>
+                                <small><i class="bi {{ $ro->sourceIcon() }}"></i> {{ $ro->sourceLabel() }}</small>
+                                <strong>{{ $ro->order_type === 'delivery' ? 'توصيل' : 'تيكاوي' }}</strong>
+                                @if($roName)
+                                    <span class="kb-ready-customer">{{ $roName }}</span>
+                                @endif
                             @endif
                         </div>
                         <div class="kb-ready-items">
@@ -449,7 +462,7 @@ new class extends Component
                             @endforeach
                         </div>
                         <div class="kb-ready-meta">
-                            <span class="kb-ready-num">#{{ $card['order']->number }}</span>
+                            <span class="kb-ready-num">#{{ $ro->number }}</span>
                             <span class="kb-ready-age">{{ $card['age_min'] }}د</span>
                         </div>
                     </div>

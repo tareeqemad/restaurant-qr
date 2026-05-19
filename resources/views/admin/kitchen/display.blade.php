@@ -142,6 +142,34 @@
         .kb-sort-btn { width: 32px !important; height: 32px !important; }
         .kb-sound-btn { padding: 0 .65rem !important; }
     }
+
+    /* External-order pickup strip — colour-codes the source so the chef
+       knows at a glance whether a "ready" ticket is going to a courier vs.
+       a customer waiting at the counter. */
+    .kb-ready-card--external {
+        border-inline-start: 4px solid var(--source-color, #b97818) !important;
+    }
+    .kb-ready-card--external .kb-ready-table {
+        background: color-mix(in srgb, var(--source-color, #b97818) 12%, white) !important;
+    }
+    .kb-ready-card--external .kb-ready-table small {
+        color: var(--source-color, #b97818) !important;
+        font-weight: 700;
+        display: inline-flex !important;
+        align-items: center;
+        gap: 4px;
+    }
+    .kb-ready-card--external .kb-ready-table strong {
+        color: var(--source-color, #b97818) !important;
+        font-size: 1.1rem !important;
+    }
+    .kb-ready-customer {
+        display: block;
+        margin-top: 2px;
+        font-size: .72rem;
+        font-weight: 700;
+        color: #475569;
+    }
 </style>
 @endpush
 

@@ -760,7 +760,7 @@ new class extends Component
 
         $this->validate([
             'paymentAmount' => ['required', 'numeric', 'min:0.01'],
-            'paymentMethod' => ['required', 'in:cash,card,transfer,app,credit'],
+            'paymentMethod' => ['required', 'in:cash,card,transfer'],
         ], attributes: [
             'paymentAmount' => 'قيمة الدفعة',
             'paymentMethod' => 'طريقة الدفع',
@@ -817,7 +817,7 @@ new class extends Component
     {
         $this->validate([
             'refundAmount' => ['required', 'numeric', 'min:0.01'],
-            'refundMethod' => ['required', 'in:cash,card,transfer,app,credit,other'],
+            'refundMethod' => ['required', 'in:cash,card,transfer,other'],
             'refundReason' => ['required', 'string', 'max:500'],
         ], attributes: [
             'refundAmount' => 'المبلغ',
@@ -1916,12 +1916,13 @@ new class extends Component
                                         </div>
                                         <div class="cx-methods">
                                             @php
+                                                // Only the three real-world settlement channels — see
+                                                // memory/project_accounting_simplification.md for why
+                                                // 'app' (wallet) and 'credit' (deferred) were dropped.
                                                 $methods = [
-                                                    'cash' => ['bi-cash-stack', 'نقدي'],
-                                                    'card' => ['bi-credit-card', 'بطاقة'],
-                                                    'transfer' => ['bi-bank', 'تحويل'],
-                                                    'app' => ['bi-phone', 'تطبيق'],
-                                                    'credit' => ['bi-hourglass', 'دين'],
+                                                    'cash' => ['bi-cash-stack', 'نقدا'],
+                                                    'card' => ['bi-credit-card', 'فيزا'],
+                                                    'transfer' => ['bi-bank', 'تحويل بنكي'],
                                                 ];
                                             @endphp
                                             @foreach($methods as $m => [$icon, $label])
@@ -1930,7 +1931,7 @@ new class extends Component
                                                 </button>
                                             @endforeach
                                         </div>
-                                        @if(in_array($paymentMethod, ['card', 'transfer', 'app']))
+                                        @if(in_array($paymentMethod, ['card', 'transfer']))
                                             <input type="text" wire:model.blur="paymentReference" placeholder="رقم المرجع (اختياري)" class="form-control mb-2">
                                         @endif
                                         <button wire:click="recordPayment" wire:loading.attr="disabled" class="cx-btn-lg cx-btn-success">
@@ -2263,11 +2264,9 @@ new class extends Component
                                     <div class="cx-methods">
                                         @php
                                             $methods = [
-                                                'cash'     => ['bi-cash-stack', 'نقدي'],
-                                                'card'     => ['bi-credit-card', 'بطاقة'],
-                                                'transfer' => ['bi-bank', 'تحويل'],
-                                                'app'      => ['bi-phone', 'تطبيق'],
-                                                'credit'   => ['bi-hourglass', 'دين'],
+                                                'cash'     => ['bi-cash-stack', 'نقدا'],
+                                                'card'     => ['bi-credit-card', 'فيزا'],
+                                                'transfer' => ['bi-bank', 'تحويل بنكي'],
                                             ];
                                         @endphp
                                         @foreach($methods as $m => [$icon, $label])
@@ -2280,7 +2279,7 @@ new class extends Component
                                         @endforeach
                                     </div>
 
-                                    @if(in_array($paymentMethod, ['card', 'transfer', 'app']))
+                                    @if(in_array($paymentMethod, ['card', 'transfer']))
                                         <input type="text" wire:model.blur="paymentReference"
                                             placeholder="رقم المرجع (اختياري)"
                                             class="form-control mb-2">
@@ -2349,11 +2348,9 @@ new class extends Component
                                             <div class="mb-2">
                                                 <label class="form-label small">الطريقة</label>
                                                 <select wire:model="refundMethod" class="form-select">
-                                                    <option value="cash">نقدي</option>
-                                                    <option value="card">بطاقة</option>
-                                                    <option value="transfer">تحويل</option>
-                                                    <option value="app">تطبيق</option>
-                                                    <option value="credit">رصيد زبون</option>
+                                                    <option value="cash">نقدا</option>
+                                                    <option value="card">فيزا</option>
+                                                    <option value="transfer">تحويل بنكي</option>
                                                 </select>
                                             </div>
                                             <div class="mb-2">

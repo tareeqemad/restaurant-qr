@@ -40,3 +40,18 @@ Schedule::command('attendance:close-stale')
     ->hourly()
     ->withoutOverlapping()
     ->runInBackground();
+
+/*
+|--------------------------------------------------------------------------
+| Inventory — nightly snapshot
+|--------------------------------------------------------------------------
+|
+| Records close-of-day stock + value per (ingredient, branch). Powers the
+| stock-trend report without rerunning aggregates over journal_lines /
+| inventory_movements every page load. Idempotent — re-running for the
+| same date overwrites that day's row instead of duplicating.
+*/
+Schedule::command('app:snapshot-inventory')
+    ->dailyAt('23:59')
+    ->withoutOverlapping()
+    ->runInBackground();

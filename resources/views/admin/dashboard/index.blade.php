@@ -360,6 +360,86 @@
     @endif
 </div>
 
+{{-- Customer debt widget — surfaces only when there's actually open debt.
+     Top-5 debtors by amount + summary row. Click-through goes to the
+     ledger. Hidden when the restaurant has zero outstanding so the
+     dashboard stays tidy on healthy days. --}}
+@if(($customerDebtStats?->total_debt ?? 0) > 0.001)
+    <x-admin.data-panel title="ديون الزبائن المفتوحة" icon="bi-wallet2"
+                        :count="(int) ($customerDebtStats->customers_owing ?? 0)">
+        <x-slot:actions>
+            <a href="{{ route('admin.customers.debts.index') }}" class="btn btn-primary btn-sm">
+                <i class="bi bi-journal-text"></i> فتح دفتر الديون
+            </a>
+        </x-slot:actions>
+
+        <div class="row g-3 mb-3">
+            <div class="col-md-4">
+                <div class="dashboard-mini dashboard-mini--danger">
+                    <span>إجمالي الدين</span>
+                    <strong>{{ \App\Helpers\Money::format((float) ($customerDebtStats->total_debt ?? 0)) }}</strong>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="dashboard-mini">
+                    <span>زبائن مديونون</span>
+                    <strong>{{ (int) ($customerDebtStats->customers_owing ?? 0) }}</strong>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="dashboard-mini">
+                    <span>فواتير مفتوحة</span>
+                    <strong>{{ (int) ($customerDebtStats->open_invoices ?? 0) }}</strong>
+                </div>
+            </div>
+        </div>
+
+        @if($topDebtors->isNotEmpty())
+            <div class="dashboard-section-label">الأعلى ديناً</div>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th>الزبون</th>
+                            <th class="text-end">الدين</th>
+                            <th class="text-center">عدد الفواتير</th>
+                            <th class="text-end">الحد</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($topDebtors as $row)
+                            @php
+                                $limit = $row->customer->credit_limit !== null ? (float) $row->customer->credit_limit : null;
+                                $over = $limit !== null && (float) $row->debt > $limit + 0.01;
+                            @endphp
+                            <tr class="{{ $over ? 'table-danger' : '' }}">
+                                <td>
+                                    <strong>{{ $row->customer->name }}</strong>
+                                    <small class="text-muted d-block" dir="ltr">{{ $row->customer->phone }}</small>
+                                </td>
+                                <td class="text-end fw-bold text-danger">{{ \App\Helpers\Money::format((float) $row->debt) }}</td>
+                                <td class="text-center"><span class="badge bg-secondary">{{ $row->invoice_count }}</span></td>
+                                <td class="text-end">
+                                    @if($limit === null)
+                                        <small class="text-muted">—</small>
+                                    @else
+                                        <span class="{{ $over ? 'text-danger fw-bold' : '' }}">{{ \App\Helpers\Money::format($limit) }}</span>
+                                    @endif
+                                </td>
+                                <td class="text-end">
+                                    <a href="{{ route('admin.customers.debts.show', $row->customer) }}"
+                                       class="btn btn-sm btn-outline-primary">تفاصيل</a>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        @endif
+    </x-admin.data-panel>
+@endif
+
 @if($branchSnapshot->isNotEmpty())
 <x-admin.data-panel title="نظرة المالك على الفروع" icon="bi-buildings" :count="$branchSnapshot->count()">
     <x-slot:actions>

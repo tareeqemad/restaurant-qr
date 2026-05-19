@@ -33,6 +33,7 @@ class Customer extends Authenticatable
         'gender',
         'preferences',
         'default_branch_id',
+        'credit_limit',
         'loyalty_customer_id',
         'phone_verified_at',
         'email_verified_at',
@@ -51,6 +52,7 @@ class Customer extends Authenticatable
         return [
             'birthday'          => 'date',
             'preferences'       => 'array',
+            'credit_limit'      => 'decimal:2',
             'phone_verified_at' => 'datetime',
             'email_verified_at' => 'datetime',
             'last_login_at'     => 'datetime',
@@ -133,6 +135,67 @@ class Customer extends Authenticatable
     public function isBlocked(): bool
     {
         return $this->status === 'blocked';
+    }
+
+    // ========== Debt / credit ledger ==========
+
+    /**
+     * Invoices that closed with an unpaid balance and were parked against
+     * this customer's account. They're the canonical debt ledger — no
+     * separate `customer_debts` table exists because the per-invoice
+     * `balance` column already does the job (and stays consistent under
+     * Refund/Payment writes for free).
+     *
+     * Filter on `balance > 0` so a debt that was settled later by a return
+     * visit drops out of the open list automatically.
+     */
+    public function openDebtInvoices(): HasMany
+    {
+        return $this->hasMany(Invoice::class)
+            ->whereNotNull('settled_on_account_at')
+            ->where('balance', '>', 0)
+            ->whereNotIn('status', ['cancelled', 'unpaid_writeoff'])
+            ->orderBy('settled_on_account_at');
+    }
+
+    /**
+     * Total currently outstanding on all open debt invoices, in major
+     * currency units. Cheap aggregate query (single SUM); call on demand
+     * rather than caching to avoid stale numbers after a fresh payment.
+     */
+    public function outstandingDebt(): float
+    {
+        return (float) $this->invoices()
+            ->whereNotNull('settled_on_account_at')
+            ->where('balance', '>', 0)
+            ->whereNotIn('status', ['cancelled', 'unpaid_writeoff'])
+            ->sum('balance');
+    }
+
+    /**
+     * Remaining headroom under the customer's credit ceiling. Returns null
+     * when no ceiling is set (treat as "unlimited"); otherwise the live
+     * difference, which can drop to zero or negative if the cashier
+     * extended credit beyond the cap (e.g. before the cap was lowered).
+     */
+    public function creditAvailable(): ?float
+    {
+        if ($this->credit_limit === null) {
+            return null;
+        }
+
+        return max(0, (float) $this->credit_limit - $this->outstandingDebt());
+    }
+
+    /**
+     * True when the customer cannot take on any more debt without the
+     * cashier explicitly raising the ceiling first. `null` credit_limit is
+     * treated as "never blocked" so a legacy customer without a configured
+     * cap continues to be served.
+     */
+    public function isCreditMaxedOut(): bool
+    {
+        return $this->credit_limit !== null && $this->creditAvailable() <= 0.001;
     }
 
     // ========== Display ==========
