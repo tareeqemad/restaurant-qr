@@ -10,6 +10,19 @@
             ->values()
         : collect();
 
+    // Live availability: BOTH the manual `is_available` flag AND a real-time
+    // stock check (recursively expanding composite ingredients). We carve
+    // the two reasons apart so the card can say "غير متوفر" vs "نفد المخزون"
+    // — different messages for different operator intent.
+    $manuallyAvailable = (bool) $item->is_available;
+    $shortages         = $manuallyAvailable ? $item->stockShortages(1.0) : [];
+    $inStock           = empty($shortages);
+    $canOrder          = $manuallyAvailable && $inStock;
+    $unavailReason     = ! $manuallyAvailable
+        ? 'غير متوفر'
+        : (! $inStock ? 'نفد المخزون' : null);
+@endphp
+
     $payload = [
         'id' => $item->id,
         'name' => $item->name,
@@ -39,29 +52,32 @@
         $ingredients->join(' '),
     ])->filter()->join(' '));
 @endphp
-<div class="dish {{ $item->is_available ? '' : 'is-unavailable' }} {{ $hasModifiers ? 'has-mods' : '' }}"
+<div class="dish {{ $canOrder ? '' : 'is-unavailable' }} {{ $hasModifiers ? 'has-mods' : '' }}"
      x-show="matchesSearch({{ \Illuminate\Support\Js::from($searchText) }})"
      x-transition.opacity.duration.150ms
      data-menu-search="{{ $searchText }}"
-     @if($item->is_available)
+     @if($canOrder)
      @click="onCardClick({{ \Illuminate\Support\Js::from($payload) }}, $event)"
      @endif>
     <div class="dish-img">
         <img src="{{ $item->imageUrl() }}" alt="{{ $item->name }}" loading="lazy" data-dish-img="{{ $item->id }}">
-        @if($item->is_featured && $item->is_available)
+        @if($item->is_featured && $canOrder)
             <span class="badge-today">متاح اليوم</span>
         @endif
-        @if($item->prep_time_minutes && $item->is_available)
+        @if($item->prep_time_minutes && $canOrder)
             <span class="badge-prep"><i class="bi bi-clock"></i> {{ $item->prep_time_minutes }} د</span>
         @endif
-        @if($hasModifiers && $item->is_available)
+        @if($hasModifiers && $canOrder)
             <span class="badge-options" title="هذا الصنف فيه خيارات (حجم/إضافات)">
                 <i class="bi bi-sliders2"></i> خيارات
             </span>
         @endif
-        @unless($item->is_available)
-            <div class="badge-unavail"><i class="bi bi-x-circle"></i> غير متوفر</div>
-        @endunless
+        @if(! $canOrder)
+            <div class="badge-unavail">
+                <i class="bi {{ $inStock ? 'bi-x-circle' : 'bi-box-seam' }}"></i>
+                {{ $unavailReason }}
+            </div>
+        @endif
     </div>
     <div class="dish-body">
         <h6 class="dish-name">{{ $item->name }}</h6>
@@ -96,10 +112,13 @@
         <div class="dish-foot">
             <span class="dish-price">{{ \App\Helpers\Money::format($item->price) }}</span>
 
-            @if(! $item->is_available)
-                {{-- Unavailable: no + button, just a disabled-looking indicator --}}
-                <span class="dish-unavail-btn" title="هذا الصنف غير متوفر حالياً">
-                    <i class="bi bi-slash-circle"></i>
+            @if(! $canOrder)
+                {{-- Unavailable: no + button, just a disabled-looking
+                     indicator. Title surfaces the reason (manual toggle
+                     vs. out of stock) so the customer + tester know why. --}}
+                <span class="dish-unavail-btn"
+                      title="{{ $inStock ? 'هذا الصنف غير متوفر حالياً' : 'نفد المخزون من أحد المكونات' }}">
+                    <i class="bi {{ $inStock ? 'bi-slash-circle' : 'bi-box-seam' }}"></i>
                 </span>
             @else
                 {{-- + button (or stepper if already in cart) — only when item is available --}}

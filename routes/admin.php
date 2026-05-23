@@ -77,6 +77,7 @@ Route::middleware(['auth', 'admin', 'branch'])->group(function () {
     // Customer debt ledger — declared BEFORE /customers/{customer} so the
     // literal `debts` path isn't swallowed by the wildcard model binding.
     Route::get ('customers/debts',                          [Admin\CustomerDebtController::class, 'index'])->name('customers.debts.index');
+    Route::get ('customers/debts/lookup',                   [Admin\CustomerDebtController::class, 'quickLookup'])->name('customers.debts.lookup');
     Route::get ('customers/debts/{customer}',               [Admin\CustomerDebtController::class, 'show'])->name('customers.debts.show');
     Route::post('customers/debts/{customer}/payment',       [Admin\CustomerDebtController::class, 'recordPayment'])->name('customers.debts.payment');
     Route::post('customers/debts/{customer}/credit-limit',  [Admin\CustomerDebtController::class, 'updateCreditLimit'])->name('customers.debts.credit_limit');
@@ -224,6 +225,23 @@ Route::middleware(['auth', 'admin', 'branch'])->group(function () {
     Route::post('orders/{order}/source',      [Admin\OrderController::class, 'updateSource'])->name('orders.update-source');
     Route::post('orders/items/{item}/cancel', [Admin\OrderController::class, 'cancelItem'])->name('orders.items.cancel');
     Route::post('orders/items/{item}/serve',  [Admin\OrderController::class, 'serveItem'])->name('orders.items.serve');
+
+    // Waiter-side order entry — for walk-in diners who can't scan the
+    // table QR. Mirrors the customer cart flow under the staff guard.
+    Route::get ('waiter-orders',                         [Admin\WaiterOrderController::class, 'index'])->name('waiter-orders.index');
+    Route::get ('waiter-orders/table/{table}',           [Admin\WaiterOrderController::class, 'create'])->name('waiter-orders.create');
+    Route::post('waiter-orders/{session}/items',         [Admin\WaiterOrderController::class, 'addItem'])->name('waiter-orders.items.add');
+    Route::delete('waiter-orders/{session}/items',       [Admin\WaiterOrderController::class, 'removeItem'])->name('waiter-orders.items.remove');
+    Route::post('waiter-orders/{session}/customer',      [Admin\WaiterOrderController::class, 'linkCustomer'])->name('waiter-orders.customer.link');
+    Route::post('waiter-orders/{session}/staff-mode',    [Admin\WaiterOrderController::class, 'setStaffMode'])->name('waiter-orders.staff_mode');
+    Route::post('waiter-orders/{session}/submit',        [Admin\WaiterOrderController::class, 'submit'])->name('waiter-orders.submit');
+
+    // Staff meal allowance — per-employee monthly tabs (manager view)
+    Route::get ('staff-meals',                  [Admin\StaffMealController::class, 'index'])->name('staff-meals.index');
+    Route::get ('staff-meals/quick-consume',    [Admin\StaffMealController::class, 'quickConsumeForm'])->name('staff-meals.quick_consume');
+    Route::post('staff-meals/quick-consume',    [Admin\StaffMealController::class, 'quickConsumeStore'])->name('staff-meals.quick_consume.store');
+    Route::get ('staff-meals/{user}',           [Admin\StaffMealController::class, 'show'])->name('staff-meals.show');
+    Route::post('staff-meals/{user}/settle',    [Admin\StaffMealController::class, 'settle'])->name('staff-meals.settle');
 
     // Station displays — one generic route handles every station code.
     // The controller checks the matching `station.{code}.view` permission

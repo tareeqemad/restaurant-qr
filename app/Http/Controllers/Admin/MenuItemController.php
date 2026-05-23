@@ -20,7 +20,9 @@ class MenuItemController extends Controller
     public function index(Request $request)
     {
         $this->authorize('viewAny', MenuItem::class);
-        $q = MenuItem::with(['category', 'station']);
+        // Eager-load recipe + ingredient so the index view can render
+        // a live "نفد المخزون" badge without an N+1 across the rows.
+        $q = MenuItem::with(['category', 'station', 'recipeItems.ingredient']);
         if ($s = $request->get('search')) {
             $q->where(function ($qq) use ($s) {
                 $qq->where('name', 'like', "%$s%")->orWhere('name_en', 'like', "%$s%")->orWhere('sku', 'like', "%$s%");

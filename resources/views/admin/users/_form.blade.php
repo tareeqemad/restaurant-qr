@@ -85,6 +85,31 @@
         <input type="password" name="password" class="form-control" @if(! isset($user)) required @endif></div>
     <div class="col-md-6"><label class="form-label">تأكيد كلمة المرور</label>
         <input type="password" name="password_confirmation" class="form-control"></div>
+
+    {{-- Staff meal allowance — the monthly cap for "وجبات الموظفين".
+         Null/blank = no allowance (the employee can't run a tab).
+         The dashboard surfaces consumption, over-limit, and the
+         carry-over to next month from here. --}}
+    <div class="col-md-6">
+        <label class="form-label">
+            <i class="bi bi-cup-hot-fill text-accent"></i>
+            بدل الوجبات الشهري
+            <small class="text-muted">(اختياري)</small>
+        </label>
+        <div class="input-group">
+            <input type="number" step="0.01" min="0" max="99999"
+                   name="monthly_meal_allowance"
+                   value="{{ old('monthly_meal_allowance', $user->monthly_meal_allowance ?? '') }}"
+                   placeholder="مثلاً: 500"
+                   class="form-control">
+            <span class="input-group-text">ش.إ / شهرياً</span>
+        </div>
+        <small class="text-muted d-block mt-1">
+            <i class="bi bi-info-circle"></i>
+            الحد الذي يستطيع هذا الموظف استهلاكه شهرياً من المطعم (له ولعائلته).
+            اتركه فارغاً = لا يستطيع الأكل على الحساب.
+        </small>
+    </div>
 </div>
 
 {{-- ─── Branch assignments ────────────────────────────────────────────

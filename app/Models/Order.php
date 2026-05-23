@@ -20,6 +20,9 @@ class Order extends Model
         'customer_address_id', 'order_type', 'status',
         'order_source', 'external_reference', 'delivery_receiver', 'platform_commission_pct',
         'created_by_user_id', 'approved_by_user_id', 'cancelled_by_user_id',
+        // Staff-meal mode: when set, the order is consumed by THIS employee
+        // and gets charged to their monthly allowance (not invoiced normally).
+        'staff_consumer_user_id',
         'customer_notes', 'delivery_address', 'internal_notes', 'cancelled_reason',
         'subtotal', 'discount_total', 'tax_total', 'service_total', 'delivery_fee', 'tip', 'total',
         'tax_rate', 'service_rate',
@@ -131,6 +134,21 @@ class Order extends Model
     public function canceller(): BelongsTo
     {
         return $this->belongsTo(User::class, 'cancelled_by_user_id');
+    }
+
+    /**
+     * The employee who consumed this order on their meal allowance.
+     * Non-null = staff meal (no regular invoice issued; the order is
+     * charged to the employee's monthly tab via StaffMealService).
+     */
+    public function staffConsumer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'staff_consumer_user_id');
+    }
+
+    public function isStaffMeal(): bool
+    {
+        return ! is_null($this->staff_consumer_user_id);
     }
 
     public function discounts(): HasMany

@@ -11,6 +11,17 @@
     </x-slot:actions>
 </x-admin.breadcrumb>
 
+{{-- Print-only header — replaces the breadcrumb on paper, since the
+     breadcrumb sits inside the admin chrome that we hide. --}}
+<div class="eod-print-header d-none">
+    <div class="eod-print-brand">
+        <strong>{{ \App\Models\Setting::get('site_name', 'المطعم') }}</strong>
+    </div>
+    <div class="eod-print-title">تقرير نهاية اليوم</div>
+    <div class="eod-print-date">التاريخ: {{ $date }}</div>
+    <hr>
+</div>
+
 <div class="data-panel-filters mb-3" style="background: white; border-radius: 14px; padding: 1rem; border: 1px solid rgba(var(--primary-rgb), .1);">
     <form class="row g-2 align-items-end">
         <div class="col-md-4 mx-auto">
@@ -145,4 +156,120 @@
         </div></div>
     </div>
 </div>
+
+{{-- ─── Print-friendly styling ────────────────────────────────────
+     Goals:
+       1. Hide all admin chrome (sidebar, header, breadcrumbs, filter
+          form, print button itself) so only the report renders.
+       2. Show the print-only header block (brand + date) instead.
+       3. Stack the three columns into one flow — A4 portrait is too
+          narrow for the 5/4/3 grid, items get cropped otherwise.
+       4. Force backgrounds + borders to print so the report doesn't
+          come out as a wall of plain text.
+       5. One-page when possible: trim padding, shrink stat cards. --}}
+@push('styles')
+<style>
+@media print {
+    /* Strip the admin shell — only the report content prints. */
+    body { background: white !important; }
+    .app-sidebar,
+    .app-header,
+    .breadcrumb-wrap,
+    .breadcrumb-actions,
+    .data-panel-filters,
+    .stat-rail,
+    nav, header, footer,
+    .alert,
+    button { display: none !important; }
+    .app-content,
+    .main-content,
+    .content,
+    main { margin: 0 !important; padding: 8mm !important; max-width: 100% !important; }
+
+    /* Show the print-only header. */
+    .eod-print-header.d-none { display: block !important; }
+    .eod-print-header {
+        text-align: center;
+        margin-bottom: 6mm;
+        font-family: 'Tajawal', sans-serif;
+    }
+    .eod-print-brand   { font-size: 16pt; }
+    .eod-print-title   { font-size: 20pt; font-weight: 900; margin-top: 2mm; }
+    .eod-print-date    { font-size: 11pt; color: #444; margin-top: 1mm; }
+    .eod-print-header hr { border-top: 2px solid #000; margin-top: 3mm; }
+
+    /* Stack the columns vertically — three side-by-side tables don't
+       fit a portrait A4 and end up clipped. Each section gets its
+       own width and a small break-inside hint. */
+    .col-lg-5, .col-lg-4, .col-lg-3 {
+        width: 100% !important;
+        max-width: 100% !important;
+        flex: 0 0 100% !important;
+        page-break-inside: avoid;
+    }
+    .row.g-3 > [class*="col-"] { margin-bottom: 6mm; }
+
+    /* Cards: kill drop-shadows + soften borders for ink-friendly
+       output. Force backgrounds in card headers so the section
+       titles still stand out on paper. */
+    .card {
+        box-shadow: none !important;
+        border: 1px solid #999 !important;
+        border-radius: 4px !important;
+        page-break-inside: avoid;
+    }
+    .card-header {
+        background: #f0f0f0 !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        border-bottom: 1px solid #999 !important;
+        padding: 4mm 5mm !important;
+    }
+    .card-body, .card-body.p-0 { padding: 0 !important; }
+
+    /* Tables: tighter rows, visible borders, repeating headers
+       across page breaks so a 30-row table stays readable. */
+    table { width: 100% !important; border-collapse: collapse !important; }
+    table thead { display: table-header-group; }
+    table th, table td {
+        padding: 2mm 3mm !important;
+        border-bottom: 1px solid #ccc !important;
+        font-size: 10pt !important;
+    }
+    table thead th {
+        background: #e8e8e8 !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        font-weight: 800;
+    }
+    table tfoot td {
+        background: #f5f5f5 !important;
+        -webkit-print-color-adjust: exact !important;
+        font-weight: 800;
+        border-top: 2px solid #000 !important;
+    }
+
+    /* Badges: text-only, no colored background on paper. */
+    .badge {
+        background: transparent !important;
+        color: #000 !important;
+        border: 1px solid #999 !important;
+        padding: 1px 4px !important;
+        font-weight: 700 !important;
+    }
+
+    /* Hint colors: convert to print-safe greyscale equivalents
+       so important rows still stand out (variance, danger…). */
+    .text-success { color: #1a6b34 !important; }
+    .text-danger  { color: #8b1a1a !important; }
+    .text-warning { color: #7a5800 !important; }
+    .text-primary { color: #1a2a6b !important; }
+
+    @page {
+        size: A4 portrait;
+        margin: 10mm 10mm 15mm 10mm;
+    }
+}
+</style>
+@endpush
 @endsection

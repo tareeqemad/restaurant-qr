@@ -47,13 +47,6 @@
             'tone' => 'danger',
         ],
         [
-            'title' => 'مبيعات حسب المنصة',
-            'desc' => 'اعرف صافي كل قناة بعد العمولة، ومن أين يأتي الإيراد فعلياً.',
-            'icon' => 'bi-bag-check-fill',
-            'href' => route('admin.reports.sales-by-platform', compact('from', 'to')),
-            'tone' => 'info',
-        ],
-        [
             'title' => 'المبيعات اليومية',
             'desc' => 'خط يومي للإيراد والفواتير والتحصيل ضمن الفترة المختارة.',
             'icon' => 'bi-bar-chart-line-fill',

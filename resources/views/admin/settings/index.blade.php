@@ -350,6 +350,30 @@
                                         الطلبات تبقى بانتظار اعتماد الجرسون حتى لا يذهب شيء للمطبخ/البار بالخطأ.
                                     </div>
                                 </div>
+
+                                {{-- ─── Staff meal allowance toggles ──────────────── --}}
+                                <div class="col-12">
+                                    <hr class="my-2">
+                                    <h6 class="text-muted mb-2">
+                                        <i class="bi bi-cup-hot-fill"></i> بدل وجبات الموظفين
+                                    </h6>
+                                </div>
+                                <div class="col-md-12">
+                                    <div class="form-check form-switch">
+                                        <input type="hidden" name="staff_meal_include_service" value="0">
+                                        <input type="checkbox" id="staff_meal_include_service" name="staff_meal_include_service"
+                                               value="1" class="form-check-input"
+                                            @checked($checked('staff_meal_include_service', config('restaurant.staff_meals.include_service', false)))>
+                                        <label for="staff_meal_include_service" class="form-check-label fw-bold">
+                                            احتساب رسوم الخدمة على طلبات الموظفين
+                                        </label>
+                                        <div class="setting-hint">
+                                            <strong>افتراضياً مُطفأ</strong>: الموظف لا يدفع رسوم خدمة لزملائه.
+                                            فعّله فقط لو مطعمك يجمع الخدمة من كل المبيعات (بما فيها وجبات الموظفين)
+                                            ويوزّعها لاحقاً على فريق العمل.
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>

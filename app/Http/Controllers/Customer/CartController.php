@@ -50,15 +50,37 @@ class CartController extends Controller
             'notes' => ['nullable', 'string', 'max:500'],
         ]);
 
-        $item = MenuItem::findOrFail($data['menu_item_id']);
+        $item = MenuItem::with('recipeItems.ingredient')->findOrFail($data['menu_item_id']);
         if (! $item->is_available) {
-            if ($request->expectsJson() || $request->ajax()) {
-                return response()->json(['ok' => false, 'error' => 'الصنف غير متوفر حالياً'], 422);
-            }
-            return back()->with('error', 'الصنف غير متوفر حالياً');
+            return $this->rejectAdd($request, 'الصنف غير متوفر حالياً');
         }
 
         $cart = session('cart.'.$session->token, []);
+
+        // Stock gate — block adding when the cumulative cart demand
+        // (existing rows for this item PLUS the new one) would consume
+        // more than what's currently on the shelf. Recursively expands
+        // composite ingredients, so a "sauce" line correctly checks its
+        // raw inputs. Customers should never get past this point with an
+        // un-fulfillable cart — the previous "wait till submit to find
+        // out" UX was the user-reported bug.
+        $virtualCart = $cart;
+        $virtualCart[] = [
+            'menu_item_id' => (int) $item->id,
+            'quantity'     => (float) $data['quantity'],
+            'modifier_ids' => $data['modifier_ids'] ?? [],
+        ];
+        $issues = $this->inventory->checkStockForOrderPreview($virtualCart);
+        if (! empty($issues)) {
+            $short = collect($issues)
+                ->map(fn ($i) => $i['ingredient'].' (متاح '.rtrim(rtrim(number_format($i['available'],2),'0'),'.')
+                    .'، مطلوب '.rtrim(rtrim(number_format($i['required'],2),'0'),'.').')')
+                ->take(3)
+                ->join('، ');
+            return $this->rejectAdd($request,
+                "نفد المخزون من: {$short}. اختر صنفاً آخر أو راجع الكاشير.");
+        }
+
         $modifiers = Modifier::whereIn('id', $data['modifier_ids'] ?? [])->get();
 
         $row = [
@@ -97,6 +119,36 @@ class CartController extends Controller
             'notes' => ['nullable', 'string', 'max:500'],
         ]);
         $cart = session('cart.'.$session->token, []);
+
+        // If the request is increasing a quantity, validate stock for
+        // the WHOLE cart with the new value applied — otherwise a
+        // hungry diner clicking + repeatedly could starve the kitchen
+        // past the safety net.
+        if (array_key_exists('quantity', $data) && $data['quantity'] !== null) {
+            $virtualCart = collect($cart)->map(function ($row) use ($data) {
+                if ($row['id'] === $data['row_id']) {
+                    $row['quantity'] = (int) $data['quantity'];
+                }
+                return [
+                    'menu_item_id' => (int) $row['menu_item_id'],
+                    'quantity'     => (float) $row['quantity'],
+                    'modifier_ids' => $row['modifier_ids'] ?? [],
+                ];
+            })->all();
+
+            $issues = $this->inventory->checkStockForOrderPreview($virtualCart);
+            if (! empty($issues)) {
+                $short = collect($issues)
+                    ->map(fn ($i) => $i['ingredient'].' (متاح '.rtrim(rtrim(number_format($i['available'],2),'0'),'.').')')
+                    ->take(2)->join('، ');
+                return response()->json([
+                    'ok'      => false,
+                    'error'   => 'stock_short',
+                    'message' => "لا يمكن زيادة الكمية — {$short}.",
+                ], 422);
+            }
+        }
+
         foreach ($cart as $i => $row) {
             if ($row['id'] === $data['row_id']) {
                 if (array_key_exists('quantity', $data) && $data['quantity'] !== null) {
@@ -113,6 +165,18 @@ class CartController extends Controller
         session()->put('cart.'.$session->token, $cart);
         $session->touch();
         return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Centralise the AJAX-or-redirect response for a rejected add so the
+     * two call-sites (manual-unavailable and stock-short) stay aligned.
+     */
+    protected function rejectAdd(Request $request, string $message)
+    {
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json(['ok' => false, 'error' => $message, 'message' => $message], 422);
+        }
+        return back()->with('error', $message);
     }
 
     public function remove(Request $request)

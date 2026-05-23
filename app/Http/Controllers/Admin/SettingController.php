@@ -38,6 +38,9 @@ class SettingController extends Controller
             'session_ttl_minutes' => ['required', 'integer', 'min:30', 'max:1440'],
             'strict_stock' => ['sometimes', 'boolean'],
             'inventory_deduction_stage' => ['sometimes', 'in:approve,preparing,ready,served'],
+            // Staff meals: branch-level toggle for whether the service
+            // charge stays on the employee's tab. Default off.
+            'staff_meal_include_service' => ['sometimes', 'boolean'],
             // Theme color settings
             'theme_primary' => ['nullable', 'regex:/^#[0-9a-fA-F]{6}$/'],
             'theme_dark' => ['nullable', 'regex:/^#[0-9a-fA-F]{6}$/'],
@@ -77,6 +80,7 @@ class SettingController extends Controller
             'session_ttl_minutes' => ['customer', 'int'],
             'strict_stock' => ['inventory', 'bool'],
             'inventory_deduction_stage' => ['inventory', 'string'],
+            'staff_meal_include_service' => ['staff_meals', 'bool'],
             'theme_primary' => ['theme', 'string'],
             'theme_dark' => ['theme', 'string'],
             'theme_header' => ['theme', 'string'],

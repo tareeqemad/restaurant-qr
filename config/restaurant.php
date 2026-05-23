@@ -40,6 +40,15 @@ return [
         'session_ttl_minutes' => 240,
     ],
 
+    'staff_meals' => [
+        // Whether service charge stays on the staff member's tab. By
+        // default it's stripped — an employee shouldn't be paying a
+        // tip to their own colleagues. Operators that pool service
+        // restaurant-wide and pay it out separately can flip this on.
+        // Override at runtime via Settings → "بدل وجبات الموظفين".
+        'include_service' => env('RESTAURANT_STAFF_MEAL_INCLUDE_SERVICE', false),
+    ],
+
     'inventory' => [
         // When true, approving an order is BLOCKED if any tracked ingredient
         // would go negative. Throws a detailed error listing the shortages.

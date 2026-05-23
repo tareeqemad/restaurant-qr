@@ -70,6 +70,65 @@ class MenuItem extends Model
         return $this->station_id ?? $this->category?->default_station_id;
     }
 
+    // ════════════════════════════════════════════════════════════════════
+    //  Stock availability — the customer must NEVER be able to add an
+    //  item to their cart when the kitchen can't make it. `is_available`
+    //  is a manual toggle (intent: "we choose not to sell this right now");
+    //  these methods compute the live STOCK truth on top of it so a
+    //  manager doesn't have to keep flipping a switch every time chicken
+    //  runs out.
+    //
+    //  Composites are recursively expanded via InventoryService so a
+    //  menu item using a composite ingredient is gated by the raw inputs
+    //  of that composite, not the composite's nominal stock.
+    // ════════════════════════════════════════════════════════════════════
+
+    /**
+     * Shortage list for fulfilling `$quantity` of this item right now.
+     * Empty array means the kitchen has enough stock. Each entry contains
+     * the ingredient name + required vs. available qty for clear UI.
+     *
+     * Items with no recipe (e.g. internet cards) always return an empty
+     * array — they don't consume stock.
+     *
+     * @return array<int,array{ingredient:string,ingredient_id:int,required:float,available:float}>
+     */
+    public function stockShortages(float $quantity = 1.0): array
+    {
+        if ($this->recipeItems->isEmpty() && ! $this->relationLoaded('recipeItems')) {
+            $this->load('recipeItems.ingredient');
+        }
+        if ($this->recipeItems->isEmpty()) {
+            return [];   // No recipe → not a tracked item (e.g. wifi card)
+        }
+
+        return app(\App\Services\InventoryService::class)
+            ->checkStockForOrderPreview([[
+                'menu_item_id' => $this->id,
+                'quantity'     => $quantity,
+                'modifier_ids' => [],
+            ]]);
+    }
+
+    /**
+     * True iff the kitchen has enough stock to fulfill `$quantity` of this
+     * item RIGHT NOW. Cheap shortcut around stockShortages().
+     */
+    public function isInStock(float $quantity = 1.0): bool
+    {
+        return empty($this->stockShortages($quantity));
+    }
+
+    /**
+     * The composite gate the customer-side flow should ask: both the
+     * manual `is_available` flag AND live stock must allow ordering.
+     */
+    public function availableToOrder(float $quantity = 1.0): bool
+    {
+        if (! $this->is_available) return false;
+        return $this->isInStock($quantity);
+    }
+
     public function imageUrl(): string
     {
         if (! $this->image) {

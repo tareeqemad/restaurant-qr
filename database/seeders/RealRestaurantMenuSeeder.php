@@ -364,11 +364,14 @@ class RealRestaurantMenuSeeder extends Seeder
             ],
 
             // ═════════════════════════════════════ 7. الحلويات
+            // Desserts are made/plated at the bar (operator decision —
+            // no separate pastry station, and the bartender already
+            // handles drinks so they own the cold/sweet workflow).
             [
                 'name' => 'الحلويات', 'name_en' => 'Desserts', 'slug' => 'desserts',
                 'icon' => 'ri-cake-2-fill', 'color' => '#ec4899',
                 'image' => 'https://images.unsplash.com/photo-1488477181946-6428a0291777?w=600&q=80',
-                'station_id' => $kitchenId,
+                'station_id' => $barId,
                 'items' => [
                     ['name' => 'كنافة', 'name_en' => 'Kunafa', 'sku' => 'DES-01', 'price' => 4.00,
                      'image' => 'https://images.unsplash.com/photo-1541443131876-44b03de101c5?w=600&q=80',

@@ -186,6 +186,58 @@ class CustomerDebtController extends Controller
     }
 
     /**
+     * Quick lookup for the cashier's "pay debt without a new invoice"
+     * widget — phone in, debt snapshot out (JSON). Powers the inline
+     * pay form on the cashier dashboard so the staffer doesn't have to
+     * leave the screen they're working on.
+     *
+     * Returns 404 when the phone isn't on file so the UI can prompt
+     * "register first" (less ambiguous than an empty 200).
+     */
+    public function quickLookup(Request $request)
+    {
+        $this->authorize('create', \App\Models\Payment::class);
+
+        $data = $request->validate([
+            'phone' => ['required', 'string', 'max:32'],
+        ]);
+
+        $customer = Customer::findForLogin($data['phone']);
+        if (! $customer) {
+            return response()->json([
+                'ok'      => false,
+                'error'   => 'not_found',
+                'message' => 'لم نجد زبوناً بهذا الرقم. سجّله من شاشة العملاء أولاً.',
+            ], 404);
+        }
+
+        $openInvoices = $customer->invoices()
+            ->whereNotNull('settled_on_account_at')
+            ->where('balance', '>', 0)
+            ->whereNotIn('status', ['cancelled', 'unpaid_writeoff'])
+            ->orderBy('settled_on_account_at')
+            ->get(['id', 'number', 'balance', 'settled_on_account_at']);
+
+        return response()->json([
+            'ok'       => true,
+            'customer' => [
+                'id'    => $customer->id,
+                'name'  => $customer->name,
+                'phone' => $customer->phone,
+            ],
+            'outstanding'    => $customer->outstandingDebt(),
+            'credit_limit'   => $customer->credit_limit !== null ? (float) $customer->credit_limit : null,
+            'open_invoices'  => $openInvoices->map(fn ($inv) => [
+                'id'      => $inv->id,
+                'number'  => $inv->number,
+                'balance' => (float) $inv->balance,
+                'age_days'=> (int) ($inv->settled_on_account_at?->diffInDays(now()) ?? 0),
+            ])->values(),
+            'pay_url' => route('admin.customers.debts.payment', $customer),
+        ]);
+    }
+
+    /**
      * Manager updates the credit ceiling. Setting it to null/empty
      * removes the cap entirely (returning the customer to "no limit").
      */

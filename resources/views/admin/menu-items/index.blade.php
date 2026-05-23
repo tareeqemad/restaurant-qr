@@ -73,6 +73,16 @@
                         $margin = $price > 0 ? ($profit / $price) * 100 : 0;
                         // Margin colour bands: green (>60%), amber (30-60%), red (<30%)
                         $marginColor = $margin >= 60 ? 'var(--primary)' : ($margin >= 30 ? '#b8872a' : '#b91c1c');
+
+                        // Live stock health — lets the manager see at a
+                        // glance which items the menu will hide from
+                        // customers right now, even when the manual
+                        // "متوفر" toggle is still on. Skip items
+                        // without recipes (wifi cards etc.).
+                        $stockShort = null;
+                        if ($i->recipeItems->count() > 0) {
+                            $stockShort = $i->stockShortages(1.0);
+                        }
                     @endphp
                     <tr>
                         <td><img src="{{ $i->imageUrl() }}" width="48" height="48" class="rounded" style="object-fit:cover"></td>
@@ -109,6 +119,17 @@
                                     <button class="btn btn-sm btn-danger"><i class="bi bi-x-circle"></i> غير متوفر</button>
                                 @endif
                             </form>
+                            @if($i->is_available && is_array($stockShort) && !empty($stockShort))
+                                {{-- Manual toggle says "on" but the
+                                     kitchen can't actually make it —
+                                     surface the shortage so the manager
+                                     knows the menu is auto-hiding it. --}}
+                                <div class="mt-1" title="{{ collect($stockShort)->map(fn($s)=>$s['ingredient'].' (متاح '.rtrim(rtrim(number_format($s['available'],2),'0'),'.').')')->join('، ') }}">
+                                    <span class="badge bg-warning text-dark">
+                                        <i class="bi bi-box-seam"></i> نفد المخزون
+                                    </span>
+                                </div>
+                            @endif
                         </td>
                         <td>
                             <a href="{{ route('admin.menu-items.edit', $i) }}" class="btn btn-sm btn-light"><i class="bi bi-pencil"></i></a>

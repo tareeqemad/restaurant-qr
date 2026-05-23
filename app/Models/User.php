@@ -28,6 +28,9 @@ class User extends Authenticatable
         'suspended_reason',
         'last_login_at',
         'password',
+        // Per-month cap for the staff meal allowance feature. Null =
+        // employee can't take meals on the house.
+        'monthly_meal_allowance',
     ];
 
     protected $hidden = [
@@ -41,7 +44,61 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'last_login_at' => 'datetime',
             'password' => 'hashed',
+            'monthly_meal_allowance' => 'decimal:2',
         ];
+    }
+
+    // ========== Staff meal allowance ==========
+
+    /**
+     * All staff-meal charges against this user. Open rows are the
+     * running tab; settled rows are history (payroll deduction, cash
+     * pay-back, write-off).
+     */
+    public function staffMealCharges(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(StaffMealCharge::class)->latest('charged_at');
+    }
+
+    /**
+     * Sum of unsettled charges in a specific month — drives the
+     * "used this month" KPI on the staff meals dashboard. Defaults to
+     * the current calendar month.
+     */
+    public function staffMealUsedInMonth(?\Carbon\Carbon $month = null): float
+    {
+        $month = $month?->copy()->startOfMonth() ?? now()->startOfMonth();
+        $end = $month->copy()->endOfMonth();
+
+        return (float) StaffMealCharge::query()
+            ->where('user_id', $this->id)
+            ->whereNull('settled_at')
+            ->whereBetween('charged_at', [$month, $end])
+            ->sum('amount');
+    }
+
+    /**
+     * Total open (un-settled) staff meal charges across all time —
+     * what the employee owes the restaurant right now.
+     */
+    public function staffMealOutstanding(): float
+    {
+        return (float) StaffMealCharge::query()
+            ->where('user_id', $this->id)
+            ->whereNull('settled_at')
+            ->sum('amount');
+    }
+
+    /**
+     * Remaining allowance for the current month. Negative when the
+     * employee is over their cap (overflow is allowed but tracked as
+     * personal debt — see StaffMealService::chargeOrder).
+     * Null when no allowance is configured.
+     */
+    public function staffMealRemainingThisMonth(): ?float
+    {
+        if ($this->monthly_meal_allowance === null) return null;
+        return round((float) $this->monthly_meal_allowance - $this->staffMealUsedInMonth(), 2);
     }
 
     // ========== Relations ==========

@@ -166,6 +166,12 @@
                                     <i class="bi bi-people-fill submenu-icon"></i>العملاء
                                 </a>
                             </li>
+                            <li class="slide">
+                                <a href="{{ route('admin.customers.debts.index') }}"
+                                   class="side-menu__item {{ $isActive('admin.customers.debts.*') }}">
+                                    <i class="bi bi-wallet2 submenu-icon"></i>دفتر الديون
+                                </a>
+                            </li>
                         @endif
                         @if($canRes)
                             <li class="slide">
@@ -201,6 +207,30 @@
                     </a>
                 </li>
                 @endcan
+
+                {{-- Waiter quick entry — for walk-ins without QR access.
+                     Same OrderPolicy::create gate as the orders board,
+                     so anyone who can see the board can take a phone-
+                     less customer's order from the floor. --}}
+                @can('create', \App\Models\Order::class)
+                <li class="slide {{ $isActive('admin.waiter-orders.*') }}">
+                    <a href="{{ route('admin.waiter-orders.index') }}" class="side-menu__item">
+                        <i class="bi bi-clipboard-plus side-menu__icon"></i>
+                        <span class="side-menu__label">إدخال طلب يدوي</span>
+                    </a>
+                </li>
+                @endcan
+
+                {{-- Staff meal allowance — manager-only ledger of
+                     per-employee monthly tabs (مدير/أدمن). --}}
+                @if(auth()->user()?->hasAnyRole(['super_admin', 'admin', 'manager']))
+                <li class="slide {{ $isActive('admin.staff-meals.*') }}">
+                    <a href="{{ route('admin.staff-meals.index') }}" class="side-menu__item">
+                        <i class="bi bi-cup-hot-fill side-menu__icon"></i>
+                        <span class="side-menu__label">بدل وجبات الموظفين</span>
+                    </a>
+                </li>
+                @endif
 
                 @can('archive', \App\Models\Order::class)
                 <li class="slide {{ $isActive('admin.orders.archive') }}">

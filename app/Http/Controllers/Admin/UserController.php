@@ -201,6 +201,10 @@ class UserController extends Controller
             'station_id'           => ['nullable', 'exists:stations,id'],
             'status'               => ['required', Rule::in(['active', 'inactive', 'suspended'])],
             'password'             => [$id ? 'nullable' : 'required', 'min:6', 'confirmed'],
+            // Monthly meal allowance — null/blank means "no allowance"
+            // (employee cannot place staff meals). 0 is also valid but
+            // semantically equivalent to null for the dashboard checks.
+            'monthly_meal_allowance' => ['nullable', 'numeric', 'min:0', 'max:99999'],
 
             // Branch assignments — required for non-owner roles (see above).
             // Pivot rows are written via sync() in extractBranchAssignments().
