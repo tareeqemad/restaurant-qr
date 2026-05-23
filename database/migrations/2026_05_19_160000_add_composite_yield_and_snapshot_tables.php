@@ -90,8 +90,16 @@ return new class extends Migration {
         Schema::dropIfExists('inventory_snapshots');
 
         Schema::table('recipe_items', function (Blueprint $table) {
+            // Order matters on MySQL: the FK constraint depends on the
+            // composite index (parent_ingredient_id, ingredient_id) —
+            // its leading column matches the FK column, so MySQL refuses
+            // to drop the index while the FK still references it.
+            //   1. Drop the FK first.
+            //   2. Then the now-orphan composite index can go.
+            //   3. Finally the column.
+            $table->dropForeign(['parent_ingredient_id']);
             $table->dropIndex('recipe_items_parent_ingredient_idx');
-            $table->dropConstrainedForeignId('parent_ingredient_id');
+            $table->dropColumn('parent_ingredient_id');
         });
 
         Schema::table('ingredients', function (Blueprint $table) {
