@@ -239,6 +239,36 @@ new class extends Component
         unset($this->ordersByColumn, $this->activeTables, $this->loadStats);
     }
 
+    /**
+     * Chef-side cancel: customer changed their mind mid-prep, the
+     * waiter is busy elsewhere, the chef needs to clear the ticket
+     * NOW. `disposition` picks return-to-stock (didn't touch) vs
+     * waste-as-loss (already prepping). Reuses OrderService so the
+     * cancel goes through the same broadcast + accounting flow as a
+     * waiter-initiated cancel.
+     */
+    public function cancelItemFromKds(int $itemId, string $disposition, string $reason, OrderService $service): void
+    {
+        $item = OrderItem::whereKey($itemId)->where('station_id', $this->stationId)->first();
+        if (! $item) return;
+        $this->ensureStationAccess($item);
+
+        $service->cancelItem(
+            item:        $item,
+            userId:      auth()->id(),
+            reason:      $reason,
+            disposition: in_array($disposition, ['return', 'waste'], true) ? $disposition : 'return',
+            wasteReason: $disposition === 'waste' ? 'إلغاء أثناء التحضير من المطبخ' : null,
+        );
+
+        $this->dispatch('toast', type: 'success',
+            message: $disposition === 'waste'
+                ? "أُلغي «{$item->name_snapshot}» وسُجِّلت المكوّنات كهدر."
+                : "أُلغي «{$item->name_snapshot}» وأُعيدت المكوّنات للمخزون.");
+
+        unset($this->ordersByColumn, $this->activeTables, $this->loadStats);
+    }
+
     public function toggleSound(): void { $this->soundEnabled = !$this->soundEnabled; }
 
     public function setSort(string $sort): void

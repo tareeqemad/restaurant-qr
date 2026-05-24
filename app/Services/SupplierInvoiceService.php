@@ -96,10 +96,47 @@ class SupplierInvoiceService
                         : null;
                     $receivedTotal = $receivedQty !== null ? $receivedQty * (float) $poItem->unit_price : null;
 
+                    // Quantity variance — needs base-unit normalization
+                    // when the PO and the invoice use different pack
+                    // sizes. Money variance stays comparable as-is
+                    // because both sides are amounts.
+                    //
+                    // Example: PO line in 24-can cartons (received 5
+                    // cartons), invoice itemized in single cans
+                    // (claims 120 cans). Naive subtraction (120 − 5)
+                    // = 115 is meaningless. Normalising both sides
+                    // gives 120 − (5 × 24) = 0 — actually balanced.
+                    $varianceQty = null;
+                    if ($poItem && $receivedQty !== null) {
+                        $poFactor  = $poItem->ingredient_unit_id && $poItem->ingredientUnit
+                            ? (float) $poItem->ingredientUnit->factor_to_base
+                            : 1.0;
+                        $invFactor = ! empty($line['ingredient_unit_id'])
+                            ? (float) (\App\Models\IngredientUnit::find($line['ingredient_unit_id'])?->factor_to_base ?? 1.0)
+                            : 1.0;
+
+                        if (abs($poFactor - $invFactor) < 0.0001) {
+                            // Same unit on both sides — keep the
+                            // variance in that unit so the existing UI
+                            // (which shows "X كرتون") reads naturally.
+                            $varianceQty = $qty - $receivedQty;
+                        } else {
+                            // Different units — normalise both to base
+                            // and report the variance in base units.
+                            // The UI prints the ingredient's base-unit
+                            // code so the operator knows the scale.
+                            $varianceQty = ($qty * $invFactor) - ($receivedQty * $poFactor);
+                        }
+                    }
+
                     $invoice->items()->create([
                         'purchase_order_item_id' => $poItem?->id,
                         'ingredient_id' => $poItem?->ingredient_id ?: ($line['ingredient_id'] ?? null),
                         'unit_id' => $poItem?->unit_id ?: ($line['unit_id'] ?? null),
+                        // Capture the invoice line's pack-size when
+                        // supplied, so future audits can see exactly
+                        // how the supplier itemised this row.
+                        'ingredient_unit_id' => ! empty($line['ingredient_unit_id']) ? (int) $line['ingredient_unit_id'] : null,
                         'description' => $line['description'],
                         'quantity' => $qty,
                         'unit_price' => $unitPrice,
@@ -108,7 +145,7 @@ class SupplierInvoiceService
                         'total' => $lineTotal,
                         'received_qty' => $receivedQty,
                         'received_total' => $receivedTotal,
-                        'variance_qty' => $receivedQty !== null ? $qty - $receivedQty : null,
+                        'variance_qty' => $varianceQty,
                         'variance_total' => $receivedTotal !== null ? $lineTotal - $receivedTotal : null,
                         'notes' => $line['notes'] ?? null,
                     ]);

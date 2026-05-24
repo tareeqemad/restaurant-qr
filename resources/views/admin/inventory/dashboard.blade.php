@@ -99,13 +99,14 @@
                                         <div class="fw-bold">{{ $ingredient->name }}</div>
                                         <small class="text-muted">{{ $ingredient->supplier?->name ?? 'بدون مورد افتراضي' }}</small>
                                     </td>
-                                    <td class="text-end {{ $ingredient->dashboard_stock <= 0 ? 'text-danger fw-bold' : 'text-warning fw-bold' }}">
-                                        {{ number_format($ingredient->dashboard_stock, 2) }}
-                                        <small class="text-muted">{{ $ingredient->baseUnit?->code }}</small>
+                                    @php $dashBase = $ingredient->baseUnit?->code; @endphp
+                                    <td class="text-end {{ $ingredient->dashboard_stock <= 0 ? 'text-danger fw-bold' : 'text-warning fw-bold' }}"
+                                        title="{{ number_format($ingredient->dashboard_stock, 4) }} {{ $dashBase }}">
+                                        {{ \App\Helpers\QuantityFormatter::smart((float) $ingredient->dashboard_stock, $dashBase) }}
                                     </td>
-                                    <td class="text-end">
-                                        {{ number_format($ingredient->dashboard_need_qty, 2) }}
-                                        <small class="text-muted">{{ $ingredient->baseUnit?->code }}</small>
+                                    <td class="text-end"
+                                        title="{{ number_format($ingredient->dashboard_need_qty, 4) }} {{ $dashBase }}">
+                                        {{ \App\Helpers\QuantityFormatter::smart((float) $ingredient->dashboard_need_qty, $dashBase) }}
                                     </td>
                                     <td class="text-end fw-bold" style="color: var(--primary);">
                                         {{ \App\Helpers\Money::format($ingredient->dashboard_need_cost) }}
@@ -291,7 +292,9 @@
                                 <tr>
                                     <td class="fw-bold">{{ $row->name }}</td>
                                     <td class="text-end">{{ $row->events_count }}</td>
-                                    <td class="text-end">{{ number_format((float) $row->qty, 2) }} <small class="text-muted">{{ $row->unit_code }}</small></td>
+                                    <td class="text-end" title="{{ number_format((float) $row->qty, 4) }} {{ $row->unit_code }}">
+                                        {{ \App\Helpers\QuantityFormatter::smart((float) $row->qty, $row->unit_code) }}
+                                    </td>
                                     <td class="text-end text-danger fw-bold">{{ \App\Helpers\Money::format($row->total_cost) }}</td>
                                 </tr>
                             @endforeach

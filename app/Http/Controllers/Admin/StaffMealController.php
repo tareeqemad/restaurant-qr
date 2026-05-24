@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\StaffMealCharge;
+use App\Models\StaffMealMonthClosure;
 use App\Models\User;
 use App\Services\StaffMealService;
+use App\Support\BranchContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 
@@ -43,6 +45,7 @@ class StaffMealController extends Controller
             'staff_count'      => $employees->count(),
             'total_allowance'  => (float) $employees->sum('monthly_meal_allowance'),
             'total_used'       => (float) $rows->sum(fn ($r) => $r['summary']['used']),
+            'total_gifted'     => (float) $rows->sum(fn ($r) => $r['summary']['gifted'] ?? 0),
             'total_outstanding'=> (float) $rows->sum(fn ($r) => $r['summary']['outstanding']),
             'over_limit_count' => $rows->filter(fn ($r) => $r['summary']['overflow'] > 0)->count(),
         ];
@@ -136,30 +139,72 @@ class StaffMealController extends Controller
             'lines.*.menu_item_id' => ['required', 'integer', 'exists:menu_items,id'],
             'lines.*.quantity'  => ['required', 'numeric', 'min:1', 'max:99'],
             'notes'             => ['nullable', 'string', 'max:500'],
+            'is_gift'           => ['sometimes', 'boolean'],
+            'gift_reason'       => ['nullable', 'string', 'max:300'],
         ], [], [
             'user_id' => 'الموظف',
             'lines'   => 'الأصناف',
         ]);
 
         $staff = User::findOrFail($data['user_id']);
-        if ($staff->monthly_meal_allowance === null) {
+        $isGift = (bool) ($data['is_gift'] ?? false);
+        // For regular consumption we still require the employee to be
+        // enrolled in the program; gifts bypass that (a gift can go to
+        // anyone — birthday meals, new-hire welcome, etc.).
+        if (! $isGift && $staff->monthly_meal_allowance === null) {
             return back()->with('error', 'الموظف المختار ليس له بدل وجبات مفعّل.');
         }
 
         try {
             $charge = $this->service->quickConsume(
-                staff: $staff,
-                lines: $data['lines'],
+                staff:            $staff,
+                lines:            $data['lines'],
                 recordedByUserId: auth()->id(),
-                notes: $data['notes'] ?? null,
+                notes:            $data['notes'] ?? null,
+                isGift:           $isGift,
+                giftReason:       $data['gift_reason'] ?? null,
             );
+            $msg = $isGift
+                ? "تم تسجيل وجبة مجانية بقيمة ".number_format((float) $charge->amount, 2)." ش.إ للموظف {$staff->name} (لا تُحسب على بدله)."
+                : "تم تسجيل استهلاك بقيمة ".number_format((float) $charge->amount, 2)." ش.إ على الموظف {$staff->name}.";
             return redirect()
                 ->route('admin.staff-meals.show', $staff)
-                ->with('success', "تم تسجيل استهلاك بقيمة "
-                    .number_format((float) $charge->amount, 2).
-                    " ش.إ على الموظف {$staff->name}.");
+                ->with('success', $msg);
         } catch (\Throwable $e) {
             return back()->withInput()->with('error', $e->getMessage());
+        }
+    }
+
+    /**
+     * Waive part (or all) of a specific OPEN charge. Used by the
+     * manager-facing "إعفاء" button on the staff detail page when
+     * the employee deserves a discount on a particular order — say
+     * the kitchen messed up, or it's their work anniversary.
+     */
+    public function waiveCharge(Request $request, StaffMealCharge $charge)
+    {
+        abort_unless(auth()->user()?->hasAnyRole(['super_admin', 'admin', 'manager']), 403);
+
+        $data = $request->validate([
+            'amount'  => ['required', 'numeric', 'min:0.01', 'max:'.((float) $charge->amount)],
+            'method'  => ['required', 'in:gift,writeoff'],
+            'reason'  => ['nullable', 'string', 'max:500'],
+        ]);
+
+        try {
+            $this->service->waiveCharge(
+                charge:  $charge,
+                amount:  (float) $data['amount'],
+                userId:  auth()->id(),
+                reason:  $data['reason'] ?? null,
+                asGift:  $data['method'] === 'gift',
+            );
+            $label = $data['method'] === 'gift' ? 'هدية' : 'شطب';
+            return back()->with('success',
+                "تم تسجيل {$label} بقيمة "
+                .number_format((float) $data['amount'], 2)." ش.إ من الحركة.");
+        } catch (\Throwable $e) {
+            return back()->with('error', $e->getMessage());
         }
     }
 
@@ -185,5 +230,84 @@ class StaffMealController extends Controller
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
         }
+    }
+
+    /**
+     * Month-end batch settlement. Picks every open charge in the
+     * chosen month + branch and settles them as one batch, marking
+     * each linked back to a `StaffMealMonthClosure` row so the
+     * printable payroll sheet can re-render anytime.
+     */
+    public function closeMonth(Request $request)
+    {
+        abort_unless(auth()->user()?->hasAnyRole(['super_admin', 'admin', 'manager']), 403);
+
+        $data = $request->validate([
+            'month'  => ['required', 'date_format:Y-m'],
+            'method' => ['required', 'in:payroll_deduction,cash,writeoff'],
+            'notes'  => ['nullable', 'string', 'max:1000'],
+            'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
+        ]);
+
+        $month = Carbon::parse($data['month'].'-01');
+        // Non-owner users are confined to their active branch — they
+        // can't close the month for another branch even if the dropdown
+        // gives them the option.
+        $branchId = $data['branch_id'] ?? BranchContext::current();
+        if (! auth()->user()?->isOwnerLevel() && $branchId !== BranchContext::current()) {
+            return back()->with('error', 'لا تملك صلاحية إقفال شهر فرع آخر.');
+        }
+
+        try {
+            $closure = $this->service->closeMonth(
+                month:          $month,
+                branchId:       $branchId,
+                method:         $data['method'],
+                closedByUserId: auth()->id(),
+                notes:          $data['notes'] ?? null,
+            );
+            $msg = $closure->charge_count > 0
+                ? "تم إقفال شهر {$month->format('Y-m')}: {$closure->charge_count} حركة بإجمالي "
+                    .number_format((float) $closure->total_amount, 2)." ش.إ."
+                : "لا توجد حركات مفتوحة لشهر {$month->format('Y-m')}.";
+            return redirect()
+                ->route('admin.staff-meals.closures.show', $closure)
+                ->with('success', $msg);
+        } catch (\Throwable $e) {
+            return back()->with('error', $e->getMessage());
+        }
+    }
+
+    /**
+     * List of every month-end closure. Manager can re-open the
+     * printable sheet from here.
+     */
+    public function closures(Request $request)
+    {
+        abort_unless(auth()->user()?->hasAnyRole(['super_admin', 'admin', 'manager']), 403);
+
+        $closures = StaffMealMonthClosure::with(['branch:id,name', 'closedBy:id,name'])
+            ->orderByDesc('month')
+            ->orderByDesc('closed_at')
+            ->paginate(20);
+
+        return view('admin.staff-meals.closures', compact('closures'));
+    }
+
+    /**
+     * Printable payroll sheet for a single closure — one row per
+     * employee with the deductible total. Stylesheet supports
+     * "طباعة" so the accountant can attach it to the payslip batch.
+     */
+    public function closureShow(StaffMealMonthClosure $closure)
+    {
+        abort_unless(auth()->user()?->hasAnyRole(['super_admin', 'admin', 'manager']), 403);
+
+        $sheet = $this->service->payrollSheet($closure);
+
+        return view('admin.staff-meals.closure-show', [
+            'closure' => $closure->load(['branch', 'closedBy']),
+            'sheet'   => $sheet,
+        ]);
     }
 }

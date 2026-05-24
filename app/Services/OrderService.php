@@ -552,18 +552,62 @@ class OrderService
         return $order;
     }
 
-    public function cancelItem(OrderItem $item, ?int $userId, string $reason, bool $skipRecalculate = false): OrderItem
-    {
-        return DB::transaction(function () use ($item, $userId, $reason, $skipRecalculate) {
+    /**
+     * Cancel one order item.
+     *
+     * `$disposition` decides what happens to the ingredients that were
+     * already deducted from inventory:
+     *   - 'return'  → put them back on the shelf (default, lossless).
+     *                 Use when the kitchen hadn't actually touched the
+     *                 item yet — the customer changed their mind in time.
+     *   - 'waste'   → keep stock decremented and ALSO log a waste
+     *                 movement so the loss shows up in the waste report
+     *                 and end-of-day. Use when the chef had already
+     *                 prepped (opened a bag of flour, fried the chicken)
+     *                 and the food can't be sold to anyone else.
+     *
+     * Items that were never deducted (still Pending) skip both — there's
+     * nothing on/off the shelf to undo.
+     */
+    public function cancelItem(
+        OrderItem $item,
+        ?int $userId,
+        string $reason,
+        bool $skipRecalculate = false,
+        string $disposition = 'return',
+        ?string $wasteReason = null,
+    ): OrderItem {
+        if (! in_array($disposition, ['return', 'waste'], true)) {
+            throw new \InvalidArgumentException("disposition must be 'return' or 'waste', got: {$disposition}");
+        }
+
+        return DB::transaction(function () use ($item, $userId, $reason, $skipRecalculate, $disposition, $wasteReason) {
             $this->assertInvoiceCanStillChange($item->order);
 
             if ($item->status === OrderItemStatus::Cancelled->value) return $item;
             $userId = $userId ?: null;
             $previousItemStatus = $item->status;
 
-            // Return stock if previously deducted
-            if (in_array($item->status, [OrderItemStatus::Approved->value, OrderItemStatus::Preparing->value, OrderItemStatus::Ready->value, OrderItemStatus::Served->value])) {
-                $this->inventory->returnForOrderItem($item);
+            $wasDeducted = in_array($item->status, [
+                OrderItemStatus::Approved->value,
+                OrderItemStatus::Preparing->value,
+                OrderItemStatus::Ready->value,
+                OrderItemStatus::Served->value,
+            ], true);
+
+            if ($wasDeducted) {
+                if ($disposition === 'return') {
+                    $this->inventory->returnForOrderItem($item);
+                } else {
+                    // Waste path: leave stock decremented (the food is
+                    // truly gone) but log waste movements so reports
+                    // correctly attribute the loss.
+                    $this->inventory->convertOrderItemToWaste(
+                        $item,
+                        $wasteReason ?: $reason,
+                        $userId,
+                    );
+                }
             }
 
             $item->update([
@@ -579,7 +623,13 @@ class OrderService
                 $this->recalculateTotals($item->order);
             }
 
-            ActivityLog::log('order_item.cancelled', "إلغاء صنف {$item->name_snapshot} من الطلب {$item->order->number}", $item, ['reason' => $reason]);
+            ActivityLog::log(
+                'order_item.cancelled',
+                "إلغاء صنف {$item->name_snapshot} من الطلب {$item->order->number}".
+                ($wasDeducted ? " ({$disposition})" : ''),
+                $item,
+                ['reason' => $reason, 'disposition' => $disposition, 'was_deducted' => $wasDeducted],
+            );
             return $item->refresh();
         });
     }

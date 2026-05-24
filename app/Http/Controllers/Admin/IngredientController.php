@@ -245,6 +245,163 @@ class IngredientController extends Controller
                 : "تم إنشاء «{$ingredient->name}» وتعيين موقعه الافتراضي. أضف الكمية لاحقاً عبر أمر شراء.");
     }
 
+    /**
+     * Consolidated stock card ("كرت الصنف") — pulls every piece of
+     * data the operator/accountant needs for ONE ingredient onto a
+     * single page so they don't have to bounce between 4 screens to
+     * understand "what's going on with sugar today?".
+     *
+     * Nine tabs:
+     *   1. General info        — every catalog field on the ingredient
+     *   2. Overview            — stat boxes + 30-day consumption trend
+     *   3. Locations           — per-storage-location stock breakdown
+     *   4. Batches             — FIFO batches with expiry warnings
+     *   5. Movements           — log of in / out / waste / return
+     *   6. Used in             — menu items + sub-recipes that consume it
+     *   7. Manufacturing       — sub-recipe of composite ingredients + cost
+     *   8. Item invoices       — every PO / supplier-invoice line that
+     *                            bought this ingredient
+     *   9. Vendor prices       — price history per supplier
+     *
+     * Everything is eager-loaded ONCE here; the view just renders
+     * collections without follow-up queries (avoids the N+1 trap on
+     * a high-traffic operator screen).
+     *
+     * Adjacent-ingredient navigation: we also return the IDs of the
+     * first/prev/next/last ingredients (sorted by name, same scope as
+     * the index) so the view can render keyboard shortcuts that let
+     * the user flick through "كرت الصنف" without going back to the
+     * list every time.
+     */
+    public function show(Ingredient $ingredient)
+    {
+        $this->authorize('viewAny', Ingredient::class);
+
+        $ingredient->load(['baseUnit', 'supplier', 'units', 'subRecipe.ingredient.baseUnit', 'subRecipe.unit', 'subRecipe.ingredientUnit']);
+
+        // ── Overview stats ────────────────────────────────────────
+        $now30 = now()->subDays(30);
+        $stock = (float) $ingredient->trackedStock();
+        $value = $stock * (float) $ingredient->cost_per_unit;
+
+        $movements30 = \App\Models\InventoryMovement::query()
+            ->where('ingredient_id', $ingredient->id)
+            ->whereBetween('occurred_at', [$now30, now()])
+            ->get();
+
+        $consumed30 = (float) $movements30->where('type', 'out')->sum('quantity_in_base');
+        $wasted30   = (float) $movements30->where('type', 'waste')->sum('quantity_in_base');
+        $received30 = (float) $movements30->where('type', 'in')->sum('quantity_in_base');
+        $lastIn     = $movements30->where('type', 'in')->sortByDesc('occurred_at')->first();
+        $lastOut    = $movements30->where('type', 'out')->sortByDesc('occurred_at')->first();
+
+        // ── Daily consumption series for the chart ────────────────
+        $daily = $movements30
+            ->where('type', 'out')
+            ->groupBy(fn ($m) => $m->occurred_at->toDateString())
+            ->map(fn ($group) => (float) $group->sum('quantity_in_base'));
+
+        $dailySeries = collect(range(0, 29))->map(function ($i) use ($daily) {
+            $date = now()->subDays(29 - $i)->toDateString();
+            return ['date' => $date, 'qty' => (float) ($daily->get($date) ?? 0)];
+        });
+
+        // ── Locations ────────────────────────────────────────────
+        $locations = $ingredient->stocks()
+            ->with('location.branch')
+            ->orderByDesc('quantity')
+            ->get();
+
+        // ── Batches ──────────────────────────────────────────────
+        $batches = \App\Models\IngredientBatch::query()
+            ->where('ingredient_id', $ingredient->id)
+            ->with('storageLocation')
+            ->orderBy('expiry_date')
+            ->limit(50)
+            ->get();
+
+        // ── Movements log (paginated) ────────────────────────────
+        $movements = \App\Models\InventoryMovement::query()
+            ->where('ingredient_id', $ingredient->id)
+            ->with(['user', 'storageLocation', 'batch'])
+            ->latest('occurred_at')
+            ->paginate(20, ['*'], 'movements_page')
+            ->withQueryString();
+
+        // ── Recipes that use this ingredient ─────────────────────
+        // Two paths: directly as a recipe line in a menu item, OR as
+        // a raw input inside another composite ingredient's sub-recipe.
+        $usedInMenuItems = \App\Models\RecipeItem::query()
+            ->where('ingredient_id', $ingredient->id)
+            ->whereNotNull('menu_item_id')
+            ->with(['menuItem.category', 'unit', 'ingredientUnit'])
+            ->get()
+            ->groupBy('menu_item_id')
+            ->map(fn ($lines) => $lines->first());
+
+        $usedInComposites = \App\Models\RecipeItem::query()
+            ->where('ingredient_id', $ingredient->id)
+            ->whereNotNull('parent_ingredient_id')
+            ->with(['parentIngredient', 'unit', 'ingredientUnit'])
+            ->get();
+
+        // ── Vendor price history ─────────────────────────────────
+        $vendorPrices = \App\Models\IngredientSupplierPrice::query()
+            ->where('ingredient_id', $ingredient->id)
+            ->with('supplier')
+            ->latest('observed_at')
+            ->limit(30)
+            ->get();
+
+        // ── Purchase-order / supplier-invoice history ────────────
+        // "Item invoices" tab — every PO line that bought this ingredient,
+        // with the matching supplier-invoice qty + receipt status so the
+        // user gets a single audit trail per SKU. Limited to the last
+        // 100 lines (worst-case ~6 months of daily POs) to keep the
+        // page fast; an "older →" link could be added later.
+        $purchaseLines = \App\Models\PurchaseOrderItem::query()
+            ->where('ingredient_id', $ingredient->id)
+            ->with([
+                'purchaseOrder.supplier:id,name',
+                'unit:id,code,name',
+                'ingredientUnit:id,name,factor_to_base',
+                'supplierInvoiceItems.supplierInvoice:id,number,invoice_date,status',
+            ])
+            ->whereHas('purchaseOrder')  // skip orphaned lines from deleted POs
+            ->latest('id')
+            ->limit(100)
+            ->get();
+
+        // ── Adjacent-ingredient navigation IDs ────────────────────
+        // The index sorts by name ASC; we mirror that so "next" goes to
+        // the alphabetically next ingredient the user already expects to
+        // see. lead()/lag() would be ideal but they're not portable across
+        // SQLite (used in tests) so we do a tiny per-call query instead.
+        $allIds = Ingredient::orderBy('name')->orderBy('id')->pluck('id');
+        $currentPos = $allIds->search($ingredient->id);
+        $nav = [
+            'first' => $allIds->first(),
+            'prev'  => $currentPos > 0 ? $allIds[$currentPos - 1] : null,
+            'next'  => $currentPos !== false && $currentPos < $allIds->count() - 1
+                       ? $allIds[$currentPos + 1] : null,
+            'last'  => $allIds->last(),
+            'index' => $currentPos !== false ? $currentPos + 1 : 0,
+            'total' => $allIds->count(),
+        ];
+
+        return view('admin.ingredients.show', compact(
+            'ingredient',
+            'stock', 'value', 'consumed30', 'wasted30', 'received30',
+            'lastIn', 'lastOut',
+            'dailySeries',
+            'locations', 'batches', 'movements',
+            'usedInMenuItems', 'usedInComposites',
+            'vendorPrices',
+            'purchaseLines',
+            'nav',
+        ));
+    }
+
     public function edit(Ingredient $ingredient)
     {
         $this->authorize('manage', Ingredient::class);
@@ -551,6 +708,79 @@ class IngredientController extends Controller
             'is_composite' => ['sometimes', 'boolean'],
             'composite_yield' => ['nullable', 'numeric', 'min:0.0001'],
         ]);
+    }
+
+    /**
+     * Replace the alternate-unit list (pack sizes) for an ingredient.
+     * Posted as `units[] = [name, factor_to_base, barcode?, purchase_price?,
+     * sale_price?, is_default_purchase?]`. Just like the sub-recipe
+     * editor, existing rows are wiped and re-inserted — simpler than a
+     * diff, and pack lists are short.
+     *
+     * Barcodes are globally unique across all ingredient_units, so a
+     * single scanned barcode resolves unambiguously to one (ingredient,
+     * unit) pair. We surface a friendly error when the user tries to
+     * reuse one.
+     */
+    public function updateUnits(Request $request, Ingredient $ingredient)
+    {
+        $this->authorize('update', $ingredient);
+
+        $data = $request->validate([
+            'units'                          => ['nullable', 'array'],
+            'units.*.name'                   => ['required_with:units', 'string', 'max:100'],
+            'units.*.factor_to_base'         => ['required_with:units', 'numeric', 'min:0.0001'],
+            'units.*.barcode'                => ['nullable', 'string', 'max:64'],
+            'units.*.purchase_price'         => ['nullable', 'numeric', 'min:0'],
+            'units.*.sale_price'             => ['nullable', 'numeric', 'min:0'],
+            'units.*.is_default_purchase'    => ['sometimes', 'boolean'],
+        ]);
+
+        $rows = $data['units'] ?? [];
+
+        // Pre-validate barcode uniqueness against OTHER ingredients,
+        // because the DB unique index would throw a less helpful error.
+        $barcodes = collect($rows)
+            ->pluck('barcode')
+            ->filter(fn ($b) => is_string($b) && trim($b) !== '')
+            ->map(fn ($b) => trim($b));
+        $conflict = \App\Models\IngredientUnit::query()
+            ->whereIn('barcode', $barcodes)
+            ->where('ingredient_id', '!=', $ingredient->id)
+            ->with('ingredient:id,name')
+            ->first();
+        if ($conflict) {
+            return back()->with('error',
+                "الباركود «{$conflict->barcode}» مستخدم مسبقاً على الصنف «{$conflict->ingredient?->name}». استخدم باركوداً مختلفاً.");
+        }
+
+        // Only ONE row may be flagged as default. The UI's radio
+        // group already enforces this, but the controller mirrors it
+        // so a hand-crafted POST can't break the invariant.
+        $defaultCount = collect($rows)->filter(fn ($r) => ! empty($r['is_default_purchase']))->count();
+        if ($defaultCount > 1) {
+            return back()->with('error', 'اختر وحدة افتراضية واحدة فقط للشراء.');
+        }
+
+        \DB::transaction(function () use ($ingredient, $rows) {
+            $ingredient->units()->delete();
+            foreach ($rows as $row) {
+                \App\Models\IngredientUnit::create([
+                    'ingredient_id'       => $ingredient->id,
+                    'name'                => trim($row['name']),
+                    'factor_to_base'      => (float) $row['factor_to_base'],
+                    'barcode'             => trim((string) ($row['barcode'] ?? '')) ?: null,
+                    'purchase_price'      => $row['purchase_price'] !== null && $row['purchase_price'] !== ''
+                                              ? (float) $row['purchase_price'] : null,
+                    'sale_price'          => $row['sale_price'] !== null && $row['sale_price'] !== ''
+                                              ? (float) $row['sale_price'] : null,
+                    'is_default_purchase' => ! empty($row['is_default_purchase']),
+                    'active'              => true,
+                ]);
+            }
+        });
+
+        return back()->with('success', 'تم حفظ وحدات الصنف.');
     }
 
     /**

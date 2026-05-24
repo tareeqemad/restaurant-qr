@@ -88,6 +88,17 @@ class Ingredient extends Model
     }
 
     /**
+     * Alternate purchase/sale units for this ingredient (pack sizes).
+     * The ingredient's `base_unit_id` is always the canonical unit;
+     * these rows define multipliers for buying/selling in larger
+     * pre-packed quantities (carton, case, pallet).
+     */
+    public function units(): HasMany
+    {
+        return $this->hasMany(IngredientUnit::class)->orderByDesc('is_default_purchase')->orderBy('name');
+    }
+
+    /**
      * Sub-recipe lines that produce this composite ingredient. Empty for
      * raw (non-composite) ingredients. Used by InventoryService to
      * recursively expand composites into their raw inputs.

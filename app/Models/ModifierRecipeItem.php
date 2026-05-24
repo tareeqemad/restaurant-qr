@@ -10,7 +10,7 @@ class ModifierRecipeItem extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['modifier_id', 'ingredient_id', 'quantity', 'unit_id'];
+    protected $fillable = ['modifier_id', 'ingredient_id', 'quantity', 'unit_id', 'ingredient_unit_id'];
 
     protected $casts = [
         'quantity' => 'decimal:4',
@@ -29,5 +29,14 @@ class ModifierRecipeItem extends Model
     public function unit(): BelongsTo
     {
         return $this->belongsTo(Unit::class);
+    }
+
+    /**
+     * Per-ingredient unit (tbsp/scoop). Same mechanism RecipeItem uses
+     * so modifier recipes can also be written in chef-speak.
+     */
+    public function ingredientUnit(): BelongsTo
+    {
+        return $this->belongsTo(IngredientUnit::class);
     }
 }

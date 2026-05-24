@@ -41,6 +41,13 @@ class SettingController extends Controller
             // Staff meals: branch-level toggle for whether the service
             // charge stays on the employee's tab. Default off.
             'staff_meal_include_service' => ['sometimes', 'boolean'],
+            // Over-limit policy when a staff order would push the employee
+            // past their hard `meal_debt_ceiling`. Tightest → loosest:
+            //   block            → throw, no charge created
+            //   require_approval → block unless a manager PIN/approves
+            //   warn             → record + log warning (default)
+            //   allow_log        → record silently (legacy behaviour)
+            'staff_meal_over_limit_policy' => ['sometimes', 'in:allow_log,warn,require_approval,block'],
             // Theme color settings
             'theme_primary' => ['nullable', 'regex:/^#[0-9a-fA-F]{6}$/'],
             'theme_dark' => ['nullable', 'regex:/^#[0-9a-fA-F]{6}$/'],
@@ -81,6 +88,7 @@ class SettingController extends Controller
             'strict_stock' => ['inventory', 'bool'],
             'inventory_deduction_stage' => ['inventory', 'string'],
             'staff_meal_include_service' => ['staff_meals', 'bool'],
+            'staff_meal_over_limit_policy' => ['staff_meals', 'string'],
             'theme_primary' => ['theme', 'string'],
             'theme_dark' => ['theme', 'string'],
             'theme_header' => ['theme', 'string'],

@@ -58,12 +58,18 @@
             </thead>
             <tbody>
                 @forelse($rows as $ingredientId => $byType)
-                    @php $ing = $byType->first()->ingredient; @endphp
+                    @php
+                        $ing = $byType->first()->ingredient;
+                        $rBase = $ing->baseUnit?->code;
+                        $inQty    = (float) ($byType->firstWhere('type', 'in')->qty ?? 0);
+                        $outQty   = (float) ($byType->firstWhere('type', 'out')->qty ?? 0);
+                        $wasteQty = (float) ($byType->firstWhere('type', 'waste')->qty ?? 0);
+                    @endphp
                     <tr>
                         <td class="fw-bold">{{ $ing->name }}</td>
-                        <td class="text-success">{{ number_format((float) ($byType->firstWhere('type', 'in')->qty ?? 0), 2) }}</td>
-                        <td class="text-warning">{{ number_format((float) ($byType->firstWhere('type', 'out')->qty ?? 0), 2) }}</td>
-                        <td class="text-danger">{{ number_format((float) ($byType->firstWhere('type', 'waste')->qty ?? 0), 2) }}</td>
+                        <td class="text-success" title="{{ number_format($inQty, 4) }} {{ $rBase }}">{{ \App\Helpers\QuantityFormatter::smart($inQty, $rBase) }}</td>
+                        <td class="text-warning" title="{{ number_format($outQty, 4) }} {{ $rBase }}">{{ \App\Helpers\QuantityFormatter::smart($outQty, $rBase) }}</td>
+                        <td class="text-danger" title="{{ number_format($wasteQty, 4) }} {{ $rBase }}">{{ \App\Helpers\QuantityFormatter::smart($wasteQty, $rBase) }}</td>
                         <td>{{ \App\Helpers\Money::format($byType->firstWhere('type', 'out')->total_cost ?? 0) }}</td>
                         <td class="{{ (float) ($byType->firstWhere('type', 'waste')->total_cost ?? 0) > 0 ? 'text-danger fw-bold' : 'text-muted' }}">
                             {{ \App\Helpers\Money::format($byType->firstWhere('type', 'waste')->total_cost ?? 0) }}

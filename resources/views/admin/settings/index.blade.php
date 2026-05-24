@@ -374,6 +374,29 @@
                                         </div>
                                     </div>
                                 </div>
+
+                                {{-- Over-limit policy — decides what happens when a staff
+                                     order would push the employee past their `meal_debt_ceiling`.
+                                     The ceiling itself is set per-user on their profile. --}}
+                                <div class="col-md-12">
+                                    @php
+                                        $policy = \App\Models\Setting::get('staff_meal_over_limit_policy', 'warn');
+                                    @endphp
+                                    <label class="form-label fw-bold mt-2">
+                                        <i class="bi bi-shield-exclamation text-warning"></i>
+                                        سياسة تجاوز سقف الدين
+                                    </label>
+                                    <select name="staff_meal_over_limit_policy" class="form-select">
+                                        <option value="allow_log"        @selected($policy === 'allow_log')>السماح والتسجيل بصمت (الأكثر مرونة)</option>
+                                        <option value="warn"             @selected($policy === 'warn')>السماح مع إظهار تحذير (موصى به)</option>
+                                        <option value="require_approval" @selected($policy === 'require_approval')>طلب موافقة مدير قبل التجاوز</option>
+                                        <option value="block"            @selected($policy === 'block')>منع الطلب كلياً عند التجاوز (الأكثر صرامة)</option>
+                                    </select>
+                                    <div class="setting-hint">
+                                        تُطبَّق فقط على الموظفين الذين عُرِّف لهم <strong>سقف دين</strong> في ملفهم الشخصي.
+                                        لو ما حدّدت سقف للموظف، النظام يكتفي بالبدل الشهري وما يمنع شي.
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>

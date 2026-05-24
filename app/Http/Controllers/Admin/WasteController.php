@@ -117,6 +117,7 @@ class WasteController extends Controller
         // behaviour of `$query` and `$base` above.
         $topIngQuery = DB::table('inventory_movements')
             ->join('ingredients', 'inventory_movements.ingredient_id', '=', 'ingredients.id')
+            ->leftJoin('units', 'ingredients.base_unit_id', '=', 'units.id')
             ->where('inventory_movements.type', 'waste')
             ->whereBetween('inventory_movements.occurred_at', [$start, $end])
             ->when($request->get('storage_location_id'), fn ($q, $locationId) => $q->where('inventory_movements.storage_location_id', $locationId))
@@ -145,11 +146,12 @@ class WasteController extends Controller
             ->selectRaw('
                 ingredients.id,
                 ingredients.name,
+                units.code as base_unit_code,
                 COUNT(*) as event_count,
                 SUM(inventory_movements.quantity_in_base) as qty,
                 SUM(inventory_movements.total_cost) as total_cost
             ')
-            ->groupBy('ingredients.id', 'ingredients.name')
+            ->groupBy('ingredients.id', 'ingredients.name', 'units.code')
             ->orderByDesc('total_cost')
             ->limit(10)
             ->get();

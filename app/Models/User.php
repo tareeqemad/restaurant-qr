@@ -31,6 +31,11 @@ class User extends Authenticatable
         // Per-month cap for the staff meal allowance feature. Null =
         // employee can't take meals on the house.
         'monthly_meal_allowance',
+        // Hard ceiling on TOTAL outstanding meal debt across all months.
+        // Null = no extra cap (only the monthly allowance softly guards).
+        // Used together with `staff_meal_over_limit_policy` to block /
+        // warn / require approval at order time.
+        'meal_debt_ceiling',
     ];
 
     protected $hidden = [
@@ -45,6 +50,7 @@ class User extends Authenticatable
             'last_login_at' => 'datetime',
             'password' => 'hashed',
             'monthly_meal_allowance' => 'decimal:2',
+            'meal_debt_ceiling' => 'decimal:2',
         ];
     }
 
@@ -99,6 +105,37 @@ class User extends Authenticatable
     {
         if ($this->monthly_meal_allowance === null) return null;
         return round((float) $this->monthly_meal_allowance - $this->staffMealUsedInMonth(), 2);
+    }
+
+    /**
+     * How much room is left under the HARD debt ceiling. Returns:
+     *   - null              → no ceiling configured (unlimited).
+     *   - positive number   → can still charge up to this much.
+     *   - 0 or negative     → at/over the ceiling; policy decides
+     *                         whether the next charge is blocked.
+     *
+     * The ceiling is checked against the total outstanding ACROSS
+     * MONTHS (not just this month), because the whole point is to
+     * stop debt from rolling forward unchecked.
+     */
+    public function staffMealCeilingHeadroom(): ?float
+    {
+        if ($this->meal_debt_ceiling === null) return null;
+        return round((float) $this->meal_debt_ceiling - $this->staffMealOutstanding(), 2);
+    }
+
+    /**
+     * "How much of the monthly allowance has this employee used as a
+     * percentage?" — drives the dashboard threshold badges + the 80%
+     * / 100% / 120% notification triggers. Returns null when no
+     * allowance is configured.
+     */
+    public function staffMealUsagePct(): ?float
+    {
+        if ($this->monthly_meal_allowance === null || (float) $this->monthly_meal_allowance <= 0) {
+            return null;
+        }
+        return round($this->staffMealUsedInMonth() / (float) $this->monthly_meal_allowance * 100, 1);
     }
 
     // ========== Relations ==========

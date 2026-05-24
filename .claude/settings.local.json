@@ -231,7 +231,11 @@
       "Bash(xargs -I {} grep -l \"invoices\" database/migrations/{})",
       "Bash(php -l app/Services/DemoResetService.php app/Http/Controllers/Admin/SystemController.php app/Console/Commands/InstallApp.php database/seeders/SystemSeeder.php database/seeders/DemoSeeder.php)",
       "Bash(curl -s -c storage/_cj.txt http://127.0.0.1:8000/login -o storage/_login.html -w \"login page: %{http_code}\\\\n\")",
-      "Bash(C:/xampp/php/php.exe -r ' *)"
+      "Bash(C:/xampp/php/php.exe -r ' *)",
+      "Bash(sqlite3 C:\\\\Users\\\\PC\\\\Desktop\\\\restaurant-qr\\\\database.sqlite \".schema customers\")",
+      "Bash(grep -rn \"sendInApp\\\\|App\\\\\\\\\\\\\\\\Models\\\\\\\\\\\\\\\\Notification\\\\|class Notification\" \"C:/Users/PC/Desktop/restaurant-qr/app\" --include=\"*.php\")",
+      "Bash(grep -n 'actionCenter\\\\|customerPulse\\\\|@if\\($top' C:/Users/PC/Desktop/restaurant-qr/resources/views/admin/dashboard/index.blade.php)",
+      "Bash(grep -n 'protected function validateData\\\\|return $request->validate' C:/Users/PC/Desktop/restaurant-qr/app/Http/Controllers/Admin/UserController.php)"
     ]
   }
 }

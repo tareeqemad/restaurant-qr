@@ -125,6 +125,7 @@ Route::middleware(['auth', 'admin', 'branch'])->group(function () {
     Route::resource('ingredients', Admin\IngredientController::class);
     Route::post('ingredients/{ingredient}/adjust', [Admin\IngredientController::class, 'adjust'])->name('ingredients.adjust');
     Route::post('ingredients/{ingredient}/sub-recipe', [Admin\IngredientController::class, 'updateSubRecipe'])->name('ingredients.sub_recipe.update');
+    Route::post('ingredients/{ingredient}/units',      [Admin\IngredientController::class, 'updateUnits'])->name('ingredients.units.update');
 
     // Suppliers
     Route::resource('suppliers', Admin\SupplierController::class);
@@ -199,6 +200,7 @@ Route::middleware(['auth', 'admin', 'branch'])->group(function () {
     // Inventory command center + movements
     Route::get('inventory-dashboard', [Admin\InventoryController::class, 'dashboard'])->name('inventory.dashboard');
     Route::get('inventory', [Admin\InventoryController::class, 'index'])->name('inventory.index');
+    Route::get('inventory/by-barcode', [Admin\InventoryController::class, 'lookupByBarcode'])->name('inventory.by_barcode');
 
     // Waste — dedicated logging surface (forces a reason + optional batch link)
     Route::get ('waste',                          [Admin\WasteController::class, 'index'])->name('waste.index');
@@ -240,8 +242,12 @@ Route::middleware(['auth', 'admin', 'branch'])->group(function () {
     Route::get ('staff-meals',                  [Admin\StaffMealController::class, 'index'])->name('staff-meals.index');
     Route::get ('staff-meals/quick-consume',    [Admin\StaffMealController::class, 'quickConsumeForm'])->name('staff-meals.quick_consume');
     Route::post('staff-meals/quick-consume',    [Admin\StaffMealController::class, 'quickConsumeStore'])->name('staff-meals.quick_consume.store');
+    Route::get ('staff-meals/closures',         [Admin\StaffMealController::class, 'closures'])->name('staff-meals.closures');
+    Route::post('staff-meals/close-month',      [Admin\StaffMealController::class, 'closeMonth'])->name('staff-meals.close_month');
+    Route::get ('staff-meals/closures/{closure}', [Admin\StaffMealController::class, 'closureShow'])->name('staff-meals.closures.show');
     Route::get ('staff-meals/{user}',           [Admin\StaffMealController::class, 'show'])->name('staff-meals.show');
     Route::post('staff-meals/{user}/settle',    [Admin\StaffMealController::class, 'settle'])->name('staff-meals.settle');
+    Route::post('staff-meals/charges/{charge}/waive', [Admin\StaffMealController::class, 'waiveCharge'])->name('staff-meals.charges.waive');
 
     // Station displays — one generic route handles every station code.
     // The controller checks the matching `station.{code}.view` permission

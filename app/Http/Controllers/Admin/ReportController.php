@@ -1505,17 +1505,21 @@ class ReportController extends Controller
             ->limit(15)
             ->get();
 
+        // Pull the base-unit code alongside so the view can format
+        // each row smartly (5,000,000 g → "5 طن") via
+        // QuantityFormatter — operator no longer has to count commas.
         $inventoryUsage = $this->scopeRaw(
             DB::table('inventory_movements')
                 ->join('ingredients', 'inventory_movements.ingredient_id', '=', 'ingredients.id')
+                ->leftJoin('units', 'ingredients.base_unit_id', '=', 'units.id')
                 ->whereBetween('inventory_movements.occurred_at', [$start, $end])
                 ->whereIn('inventory_movements.type', ['out', 'waste']),
             'inventory_movements.branch_id'
         )
-            ->select('ingredients.name', 'inventory_movements.type',
+            ->select('ingredients.name', 'inventory_movements.type', 'units.code as base_unit_code',
                 DB::raw('SUM(inventory_movements.quantity_in_base) as qty'),
                 DB::raw('SUM(inventory_movements.total_cost) as cost'))
-            ->groupBy('ingredients.name', 'inventory_movements.type')
+            ->groupBy('ingredients.name', 'inventory_movements.type', 'units.code')
             ->get()
             ->groupBy('name');
 

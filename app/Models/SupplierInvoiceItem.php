@@ -15,6 +15,7 @@ class SupplierInvoiceItem extends Model
         'purchase_order_item_id',
         'ingredient_id',
         'unit_id',
+        'ingredient_unit_id',
         'description',
         'quantity',
         'unit_price',

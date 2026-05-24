@@ -193,20 +193,38 @@
                                 $hasReceipt   = $totalRecvQty > 0;
                                 $priceChanged = $hasReceipt && abs($priceDelta) > 0.0001;
                             @endphp
+                            @php
+                                // Display unit: pack name if the line was
+                                // ordered in an alternate unit (carton/case),
+                                // otherwise the global unit code (g/kg/L).
+                                $orderUnitLabel = $line->ingredientUnit?->name ?? ($line->unit?->code ?? '');
+                                // Base-unit equivalent for the tooltip — operator
+                                // can hover to see "5 cartons = 120 cans".
+                                $baseCode = $line->ingredient?->baseUnit?->code;
+                                $baseQty  = $line->ingredientUnit
+                                    ? (float) $line->quantity_ordered * (float) $line->ingredientUnit->factor_to_base
+                                    : null;
+                                $tooltip = $baseQty !== null
+                                    ? "{$line->quantity_ordered} {$orderUnitLabel} = ".\App\Helpers\QuantityFormatter::smart($baseQty, $baseCode)
+                                    : null;
+                            @endphp
                             <tr>
                                 <td>
                                     <div class="fw-bold">{{ $line->ingredient?->name ?? '—' }}</div>
                                     @if($line->notes)<small class="text-muted">{{ $line->notes }}</small>@endif
                                 </td>
-                                <td>{{ \App\Helpers\Qty::format($line->quantity_ordered) }} {{ $line->unit?->code ?? '' }}</td>
+                                <td title="{{ $tooltip }}">{{ \App\Helpers\Qty::format($line->quantity_ordered) }} {{ $orderUnitLabel }}</td>
                                 <td>
-                                    <span class="badge bg-{{ $line->isFullyReceived() ? 'success' : ((float) $line->quantity_received > 0 ? 'warning' : 'secondary') }}">
-                                        {{ \App\Helpers\Qty::format($line->quantity_received) }}
+                                    <span class="badge bg-{{ $line->isFullyReceived() ? 'success' : ((float) $line->quantity_received > 0 ? 'warning' : 'secondary') }}"
+                                          @if($line->ingredientUnit)
+                                            title="{{ $line->quantity_received }} {{ $line->ingredientUnit->name }} = {{ \App\Helpers\QuantityFormatter::smart((float) $line->quantity_received * (float) $line->ingredientUnit->factor_to_base, $baseCode) }}"
+                                          @endif>
+                                        {{ \App\Helpers\Qty::format($line->quantity_received) }} {{ $orderUnitLabel }}
                                     </span>
                                 </td>
                                 <td>
                                     <span class="badge bg-{{ $invoicedQty >= (float) $line->quantity_received && $invoicedQty > 0 ? 'success' : 'light text-muted' }}">
-                                        {{ \App\Helpers\Qty::format($invoicedQty) }}
+                                        {{ \App\Helpers\Qty::format($invoicedQty) }} {{ $orderUnitLabel }}
                                     </span>
                                 </td>
                                 <td>

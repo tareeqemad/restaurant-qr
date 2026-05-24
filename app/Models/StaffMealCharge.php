@@ -26,7 +26,8 @@ class StaffMealCharge extends Model
     protected $fillable = [
         'branch_id', 'user_id', 'order_id',
         'amount', 'charged_at', 'settled_at',
-        'settled_by_user_id', 'settlement_method', 'notes',
+        'settled_by_user_id', 'settlement_method',
+        'month_closure_id', 'notes',
     ];
 
     protected $casts = [
@@ -39,4 +40,5 @@ class StaffMealCharge extends Model
     public function order(): BelongsTo       { return $this->belongsTo(Order::class); }
     public function branch(): BelongsTo      { return $this->belongsTo(Branch::class); }
     public function settledBy(): BelongsTo   { return $this->belongsTo(User::class, 'settled_by_user_id'); }
+    public function monthClosure(): BelongsTo { return $this->belongsTo(StaffMealMonthClosure::class, 'month_closure_id'); }
 }

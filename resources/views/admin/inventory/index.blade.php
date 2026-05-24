@@ -124,8 +124,13 @@
                                 <span class="text-muted fs-12">—</span>
                             @endif
                         </td>
-                        <td>{{ number_format((float)$m->quantity_in_base, 2) }} {{ $m->ingredient->baseUnit->code ?? '' }}</td>
-                        <td>{{ number_format((float)$m->stock_after, 2) }}</td>
+                        @php $baseCode = $m->ingredient->baseUnit->code ?? ''; @endphp
+                        <td title="{{ number_format((float)$m->quantity_in_base, 4) }} {{ $baseCode }}">
+                            {{ \App\Helpers\QuantityFormatter::smart((float) $m->quantity_in_base, $baseCode) }}
+                        </td>
+                        <td title="{{ number_format((float)$m->stock_after, 4) }} {{ $baseCode }}">
+                            {{ \App\Helpers\QuantityFormatter::smart((float) $m->stock_after, $baseCode) }}
+                        </td>
                         <td>{{ \App\Helpers\Qty::format($m->total_cost) }}</td>
                         <td>
                             @php($ref = $m->reference_meta)

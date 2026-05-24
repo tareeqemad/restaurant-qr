@@ -187,6 +187,40 @@
                     @elseif($it->status === 'ready')
                         <span class="kb-item-badge">✓</span>
                     @endif
+
+                    {{-- Chef-side cancel: two paths.
+                         "لم يبدأ" = return ingredients to stock.
+                         "بدأ التحضير" = log them as waste (food can't
+                         be reused, but still need to reset the ticket). --}}
+                    @if(in_array($it->status, ['approved', 'preparing']))
+                        <div class="kb-item-cancel" x-data="{ open: false }">
+                            <button type="button" class="kb-item-btn kb-item-btn-cancel"
+                                    @click="open = !open" title="إلغاء الصنف">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                            <div class="kb-cancel-menu" x-show="open" x-cloak @click.outside="open = false">
+                                <div class="kb-cancel-title">إلغاء الصنف؟</div>
+                                <button type="button" class="kb-cancel-opt kb-cancel-opt--return"
+                                        wire:click="cancelItemFromKds({{ $it->id }}, 'return', 'إلغاء من المطبخ — لم يبدأ التحضير')"
+                                        @click="open = false">
+                                    <i class="bi bi-arrow-counterclockwise"></i>
+                                    <div>
+                                        <strong>لم يبدأ التحضير</strong>
+                                        <small>إرجاع المكوّنات للمخزون</small>
+                                    </div>
+                                </button>
+                                <button type="button" class="kb-cancel-opt kb-cancel-opt--waste"
+                                        wire:click="cancelItemFromKds({{ $it->id }}, 'waste', 'إلغاء من المطبخ — بدأ التحضير')"
+                                        @click="open = false">
+                                    <i class="bi bi-trash3"></i>
+                                    <div>
+                                        <strong>بدأ التحضير</strong>
+                                        <small>تسجيل المكوّنات كهدر</small>
+                                    </div>
+                                </button>
+                            </div>
+                        </div>
+                    @endif
                 </div>
             </div>
         @endforeach
@@ -402,6 +436,60 @@
         flex: 0 0 auto;
         margin-top: 1px;
     }
+
+    /* ─── Chef-side cancel button + popover ──────────────────────────
+       Two-path picker: return (kitchen never touched it) vs waste
+       (chef started prep). The popover anchors to the cancel button
+       and stays compact so it doesn't crowd the row on narrow KDS
+       screens. */
+    .kb-item-cancel { position: relative; }
+    .kb-item-btn-cancel {
+        background: rgba(239, 68, 68, .08) !important;
+        color: #b91c1c !important;
+        border: 1px solid rgba(239, 68, 68, .25) !important;
+    }
+    .kb-item-btn-cancel:hover {
+        background: rgba(239, 68, 68, .15) !important;
+    }
+    .kb-cancel-menu {
+        position: absolute;
+        top: calc(100% + 6px);
+        inset-inline-end: 0;
+        z-index: 50;
+        min-width: 230px;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, .15);
+        padding: .5rem;
+    }
+    .kb-cancel-title {
+        font-weight: 800;
+        font-size: .78rem;
+        color: #475569;
+        padding: 4px 8px 6px;
+        border-bottom: 1px solid #f1f5f9;
+        margin-bottom: 4px;
+    }
+    .kb-cancel-opt {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        padding: 8px 10px;
+        background: transparent;
+        border: none;
+        text-align: start;
+        border-radius: 6px;
+        cursor: pointer;
+        font-family: inherit;
+    }
+    .kb-cancel-opt:hover { background: #f8fafc; }
+    .kb-cancel-opt i { font-size: 1.1rem; }
+    .kb-cancel-opt strong { display: block; font-size: .85rem; color: #0f172a; }
+    .kb-cancel-opt small { display: block; font-size: .7rem; color: #64748b; line-height: 1.2; }
+    .kb-cancel-opt--return i { color: #15803d; }
+    .kb-cancel-opt--waste  i { color: #b91c1c; }
 </style>
 @endpush
 @endonce

@@ -246,7 +246,16 @@
                             @endif
                         </td>
                         <td>{{ $ing->sku }}</td>
-                        <td>{{ number_format($stock, 2) }}</td>
+                        @php
+                            // Smart display: turn 5,000,000g into "5 طن"
+                            // so the operator doesn't have to count
+                            // commas. Raw base number stays in the
+                            // tooltip for the technical/accounting view.
+                            $baseCode      = $ing->baseUnit?->code;
+                            $stockSmart    = \App\Helpers\QuantityFormatter::smart($stock, $baseCode);
+                            $thresholdSmart= \App\Helpers\QuantityFormatter::smart($threshold, $baseCode);
+                        @endphp
+                        <td title="القيمة الأساسية: {{ number_format($stock, 2) }} {{ $baseCode }}">{{ $stockSmart }}</td>
                         <td>
                             {{-- Per-location breakdown — chips show location name +
                                  quantity. Empty when nothing is stocked anywhere
@@ -257,16 +266,16 @@
                                 <div class="loc-chips">
                                     @foreach($ing->stocks->sortByDesc('quantity') as $st)
                                         <span class="loc-chip"
-                                              title="{{ $st->location?->name ?? 'موقع محذوف' }} — {{ number_format((float) $st->quantity, 2) }} {{ $ing->baseUnit?->code }}">
+                                              title="{{ $st->location?->name ?? 'موقع محذوف' }} — {{ number_format((float) $st->quantity, 2) }} {{ $baseCode }}">
                                             <i class="bi bi-geo-alt-fill"></i>
                                             <span class="loc-chip__name">{{ $st->location?->name ?? '—' }}</span>
-                                            <span class="loc-chip__qty">{{ number_format((float) $st->quantity, 2) }}</span>
+                                            <span class="loc-chip__qty">{{ \App\Helpers\QuantityFormatter::smart((float) $st->quantity, $baseCode) }}</span>
                                         </span>
                                     @endforeach
                                 </div>
                             @endif
                         </td>
-                        <td>{{ number_format($threshold, 2) }}</td>
+                        <td title="القيمة الأساسية: {{ number_format($threshold, 2) }} {{ $baseCode }}">{{ $thresholdSmart }}</td>
                         <td>{{ $ing->baseUnit->code ?? '' }}</td>
                         <td>
                             {{-- Use up to 4 decimals so cheap ingredients (e.g. بصل @ 0.001 ₪/g)
@@ -291,6 +300,15 @@
                                  inline-buttons wrap to a 2×2 grid the moment the
                                  column gets squeezed. --}}
                             <div class="ing-actions">
+                                {{-- Stock-card view — single-page consolidation of
+                                     stocks, batches, movements, recipes, vendor
+                                     prices. Front-and-center for the 90% case
+                                     where the operator wants context, not edit. --}}
+                                <a href="{{ route('admin.ingredients.show', $ing) }}"
+                                   class="btn btn-sm btn-primary ing-act-btn"
+                                   title="فتح كرت الصنف">
+                                    <i class="bi bi-card-text"></i>
+                                </a>
                                 <button class="btn btn-sm btn-success ing-act-btn"
                                         data-bs-toggle="modal" data-bs-target="#adjust{{ $ing->id }}"
                                         title="تسجيل حركة مخزون">
@@ -326,7 +344,11 @@
                                         <button class="btn-close" data-bs-dismiss="modal"></button>
                                     </div>
                                     <div class="modal-body">
-                                        <p>المخزون الحالي: <strong>{{ number_format((float)$ing->current_stock, 2) }} {{ $ing->baseUnit->code }}</strong></p>
+                                        <p>المخزون الحالي:
+                                            <strong title="القيمة الأساسية: {{ number_format((float)$ing->current_stock, 2) }} {{ $ing->baseUnit->code }}">
+                                                {{ \App\Helpers\QuantityFormatter::smart((float) $ing->current_stock, $ing->baseUnit?->code) }}
+                                            </strong>
+                                        </p>
                                         <div class="mb-2">
                                             <label class="form-label">نوع الحركة</label>
                                             <select name="type" class="form-select" required>

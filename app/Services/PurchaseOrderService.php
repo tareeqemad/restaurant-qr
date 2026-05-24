@@ -173,7 +173,9 @@ class PurchaseOrderService
         $previousStatus = $po->status;
 
         $po = DB::transaction(function () use ($po, $receipts, $userId, $meta) {
-            $lines = $po->items()->with('ingredient.baseUnit', 'unit')->lockForUpdate()->get();
+            $lines = $po->items()
+                ->with('ingredient.baseUnit', 'unit', 'ingredientUnit')
+                ->lockForUpdate()->get();
             $receipt = null;
 
             foreach ($lines as $line) {
@@ -213,8 +215,16 @@ class PurchaseOrderService
                 $orderedUnit = $line->unit_id;
                 $baseUnit    = $ingredient->base_unit_id;
 
-                // Convert qty to base unit
-                $qtyBaseRaw = UnitConverter::convert($qtyReceived, $orderedUnit, $baseUnit);
+                // Convert qty to base unit. Two paths:
+                //   1. Line has an `ingredient_unit_id` (pack-size mode)
+                //      → multiply by that unit's factor_to_base.
+                //   2. Otherwise fall back to global Unit conversion
+                //      (existing behavior — kg→g via factor_to_base).
+                if ($line->ingredient_unit_id && $line->ingredientUnit) {
+                    $qtyBaseRaw = $qtyReceived * (float) $line->ingredientUnit->factor_to_base;
+                } else {
+                    $qtyBaseRaw = UnitConverter::convert($qtyReceived, $orderedUnit, $baseUnit);
+                }
 
                 // Yield adjustment for raw ingredients: 5kg whole chicken
                 // at 70% yield = 3.5kg usable lands on the shelf and the
@@ -231,7 +241,13 @@ class PurchaseOrderService
                 // Unit cost in BASE unit (price paid / factor). Use the
                 // actual receipt price when the user overrode it — otherwise
                 // the moving-average wouldn't reflect what actually got paid.
-                $oneOrderedUnitInBase = UnitConverter::convert(1.0, $orderedUnit, $baseUnit);
+                // Same two-path logic as quantity: ingredient-unit takes
+                // priority over global Unit conversion when set.
+                if ($line->ingredient_unit_id && $line->ingredientUnit) {
+                    $oneOrderedUnitInBase = (float) $line->ingredientUnit->factor_to_base;
+                } else {
+                    $oneOrderedUnitInBase = UnitConverter::convert(1.0, $orderedUnit, $baseUnit);
+                }
                 $baseUnitCost = $oneOrderedUnitInBase > 0
                     ? $actualUnitPrice / $oneOrderedUnitInBase
                     : $actualUnitPrice;
@@ -413,12 +429,13 @@ class PurchaseOrderService
             $subtotal    += $lineSubtotal;
 
             $po->items()->create([
-                'ingredient_id'    => $line['ingredient_id'],
-                'unit_id'          => $line['unit_id'],
-                'quantity_ordered' => $qty,
-                'unit_price'       => $price,
-                'subtotal'         => $lineSubtotal,
-                'notes'            => $line['notes'] ?? null,
+                'ingredient_id'      => $line['ingredient_id'],
+                'unit_id'            => $line['unit_id'],
+                'ingredient_unit_id' => ! empty($line['ingredient_unit_id']) ? (int) $line['ingredient_unit_id'] : null,
+                'quantity_ordered'   => $qty,
+                'unit_price'         => $price,
+                'subtotal'           => $lineSubtotal,
+                'notes'              => $line['notes'] ?? null,
             ]);
         }
 

@@ -185,9 +185,9 @@
                                 @endif
                             </td>
                             <td class="fs-12">{{ $r->supplier ?? '—' }}</td>
-                            <td class="text-end {{ $r->qty <= 0 ? 'text-danger' : '' }}">
-                                {{ \App\Helpers\Qty::format($r->qty) }}
-                                <small class="text-muted">{{ $r->unit_code }}</small>
+                            <td class="text-end {{ $r->qty <= 0 ? 'text-danger' : '' }}"
+                                title="{{ \App\Helpers\Qty::format($r->qty) }} {{ $r->unit_code }}">
+                                {{ \App\Helpers\QuantityFormatter::smart((float) $r->qty, $r->unit_code) }}
                             </td>
                             <td class="text-end">{{ \App\Helpers\Qty::format($r->unit_cost) }}</td>
                             <td class="text-end fw-bold text-primary">{{ number_format((float) $r->value, 2) }} ₪</td>

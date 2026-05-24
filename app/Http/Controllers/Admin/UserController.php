@@ -205,6 +205,10 @@ class UserController extends Controller
             // (employee cannot place staff meals). 0 is also valid but
             // semantically equivalent to null for the dashboard checks.
             'monthly_meal_allowance' => ['nullable', 'numeric', 'min:0', 'max:99999'],
+            // Hard ceiling on TOTAL outstanding debt across all months.
+            // Combined with `staff_meal_over_limit_policy` (settings) to
+            // block/warn/require approval at order time. Null = no cap.
+            'meal_debt_ceiling'      => ['nullable', 'numeric', 'min:0', 'max:999999'],
 
             // Branch assignments — required for non-owner roles (see above).
             // Pivot rows are written via sync() in extractBranchAssignments().

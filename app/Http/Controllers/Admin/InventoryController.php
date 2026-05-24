@@ -201,6 +201,56 @@ class InventoryController extends Controller
         ));
     }
 
+    /**
+     * Barcode lookup — returns the ingredient + pack-size for a scanned
+     * code, or 404 when the code isn't on file. Driven by the PO line
+     * builder when the user fires a scanner gun (which types the EAN
+     * then presses Enter); the JSON response feeds the row directly.
+     *
+     * Why a JSON endpoint instead of a Livewire method: the scanner
+     * input is global to the page — any input that receives the
+     * keystroke can trigger this lookup. Keeping it stateless makes it
+     * trivially callable from anywhere (POS counter, mobile receiving
+     * app later, etc.).
+     */
+    public function lookupByBarcode(Request $request)
+    {
+        $this->authorize('viewAny', Ingredient::class);
+
+        $data = $request->validate([
+            'barcode' => ['required', 'string', 'max:64'],
+        ]);
+
+        $unit = \App\Models\IngredientUnit::with('ingredient.baseUnit')
+            ->where('barcode', trim($data['barcode']))
+            ->first();
+
+        if ($unit) {
+            return response()->json([
+                'ok'       => true,
+                'kind'     => 'ingredient_unit',
+                'unit'     => [
+                    'id'             => $unit->id,
+                    'name'           => $unit->name,
+                    'factor_to_base' => (float) $unit->factor_to_base,
+                    'purchase_price' => $unit->purchase_price !== null ? (float) $unit->purchase_price : null,
+                ],
+                'ingredient' => [
+                    'id'              => $unit->ingredient->id,
+                    'name'            => $unit->ingredient->name,
+                    'base_unit_id'    => $unit->ingredient->base_unit_id,
+                    'base_unit_code'  => $unit->ingredient->baseUnit?->code,
+                ],
+            ]);
+        }
+
+        return response()->json([
+            'ok'      => false,
+            'error'   => 'not_found',
+            'message' => "لم نجد عبوة بهذا الباركود ({$data['barcode']}). أضف الوحدة من صفحة المكوّن أولاً.",
+        ], 404);
+    }
+
     public function index(Request $request)
     {
         $this->authorize('viewAny', Ingredient::class);

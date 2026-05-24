@@ -344,9 +344,28 @@ class OrderController extends Controller
     public function cancelItem(Request $request, OrderItem $item)
     {
         $this->authorize('cancel', $item->order);
-        $data = $request->validate(['reason' => ['required', 'string', 'max:500']]);
-        $this->service->cancelItem($item, auth()->id(), $data['reason']);
-        return back()->with('success', 'تم إلغاء الصنف');
+        $data = $request->validate([
+            'reason'       => ['required', 'string', 'max:500'],
+            // 'return' (default) — kitchen never touched it; put
+            // ingredients back. 'waste' — chef started prep, food
+            // can't be reused, count it as a loss for the waste
+            // report. The radio in the cancel modal posts this.
+            'disposition'  => ['nullable', 'in:return,waste'],
+            'waste_reason' => ['nullable', 'string', 'max:200'],
+        ]);
+
+        $this->service->cancelItem(
+            item:        $item,
+            userId:      auth()->id(),
+            reason:      $data['reason'],
+            disposition: $data['disposition'] ?? 'return',
+            wasteReason: $data['waste_reason'] ?? null,
+        );
+
+        $msg = ($data['disposition'] ?? 'return') === 'waste'
+            ? 'تم إلغاء الصنف وتسجيل المكوّنات كهدر.'
+            : 'تم إلغاء الصنف وإرجاع المكوّنات للمخزون.';
+        return back()->with('success', $msg);
     }
 
     public function serveItem(OrderItem $item)

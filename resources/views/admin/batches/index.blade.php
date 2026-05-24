@@ -129,15 +129,22 @@
                                 <span class="text-muted">—</span>
                             @endif
                         </td>
-                        <td>{{ \App\Helpers\Qty::format($b->initial_qty) }} {{ $b->ingredient?->baseUnit?->code }}</td>
+                        @php $bBase = $b->ingredient?->baseUnit?->code; @endphp
+                        <td title="{{ \App\Helpers\Qty::format($b->initial_qty) }} {{ $bBase }}">
+                            {{ \App\Helpers\QuantityFormatter::smart((float) $b->initial_qty, $bBase) }}
+                        </td>
                         <td class="fw-bold">
                             @if($b->isDepleted())
                                 <span class="text-muted"><i class="bi bi-check2"></i> نفذت</span>
                             @else
-                                {{ \App\Helpers\Qty::format($b->remaining_qty) }}
+                                <span title="{{ \App\Helpers\Qty::format($b->remaining_qty) }} {{ $bBase }}">
+                                    {{ \App\Helpers\QuantityFormatter::smart((float) $b->remaining_qty, $bBase) }}
+                                </span>
                             @endif
                         </td>
-                        <td>{{ \App\Helpers\Qty::format($b->unit_cost) }}</td>
+                        <td title="تكلفة الوحدة الأساسية ({{ $bBase }})">
+                            {{ \App\Helpers\Qty::format($b->unit_cost) }}
+                        </td>
                         <td class="fw-bold" style="color:var(--primary);">
                             {{ \App\Helpers\Money::format((float) $b->remaining_qty * (float) $b->unit_cost) }}
                         </td>

@@ -126,7 +126,9 @@
                                 <span class="badge bg-primary-transparent text-primary">بيع</span>
                             @endif
                         </td>
-                        <td>{{ number_format((float) $row->qty, 1) }}</td>
+                        <td title="{{ number_format((float) $row->qty, 4) }} {{ $row->base_unit_code ?? '' }}">
+                            {{ \App\Helpers\QuantityFormatter::smart((float) $row->qty, $row->base_unit_code) }}
+                        </td>
                         <td class="small">{{ number_format((float) $row->cost, 2) }}</td>
                     </tr>
                 @endforeach

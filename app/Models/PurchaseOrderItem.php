@@ -13,6 +13,7 @@ class PurchaseOrderItem extends Model
 
     protected $fillable = [
         'purchase_order_id', 'ingredient_id', 'unit_id',
+        'ingredient_unit_id',
         'quantity_ordered', 'unit_price', 'subtotal',
         'quantity_received', 'fully_received_at',
         'notes',
@@ -39,6 +40,17 @@ class PurchaseOrderItem extends Model
     public function unit(): BelongsTo
     {
         return $this->belongsTo(Unit::class);
+    }
+
+    /**
+     * Optional pack-size override — when set, this PO line is in the
+     * ingredient's alternate unit (e.g. "كرتون 24 علبة") and the
+     * receipt service multiplies by its factor instead of going
+     * through the global UnitConverter.
+     */
+    public function ingredientUnit(): BelongsTo
+    {
+        return $this->belongsTo(IngredientUnit::class);
     }
 
     public function receiptItems(): HasMany

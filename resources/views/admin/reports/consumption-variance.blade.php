@@ -109,11 +109,18 @@
                                 @endif
                                 <small class="text-muted d-block">{{ $r['ingredient']->sku }}</small>
                             </td>
-                            <td class="text-end">{{ number_format($r['theoretical'], 2) }} {{ $r['unit_code'] }}</td>
-                            <td class="text-end">{{ number_format($r['actual'], 2) }} {{ $r['unit_code'] }}</td>
-                            <td class="text-end text-muted">{{ number_format($r['waste'], 2) }} {{ $r['unit_code'] }}</td>
-                            <td class="text-end fw-bold {{ $r['variance'] > 0 ? 'text-danger' : ($r['variance'] < 0 ? 'text-warning' : 'text-muted') }}">
-                                {{ $r['variance'] > 0 ? '+' : '' }}{{ number_format($r['variance'], 2) }} {{ $r['unit_code'] }}
+                            <td class="text-end" title="{{ number_format($r['theoretical'], 4) }} {{ $r['unit_code'] }}">
+                                {{ \App\Helpers\QuantityFormatter::smart((float) $r['theoretical'], $r['unit_code']) }}
+                            </td>
+                            <td class="text-end" title="{{ number_format($r['actual'], 4) }} {{ $r['unit_code'] }}">
+                                {{ \App\Helpers\QuantityFormatter::smart((float) $r['actual'], $r['unit_code']) }}
+                            </td>
+                            <td class="text-end text-muted" title="{{ number_format($r['waste'], 4) }} {{ $r['unit_code'] }}">
+                                {{ \App\Helpers\QuantityFormatter::smart((float) $r['waste'], $r['unit_code']) }}
+                            </td>
+                            <td class="text-end fw-bold {{ $r['variance'] > 0 ? 'text-danger' : ($r['variance'] < 0 ? 'text-warning' : 'text-muted') }}"
+                                title="{{ number_format($r['variance'], 4) }} {{ $r['unit_code'] }}">
+                                {{ $r['variance'] > 0 ? '+' : '' }}{{ \App\Helpers\QuantityFormatter::smart(abs((float) $r['variance']), $r['unit_code']) }}
                             </td>
                             <td class="text-end">
                                 @if($r['variance_pct'] !== null)

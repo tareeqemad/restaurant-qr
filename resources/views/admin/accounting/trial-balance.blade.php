@@ -7,7 +7,7 @@
     title="ميزان المراجعة"
     icon="bi-columns-gap"
     subtitle="مطابقة إجمالي المدين والدائن لكل الحسابات المرحّلة"
-    :crumbs="[['label' => 'الحسابات', 'url' => route('admin.cashier.index')]]"
+    :crumbs="[['label' => 'التقارير', 'url' => route('admin.reports.index')]]"
 />
 
 {{-- Plain-language explainer — accountants of all backgrounds open this

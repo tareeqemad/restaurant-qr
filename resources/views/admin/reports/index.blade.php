@@ -12,11 +12,18 @@
             'tone' => 'primary',
         ],
         [
-            'title' => 'تفاصيل الصندوق',
+            'title' => 'قائمة الدخل',
             'desc' => 'قراءة الربح الحقيقي بعد تكلفة المبيعات والهدر، مع أكثر الأصناف ربحية.',
             'icon' => 'bi-graph-up-arrow',
             'href' => route('admin.reports.profit-loss', compact('from', 'to')),
             'tone' => 'success',
+        ],
+        [
+            'title' => 'ميزان المراجعة',
+            'desc' => 'تحقق محاسبي يثبت أن مجموع المدين = مجموع الدائن لكل القيود اليومية.',
+            'icon' => 'bi-columns-gap',
+            'href' => route('admin.accounting.trial-balance'),
+            'tone' => 'info',
         ],
         [
             'title' => 'هندسة المنيو',

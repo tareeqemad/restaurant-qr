@@ -90,7 +90,7 @@
          Null/blank = no allowance (the employee can't run a tab).
          The dashboard surfaces consumption, over-limit, and the
          carry-over to next month from here. --}}
-    <div class="col-md-6">
+    <div class="col-md-3">
         <label class="form-label">
             <i class="bi bi-cup-hot-fill text-accent"></i>
             بدل الوجبات الشهري
@@ -106,8 +106,31 @@
         </div>
         <small class="text-muted d-block mt-1">
             <i class="bi bi-info-circle"></i>
-            الحد الذي يستطيع هذا الموظف استهلاكه شهرياً من المطعم (له ولعائلته).
-            اتركه فارغاً = لا يستطيع الأكل على الحساب.
+            الحد الذي يستطيع استهلاكه شهرياً مجاناً. اتركه فارغاً = لا يأكل على الحساب.
+        </small>
+    </div>
+
+    {{-- Hard debt ceiling — works WITH the policy in الإعدادات to stop
+         debt from rolling forward unchecked. Without a value here, the
+         employee can keep accumulating tabs across months indefinitely
+         (the original behaviour, kept as default for back-compat). --}}
+    <div class="col-md-3">
+        <label class="form-label">
+            <i class="bi bi-shield-exclamation text-warning"></i>
+            سقف الدين المسموح
+            <small class="text-muted">(اختياري)</small>
+        </label>
+        <div class="input-group">
+            <input type="number" step="0.01" min="0" max="999999"
+                   name="meal_debt_ceiling"
+                   value="{{ old('meal_debt_ceiling', $user->meal_debt_ceiling ?? '') }}"
+                   placeholder="مثلاً: 1500"
+                   class="form-control">
+            <span class="input-group-text">ش.إ</span>
+        </div>
+        <small class="text-muted d-block mt-1">
+            <i class="bi bi-info-circle"></i>
+            الحد الأقصى للدين المتراكم. عند تجاوزه يتم تطبيق سياسة المنع/التحذير المضبوطة في الإعدادات.
         </small>
     </div>
 </div>

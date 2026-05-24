@@ -55,11 +55,13 @@ new class extends Component
         return $query->get(['id', 'name'])->all();
     }
 
-    /** Ingredients seed for the row dropdowns — id + name + base_unit_id only. */
+    /** Ingredients seed for the row dropdowns — id + name + base_unit_id +
+     *  alternate units (so the row's pack-size picker can show carton /
+     *  case / pallet options as soon as the buyer picks the ingredient). */
     #[Computed(persist: false)]
     public function ingredientOptions(): array
     {
-        return Ingredient::with('baseUnit')
+        return Ingredient::with('baseUnit', 'units')
             ->orderBy('name')
             ->get(['id', 'name', 'base_unit_id', 'cost_per_unit'])
             ->map(fn ($i) => [
@@ -67,6 +69,13 @@ new class extends Component
                 'name'         => $i->name . ' (' . ($i->baseUnit?->code ?? '') . ')',
                 'base_unit_id' => $i->base_unit_id,
                 'fallback_cost'=> (float) $i->cost_per_unit,
+                'units'        => $i->units->where('active', true)->map(fn ($u) => [
+                    'id'                  => $u->id,
+                    'name'                => $u->name,
+                    'factor'              => (float) $u->factor_to_base,
+                    'purchase_price'      => $u->purchase_price !== null ? (float) $u->purchase_price : null,
+                    'is_default_purchase' => (bool) $u->is_default_purchase,
+                ])->values()->all(),
             ])
             ->all();
     }
@@ -88,14 +97,15 @@ new class extends Component
 
         return PurchaseOrder::findOrFail($this->poId)
             ->items()
-            ->with('ingredient.baseUnit', 'unit')
+            ->with('ingredient.baseUnit', 'unit', 'ingredientUnit')
             ->get()
             ->map(fn ($l) => [
-                'ingredient_id'    => $l->ingredient_id,
-                'unit_id'          => $l->unit_id,
-                'quantity_ordered' => (float) $l->quantity_ordered,
-                'unit_price'       => (float) $l->unit_price,
-                'notes'            => (string) $l->notes,
+                'ingredient_id'      => $l->ingredient_id,
+                'unit_id'            => $l->unit_id,
+                'ingredient_unit_id' => $l->ingredient_unit_id,
+                'quantity_ordered'   => (float) $l->quantity_ordered,
+                'unit_price'         => (float) $l->unit_price,
+                'notes'              => (string) $l->notes,
             ])
             ->all();
     }
@@ -139,11 +149,12 @@ new class extends Component
         $cleanLines = collect($payload['lines'] ?? [])
             ->filter(fn ($l) => ! empty($l['ingredient_id']) && (float) ($l['quantity_ordered'] ?? 0) > 0)
             ->map(fn ($l) => [
-                'ingredient_id'    => (int) $l['ingredient_id'],
-                'unit_id'          => (int) $l['unit_id'],
-                'quantity_ordered' => (float) $l['quantity_ordered'],
-                'unit_price'       => (float) $l['unit_price'],
-                'notes'            => (string) ($l['notes'] ?? ''),
+                'ingredient_id'      => (int) $l['ingredient_id'],
+                'unit_id'            => (int) $l['unit_id'],
+                'ingredient_unit_id' => ! empty($l['ingredient_unit_id']) ? (int) $l['ingredient_unit_id'] : null,
+                'quantity_ordered'   => (float) $l['quantity_ordered'],
+                'unit_price'         => (float) $l['unit_price'],
+                'notes'              => (string) ($l['notes'] ?? ''),
             ])
             ->values()
             ->toArray();
@@ -294,12 +305,30 @@ new class extends Component
                                            class="form-control form-control-sm text-end">
                                 </td>
                                 <td>
-                                    <select x-model.number="line.unit_id" class="form-select form-select-sm">
-                                        <option value="0">—</option>
-                                        <template x-for="u in units" :key="u.id">
-                                            <option :value="u.id" x-text="u.label"></option>
-                                        </template>
-                                    </select>
+                                    {{-- Pack-size picker: when the chosen ingredient has
+                                         alternate units (carton/case/pallet), show them
+                                         first — fastest path for buyers who think in packs.
+                                         Falls back to the global Unit dropdown for free-form
+                                         ingredients (raw flour by gram, etc.). --}}
+                                    <template x-if="ingredientAltUnits(line).length > 0">
+                                        <select x-model.number="line.ingredient_unit_id"
+                                                @change="onAltUnitChange(idx)"
+                                                class="form-select form-select-sm">
+                                            <option value="">— الوحدة الأساسية —</option>
+                                            <template x-for="u in ingredientAltUnits(line)" :key="u.id">
+                                                <option :value="u.id"
+                                                        x-text="u.name + ' (×' + u.factor + ')'"></option>
+                                            </template>
+                                        </select>
+                                    </template>
+                                    <template x-if="ingredientAltUnits(line).length === 0">
+                                        <select x-model.number="line.unit_id" class="form-select form-select-sm">
+                                            <option value="0">—</option>
+                                            <template x-for="u in units" :key="u.id">
+                                                <option :value="u.id" x-text="u.label"></option>
+                                            </template>
+                                        </select>
+                                    </template>
                                 </td>
                                 <td>
                                     <input type="number" step="0.0001" min="0"
@@ -398,12 +427,31 @@ window.poLineBuilder = function (config) {
             this.lines.push({
                 ingredient_id: 0,
                 unit_id: 0,
+                ingredient_unit_id: null,   // null = use global unit_id, set = alt-pack
                 quantity_ordered: 1,
                 unit_price: 0,
                 notes: '',
                 _q: '',
                 _open: false,
             });
+        },
+
+        // ─── Alternate-unit (pack-size) helpers ────────────────────────
+        ingredientAltUnits(line) {
+            const ing = this.ingredients.find(i => i.id === line.ingredient_id);
+            return ing?.units ?? [];
+        },
+        onAltUnitChange(idx) {
+            const line = this.lines[idx];
+            if (! line.ingredient_unit_id) return;
+            const ing = this.ingredients.find(i => i.id === line.ingredient_id);
+            const unit = ing?.units?.find(u => u.id === Number(line.ingredient_unit_id));
+            if (! unit) return;
+            // Auto-fill the saved purchase price for this pack so the
+            // buyer doesn't have to retype 30 ש"ח every carton.
+            if (unit.purchase_price !== null) {
+                line.unit_price = unit.purchase_price;
+            }
         },
 
         // ─── Ingredient combobox helpers ─────────────────────────────────
@@ -438,7 +486,11 @@ window.poLineBuilder = function (config) {
         },
         get canSubmit() {
             if (! this.supplier_id) return false;
-            return this.lines.some(l => l.ingredient_id && l.unit_id && (Number(l.quantity_ordered) || 0) > 0);
+            // A line is valid when it has an ingredient + qty AND either
+            // a global unit_id OR a pack-size ingredient_unit_id.
+            return this.lines.some(l => l.ingredient_id
+                && (l.unit_id || l.ingredient_unit_id)
+                && (Number(l.quantity_ordered) || 0) > 0);
         },
 
         // Server-side lookup (last vendor price). Single tiny request,
@@ -452,13 +504,24 @@ window.poLineBuilder = function (config) {
             if (ing) {
                 line.unit_id = ing.base_unit_id;
                 if (! line.unit_price) line.unit_price = ing.fallback_cost;
+
+                // If the ingredient has a default purchase pack, pre-
+                // select it and use its price — fastest path for the
+                // common "I always buy by the carton" case.
+                const defaultUnit = (ing.units || []).find(u => u.is_default_purchase);
+                if (defaultUnit) {
+                    line.ingredient_unit_id = defaultUnit.id;
+                    if (defaultUnit.purchase_price !== null) {
+                        line.unit_price = defaultUnit.purchase_price;
+                    }
+                }
             }
 
             // Then ask server for the supplier-specific last price
             try {
                 const res = await this.$wire.lookupLastPrice(this.supplier_id || null, line.ingredient_id);
-                if (res?.unit_id) line.unit_id = res.unit_id;
-                if (typeof res?.price === 'number') line.unit_price = res.price;
+                if (res?.unit_id && ! line.ingredient_unit_id) line.unit_id = res.unit_id;
+                if (typeof res?.price === 'number' && ! line.ingredient_unit_id) line.unit_price = res.price;
             } catch (e) { /* keep optimistic value on network failure */ }
         },
 

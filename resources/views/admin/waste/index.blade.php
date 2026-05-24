@@ -100,7 +100,9 @@
                                 <tr>
                                     <td class="fw-semibold">{{ $ing->name }}</td>
                                     <td class="text-end">{{ $ing->event_count }}</td>
-                                    <td class="text-end">{{ \App\Helpers\Qty::format($ing->qty) }}</td>
+                                    <td class="text-end" title="{{ \App\Helpers\Qty::format($ing->qty) }} {{ $ing->base_unit_code ?? '' }}">
+                                        {{ \App\Helpers\QuantityFormatter::smart((float) $ing->qty, $ing->base_unit_code) }}
+                                    </td>
                                     <td class="text-end fw-semibold text-danger">{{ number_format((float) $ing->total_cost, 2) }} ₪</td>
                                     <td class="text-end">
                                         <a href="{{ route('admin.waste.create', ['ingredient_id' => $ing->id]) }}"
@@ -244,9 +246,9 @@
                                     <span class="text-muted fs-12">—</span>
                                 @endif
                             </td>
-                            <td class="text-end">
-                                {{ \App\Helpers\Qty::format($m->quantity_in_base) }}
-                                <small class="text-muted">{{ $m->ingredient?->baseUnit?->code }}</small>
+                            @php $wBase = $m->ingredient?->baseUnit?->code; @endphp
+                            <td class="text-end" title="{{ \App\Helpers\Qty::format($m->quantity_in_base) }} {{ $wBase }}">
+                                {{ \App\Helpers\QuantityFormatter::smart((float) $m->quantity_in_base, $wBase) }}
                             </td>
                             <td class="text-end fw-semibold text-danger">{{ number_format((float) $m->total_cost, 2) }} ₪</td>
                             <td class="fs-12 text-muted">{{ $m->user?->name ?? '—' }}</td>

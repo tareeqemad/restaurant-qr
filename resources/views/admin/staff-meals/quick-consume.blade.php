@@ -138,9 +138,32 @@
                                    placeholder="مثلاً: خلال نوبة الظهر">
                         </div>
 
-                        <button class="btn btn-warning w-100 mt-3" :disabled="lines.length === 0 || ! selectedStaff">
-                            <i class="bi bi-check-circle-fill"></i>
-                            تأكيد الاستهلاك
+                        {{-- Gift toggle — when checked, the order is recorded
+                             but the amount is NOT added to the employee's tab.
+                             Used for birthdays, performance rewards, etc. --}}
+                        <div class="mt-3 p-2 border border-success rounded bg-light">
+                            <input type="hidden" name="is_gift" value="0">
+                            <div class="form-check form-switch">
+                                <input type="checkbox" id="is_gift" name="is_gift" value="1"
+                                       class="form-check-input" x-model="isGift">
+                                <label for="is_gift" class="form-check-label fw-bold text-success">
+                                    <i class="bi bi-gift-fill"></i> وجبة مجانية — هدية للموظف
+                                </label>
+                            </div>
+                            <small class="text-muted d-block mt-1">
+                                لو فعّلت هذا الخيار، الطلب يُحفظ كهدية ولا يُحسب على بدل وجبات الموظف.
+                            </small>
+                            <template x-if="isGift">
+                                <input type="text" name="gift_reason" class="form-control form-control-sm mt-2"
+                                       placeholder="السبب (اختياري): عيد ميلاد، موظف الشهر، ترحيب…">
+                            </template>
+                        </div>
+
+                        <button class="btn w-100 mt-3"
+                                :class="isGift ? 'btn-success' : 'btn-warning'"
+                                :disabled="lines.length === 0 || ! selectedStaff">
+                            <i class="bi" :class="isGift ? 'bi-gift-fill' : 'bi-check-circle-fill'"></i>
+                            <span x-text="isGift ? 'تسجيل وجبة مجانية' : 'تأكيد الاستهلاك'"></span>
                         </button>
                     </div>
                 </div>
@@ -156,6 +179,9 @@ function quickConsumeForm() {
         selectedStaff: '',
         lines: [],
         nextKey: 1,
+        // Mirrors the "وجبة مجانية" toggle — flips the submit button
+        // label/color and exposes the reason input.
+        isGift: false,
 
         addItem(id, name, unitPrice) {
             // If already in cart, just bump the quantity.

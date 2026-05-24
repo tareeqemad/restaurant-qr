@@ -38,6 +38,16 @@
     </div>
 </div>
 
+@if(($summary['gifted'] ?? 0) > 0)
+    <div class="alert alert-info d-flex align-items-center gap-2 small mb-3">
+        <i class="bi bi-gift-fill fs-5"></i>
+        <div>
+            تلقى هذا الموظف <strong>{{ \App\Helpers\Money::format($summary['gifted']) }}</strong>
+            كهدايا وإعفاءات هذا الشهر (لم تُحسب على بدله).
+        </div>
+    </div>
+@endif
+
 @if($summary['outstanding'] > 0)
     <div class="card mb-3 border-success">
         <div class="card-header bg-success text-white">
@@ -145,10 +155,19 @@
                         <th>الحالة</th>
                         <th>طريقة التسوية</th>
                         <th>ملاحظات</th>
+                        <th class="text-center" style="width:120px">إجراء</th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach($charges as $c)
+                        @php
+                            $methodLabel = [
+                                'cash'              => ['نقدي', 'success'],
+                                'payroll_deduction' => ['خصم راتب', 'primary'],
+                                'writeoff'          => ['شطب', 'danger'],
+                                'gift'              => ['هدية', 'info'],
+                            ][$c->settlement_method] ?? [$c->settlement_method, 'secondary'];
+                        @endphp
                         <tr class="{{ $c->settled_at ? 'text-muted' : 'fw-bold' }}">
                             <td><small>{{ $c->charged_at?->format('Y-m-d H:i') }}</small></td>
                             <td>
@@ -161,21 +180,32 @@
                             <td class="text-end">{{ \App\Helpers\Money::format($c->amount) }}</td>
                             <td>
                                 @if($c->settled_at)
-                                    <span class="badge bg-success"><i class="bi bi-check-circle"></i> سُويت</span>
+                                    @if($c->settlement_method === 'gift')
+                                        <span class="badge bg-info"><i class="bi bi-gift-fill"></i> هدية</span>
+                                    @else
+                                        <span class="badge bg-success"><i class="bi bi-check-circle"></i> سُويت</span>
+                                    @endif
                                 @else
                                     <span class="badge bg-warning text-dark"><i class="bi bi-clock"></i> مفتوحة</span>
                                 @endif
                             </td>
                             <td>
                                 @if($c->settlement_method)
-                                    <small>
-                                        {{ ['cash' => 'نقدي', 'payroll_deduction' => 'خصم راتب', 'writeoff' => 'شطب'][$c->settlement_method] ?? $c->settlement_method }}
-                                    </small>
+                                    <span class="badge bg-{{ $methodLabel[1] }}">{{ $methodLabel[0] }}</span>
                                 @else
                                     —
                                 @endif
                             </td>
                             <td><small class="text-muted">{{ $c->notes }}</small></td>
+                            <td class="text-center">
+                                @if(! $c->settled_at)
+                                    <button class="btn btn-sm btn-outline-info" data-bs-toggle="modal"
+                                            data-bs-target="#waiveModal-{{ $c->id }}"
+                                            title="إعفاء جزء أو كامل هذه الحركة">
+                                        <i class="bi bi-gift"></i> إعفاء
+                                    </button>
+                                @endif
+                            </td>
                         </tr>
                     @endforeach
                 </tbody>
@@ -185,4 +215,71 @@
         @endif
     </div>
 </div>
+
+{{-- ────────── Waiver modals (one per open charge) ──────────
+     The manager picks the amount to waive (defaulting to the full
+     charge), the method (gift vs writeoff), and an optional reason.
+     A partial waiver splits the row in two so the audit trail keeps
+     the original order reference. --}}
+@foreach($charges->where('settled_at', null) as $c)
+    <div class="modal fade" id="waiveModal-{{ $c->id }}" tabindex="-1">
+        <div class="modal-dialog">
+            <form method="POST" action="{{ route('admin.staff-meals.charges.waive', $c) }}" class="modal-content">
+                @csrf
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-gift text-info"></i>
+                        إعفاء من حركة #{{ $c->id }}
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-light border small mb-3">
+                        <div><strong>الموظف:</strong> {{ $user->name }}</div>
+                        @if($c->order)
+                            <div><strong>الطلب:</strong> <code>{{ $c->order->number }}</code></div>
+                        @endif
+                        <div><strong>قيمة الحركة:</strong> {{ \App\Helpers\Money::format($c->amount) }}</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">المبلغ المراد إعفاؤه</label>
+                        <div class="input-group">
+                            <input type="number" name="amount" step="0.01" min="0.01"
+                                   max="{{ $c->amount }}"
+                                   value="{{ number_format((float) $c->amount, 2, '.', '') }}"
+                                   class="form-control text-end fw-bold" required>
+                            <span class="input-group-text">ش.إ</span>
+                        </div>
+                        <small class="text-muted">القيمة الافتراضية = إعفاء كامل. قلّلها لإعفاء جزئي.</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">نوع الإعفاء</label>
+                        <select name="method" class="form-select" required>
+                            <option value="gift" selected>🎁 هدية / مكافأة (يُسجَّل كمصروف هدايا)</option>
+                            <option value="writeoff">شطب / تنازل (يُسجَّل كدين معدوم)</option>
+                        </select>
+                        <small class="text-muted d-block mt-1">
+                            <strong>هدية</strong>: مناسبات، عيد ميلاد، موظف الشهر.
+                            <strong>شطب</strong>: تنازل إداري لأسباب أخرى.
+                        </small>
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label">السبب (اختياري)</label>
+                        <input type="text" name="reason" maxlength="500" class="form-control"
+                               placeholder="مثلاً: عيد ميلاد، تعويض عن خطأ بالطلب…">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-info text-white">
+                        <i class="bi bi-check-circle"></i> تنفيذ الإعفاء
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+@endforeach
 @endsection

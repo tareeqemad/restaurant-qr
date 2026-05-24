@@ -144,6 +144,20 @@ class RecipeCostService
         $ingredient = $line->ingredient;
         if (!$ingredient) return 0.0;
 
+        // Path 1: ingredient-specific unit (tbsp, scoop) — direct
+        // multiplication, no UnitConverter detour. Matches the
+        // deduction math in InventoryService so cost + actual usage
+        // are computed against the same base-unit quantity.
+        if ($line->ingredient_unit_id) {
+            $unit = $line->ingredientUnit;
+            if ($unit) {
+                return (float) $line->quantity
+                    * (float) $unit->factor_to_base
+                    * (float) $ingredient->cost_per_unit;
+            }
+        }
+
+        // Path 2: global unit conversion (legacy).
         $recipeUnitId = $line->unit_id ?? $ingredient->base_unit_id;
         $baseUnitId   = $ingredient->base_unit_id;
 

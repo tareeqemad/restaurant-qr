@@ -152,12 +152,33 @@ class MenuItemController extends Controller
         $item->recipeItems()->delete();
         foreach ($recipe as $r) {
             if (empty($r['ingredient_id']) || empty($r['quantity'])) continue;
+
+            // The form sends ONE select for "unit" with a value prefix:
+            //   "u:5"  → global Unit id 5
+            //   "iu:9" → IngredientUnit id 9 (tbsp/scoop for this ingredient)
+            // Split it back into the two FK columns the schema expects.
+            $unitId           = null;
+            $ingredientUnitId = null;
+            $raw              = (string) ($r['unit_id'] ?? '');
+            if (str_starts_with($raw, 'iu:')) {
+                $ingredientUnitId = (int) substr($raw, 3);
+                // Default unit_id to the ingredient's base unit so the
+                // NOT NULL constraint stays happy and a stale lookup
+                // through `unit` still resolves to something sensible.
+                $ingredientUnitId = $ingredientUnitId ?: null;
+                $ingredient = \App\Models\Ingredient::find($r['ingredient_id']);
+                $unitId     = $ingredient?->base_unit_id;
+            } else {
+                $unitId = (int) (str_starts_with($raw, 'u:') ? substr($raw, 2) : $raw);
+            }
+
             RecipeItem::create([
-                'menu_item_id' => $item->id,
-                'ingredient_id' => $r['ingredient_id'],
-                'quantity' => $r['quantity'],
-                'unit_id' => $r['unit_id'],
-                'is_optional' => ! empty($r['is_optional']),
+                'menu_item_id'       => $item->id,
+                'ingredient_id'      => $r['ingredient_id'],
+                'quantity'           => $r['quantity'],
+                'unit_id'            => $unitId,
+                'ingredient_unit_id' => $ingredientUnitId,
+                'is_optional'        => ! empty($r['is_optional']),
             ]);
         }
     }
