@@ -439,6 +439,68 @@ class User extends Authenticatable
         return $role?->permissions->contains('name', $name) ?? false;
     }
 
+    // ─── Permission deviation helpers (powering the user edit form tree) ───
+
+    /**
+     * IDs the user's ROLE grants by default. The reference set against
+     * which deviations are computed. Returns an empty collection for
+     * owner-level users (they bypass the check entirely; surfacing per-
+     * permission toggles for them would be misleading).
+     */
+    public function rolePermissionIds(): \Illuminate\Support\Collection
+    {
+        if ($this->isOwnerLevel()) return collect();
+        $role = Role::where('name', $this->role)->with('permissions:id')->first();
+        return collect($role?->permissions?->pluck('id') ?? []);
+    }
+
+    /**
+     * IDs explicitly granted on the user_permission pivot (granted=true).
+     * These are the EXTRA permissions a user has on top of their role.
+     * Loading via the relation honors withPivot('granted') so we can
+     * separate grants from revokes.
+     */
+    public function grantedPermissionIds(): \Illuminate\Support\Collection
+    {
+        return $this->permissions()
+            ->wherePivot('granted', true)
+            ->pluck('permissions.id');
+    }
+
+    /**
+     * IDs explicitly REVOKED on the user_permission pivot (granted=false).
+     * These are role-default permissions the admin has stripped from this
+     * one user (rare but useful: a manager forbidden from settling debts).
+     */
+    public function revokedPermissionIds(): \Illuminate\Support\Collection
+    {
+        return $this->permissions()
+            ->wherePivot('granted', false)
+            ->pluck('permissions.id');
+    }
+
+    /**
+     * The user's EFFECTIVE permission ID set — what hasPermission() would
+     * actually answer "yes" to. Computed as:
+     *   (role permissions ∪ direct grants) − explicit revokes
+     * Owner-level users return null to signal "everything" — the UI uses
+     * that to display "all permissions (owner)" rather than ticking 119
+     * boxes one by one.
+     */
+    public function effectivePermissionIds(): ?\Illuminate\Support\Collection
+    {
+        if ($this->isOwnerLevel()) return null;
+
+        $role    = $this->rolePermissionIds();
+        $granted = $this->grantedPermissionIds();
+        $revoked = $this->revokedPermissionIds();
+
+        // `union` operates on KEYS (not values) so on plucked integer
+        // collections it silently drops `$granted` — `merge`+`unique`
+        // gives the value-level union we actually want.
+        return $role->merge($granted)->unique()->diff($revoked)->values();
+    }
+
     // ========== Accessors ==========
 
     public function getAvatarUrlAttribute(): string

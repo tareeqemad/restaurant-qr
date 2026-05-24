@@ -43,6 +43,11 @@ class PermissionSeeder extends Seeder
             'settings' => ['view', 'update'],
             'lookups' => ['viewAny', 'create', 'update', 'delete'],
             'activity_logs' => ['viewAny'],
+            // Staff meal program — was role-gated previously, now permissioned
+            // so a single cashier can be granted the closure capability without
+            // a full manager promotion. `viewAny` covers dashboard + detail
+            // pages; `quick_consume` is the only one floor staff need.
+            'staff_meals' => ['viewAny', 'quick_consume', 'settle', 'waive', 'close_month'],
         ];
 
         foreach ($groups as $group => $actions) {
@@ -132,6 +137,10 @@ class PermissionSeeder extends Seeder
                 'expenses.viewAny', 'expenses.view', 'expenses.create',
                 // Customer phone-lookup at checkout (read-only).
                 'customers.viewAny', 'customers.view',
+                // Cashier can run the staff-meal quick consume during a
+                // shift (cola, water) — settling debt / closing the month
+                // remains a manager action.
+                'staff_meals.quick_consume',
             ])->pluck('id'));
         }
     }

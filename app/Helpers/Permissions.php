@@ -98,6 +98,7 @@ class Permissions
 
         'reports'        => ['label' => 'التقارير',           'icon' => 'bi-graph-up-arrow',       'order' => 40],
         'activity_logs'  => ['label' => 'سجل النشاطات',       'icon' => 'bi-journal-text',         'order' => 41],
+        'staff_meals'    => ['label' => 'بدل وجبات الموظفين',  'icon' => 'bi-cup-hot-fill',         'order' => 42],
 
         // Dynamic group — one permission per Station, auto-managed by
         // StationObserver. The tree shows a card per station with a single
@@ -149,5 +150,12 @@ class Permissions
         'expenses.approve'             => 'اعتماد المصروفات',
         'expenses.reject'              => 'رفض المصروفات',
         'customers.block'              => 'حظر / إلغاء حظر العميل',
+        // Staff meals — overrides because the generic action labels are
+        // too vague ("settle" alone doesn't convey it's debt settlement).
+        'staff_meals.viewAny'          => 'عرض لوحة بدل وجبات الموظفين',
+        'staff_meals.quick_consume'    => 'تسجيل استهلاك سريع للموظفين',
+        'staff_meals.settle'           => 'تسوية مستحقات الموظفين',
+        'staff_meals.waive'            => 'إعفاء حركة أو منح هدية',
+        'staff_meals.close_month'      => 'إقفال شهر بدل الوجبات + كشف الرواتب',
     ];
 }

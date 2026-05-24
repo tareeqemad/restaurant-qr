@@ -21,7 +21,7 @@ class StaffMealController extends Controller
 
     public function index(Request $request)
     {
-        abort_unless(auth()->user()?->hasAnyRole(['super_admin', 'admin', 'manager']), 403);
+        abort_unless(auth()->user()?->hasPermission('staff_meals.viewAny'), 403);
 
         $month = $request->filled('month')
             ? Carbon::parse($request->get('month').'-01')
@@ -59,7 +59,7 @@ class StaffMealController extends Controller
 
     public function show(User $user)
     {
-        abort_unless(auth()->user()?->hasAnyRole(['super_admin', 'admin', 'manager']), 403);
+        abort_unless(auth()->user()?->hasPermission('staff_meals.viewAny'), 403);
 
         $summary = $this->service->monthSummary($user);
         $charges = StaffMealCharge::with('order.items')
@@ -107,7 +107,7 @@ class StaffMealController extends Controller
      */
     public function quickConsumeForm()
     {
-        abort_unless(auth()->user()?->hasAnyRole(['super_admin', 'admin', 'manager', 'cashier']), 403);
+        abort_unless(auth()->user()?->hasPermission('staff_meals.quick_consume'), 403);
 
         $employees = User::query()
             ->whereNotNull('monthly_meal_allowance')
@@ -131,7 +131,7 @@ class StaffMealController extends Controller
 
     public function quickConsumeStore(Request $request)
     {
-        abort_unless(auth()->user()?->hasAnyRole(['super_admin', 'admin', 'manager', 'cashier']), 403);
+        abort_unless(auth()->user()?->hasPermission('staff_meals.quick_consume'), 403);
 
         $data = $request->validate([
             'user_id'           => ['required', 'integer', 'exists:users,id'],
@@ -183,7 +183,7 @@ class StaffMealController extends Controller
      */
     public function waiveCharge(Request $request, StaffMealCharge $charge)
     {
-        abort_unless(auth()->user()?->hasAnyRole(['super_admin', 'admin', 'manager']), 403);
+        abort_unless(auth()->user()?->hasPermission('staff_meals.waive'), 403);
 
         $data = $request->validate([
             'amount'  => ['required', 'numeric', 'min:0.01', 'max:'.((float) $charge->amount)],
@@ -210,7 +210,7 @@ class StaffMealController extends Controller
 
     public function settle(Request $request, User $user)
     {
-        abort_unless(auth()->user()?->hasAnyRole(['super_admin', 'admin', 'manager']), 403);
+        abort_unless(auth()->user()?->hasPermission('staff_meals.settle'), 403);
 
         $data = $request->validate([
             'amount' => ['required', 'numeric', 'min:0.01'],
@@ -240,7 +240,7 @@ class StaffMealController extends Controller
      */
     public function closeMonth(Request $request)
     {
-        abort_unless(auth()->user()?->hasAnyRole(['super_admin', 'admin', 'manager']), 403);
+        abort_unless(auth()->user()?->hasPermission('staff_meals.close_month'), 403);
 
         $data = $request->validate([
             'month'  => ['required', 'date_format:Y-m'],
@@ -284,7 +284,7 @@ class StaffMealController extends Controller
      */
     public function closures(Request $request)
     {
-        abort_unless(auth()->user()?->hasAnyRole(['super_admin', 'admin', 'manager']), 403);
+        abort_unless(auth()->user()?->hasPermission('staff_meals.viewAny'), 403);
 
         $closures = StaffMealMonthClosure::with(['branch:id,name', 'closedBy:id,name'])
             ->orderByDesc('month')
@@ -301,7 +301,7 @@ class StaffMealController extends Controller
      */
     public function closureShow(StaffMealMonthClosure $closure)
     {
-        abort_unless(auth()->user()?->hasAnyRole(['super_admin', 'admin', 'manager']), 403);
+        abort_unless(auth()->user()?->hasPermission('staff_meals.viewAny'), 403);
 
         $sheet = $this->service->payrollSheet($closure);
 

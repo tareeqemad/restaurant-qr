@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Enums\UserRole;
+use App\Helpers\Permissions;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\Branch;
+use App\Models\Permission;
 use App\Models\Role;
 use App\Models\Station;
 use App\Models\User;
@@ -72,7 +74,10 @@ class UserController extends Controller
     public function create()
     {
         $this->authorize('create', User::class);
-        return view('admin.users.create', $this->branchFormData());
+        return view('admin.users.create', array_merge(
+            $this->branchFormData(),
+            $this->permissionFormData(),
+        ));
     }
 
     public function store(Request $request)
@@ -92,6 +97,9 @@ class UserController extends Controller
 
         $user = User::create($data);
         $user->branches()->sync($branchAssignments);
+        if (auth()->user()?->hasPermission('roles.update')) {
+            $this->syncUserPermissions($user, $request);
+        }
 
         ActivityLog::log('user.created', "إنشاء مستخدم {$user->name}", $user);
         return redirect()->route('admin.users.index')->with('success', 'تم إنشاء المستخدم');
@@ -101,8 +109,9 @@ class UserController extends Controller
     {
         $this->authorize('update', $user);
         return view('admin.users.edit', array_merge(
-            ['user' => $user->load('branches')],
+            ['user' => $user->load('branches', 'permissions')],
             $this->branchFormData(),
+            $this->permissionFormData($user),
         ));
     }
 
@@ -127,9 +136,99 @@ class UserController extends Controller
 
         $user->update($data);
         $user->branches()->sync($branchAssignments);
+        // Sync the permission tree only when the editor can manage roles —
+        // any other admin can see the form (for context) but its values
+        // aren't applied. The view itself disables the checkboxes too.
+        if (auth()->user()?->hasPermission('roles.update')) {
+            $this->syncUserPermissions($user, $request);
+        }
 
         ActivityLog::log('user.updated', "تعديل المستخدم {$user->name}", $user);
         return redirect()->route('admin.users.index')->with('success', 'تم تحديث المستخدم');
+    }
+
+    /**
+     * Build the permission-tree payload the user form needs:
+     *   - `permissionTree`: the grouped collection rendered by the Blade
+     *   - `rolePermIds` : ids the user's role grants by default (pre-checked
+     *                     baseline; ticking a NEW one creates an EXTRA grant,
+     *                     unticking one creates an explicit REVOKE)
+     *   - `userPermIds` : ids the user actually has right now (effective)
+     *   - `revokedIds`  : ids stripped from the role default (granted=false)
+     *
+     * For create() we only show the tree if the chosen role is "templated"
+     * (anything other than owner-level). Owner-level users always have full
+     * access — surfacing 119 checkboxes for them would just confuse the UX.
+     */
+    protected function permissionFormData(?User $user = null): array
+    {
+        $permissions = Permission::orderBy('group')
+            ->orderBy('display_order')
+            ->orderBy('name')
+            ->get()
+            ->groupBy('group');
+
+        return [
+            'permissionTree' => Permissions::tree($permissions),
+            'rolePermIds'    => $user ? $user->rolePermissionIds()->all() : [],
+            'userPermIds'    => $user ? ($user->effectivePermissionIds()?->all() ?? []) : [],
+            'revokedIds'     => $user ? $user->revokedPermissionIds()->all() : [],
+            'isOwnerLevel'   => $user?->isOwnerLevel() ?? false,
+        ];
+    }
+
+    /**
+     * Persist the user_permission deviations from the form.
+     *
+     * The DB rule: user_permission stores ONLY the difference between the
+     * effective state and the role default. Two kinds of rows exist:
+     *   granted=true  → an EXTRA permission this user has beyond their role
+     *   granted=false → a permission the role grants but this user is
+     *                   explicitly denied
+     * Matching the role exactly (either both yes or both no) leaves the
+     * table empty — that keeps audits short and re-seeding the role
+     * automatically re-applies to everyone.
+     *
+     * The form posts:
+     *   permissions[] = ids the user SHOULD have (checked boxes)
+     * We diff that against the role's defaults to compute grants/revokes.
+     */
+    protected function syncUserPermissions(User $user, Request $request): void
+    {
+        // Owner-level users never carry per-user overrides — they bypass
+        // the check anyway, so storing rows would just be noise.
+        if ($user->isOwnerLevel()) {
+            $user->permissions()->detach();
+            return;
+        }
+
+        $request->validate([
+            'permissions'   => ['nullable', 'array'],
+            'permissions.*' => ['integer', 'exists:permissions,id'],
+        ]);
+
+        $checked = collect($request->input('permissions', []))->map(fn ($id) => (int) $id)->unique();
+        $roleIds = $user->rolePermissionIds();
+
+        $grants  = $checked->diff($roleIds);     // checked but not in role → extra grants
+        $revokes = $roleIds->diff($checked);     // unchecked but in role  → explicit revokes
+
+        $sync = [];
+        foreach ($grants as $id)  $sync[$id] = ['granted' => true];
+        foreach ($revokes as $id) $sync[$id] = ['granted' => false];
+
+        $user->permissions()->sync($sync);
+
+        if ($grants->isNotEmpty() || $revokes->isNotEmpty()) {
+            ActivityLog::log(
+                'user.permissions_changed',
+                "تعديل صلاحيات {$user->name}: "
+                .$grants->count()." منح إضافي، "
+                .$revokes->count()." إلغاء من الدور",
+                $user,
+                ['granted' => $grants->all(), 'revoked' => $revokes->all()],
+            );
+        }
     }
 
     public function destroy(User $user)

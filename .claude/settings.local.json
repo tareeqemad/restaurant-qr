@@ -235,7 +235,10 @@
       "Bash(sqlite3 C:\\\\Users\\\\PC\\\\Desktop\\\\restaurant-qr\\\\database.sqlite \".schema customers\")",
       "Bash(grep -rn \"sendInApp\\\\|App\\\\\\\\\\\\\\\\Models\\\\\\\\\\\\\\\\Notification\\\\|class Notification\" \"C:/Users/PC/Desktop/restaurant-qr/app\" --include=\"*.php\")",
       "Bash(grep -n 'actionCenter\\\\|customerPulse\\\\|@if\\($top' C:/Users/PC/Desktop/restaurant-qr/resources/views/admin/dashboard/index.blade.php)",
-      "Bash(grep -n 'protected function validateData\\\\|return $request->validate' C:/Users/PC/Desktop/restaurant-qr/app/Http/Controllers/Admin/UserController.php)"
+      "Bash(grep -n 'protected function validateData\\\\|return $request->validate' C:/Users/PC/Desktop/restaurant-qr/app/Http/Controllers/Admin/UserController.php)",
+      "Bash(xargs ls -la)",
+      "PowerShell($content = Get-Content \"C:\\\\Users\\\\PC\\\\Desktop\\\\restaurant-qr\\\\database\\\\seeders\\\\PermissionSeeder.php\" -Raw; $groups = $content | Select-String -Pattern \"^\\\\s+'\\(\\\\w+\\)'\\\\s+=>\" -AllMatches | Measure-Object; Write-Output \"Total permission groups: $\\($groups.Count\\)\")",
+      "Bash(cat > *)"
     ]
   }
 }
