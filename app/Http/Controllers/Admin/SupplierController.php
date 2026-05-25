@@ -13,13 +13,16 @@ class SupplierController extends Controller
     {
         $this->authorize('viewAny', Supplier::class);
 
-        // Branch-aware: branch users see only their branch's suppliers;
-        // owner-level sees all.
+        // Branch-aware listing. Behavior depends on the active context:
+        //   - Active branch picked (any role)     → filter to that branch
+        //   - Owner-level + "all branches" picked → no filter (global view)
+        //   - Branch user with no context         → fall back to their
+        //     primary branch (defensive — should never happen in practice
+        //     because SetActiveBranch middleware pins it on every request)
         $user = auth()->user();
-        $branchId = null;
-        if ($user && ! $user->isOwnerLevel()) {
-            $branchId = \App\Support\BranchContext::current()
-                ?? optional($user->primaryBranch())->id;
+        $branchId = \App\Support\BranchContext::current();
+        if (! $branchId && $user && ! $user->isOwnerLevel()) {
+            $branchId = optional($user->primaryBranch())->id;
         }
 
         $q = Supplier::query()->with('branches:id,name')->withCount('ingredients');

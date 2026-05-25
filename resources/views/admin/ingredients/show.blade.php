@@ -23,41 +23,38 @@
     icon="bi-card-text"
     :crumbs="[['label' => 'المكونات', 'url' => route('admin.ingredients.index')]]">
     <x-slot:actions>
-        {{-- Adjacent-ingredient navigation. Buttons mirror the keyboard
-             shortcuts (Ctrl+Home / Ctrl+← / Ctrl+→ / Ctrl+End) and disable
-             gracefully at the edges of the list. Position counter on the
-             right shows the user where they are. --}}
-        <div class="btn-group btn-group-sm me-2" role="group" aria-label="التنقل بين الأصناف">
-            <a href="{{ $nav['first'] ? route('admin.ingredients.show', $nav['first']) : '#' }}"
-               class="btn btn-outline-secondary {{ ! $nav['first'] || $nav['first'] == $ingredient->id ? 'disabled' : '' }}"
-               title="الأول (Ctrl+Home)" data-ing-nav="first">
-                <i class="bi bi-skip-backward-fill"></i>
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            {{-- Primary actions first — what the user is most likely here for. --}}
+            <a href="{{ route('admin.ingredients.edit', $ingredient) }}" class="btn btn-primary btn-sm">
+                <i class="bi bi-pencil"></i> تعديل
             </a>
-            <a href="{{ $nav['prev'] ? route('admin.ingredients.show', $nav['prev']) : '#' }}"
-               class="btn btn-outline-secondary {{ ! $nav['prev'] ? 'disabled' : '' }}"
-               title="السابق (Ctrl+→)" data-ing-nav="prev">
-                <i class="bi bi-chevron-right"></i> السابق
-            </a>
-            <span class="btn btn-outline-secondary disabled" style="cursor:default;">
+            <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#cardAdjust">
+                <i class="bi bi-arrow-down-up"></i> تسجيل حركة
+            </button>
+
+            {{-- Adjacent-ingredient navigation. Skip-to-first / skip-to-last
+                 are intentionally NOT here — they're keyboard-only (Ctrl+Home
+                 / Ctrl+End) because their filled-triangle icons read as heavy
+                 black squares next to lighter buttons. The position counter
+                 sits next to the group as plain text rather than a disabled
+                 button so it doesn't compete visually. --}}
+            <div class="vr d-none d-md-inline-block"></div>
+            <div class="btn-group btn-group-sm" role="group" aria-label="التنقل بين الأصناف">
+                <a href="{{ $nav['prev'] ? route('admin.ingredients.show', $nav['prev']) : '#' }}"
+                   class="btn btn-outline-secondary {{ ! $nav['prev'] ? 'disabled' : '' }}"
+                   title="السابق (Ctrl+→)" data-ing-nav="prev">
+                    <i class="bi bi-chevron-right"></i> السابق
+                </a>
+                <a href="{{ $nav['next'] ? route('admin.ingredients.show', $nav['next']) : '#' }}"
+                   class="btn btn-outline-secondary {{ ! $nav['next'] ? 'disabled' : '' }}"
+                   title="التالي (Ctrl+←)" data-ing-nav="next">
+                    التالي <i class="bi bi-chevron-left"></i>
+                </a>
+            </div>
+            <small class="text-muted fw-bold" dir="ltr">
                 {{ $nav['index'] }} / {{ $nav['total'] }}
-            </span>
-            <a href="{{ $nav['next'] ? route('admin.ingredients.show', $nav['next']) : '#' }}"
-               class="btn btn-outline-secondary {{ ! $nav['next'] ? 'disabled' : '' }}"
-               title="التالي (Ctrl+←)" data-ing-nav="next">
-                التالي <i class="bi bi-chevron-left"></i>
-            </a>
-            <a href="{{ $nav['last'] ? route('admin.ingredients.show', $nav['last']) : '#' }}"
-               class="btn btn-outline-secondary {{ ! $nav['last'] || $nav['last'] == $ingredient->id ? 'disabled' : '' }}"
-               title="الأخير (Ctrl+End)" data-ing-nav="last">
-                <i class="bi bi-skip-forward-fill"></i>
-            </a>
+            </small>
         </div>
-        <a href="{{ route('admin.ingredients.edit', $ingredient) }}" class="btn btn-primary btn-sm">
-            <i class="bi bi-pencil"></i> تعديل
-        </a>
-        <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#cardAdjust">
-            <i class="bi bi-arrow-down-up"></i> تسجيل حركة
-        </button>
     </x-slot:actions>
 </x-admin.breadcrumb>
 
