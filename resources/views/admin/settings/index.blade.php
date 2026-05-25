@@ -329,7 +329,9 @@
                                         <div class="setting-hint">مهم جداً للمطبخ والبار. إيقافه مناسب للديمو فقط.</div>
                                     </div>
                                 </div>
-                                @php($currentStage = $read('inventory_deduction_stage', config('restaurant.inventory.deduction_stage', 'approve')))
+                                @php
+                                    $currentStage = $read('inventory_deduction_stage', config('restaurant.inventory.deduction_stage', 'approve'));
+                                @endphp
                                 <div class="col-md-6">
                                     <label class="form-label fw-bold">لحظة خصم المكونات من المخزن</label>
                                     <select name="inventory_deduction_stage" class="form-select">
