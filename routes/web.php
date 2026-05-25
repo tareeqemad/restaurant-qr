@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\BrandAssetController;
 use App\Http\Controllers\OptimizedAssetController;
@@ -27,6 +28,14 @@ Route::middleware('guest')->group(function () {
     Route::post('/login', [LoginController::class, 'store'])
         ->middleware('throttle:5,1')
         ->name('login.store');
+
+    // Forgot-password (staff). The controller also enforces its own
+    // per-identifier + per-IP throttles so the SMS provider doesn't get
+    // hammered on a typo loop.
+    Route::get ('/forgot-password',  [ForgotPasswordController::class, 'show'])->name('password.request');
+    Route::post('/forgot-password',  [ForgotPasswordController::class, 'store'])
+        ->middleware('throttle:10,1')
+        ->name('password.email');
 });
 
 Route::post('/logout', [LoginController::class, 'destroy'])->middleware('auth')->name('logout');

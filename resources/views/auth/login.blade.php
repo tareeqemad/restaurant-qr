@@ -1,6 +1,6 @@
 @php
     $theme = \App\Support\ThemePalette::current();
-    $siteName = \App\Models\Setting::get('site_name', config('restaurant.name', 'Relax'));
+    $siteName = \App\Helpers\Brand::name();
 @endphp
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -632,10 +632,13 @@
                             </button>
                         </form>
 
-                        {{-- "نسيت كلمة المرور؟" link removed by request to keep
-                             the admin login card compact. The forgot-panel
-                             markup below is kept (inert) — re-add the trigger
-                             button here if the flow is needed again. --}}
+                        <div class="text-center mt-3">
+                            <a href="{{ route('password.request') }}"
+                               style="color: var(--muted); text-decoration: none; font-size: .9rem; font-weight: 700;">
+                                <i class="bi bi-question-circle"></i>
+                                نسيت كلمة المرور؟
+                            </a>
+                        </div>
                     </div>
 
                     {{-- Forgot password panel --}}

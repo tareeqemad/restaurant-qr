@@ -1,0 +1,165 @@
+<?php
+
+namespace App\Http\Controllers\Auth;
+
+use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
+use App\Models\User;
+use App\Services\SmsService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
+
+/**
+ * Forgot-password flow for staff (admins, cashiers, waiters…).
+ *
+ * Identifier-first, then SMS-delivered temporary password. We don't
+ * use OTPs here — the user explicitly asked for "easy new password
+ * delivered by SMS" so the flow is:
+ *
+ *   1. User submits phone (or username/email).
+ *   2. We look up the matching active staff account.
+ *   3. Generate a memorable-but-random 8-char password (no 0/O/1/l/I).
+ *   4. Hash and save it.
+ *   5. SMS the plaintext to the user's phone.
+ *
+ * Privacy: we always show a generic "if a matching account exists,
+ * an SMS was sent" message — never confirm whether the identifier
+ * actually resolved. This stops the page from being used as a
+ * "does X work here?" account-enumeration tool. The activity log
+ * captures the real outcome for admins to review.
+ *
+ * Rate limits:
+ *   - 1 reset per identifier per 60s (so a typo doesn't burn balance)
+ *   - 5 resets per IP per hour (mild abuse protection)
+ */
+class ForgotPasswordController extends Controller
+{
+    /** Characters we draw the temp password from. 0/O/1/l/I are
+     *  excluded because they look identical in many SMS fonts and
+     *  the user has to type the password back into the login form. */
+    protected const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+
+    protected const TEMP_LENGTH = 8;
+
+    public function show()
+    {
+        return view('auth.forgot-password');
+    }
+
+    public function store(Request $request, SmsService $sms)
+    {
+        $data = $request->validate([
+            'identifier' => ['required', 'string', 'max:120'],
+        ], [
+            'identifier.required' => 'أدخل رقم الجوال أو اسم المستخدم.',
+        ]);
+
+        $identifier = trim($data['identifier']);
+
+        // IP throttle first — cheaper than even looking up the user.
+        $ipKey = 'forgot-pw-ip:'.$request->ip();
+        if (RateLimiter::tooManyAttempts($ipKey, 5)) {
+            $seconds = RateLimiter::availableIn($ipKey);
+            return back()
+                ->withErrors(['identifier' => "تم تجاوز الحد المسموح. حاول بعد {$seconds} ثانية."])
+                ->withInput();
+        }
+
+        // Per-identifier throttle so retries don't spam SMS.
+        $idKey = 'forgot-pw-id:'.mb_strtolower($identifier);
+        if (RateLimiter::tooManyAttempts($idKey, 1)) {
+            $seconds = RateLimiter::availableIn($idKey);
+            return back()
+                ->withErrors(['identifier' => "أُرسلت رسالة لهذا الحساب مؤخراً. حاول بعد {$seconds} ثانية."])
+                ->withInput();
+        }
+
+        $user = $this->resolveUser($identifier);
+
+        // Hit the throttles regardless of whether the user was found —
+        // otherwise the response timing leaks enumeration data.
+        RateLimiter::hit($ipKey, 3600);
+        RateLimiter::hit($idKey, 60);
+
+        if (! $user || ! $user->canLogin() || empty($user->phone)) {
+            ActivityLog::log('forgot_password.miss', "محاولة استرجاع لـ '{$identifier}'", null, [
+                'identifier' => $identifier,
+                'ip'         => $request->ip(),
+            ]);
+            // Generic response regardless of outcome (anti-enumeration).
+            return back()->with('success', $this->successMessage());
+        }
+
+        $tempPassword = $this->generateTempPassword();
+
+        try {
+            $sms->send(
+                $user->phone,
+                $this->formatMessage($user, $tempPassword),
+                "forgot_password:user:{$user->id}"
+            );
+        } catch (\Throwable $e) {
+            ActivityLog::log('forgot_password.sms_failed', "فشل إرسال SMS للمستخدم #{$user->id}", $user, [
+                'error' => $e->getMessage(),
+            ]);
+            return back()->withErrors(['identifier' => $e->getMessage()])->withInput();
+        }
+
+        // Only persist the new password AFTER the SMS has gone out —
+        // otherwise a provider failure leaves the user locked out
+        // with a password they never received.
+        $user->update(['password' => Hash::make($tempPassword)]);
+
+        ActivityLog::log('forgot_password.sent', "إرسال كلمة مرور جديدة للمستخدم #{$user->id}", $user, [
+            'phone' => $user->phone,
+        ]);
+
+        return back()->with('success', $this->successMessage());
+    }
+
+    /**
+     * Match the submitted identifier against username, email, or phone.
+     * Phone comparison is digits-only on both sides so "+970 59…" and
+     * "0599…" resolve to the same row.
+     */
+    protected function resolveUser(string $identifier): ?User
+    {
+        if (str_contains($identifier, '@')) {
+            return User::where('email', $identifier)->first();
+        }
+
+        $digits = preg_replace('/\D+/', '', $identifier) ?? '';
+        if ($digits !== '' && strlen($digits) >= 8) {
+            $user = User::where('phone', $identifier)
+                ->orWhere('phone', $digits)
+                ->first();
+            if ($user) return $user;
+        }
+
+        return User::where('username', $identifier)->first();
+    }
+
+    protected function generateTempPassword(): string
+    {
+        $alphabet = self::ALPHABET;
+        $max = strlen($alphabet) - 1;
+        $out = '';
+        for ($i = 0; $i < self::TEMP_LENGTH; $i++) {
+            $out .= $alphabet[random_int(0, $max)];
+        }
+        return $out;
+    }
+
+    protected function formatMessage(User $user, string $password): string
+    {
+        $brand = \App\Helpers\Brand::name();
+        $loginUrl = route('login');
+        return "{$brand}\nYour account password has been changed.\nNew password: {$password}\nLogin: {$loginUrl}";
+    }
+
+    protected function successMessage(): string
+    {
+        return 'إذا كان الحساب موجوداً، تم إرسال كلمة مرور جديدة عبر SMS لرقم الجوال المسجل.';
+    }
+}

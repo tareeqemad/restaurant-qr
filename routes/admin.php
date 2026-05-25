@@ -279,6 +279,14 @@ Route::middleware(['auth', 'admin', 'branch'])->group(function () {
     Route::get('cashier/invoice/{invoice}/pdf', [Admin\CashierController::class, 'pdf'])->name('cashier.pdf');
     Route::get('cashier/invoice/{invoice}/print', [Admin\CashierController::class, 'print'])->name('cashier.print');
 
+    // Pending bank transfers — waiter claims, cashier verifies
+    Route::post('waiter-orders/{session}/transfer', [Admin\PendingTransferController::class, 'store'])->name('waiter-orders.transfer.store');
+    Route::get('cashier/transfers', [Admin\PendingTransferController::class, 'queue'])->name('cashier.transfers.queue');
+    Route::post('cashier/transfers/{transfer}/verify', [Admin\PendingTransferController::class, 'verify'])->name('cashier.transfers.verify');
+    Route::post('cashier/transfers/{transfer}/reject', [Admin\PendingTransferController::class, 'reject'])->name('cashier.transfers.reject');
+    Route::post('cashier/transfers/{transfer}/reopen', [Admin\PendingTransferController::class, 'reopen'])->name('cashier.transfers.reopen');
+    Route::get('cashier/transfers/report', [Admin\PendingTransferController::class, 'report'])->name('cashier.transfers.report');
+
     // Shifts
     Route::resource('shifts', Admin\ShiftController::class)->only(['index','store']);
     Route::post('shifts/{shift}/close', [Admin\ShiftController::class, 'close'])->name('shifts.close');
@@ -350,6 +358,7 @@ Route::middleware(['auth', 'admin', 'branch'])->group(function () {
     Route::get('settings', [Admin\SettingController::class, 'index'])->name('settings.index');
     Route::put('settings', [Admin\SettingController::class, 'update'])->name('settings.update');
     Route::post('settings/reset-theme', [Admin\SettingController::class, 'resetTheme'])->name('settings.reset-theme');
+    Route::post('settings/sms/test',    [Admin\SettingController::class, 'testSms'])->name('settings.sms.test');
     Route::post('settings/brand', [Admin\SettingController::class, 'updateBrand'])->name('settings.brand.update');
     Route::delete('settings/brand/{key}', [Admin\SettingController::class, 'deleteBrand'])->name('settings.brand.delete');
 

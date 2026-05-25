@@ -1,5 +1,5 @@
 @php
-    $restaurantName = \App\Models\Setting::get('site_name', config('restaurant.name', 'Relax'));
+    $restaurantName = \App\Helpers\Brand::name();
     $logo = asset('default_logo.png');
     $branchName = $table->branch?->name ?: 'الفرع الرئيسي';
     $zoneLabel = $table->zone?->label;

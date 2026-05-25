@@ -268,7 +268,7 @@
     </div>
 
     @php
-        $brandName = \App\Models\Setting::get('site_name', config('restaurant.name', 'Relax'));
+        $brandName = \App\Helpers\Brand::name();
     @endphp
     <div class="error-footer">
         <img src="{{ \App\Helpers\Brand::logoUrl() }}" alt="{{ $brandName }}">

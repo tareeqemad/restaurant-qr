@@ -1,5 +1,5 @@
 @php
-    $siteName = \App\Models\Setting::get('site_name', config('restaurant.name', 'Relax'));
+    $siteName = \App\Helpers\Brand::name();
     $u = auth()->user();
     $avatarUrl = $u?->avatar_url ?: \App\Helpers\Brand::defaultAvatarDataUri();
 

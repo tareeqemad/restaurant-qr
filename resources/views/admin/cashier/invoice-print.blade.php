@@ -26,7 +26,7 @@ hr { border: 0; border-top: 1px dashed #333; margin: .5rem 0; }
     $originLabel = $invoice->tableSession
         ? 'طاولة '.($invoice->tableSession?->table?->number ?? '—')
         : (($invoice->order?->order_type === 'delivery' ? 'دليفري' : 'استلام/سفري').' - '.($invoice->order?->sourceLabel() ?? 'طلب مباشر'));
-    $siteName = \App\Models\Setting::get('site_name', config('restaurant.name'));
+    $siteName = \App\Helpers\Brand::name();
     $legalName = \App\Models\Setting::get('legal_name');
     $taxNumber = \App\Models\Setting::get('tax_number');
     $currencySymbol = \App\Models\Setting::get('currency_symbol', config('restaurant.currency_symbol'));

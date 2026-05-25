@@ -25,7 +25,7 @@ class ProfitLossPdf
             : 'كل الفروع';
 
         $brand = [
-            'name'     => Setting::get('site_name', config('restaurant.name', 'Relax')),
+            'name'     => \App\Helpers\Brand::name(),
             'currency' => Setting::get('currency_symbol', config('restaurant.currency_symbol', '₪')),
             'logo'     => Setting::get('brand_logo'),
             'tax'      => Setting::get('tax_number'),

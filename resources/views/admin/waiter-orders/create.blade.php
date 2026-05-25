@@ -359,6 +359,98 @@
                 @endif
             </div>
         </div>
+
+        {{-- Bank-transfer claim — visible once the session has at least
+             one submitted order. The customer paid from their banking
+             app and showed the waiter; the cashier confirms later in
+             the bank's own dashboard. --}}
+        @php
+            $sessionOrdersCount = $session->orders()->count();
+            $sessionTotalGuess = $session->orders()->sum('total');
+        @endphp
+        @if($sessionOrdersCount > 0)
+            <div class="card mb-3 border-info">
+                <div class="card-header bg-info-transparent">
+                    <i class="bi bi-bank text-info"></i>
+                    <strong>دفع بتحويل بنكي</strong>
+                </div>
+                <div class="card-body">
+                    <small class="text-muted d-block mb-2">
+                        الزبون حوّل المبلغ على حساب المطعم من تطبيق البنك.
+                        أدخل التفاصيل وسيظهر للكاشير للتأكد من البنك.
+                    </small>
+                    <button type="button" class="btn btn-info w-100"
+                            data-bs-toggle="modal" data-bs-target="#transferModal">
+                        <i class="bi bi-cash-coin"></i> تسجيل تحويل
+                    </button>
+                </div>
+            </div>
+
+            <div class="modal fade" id="transferModal" tabindex="-1">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <form action="{{ route('admin.waiter-orders.transfer.store', $session) }}" method="POST">
+                            @csrf
+                            <div class="modal-header">
+                                <h5 class="modal-title">
+                                    <i class="bi bi-bank"></i> تسجيل تحويل — طاولة {{ $table->number }}
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold">
+                                        المبلغ المحوّل <span class="text-danger">*</span>
+                                    </label>
+                                    <input type="number" step="0.01" min="0.01" name="amount"
+                                           class="form-control" required
+                                           value="{{ number_format((float) $sessionTotalGuess, 2, '.', '') }}">
+                                    <small class="text-muted">
+                                        المجموع الحالي للجلسة كاقتراح — عدّله إذا الزبون حوّل مبلغ مختلف.
+                                    </small>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold">
+                                        اسم المحوّل (كما يظهر في كشف البنك) <span class="text-danger">*</span>
+                                    </label>
+                                    <input type="text" name="sender_name" class="form-control" required maxlength="120"
+                                           placeholder="مثلاً: محمد علي">
+                                    <small class="text-muted">
+                                        قد يكون الزبون أو شخص حوّل بدلاً منه (والد، صديق…).
+                                    </small>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">رقم جوال الزبون (لو زبون دائم)</label>
+                                    <input type="text" name="customer_phone" class="form-control" dir="ltr"
+                                           maxlength="32" placeholder="0599…"
+                                           value="{{ $session->customer_phone }}">
+                                    <small class="text-muted">
+                                        اختياري — لو موجود في قاعدة الزبائن، يظهر اسمه للكاشير.
+                                    </small>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">اسم الزبون (لو walk-in)</label>
+                                    <input type="text" name="customer_name" class="form-control" maxlength="120"
+                                           value="{{ $session->customer_name }}"
+                                           placeholder="اسم الزبون لو مش مسجل بقاعدة البيانات">
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label">ملاحظات</label>
+                                    <textarea name="notes" rows="2" class="form-control" maxlength="500"
+                                              placeholder="اختياري — أي تفصيل يساعد الكاشير"></textarea>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-light" data-bs-dismiss="modal">إلغاء</button>
+                                <button class="btn btn-info">
+                                    <i class="bi bi-send-check"></i> أرسل للكاشير للتأكيد
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        @endif
     </div>
 </div>
 @endsection

@@ -3,7 +3,7 @@
 @section('content')
 
 @php
-    $restaurantName = \App\Models\Setting::get('site_name', config('restaurant.name'));
+    $restaurantName = \App\Helpers\Brand::name();
     $restaurantLogoUrl = \App\Helpers\Brand::logoUrl();
     $tableNumber = $session->table->number ?? '—';
     $branchName = $session->table?->branch?->name;

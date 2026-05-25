@@ -15,7 +15,7 @@
      breadcrumb sits inside the admin chrome that we hide. --}}
 <div class="eod-print-header d-none">
     <div class="eod-print-brand">
-        <strong>{{ \App\Models\Setting::get('site_name', 'المطعم') }}</strong>
+        <strong>{{ \App\Helpers\Brand::name() }}</strong>
     </div>
     <div class="eod-print-title">تقرير نهاية اليوم</div>
     <div class="eod-print-date">التاريخ: {{ $date }}</div>

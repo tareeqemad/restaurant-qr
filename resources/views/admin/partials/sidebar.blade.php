@@ -1,5 +1,5 @@
 @php
-    $siteName = \App\Models\Setting::get('site_name', config('restaurant.name', 'Relax'));
+    $siteName = \App\Helpers\Brand::name();
     $u = auth()->user();
     $isActive = fn($routes) => request()->routeIs($routes) ? 'active' : '';
     $isOpen   = fn($routes) => request()->routeIs($routes) ? 'open'   : '';
@@ -318,7 +318,19 @@
                     </a>
                     <ul class="slide-menu child2">
                         @if($canCashier)
-                            <li class="slide"><a href="{{ route('admin.cashier.index') }}" class="side-menu__item {{ $isActive('admin.cashier.*') }}"><i class="bi bi-cash-stack submenu-icon"></i>الكاشير</a></li>
+                            @php
+                                $pendingTransfers = $sidebarBadges['pending_transfers'] ?? 0;
+                            @endphp
+                            <li class="slide"><a href="{{ route('admin.cashier.index') }}" class="side-menu__item {{ $isActive('admin.cashier.index') }}"><i class="bi bi-cash-stack submenu-icon"></i>الكاشير</a></li>
+                            <li class="slide">
+                                <a href="{{ route('admin.cashier.transfers.queue') }}" class="side-menu__item {{ $isActive('admin.cashier.transfers.*') }}">
+                                    <i class="bi bi-bank submenu-icon"></i>
+                                    تحويلات بانتظار
+                                    @if($pendingTransfers > 0)
+                                        <span class="badge bg-warning text-dark ms-auto">{{ $pendingTransfers }}</span>
+                                    @endif
+                                </a>
+                            </li>
                         @endif
                         @if($canAccounting)
                             <li class="slide"><a href="{{ route('admin.accounting.trial-balance') }}" class="side-menu__item {{ $isActive('admin.accounting.trial-balance') }}"><i class="bi bi-columns-gap submenu-icon"></i>ميزان المراجعة</a></li>

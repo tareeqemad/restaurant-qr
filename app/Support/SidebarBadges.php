@@ -6,6 +6,7 @@ use App\Enums\ReservationStatus;
 use App\Models\Attendance;
 use App\Models\Expense;
 use App\Models\Order;
+use App\Models\PendingTransfer;
 use App\Models\Reservation;
 use Illuminate\Support\Facades\Cache;
 
@@ -25,7 +26,7 @@ use Illuminate\Support\Facades\Cache;
 class SidebarBadges
 {
     /**
-     * @return array{open_attendance:int, pending_reservations:int, pending_orders:int, pending_expenses:int}
+     * @return array{open_attendance:int, pending_reservations:int, pending_orders:int, pending_expenses:int, pending_transfers:int}
      */
     public static function counts(): array
     {
@@ -38,6 +39,7 @@ class SidebarBadges
                 'pending_reservations' => self::safeCount(fn () => Reservation::withStatus(ReservationStatus::Pending)->count()),
                 'pending_orders'       => self::safeCount(fn () => Order::where('status', 'pending')->count()),
                 'pending_expenses'     => self::safeCount(fn () => Expense::pending()->count()),
+                'pending_transfers'    => self::safeCount(fn () => PendingTransfer::pending()->count()),
             ];
         });
     }

@@ -20,6 +20,14 @@ Route::middleware('guest:customer')->group(function () {
     Route::get   ('/register', [Portal\AuthController::class, 'showRegister'])->name('portal.register');
     Route::post  ('/register', [Portal\AuthController::class, 'register'])
         ->middleware('throttle:10,1');
+
+    // Forgot-password (customer). Controller enforces per-phone +
+    // per-IP throttles in addition to this route-level throttle so
+    // SMS balance is protected against retries.
+    Route::get   ('/forgot-password', [Portal\ForgotPasswordController::class, 'show'])->name('portal.password.request');
+    Route::post  ('/forgot-password', [Portal\ForgotPasswordController::class, 'store'])
+        ->middleware('throttle:10,1')
+        ->name('portal.password.email');
 });
 
 // Authenticated portal

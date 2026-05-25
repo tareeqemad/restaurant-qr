@@ -13,16 +13,44 @@ class SettingController extends Controller
     {
         abort_unless(auth()->user()->hasAnyRole(['super_admin', 'admin', 'manager']), 403);
         return view('admin.settings.index', [
-            'defaults'   => config('restaurant.theme'),
-            'currencies' => \App\Models\Currency::orderBy('display_order')->orderBy('code')->get(),
+            'defaults'      => config('restaurant.theme'),
+            'currencies'    => \App\Models\Currency::orderBy('display_order')->orderBy('code')->get(),
+            'cappableRoles' => $this->cappableRoles(),
         ]);
+    }
+
+    /**
+     * Roles that can have a discount cap configured. Owner-level roles
+     * (super_admin / partner / admin) are excluded — they're treated as
+     * uncapped in OrderDiscountService and showing them here would be
+     * misleading. Every other role, system-defined or branch-custom,
+     * appears so the admin can set 0 (= no discount) for roles like
+     * chef/bartender that don't apply discounts in practice.
+     */
+    protected function cappableRoles()
+    {
+        return \App\Models\Role::query()
+            ->whereNotIn('name', ['super_admin', 'partner', 'admin'])
+            ->orderBy('display_order')
+            ->orderBy('name')
+            ->get(['id', 'name', 'label']);
     }
 
     public function update(Request $request)
     {
         abort_unless(auth()->user()->hasAnyRole(['super_admin', 'admin']), 403);
 
-        $data = $request->validate([
+        // Build discount-cap rules dynamically from the roles table so a
+        // role added later in /admin/roles gets validation automatically.
+        // Each role contributes _pct (0..100) and _fixed (>= 0) keys.
+        $cappableRoles = $this->cappableRoles();
+        $dynamicRules  = [];
+        foreach ($cappableRoles as $role) {
+            $dynamicRules['discount_cap_'.$role->name.'_pct']   = ['sometimes', 'numeric', 'min:0', 'max:100'];
+            $dynamicRules['discount_cap_'.$role->name.'_fixed'] = ['sometimes', 'numeric', 'min:0'];
+        }
+
+        $data = $request->validate(array_merge($dynamicRules, [
             'site_name' => ['required', 'string', 'max:120'],
             'legal_name' => ['nullable', 'string', 'max:160'],
             'tax_number' => ['nullable', 'string', 'max:80'],
@@ -56,20 +84,38 @@ class SettingController extends Controller
             'theme_menu' => ['nullable', 'regex:/^#[0-9a-fA-F]{6}$/'],
             'theme_header_style' => ['nullable', 'in:light,dark,color'],
             'theme_menu_style' => ['nullable', 'in:light,dark,brand'],
-            // Discount caps per role — admins can tune the per-role
-            // ceiling (max % and max fixed amount) without redeploying.
-            'discount_cap_cashier_pct'   => ['sometimes', 'numeric', 'min:0', 'max:100'],
-            'discount_cap_cashier_fixed' => ['sometimes', 'numeric', 'min:0'],
-            'discount_cap_waiter_pct'    => ['sometimes', 'numeric', 'min:0', 'max:100'],
-            'discount_cap_waiter_fixed'  => ['sometimes', 'numeric', 'min:0'],
-            'discount_cap_manager_pct'   => ['sometimes', 'numeric', 'min:0', 'max:100'],
-            'discount_cap_manager_fixed' => ['sometimes', 'numeric', 'min:0'],
+            // Discount caps per role — see $dynamicRules above. Validation
+            // is generated from the roles table so any custom role added
+            // in /admin/roles automatically gets its own cap fields.
             // Prep-time buffer: extra % piled on top of max(item prep_time)
             // when computing the customer-facing ETA + the kitchen's
             // "should be ready by" stamp. 20% is the rule-of-thumb default;
             // capped at 200 so a typo can't quote "ready in 4 hours".
             'prep_time_buffer_pct' => ['sometimes', 'integer', 'min:0', 'max:200'],
-        ]);
+            // SMS provider (TweetSMS by default). Credentials are stored
+            // in the settings table; the password is encrypted with
+            // Laravel's Crypt facade before write so a DB leak doesn't
+            // expose the provider account. An empty password on submit
+            // means "keep the existing one" — the form pre-fills with a
+            // masked placeholder for that reason.
+            'sms_enabled'   => ['sometimes', 'boolean'],
+            'sms_provider'  => ['nullable', 'string', 'max:40'],
+            'sms_api_url'   => ['nullable', 'url', 'max:255'],
+            'sms_username'  => ['nullable', 'string', 'max:120'],
+            'sms_password'  => ['nullable', 'string', 'max:200'],
+            'sms_sender'    => ['nullable', 'string', 'max:40'],
+        ]));
+
+        // Encrypt the SMS password before persisting. An empty submit
+        // keeps the existing value — otherwise editing any other field
+        // would wipe the password every time.
+        if (array_key_exists('sms_password', $data)) {
+            if ($data['sms_password'] === null || $data['sms_password'] === '') {
+                unset($data['sms_password']);
+            } else {
+                $data['sms_password'] = \Illuminate\Support\Facades\Crypt::encryptString($data['sms_password']);
+            }
+        }
 
         $meta = [
             'site_name' => ['general', 'string'],
@@ -96,14 +142,21 @@ class SettingController extends Controller
             'theme_menu' => ['theme', 'string'],
             'theme_header_style' => ['theme', 'string'],
             'theme_menu_style' => ['theme', 'string'],
-            'discount_cap_cashier_pct'   => ['discounts', 'float'],
-            'discount_cap_cashier_fixed' => ['discounts', 'float'],
-            'discount_cap_waiter_pct'    => ['discounts', 'float'],
-            'discount_cap_waiter_fixed'  => ['discounts', 'float'],
-            'discount_cap_manager_pct'   => ['discounts', 'float'],
-            'discount_cap_manager_fixed' => ['discounts', 'float'],
+            // discount_cap_{role}_* meta is injected from $cappableRoles
+            // right after this array — same dynamic source as the rules.
             'prep_time_buffer_pct'       => ['general', 'int'],
+            'sms_enabled'                => ['sms', 'bool'],
+            'sms_provider'               => ['sms', 'string'],
+            'sms_api_url'                => ['sms', 'string'],
+            'sms_username'               => ['sms', 'string'],
+            'sms_password'               => ['sms', 'string'],
+            'sms_sender'                 => ['sms', 'string'],
         ];
+
+        foreach ($cappableRoles as $role) {
+            $meta['discount_cap_'.$role->name.'_pct']   = ['discounts', 'float'];
+            $meta['discount_cap_'.$role->name.'_fixed'] = ['discounts', 'float'];
+        }
 
         $clearable = ['legal_name', 'tax_number', 'receipt_footer'];
 
@@ -120,6 +173,23 @@ class SettingController extends Controller
         }
 
         return back()->with('success', 'تم الحفظ');
+    }
+
+    /**
+     * Ping the SMS provider with the saved credentials and report
+     * back. Cheapest correct-config proof: a `chk_balance` call.
+     * Returns the balance as text so the admin sees a non-zero
+     * number — a successful auth + healthy account in one round-trip.
+     */
+    public function testSms(\App\Services\SmsService $sms)
+    {
+        abort_unless(auth()->user()->hasAnyRole(['super_admin', 'admin']), 403);
+        try {
+            $balance = $sms->balance();
+            return back()->with('success', "تم الاتصال بنجاح. الرصيد المتاح: {$balance}");
+        } catch (\Throwable $e) {
+            return back()->with('error', $e->getMessage());
+        }
     }
 
     public function resetTheme(Request $request)

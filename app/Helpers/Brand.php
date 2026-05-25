@@ -20,6 +20,23 @@ use Illuminate\Support\Facades\Storage;
  */
 class Brand
 {
+    /**
+     * Single source of truth for the restaurant name everywhere it is
+     * displayed (header, sidebar, SMS, PDF invoices, error pages…).
+     *
+     * Resolution chain:
+     *   1. settings.site_name  (set from /admin/settings — admin overrideable)
+     *   2. config('restaurant.name')  (env RESTAURANT_NAME, default 'مطعم QR')
+     *
+     * No further hardcoded fallback — the config layer already guarantees a
+     * non-empty string via its own default. Centralising here means a brand
+     * rename only needs to touch the settings row.
+     */
+    public static function name(): string
+    {
+        return (string) Setting::get('site_name', config('restaurant.name'));
+    }
+
     /** URL of the uploaded brand logo, or the default restaurant logo. */
     public static function logoUrl(): string
     {
@@ -93,7 +110,7 @@ class Brand
      */
     public static function defaultMonogramDataUri(bool $square = false): string
     {
-        $name = (string) Setting::get('site_name', config('restaurant.name', 'Relax'));
+        $name = static::name();
         $letter = mb_substr(trim($name) !== '' ? trim($name) : '?', 0, 1, 'UTF-8');
         // SVG attribute can't contain literal &, <, >, ", ' — escape defensively.
         $letterSafe = htmlspecialchars($letter, ENT_QUOTES | ENT_XML1, 'UTF-8');

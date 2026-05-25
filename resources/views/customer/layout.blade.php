@@ -1,6 +1,6 @@
 @php
     $theme = \App\Support\ThemePalette::current();
-    $brandName = \App\Models\Setting::get('site_name', config('restaurant.name', 'Relax'));
+    $brandName = \App\Helpers\Brand::name();
 @endphp
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">

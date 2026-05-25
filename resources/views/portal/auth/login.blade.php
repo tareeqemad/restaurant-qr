@@ -1,6 +1,6 @@
 @php
     $theme = \App\Support\ThemePalette::current();
-    $siteName = \App\Models\Setting::get('site_name', config('restaurant.name', 'Relax'));
+    $siteName = \App\Helpers\Brand::name();
 @endphp
 <!DOCTYPE html>
 {{--
@@ -638,6 +638,14 @@
                         <div class="signup-row">
                             <span>ليس لديك حساب؟</span>
                             <a href="{{ route('portal.register') }}">أنشئ حسابك الآن</a>
+                        </div>
+
+                        <div class="text-center" style="margin-top: .75rem;">
+                            <a href="{{ route('portal.password.request') }}"
+                               style="color: var(--muted-2); text-decoration: none; font-size: .9rem; font-weight: 700;">
+                                <i class="bi bi-question-circle"></i>
+                                نسيت كلمة المرور؟
+                            </a>
                         </div>
                     </div>
 

@@ -172,6 +172,7 @@
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-billing"><i class="bi bi-receipt"></i> الفوترة</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-operations"><i class="bi bi-sliders"></i> التشغيل</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-discounts"><i class="bi bi-percent"></i> الخصومات</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-sms"><i class="bi bi-chat-dots"></i> الرسائل النصية</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-brand"><i class="bi bi-image"></i> الشعار</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-theme"><i class="bi bi-palette"></i> الهوية</a></li>
             <li class="nav-item">
@@ -425,36 +426,125 @@
                             @php
                                 $caps = config('restaurant.discounts.caps', []);
                                 $currency = \App\Models\Setting::get('currency_symbol', config('restaurant.currency_symbol', '₪'));
-                                $roleLabels = ['cashier' => 'الكاشير', 'waiter' => 'الجرسون', 'manager' => 'مدير الفرع'];
                             @endphp
 
-                            <div class="row g-3">
-                                @foreach($roleLabels as $role => $label)
-                                    @php $defaults = $caps[$role] ?? ['percent' => 0, 'fixed' => 0]; @endphp
-                                    <div class="col-md-4">
-                                        <div class="card border" style="background:#fafdfa; border-color:#d6eadc !important;">
-                                            <div class="card-body">
-                                                <h6 class="fw-bold mb-3" style="color:#14532d;">
-                                                    <i class="bi bi-person-badge"></i> {{ $label }}
-                                                </h6>
-                                                <div class="mb-3">
-                                                    <label class="form-label small">حد النسبة (%)</label>
-                                                    <input type="number" min="0" max="100" step="0.5"
-                                                           name="discount_cap_{{ $role }}_pct"
-                                                           class="form-control"
-                                                           value="{{ $read('discount_cap_'.$role.'_pct', $defaults['percent']) }}">
-                                                </div>
-                                                <div class="mb-0">
-                                                    <label class="form-label small">حد المبلغ الثابت ({{ $currency }})</label>
-                                                    <input type="number" min="0" step="0.01"
-                                                           name="discount_cap_{{ $role }}_fixed"
-                                                           class="form-control"
-                                                           value="{{ $read('discount_cap_'.$role.'_fixed', $defaults['fixed']) }}">
+                            @if($cappableRoles->isEmpty())
+                                <div class="alert alert-warning mb-0">
+                                    <i class="bi bi-exclamation-triangle"></i>
+                                    لا توجد أدوار قابلة لتحديد سقف. أضف أدواراً من
+                                    <a href="{{ route('admin.roles.index') }}">شاشة الأدوار</a> أولاً.
+                                </div>
+                            @else
+                                <div class="row g-3">
+                                    @foreach($cappableRoles as $role)
+                                        @php
+                                            $label = $role->label ?: $role->name;
+                                            $defaults = $caps[$role->name] ?? ['percent' => 0, 'fixed' => 0];
+                                        @endphp
+                                        <div class="col-md-4">
+                                            <div class="card border" style="background:#fafdfa; border-color:#d6eadc !important;">
+                                                <div class="card-body">
+                                                    <h6 class="fw-bold mb-3" style="color:#14532d;">
+                                                        <i class="bi bi-person-badge"></i> {{ $label }}
+                                                        @unless($role->is_system)
+                                                            <span class="badge bg-info-transparent text-info ms-1 fs-11">دور مخصّص</span>
+                                                        @endunless
+                                                    </h6>
+                                                    <div class="mb-3">
+                                                        <label class="form-label small">حد النسبة (%)</label>
+                                                        <input type="number" min="0" max="100" step="0.5"
+                                                               name="discount_cap_{{ $role->name }}_pct"
+                                                               class="form-control"
+                                                               value="{{ $read('discount_cap_'.$role->name.'_pct', $defaults['percent']) }}">
+                                                    </div>
+                                                    <div class="mb-0">
+                                                        <label class="form-label small">حد المبلغ الثابت ({{ $currency }})</label>
+                                                        <input type="number" min="0" step="0.01"
+                                                               name="discount_cap_{{ $role->name }}_fixed"
+                                                               class="form-control"
+                                                               value="{{ $read('discount_cap_'.$role->name.'_fixed', $defaults['fixed']) }}">
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
+                                    @endforeach
+                                </div>
+                                <div class="mt-3">
+                                    <small class="text-muted">
+                                        <i class="bi bi-info-circle"></i>
+                                        ضع <strong>0</strong> لكلا الحقلين لأي دور لا يحتاج خصم (مثلاً المطبخ/البار).
+                                        أي دور مخصّص تضيفه من <a href="{{ route('admin.roles.index') }}">شاشة الأدوار</a> رح يظهر هنا تلقائياً.
+                                    </small>
+                                </div>
+                            @endif
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-pane fade" id="tab-sms">
+                    <div class="settings-card card">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="bi bi-chat-dots text-accent"></i> إعدادات الرسائل النصية (TweetSMS)</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="alert bg-primary-transparent border-0 mb-3">
+                                <i class="bi bi-info-circle"></i>
+                                هذه الإعدادات تستخدم لإرسال SMS عند نسيان كلمة المرور والتنبيهات للزبائن/الموظفين.
+                                كلمة المرور تُحفظ مشفّرة في قاعدة البيانات. لتجربة الاتصال بعد الحفظ، اضغط "اختبر الاتصال"
+                                ويتم استعلام رصيد حسابك في TweetSMS.
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-md-3 d-flex align-items-end">
+                                    <div class="form-check form-switch">
+                                        <input type="hidden" name="sms_enabled" value="0">
+                                        <input type="checkbox" id="sms_enabled" name="sms_enabled" value="1" class="form-check-input"
+                                            @checked($checked('sms_enabled', false))>
+                                        <label for="sms_enabled" class="form-check-label fw-bold">تفعيل خدمة الرسائل</label>
                                     </div>
-                                @endforeach
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">المزود</label>
+                                    <input name="sms_provider" class="form-control" maxlength="40"
+                                           value="{{ $read('sms_provider', 'tweetsms') }}" placeholder="tweetsms">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">رابط API</label>
+                                    <input name="sms_api_url" class="form-control" maxlength="255" dir="ltr"
+                                           value="{{ $read('sms_api_url', 'http://www.tweetsms.ps/api.php') }}"
+                                           placeholder="http://www.tweetsms.ps/api.php">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">اسم المستخدم</label>
+                                    <input name="sms_username" class="form-control" maxlength="120" dir="ltr"
+                                           value="{{ $read('sms_username') }}" autocomplete="off">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">كلمة المرور</label>
+                                    <input type="password" name="sms_password" class="form-control" maxlength="200" dir="ltr"
+                                           autocomplete="new-password"
+                                           placeholder="{{ \App\Models\Setting::get('sms_password') ? '••••••••••••' : '' }}">
+                                    <div class="setting-hint mt-1">
+                                        اتركها فارغة للإبقاء على الحالية. تعبئتها تستبدلها (تُحفظ مشفّرة).
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">اسم المرسل (Sender ID)</label>
+                                    <input name="sms_sender" class="form-control" maxlength="40" dir="ltr"
+                                           value="{{ $read('sms_sender') }}" placeholder="مثلاً: Relax">
+                                    <div class="setting-hint mt-1">
+                                        اسم المرسل المعتمد لدى TweetSMS — لازم يكون مفعّل على حسابك.
+                                    </div>
+                                </div>
+                                <div class="col-12">
+                                    <button type="button" class="btn btn-outline-primary btn-sm"
+                                            onclick="document.getElementById('smsTestForm').submit()"
+                                            @disabled(!$canEditSettings)>
+                                        <i class="bi bi-broadcast"></i> اختبر الاتصال (استعلام الرصيد)
+                                    </button>
+                                    <small class="text-muted ms-2">
+                                        احفظ التعديلات أولاً قبل الاختبار، عشان الاختبار يستخدم الإعدادات المخزّنة.
+                                    </small>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -749,6 +839,7 @@
         </div>
 
         <form id="resetThemeForm" action="{{ route('admin.settings.reset-theme') }}" method="POST" class="d-none">@csrf</form>
+        <form id="smsTestForm" action="{{ route('admin.settings.sms.test') }}" method="POST" class="d-none">@csrf</form>
         <form id="del-logo" method="POST" action="{{ route('admin.settings.brand.delete', 'brand_logo') }}" class="d-none">@csrf @method('DELETE')</form>
         <form id="del-favicon" method="POST" action="{{ route('admin.settings.brand.delete', 'brand_favicon') }}" class="d-none">@csrf @method('DELETE')</form>
     </div>
@@ -758,7 +849,7 @@
     (function () {
         function initSettingsPage() {
         const saveRow = document.getElementById('settingsSaveRow');
-        const mainTabs = ['#tab-general', '#tab-billing', '#tab-operations', '#tab-discounts', '#tab-theme'];
+        const mainTabs = ['#tab-general', '#tab-billing', '#tab-operations', '#tab-discounts', '#tab-sms', '#tab-theme'];
         const root = document.documentElement;
         const colorFields = {
             theme_primary: '#164c37',
