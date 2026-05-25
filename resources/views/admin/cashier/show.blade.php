@@ -109,7 +109,11 @@
                         <div class="mb-2"><label class="form-label">المبلغ</label><input type="number" step="0.01" name="amount" value="{{ $inv->balance }}" class="form-control" required></div>
                         <div class="mb-2"><label class="form-label">طريقة الدفع</label>
                             <select name="method" class="form-select" required>
-                                <option value="cash">نقدا</option><option value="card">فيزا</option><option value="transfer">تحويل بنكي</option>
+                                @foreach(\App\Support\PaymentMethods::catalog() as $code => $meta)
+                                    @if($meta['enabled'])
+                                        <option value="{{ $code }}">{{ $meta['label'] }}</option>
+                                    @endif
+                                @endforeach
                             </select>
                         </div>
                         <div class="mb-2"><input name="reference" class="form-control" placeholder="رقم المرجع (اختياري)"></div>

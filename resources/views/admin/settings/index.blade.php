@@ -172,6 +172,7 @@
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-billing"><i class="bi bi-receipt"></i> الفوترة</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-operations"><i class="bi bi-sliders"></i> التشغيل</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-discounts"><i class="bi bi-percent"></i> الخصومات</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-statuses"><i class="bi bi-flag"></i> حالات الطلب</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-sms"><i class="bi bi-chat-dots"></i> الرسائل النصية</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-brand"><i class="bi bi-image"></i> الشعار</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-theme"><i class="bi bi-palette"></i> الهوية</a></li>
@@ -274,6 +275,34 @@
                                     <textarea name="receipt_footer" class="form-control" rows="2" maxlength="500"
                                         placeholder="مثلاً: شكراً لزيارتكم، نتمنى لكم يوماً سعيداً">{{ $read('receipt_footer', 'شكراً لزيارتكم') }}</textarea>
                                 </div>
+
+                                {{-- ─── Payment methods toggles ──────────────── --}}
+                                <div class="col-12">
+                                    <hr class="my-2">
+                                    <h6 class="text-muted mb-1">
+                                        <i class="bi bi-credit-card"></i> طرق الدفع المسموح بها
+                                    </h6>
+                                    <div class="setting-hint mb-2">
+                                        فعّل فقط الطرق التي تقبلها فعلاً. تظهر للكاشير فقط الطرق المفعّلة هنا.
+                                    </div>
+                                </div>
+                                @foreach(\App\Support\PaymentMethods::catalog() as $code => $meta)
+                                    <div class="col-md-4 col-sm-6">
+                                        <div class="form-check form-switch p-3 border rounded"
+                                             style="background:#fafdfa; border-color:#d6eadc !important;">
+                                            <input type="hidden" name="{{ \App\Support\PaymentMethods::settingKey($code) }}" value="0">
+                                            <input type="checkbox"
+                                                   id="pm_{{ $code }}"
+                                                   name="{{ \App\Support\PaymentMethods::settingKey($code) }}"
+                                                   value="1" class="form-check-input"
+                                                   @checked($meta['enabled'])>
+                                            <label for="pm_{{ $code }}" class="form-check-label fw-bold">
+                                                <i class="bi {{ $meta['icon'] }} text-accent"></i>
+                                                {{ $meta['label'] }}
+                                            </label>
+                                        </div>
+                                    </div>
+                                @endforeach
                             </div>
                         </div>
                     </div>
@@ -481,6 +510,61 @@
                     </div>
                 </div>
 
+                <div class="tab-pane fade" id="tab-statuses">
+                    <div class="settings-card card">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="bi bi-flag text-accent"></i> تسميات وألوان حالات الطلب</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="alert bg-primary-transparent border-0 mb-3">
+                                <i class="bi bi-info-circle"></i>
+                                عدّل تسمية حالة الطلب أو لون شارتها ليناسب مطعمك. اتركها فارغة للعودة للقيمة الافتراضية.
+                                التسمية الجديدة تظهر في الكاشير، المطبخ، صفحات الطلبات، وللزبون.
+                            </div>
+                            <div class="row g-3">
+                                @foreach(\App\Enums\OrderStatus::cases() as $case)
+                                    @php
+                                        $labelKey = 'order_status_'.$case->value.'_label';
+                                        $colorKey = 'order_status_'.$case->value.'_color';
+                                        $currentColor = $read($colorKey, $case->defaultColor());
+                                    @endphp
+                                    <div class="col-md-6 col-lg-4">
+                                        <div class="card border" style="background:#fafdfa; border-color:#d6eadc !important;">
+                                            <div class="card-body">
+                                                <div class="d-flex align-items-center justify-content-between mb-2">
+                                                    <small class="text-muted">المفتاح: <code>{{ $case->value }}</code></small>
+                                                    <span class="badge bg-{{ $currentColor }}">
+                                                        {{ $read($labelKey, $case->defaultLabel()) }}
+                                                    </span>
+                                                </div>
+                                                <div class="mb-2">
+                                                    <label class="form-label small">التسمية الظاهرة</label>
+                                                    <input type="text" name="{{ $labelKey }}"
+                                                           class="form-control form-control-sm"
+                                                           maxlength="60"
+                                                           value="{{ $read($labelKey) }}"
+                                                           placeholder="{{ $case->defaultLabel() }}">
+                                                </div>
+                                                <div class="mb-0">
+                                                    <label class="form-label small">لون الشارة</label>
+                                                    <select name="{{ $colorKey }}" class="form-select form-select-sm">
+                                                        <option value="">— الافتراضي ({{ $case->defaultColor() }}) —</option>
+                                                        @foreach(\App\Enums\OrderStatus::ALLOWED_COLORS as $color)
+                                                            <option value="{{ $color }}" @selected($read($colorKey) === $color)>
+                                                                {{ $color }}
+                                                            </option>
+                                                        @endforeach
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                @endforeach
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="tab-pane fade" id="tab-sms">
                     <div class="settings-card card">
                         <div class="card-header">
@@ -544,6 +628,33 @@
                                     <small class="text-muted ms-2">
                                         احفظ التعديلات أولاً قبل الاختبار، عشان الاختبار يستخدم الإعدادات المخزّنة.
                                     </small>
+                                </div>
+
+                                {{-- ─── SMS message templates ─────────────── --}}
+                                <div class="col-12">
+                                    <hr class="my-2">
+                                    <h6 class="text-muted mb-1">
+                                        <i class="bi bi-chat-square-text"></i> صيغ الرسائل القابلة للتخصيص
+                                    </h6>
+                                    <div class="setting-hint mb-2">
+                                        المتغيرات المتاحة:
+                                        <code dir="ltr">{brand}</code> اسم المطعم،
+                                        <code dir="ltr">{password}</code> كلمة المرور الجديدة،
+                                        <code dir="ltr">{login_url}</code> رابط تسجيل الدخول.
+                                        اتركها فارغة لاستخدام الصيغة الافتراضية الإنجليزية.
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">قالب رسالة استرجاع كلمة المرور (الموظفين)</label>
+                                    <textarea name="sms_template_forgot_staff" class="form-control" rows="4"
+                                              maxlength="500" dir="auto"
+                                              placeholder="{brand}&#10;Your account password has been changed.&#10;New password: {password}&#10;Login: {login_url}">{{ $read('sms_template_forgot_staff') }}</textarea>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">قالب رسالة استرجاع كلمة المرور (الزبائن)</label>
+                                    <textarea name="sms_template_forgot_customer" class="form-control" rows="4"
+                                              maxlength="500" dir="auto"
+                                              placeholder="{brand}&#10;Your account password has been changed.&#10;New password: {password}&#10;Login: {login_url}">{{ $read('sms_template_forgot_customer') }}</textarea>
                                 </div>
                             </div>
                         </div>
@@ -849,7 +960,7 @@
     (function () {
         function initSettingsPage() {
         const saveRow = document.getElementById('settingsSaveRow');
-        const mainTabs = ['#tab-general', '#tab-billing', '#tab-operations', '#tab-discounts', '#tab-sms', '#tab-theme'];
+        const mainTabs = ['#tab-general', '#tab-billing', '#tab-operations', '#tab-discounts', '#tab-statuses', '#tab-sms', '#tab-theme'];
         const root = document.documentElement;
         const colorFields = {
             theme_primary: '#164c37',

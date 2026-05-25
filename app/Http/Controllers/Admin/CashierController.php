@@ -67,7 +67,7 @@ class CashierController extends Controller
         $this->authorize('create', Payment::class);
         $data = $request->validate([
             'amount' => ['required', 'numeric', 'min:0.01'],
-            'method' => ['required', 'in:cash,card,transfer'],
+            'method' => ['required', \App\Support\PaymentMethods::inRule()],
             'reference' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string'],
         ]);
@@ -144,7 +144,7 @@ class CashierController extends Controller
             'splits' => ['required', 'array', 'min:2'],
             'splits.*.label' => ['nullable', 'string', 'max:255'],
             'splits.*.amount' => ['required', 'numeric', 'min:0.01'],
-            'splits.*.method' => ['required', 'in:cash,card,transfer'],
+            'splits.*.method' => ['required', \App\Support\PaymentMethods::inRule()],
         ]);
         try {
             $this->billing->splitInvoice($invoice, $data['splits']);

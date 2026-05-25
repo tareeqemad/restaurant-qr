@@ -103,11 +103,21 @@ class ForgotPasswordController extends Controller
         return $out;
     }
 
+    /**
+     * Template-driven body. Same {brand} / {password} / {login_url}
+     * placeholders as the staff flow; restaurant admins edit the
+     * customer-facing wording from /admin/settings independently.
+     */
     protected function formatMessage(Customer $customer, string $password): string
     {
-        $brand = \App\Helpers\Brand::name();
-        $loginUrl = route('portal.login');
-        return "{$brand}\nYour account password has been changed.\nNew password: {$password}\nLogin: {$loginUrl}";
+        $template = trim((string) \App\Models\Setting::get('sms_template_forgot_customer'))
+            ?: "{brand}\nYour account password has been changed.\nNew password: {password}\nLogin: {login_url}";
+
+        return strtr($template, [
+            '{brand}'     => \App\Helpers\Brand::name(),
+            '{password}'  => $password,
+            '{login_url}' => route('portal.login'),
+        ]);
     }
 
     protected function successMessage(): string

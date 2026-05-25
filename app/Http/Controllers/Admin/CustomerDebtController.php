@@ -146,12 +146,12 @@ class CustomerDebtController extends Controller
 
         $data = $request->validate([
             'amount'    => ['required', 'numeric', 'min:0.01'],
-            'method'    => ['required', 'in:cash,card,transfer'],
+            'method'    => ['required', \App\Support\PaymentMethods::inRule()],
             'reference' => ['nullable', 'string', 'max:255'],
             'notes'     => ['nullable', 'string', 'max:500'],
             'primary_invoice_id' => ['nullable', 'integer'],
         ], [
-            'method.in' => 'طرق الدفع المتاحة: نقدا، فيزا، أو تحويل بنكي فقط.',
+            'method.in' => 'طريقة الدفع غير مفعّلة في إعدادات المطعم.',
         ]);
 
         // Guard the primary invoice — must exist and belong to this same

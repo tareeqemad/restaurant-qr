@@ -151,11 +151,24 @@ class ForgotPasswordController extends Controller
         return $out;
     }
 
+    /**
+     * The SMS body is template-driven so each restaurant can rephrase
+     * it from /admin/settings without redeploying. Placeholders:
+     *   {brand}     → site name
+     *   {password}  → the freshly generated temporary password
+     *   {login_url} → absolute URL to the staff login screen
+     * Missing or empty setting falls back to the English default below.
+     */
     protected function formatMessage(User $user, string $password): string
     {
-        $brand = \App\Helpers\Brand::name();
-        $loginUrl = route('login');
-        return "{$brand}\nYour account password has been changed.\nNew password: {$password}\nLogin: {$loginUrl}";
+        $template = trim((string) \App\Models\Setting::get('sms_template_forgot_staff'))
+            ?: "{brand}\nYour account password has been changed.\nNew password: {password}\nLogin: {login_url}";
+
+        return strtr($template, [
+            '{brand}'     => \App\Helpers\Brand::name(),
+            '{password}'  => $password,
+            '{login_url}' => route('login'),
+        ]);
     }
 
     protected function successMessage(): string

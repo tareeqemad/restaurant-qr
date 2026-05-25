@@ -50,6 +50,13 @@ class SettingController extends Controller
             $dynamicRules['discount_cap_'.$role->name.'_fixed'] = ['sometimes', 'numeric', 'min:0'];
         }
 
+        // Order-status label/color overrides — one pair per OrderStatus case.
+        // Empty strings allowed (= revert to default in OrderStatus enum).
+        foreach (\App\Enums\OrderStatus::cases() as $case) {
+            $dynamicRules['order_status_'.$case->value.'_label'] = ['nullable', 'string', 'max:60'];
+            $dynamicRules['order_status_'.$case->value.'_color'] = ['nullable', 'in:'.implode(',', \App\Enums\OrderStatus::ALLOWED_COLORS)];
+        }
+
         $data = $request->validate(array_merge($dynamicRules, [
             'site_name' => ['required', 'string', 'max:120'],
             'legal_name' => ['nullable', 'string', 'max:160'],
@@ -104,6 +111,18 @@ class SettingController extends Controller
             'sms_username'  => ['nullable', 'string', 'max:120'],
             'sms_password'  => ['nullable', 'string', 'max:200'],
             'sms_sender'    => ['nullable', 'string', 'max:40'],
+            // SMS body templates. Free text with placeholders ({brand},
+            // {password}, {login_url}). Empty → use the controller's
+            // baked-in English default so a fresh install isn't broken.
+            'sms_template_forgot_staff'    => ['nullable', 'string', 'max:500'],
+            'sms_template_forgot_customer' => ['nullable', 'string', 'max:500'],
+            // Payment-method toggles. One boolean per method known to
+            // PaymentMethods::CATALOG; missing = use the catalog default.
+            'payment_method_cash_enabled'     => ['sometimes', 'boolean'],
+            'payment_method_card_enabled'     => ['sometimes', 'boolean'],
+            'payment_method_transfer_enabled' => ['sometimes', 'boolean'],
+            'payment_method_app_enabled'      => ['sometimes', 'boolean'],
+            'payment_method_credit_enabled'   => ['sometimes', 'boolean'],
         ]));
 
         // Encrypt the SMS password before persisting. An empty submit
@@ -151,6 +170,13 @@ class SettingController extends Controller
             'sms_username'               => ['sms', 'string'],
             'sms_password'               => ['sms', 'string'],
             'sms_sender'                 => ['sms', 'string'],
+            'sms_template_forgot_staff'    => ['sms', 'string'],
+            'sms_template_forgot_customer' => ['sms', 'string'],
+            'payment_method_cash_enabled'     => ['payments', 'bool'],
+            'payment_method_card_enabled'     => ['payments', 'bool'],
+            'payment_method_transfer_enabled' => ['payments', 'bool'],
+            'payment_method_app_enabled'      => ['payments', 'bool'],
+            'payment_method_credit_enabled'   => ['payments', 'bool'],
         ];
 
         foreach ($cappableRoles as $role) {
@@ -158,7 +184,15 @@ class SettingController extends Controller
             $meta['discount_cap_'.$role->name.'_fixed'] = ['discounts', 'float'];
         }
 
-        $clearable = ['legal_name', 'tax_number', 'receipt_footer'];
+        // Order-status meta + allow clearing to revert to defaults.
+        $clearable = ['legal_name', 'tax_number', 'receipt_footer',
+                      'sms_template_forgot_staff', 'sms_template_forgot_customer'];
+        foreach (\App\Enums\OrderStatus::cases() as $case) {
+            $meta['order_status_'.$case->value.'_label'] = ['order_status', 'string'];
+            $meta['order_status_'.$case->value.'_color'] = ['order_status', 'string'];
+            $clearable[] = 'order_status_'.$case->value.'_label';
+            $clearable[] = 'order_status_'.$case->value.'_color';
+        }
 
         foreach ($data as $k => $v) {
             if ($v === null || $v === '') {
