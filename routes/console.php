@@ -71,3 +71,19 @@ Schedule::command('backup:run')
     ->dailyAt('03:30')
     ->withoutOverlapping()
     ->runInBackground();
+
+/*
+|--------------------------------------------------------------------------
+| Cloud sync — drain on reconnect
+|--------------------------------------------------------------------------
+|
+| Branch nodes try to sync every minute. The command is a cheap no-op unless
+| SYNC_ENABLED=true and SYNC_ROLE=branch, and it just records "offline" when
+| the cloud is unreachable — so the moment the internet returns, the pending
+| config (down) and transactions (up) drain automatically without anyone
+| pressing a button. See docs/offline-sync-architecture.md.
+*/
+Schedule::command('sync:run')
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->runInBackground();
