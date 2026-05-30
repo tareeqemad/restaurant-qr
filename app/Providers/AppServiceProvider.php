@@ -2,9 +2,11 @@
 
 namespace App\Providers;
 
-use App\Models\ActivityLog;
-use App\Models\Attendance;
+use App\Http\Middleware\SetActiveBranch;
 use App\Models\Account;
+use App\Models\ActivityLog;
+use App\Models\Announcement;
+use App\Models\Attendance;
 use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\Expense;
@@ -12,7 +14,6 @@ use App\Models\Ingredient;
 use App\Models\Lookup;
 use App\Models\MenuItem;
 use App\Models\MenuPromotion;
-use App\Models\Announcement;
 use App\Models\Order;
 use App\Models\OrderDiscount;
 use App\Models\Payment;
@@ -34,6 +35,7 @@ use App\Observers\RecipeItemObserver;
 use App\Observers\StationObserver;
 use App\Policies\AccountPolicy;
 use App\Policies\ActivityLogPolicy;
+use App\Policies\AnnouncementPolicy;
 use App\Policies\AttendancePolicy;
 use App\Policies\BranchPolicy;
 use App\Policies\CustomerPolicy;
@@ -42,7 +44,6 @@ use App\Policies\InventoryPolicy;
 use App\Policies\LookupPolicy;
 use App\Policies\MenuPolicy;
 use App\Policies\MenuPromotionPolicy;
-use App\Policies\AnnouncementPolicy;
 use App\Policies\OrderDiscountPolicy;
 use App\Policies\OrderPolicy;
 use App\Policies\PaymentPolicy;
@@ -57,12 +58,16 @@ use App\Policies\SupplierInvoicePolicy;
 use App\Policies\SupplierPolicy;
 use App\Policies\TablePolicy;
 use App\Policies\UserPolicy;
-use Illuminate\Pagination\Paginator;
+use App\Sync\SyncUuid;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Middleware\TrustProxies;
+use Illuminate\Pagination\Paginator;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
+use Livewire\Livewire;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -90,8 +95,8 @@ class AppServiceProvider extends ServiceProvider
         // SetActiveBranch as persistent makes Livewire run it on every
         // wire:click round-trip — keeping zone chips, branch-scoped
         // dropdowns, etc. stable after the initial page render.
-        \Livewire\Livewire::addPersistentMiddleware([
-            \App\Http\Middleware\SetActiveBranch::class,
+        Livewire::addPersistentMiddleware([
+            SetActiveBranch::class,
         ]);
 
         Gate::policy(Account::class, AccountPolicy::class);
@@ -126,5 +131,12 @@ class AppServiceProvider extends ServiceProvider
         // Keep a permission row in sync with each station so role admins can
         // grant per-station screen access from the normal role-edit page.
         Station::observe(StationObserver::class);
+
+        Event::listen('eloquent.creating: *', function (string $event, array $payload): void {
+            $model = $payload[0] ?? null;
+            if ($model instanceof Model) {
+                SyncUuid::assignIfMissing($model);
+            }
+        });
     }
 }

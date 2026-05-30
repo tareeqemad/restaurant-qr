@@ -62,7 +62,7 @@ abstract class SyncStream
      * @param  array<int, array<string, mixed>>  $changes
      * @return int rows received
      */
-    public function receive(array $changes): int
+    public function receive(array $changes, array $context = []): int
     {
         throw new \LogicException(static::class.' does not receive (not an up stream).');
     }

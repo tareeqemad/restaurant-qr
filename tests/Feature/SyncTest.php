@@ -2,8 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Models\Branch;
+use App\Models\Category;
+use App\Models\Order;
 use App\Models\Setting;
 use App\Models\SyncState;
+use App\Support\BranchContext;
 use App\Sync\SyncManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -93,6 +97,67 @@ class SyncTest extends TestCase
 
         $this->assertTrue($report['skipped']);
         $this->assertSame(0, SyncState::count());
+    }
+
+    public function test_synced_models_get_ulids_and_table_pull_exports_foreign_uuid_refs(): void
+    {
+        config(['sync.role' => 'cloud', 'sync.accept_token' => 'secret']);
+
+        $branch = Branch::create(['code' => 'main', 'name' => 'Main', 'is_active' => true]);
+        BranchContext::set($branch->id);
+        $category = Category::create(['name' => 'Food', 'slug' => 'food', 'active' => true]);
+
+        $this->assertNotEmpty($branch->uuid);
+        $this->assertNotEmpty($category->uuid);
+
+        $response = $this->withToken('secret')
+            ->getJson('/api/sync/pull?stream=categories')
+            ->assertOk();
+
+        $change = collect($response->json('changes'))->firstWhere('slug', 'food');
+
+        $this->assertSame($category->uuid, $change['uuid']);
+        $this->assertSame($branch->uuid, $change['_sync_refs']['branch_id']);
+    }
+
+    public function test_cloud_push_receives_branch_owned_rows_by_uuid_not_local_id(): void
+    {
+        config(['sync.role' => 'cloud', 'sync.accept_token' => 'secret']);
+
+        $branch = Branch::create(['code' => 'main', 'name' => 'Main', 'is_active' => true]);
+
+        $remoteOrderUuid = '01JZ0000000000000000000001';
+
+        $this->withToken('secret')->postJson('/api/sync/push', [
+            'stream' => 'orders',
+            'changes' => [[
+                'uuid' => $remoteOrderUuid,
+                'branch_id' => 999999,
+                'number' => 'ORD-REMOTE-0001',
+                'order_source' => 'dine_in',
+                'platform_commission_pct' => 0,
+                'order_type' => 'dine_in',
+                'status' => 'pending',
+                'subtotal' => 0,
+                'discount_total' => 0,
+                'tax_total' => 0,
+                'service_total' => 0,
+                'delivery_fee' => 0,
+                'tip' => 0,
+                'total' => 0,
+                'tax_rate' => 0,
+                'service_rate' => 0,
+                'submitted_at' => '2026-05-30 10:00:00',
+                'created_at' => '2026-05-30 10:00:00',
+                'updated_at' => '2026-05-30 10:00:00',
+                '_sync_refs' => ['branch_id' => $branch->uuid],
+            ]],
+        ])->assertOk()->assertJson(['received' => 1]);
+
+        $order = Order::where('uuid', $remoteOrderUuid)->firstOrFail();
+
+        $this->assertSame($branch->id, $order->branch_id);
+        $this->assertSame('ORD-REMOTE-0001', $order->number);
     }
 
     private function asBranch(): void

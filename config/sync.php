@@ -29,6 +29,9 @@ return [
     'token' => env('SYNC_TOKEN'),
     // Which branch this node is (matches branches.id on the cloud).
     'branch_id' => env('SYNC_BRANCH_ID'),
+    // Stable branch identity. Prefer this over numeric IDs when the branch
+    // database and cloud database were not cloned from the same source.
+    'branch_uuid' => env('SYNC_BRANCH_UUID'),
 
     // HTTP timeout (seconds) per request and max rows per batch.
     'timeout' => (int) env('SYNC_TIMEOUT', 15),

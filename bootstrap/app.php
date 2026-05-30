@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\AdminMiddleware;
+use App\Http\Middleware\EnsureValidLicense;
 use App\Http\Middleware\SetActiveBranch;
 use App\Http\Middleware\TableSessionMiddleware;
 use App\Http\Middleware\VerifySyncToken;
@@ -34,6 +35,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'admin' => AdminMiddleware::class,
             'branch' => SetActiveBranch::class,
+            'license' => EnsureValidLicense::class,
             'table.session' => TableSessionMiddleware::class,
             'sync.token' => VerifySyncToken::class,
         ]);

@@ -475,8 +475,10 @@
                     $canSettings   = $u && $u->hasAnyRole(['super_admin','admin']);
                     $canActivity   = $u && $u->can('viewAny', \App\Models\ActivityLog::class);
                     $canLookups    = $u && $u->can('viewAny', \App\Models\Lookup::class);
+                    $canLicenseStatus = $u && config('license.enabled') && $u->hasAnyRole(['super_admin','admin']);
+                    $canLicenses = $u && config('license.role') === 'cloud' && $u->isSuperAdmin();
 
-                    $showSystemSection = $canMenu || $canStations || $canUsers || $canRoles || $canBranches || $canSettings || $canActivity || $canLookups;
+                    $showSystemSection = $canMenu || $canStations || $canUsers || $canRoles || $canBranches || $canSettings || $canActivity || $canLookups || $canLicenseStatus || $canLicenses;
 
                     // Menu submenu opens when any catalogue-management route is active
                     $menuOpen = request()->routeIs('admin.categories.*')
@@ -498,6 +500,8 @@
                         || request()->routeIs('admin.lookups.*')
                         || request()->routeIs('admin.settings.*')
                         || request()->routeIs('admin.currencies.*')
+                        || request()->routeIs('admin.license-status.*')
+                        || request()->routeIs('admin.licenses.*')
                         || request()->routeIs('admin.activity-logs.*')
                         || request()->routeIs('admin.system.*');
                 @endphp
@@ -613,6 +617,24 @@
                      manager naturally look for system-level config
                      items under "إدارة النظام". Duplicate link here
                      so it's discoverable from both spots. --}}
+                @if($canLicenseStatus)
+                <li class="slide {{ $isActive('admin.license-status.*') }}">
+                    <a href="{{ route('admin.license-status.index') }}" class="side-menu__item">
+                        <i class="bi bi-key-fill side-menu__icon"></i>
+                        <span class="side-menu__label">الترخيص</span>
+                    </a>
+                </li>
+                @endif
+
+                @if($canLicenses)
+                <li class="slide {{ $isActive('admin.licenses.*') }}">
+                    <a href="{{ route('admin.licenses.index') }}" class="side-menu__item">
+                        <i class="bi bi-patch-check-fill side-menu__icon"></i>
+                        <span class="side-menu__label">تراخيص العملاء</span>
+                    </a>
+                </li>
+                @endif
+
                 @if(auth()->user()?->hasPermission('chart_of_accounts.viewAny'))
                 <li class="slide {{ $isActive('admin.accounts.*') }}">
                     <a href="{{ route('admin.accounts.index') }}" class="side-menu__item">

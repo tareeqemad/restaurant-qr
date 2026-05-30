@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\CurrencyController;
 use App\Http\Controllers\Customer;
 use Illuminate\Support\Facades\Route;
 
@@ -7,10 +8,10 @@ use Illuminate\Support\Facades\Route;
 Route::get('/menu/{token}', [Customer\MenuController::class, 'open'])->name('customer.menu.open');
 
 // Currency switcher — accessible from any customer page, doesn't require table session
-Route::post('/currency', [\App\Http\Controllers\Admin\CurrencyController::class, 'switch'])->name('customer.currency.switch');
+Route::post('/currency', [CurrencyController::class, 'switch'])->name('customer.currency.switch');
 
 // After session is opened (cookie set)
-Route::middleware('table.session')->group(function () {
+Route::middleware(['table.session', 'license'])->group(function () {
     Route::get('/menu', [Customer\MenuController::class, 'menu'])->name('customer.menu');
     Route::post('/menu/dismiss-promo/{id}', [Customer\MenuController::class, 'dismissGuestPromo'])
         ->name('customer.menu.dismissGuestPromo');

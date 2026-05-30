@@ -4,6 +4,7 @@ namespace App\Sync;
 
 use App\Models\SyncState;
 use App\Sync\Streams\SettingsStream;
+use App\Sync\Streams\TableStream;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -23,9 +24,23 @@ class SyncManager
      */
     public function streams(): array
     {
-        return [
+        $streams = [
             new SettingsStream,
         ];
+
+        foreach (SyncRegistry::downTables() as $table => $config) {
+            if ($table === 'settings') {
+                continue;
+            }
+
+            $streams[] = TableStream::down($table, $config);
+        }
+
+        foreach (SyncRegistry::upTables() as $table => $config) {
+            $streams[] = TableStream::up($table, $config);
+        }
+
+        return $streams;
     }
 
     public function streamByName(string $name, string $direction): ?SyncStream

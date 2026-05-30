@@ -39,7 +39,10 @@ class SyncController extends Controller
     {
         $stream = $this->resolve((string) $request->input('stream'), 'up');
 
-        $received = $stream->receive($request->input('changes', []));
+        $received = $stream->receive($request->input('changes', []), [
+            'branch_id' => $request->input('branch_id') ?: $request->header('X-Branch-Id'),
+            'branch_uuid' => $request->input('branch_uuid') ?: $request->header('X-Branch-Uuid'),
+        ]);
 
         return response()->json(['ok' => true, 'received' => $received]);
     }

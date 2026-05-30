@@ -5,7 +5,7 @@ use App\Models\PurchaseOrder;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware(['auth', 'admin', 'branch'])->group(function () {
+Route::middleware(['auth', 'admin', 'branch', 'license'])->group(function () {
     // Dashboard
     Route::get('/', [Admin\DashboardController::class, 'index'])->name('dashboard');
 
@@ -40,6 +40,16 @@ Route::middleware(['auth', 'admin', 'branch'])->group(function () {
         [Admin\SystemController::class, 'index'])->name('system.index');
     Route::post('system/reset-demo',
         [Admin\SystemController::class, 'resetDemo'])->name('system.reset-demo');
+
+    // License status on branch nodes and license management on the cloud node.
+    Route::get('license-status', [Admin\LocalLicenseController::class, 'index'])->name('license-status.index');
+    Route::post('license-status/key', [Admin\LocalLicenseController::class, 'updateKey'])->name('license-status.key');
+    Route::post('license-status/refresh', [Admin\LocalLicenseController::class, 'refresh'])->name('license-status.refresh');
+
+    Route::resource('licenses', Admin\LicenseController::class)->only(['index', 'create', 'store', 'show']);
+    Route::post('licenses/{license}/renew', [Admin\LicenseController::class, 'renew'])->name('licenses.renew');
+    Route::post('licenses/{license}/suspend', [Admin\LicenseController::class, 'suspend'])->name('licenses.suspend');
+    Route::post('licenses/{license}/activate', [Admin\LicenseController::class, 'activate'])->name('licenses.activate');
 
     // Branches (Super Admin only — gated by BranchPolicy)
     Route::resource('branches', Admin\BranchController::class)->except(['show']);

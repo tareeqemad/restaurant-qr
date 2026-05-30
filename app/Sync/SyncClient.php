@@ -16,6 +16,7 @@ class SyncClient
         private readonly ?string $token,
         private readonly int $timeout = 15,
         private readonly ?string $branchId = null,
+        private readonly ?string $branchUuid = null,
     ) {}
 
     public static function fromConfig(): self
@@ -25,6 +26,7 @@ class SyncClient
             config('sync.token'),
             (int) config('sync.timeout', 15),
             config('sync.branch_id'),
+            config('sync.branch_uuid'),
         );
     }
 
@@ -81,6 +83,7 @@ class SyncClient
         $this->request()->post($this->baseUrl.'/api/sync/push', [
             'stream' => $stream,
             'branch_id' => $this->branchId,
+            'branch_uuid' => $this->branchUuid,
             'changes' => $changes,
         ])->throw();
     }
@@ -90,6 +93,9 @@ class SyncClient
         return Http::timeout($this->timeout)
             ->withToken($this->token)
             ->acceptJson()
-            ->withHeaders(array_filter(['X-Branch-Id' => $this->branchId]));
+            ->withHeaders(array_filter([
+                'X-Branch-Id' => $this->branchId,
+                'X-Branch-Uuid' => $this->branchUuid,
+            ]));
     }
 }
