@@ -92,6 +92,11 @@ class RefundService
             // Only completed refunds affect the ledger. Pending ones are reservations.
             if ($status === 'completed') {
                 $invoice->increment('refunded_total', $amount);
+                // Refund just shifted the balance math — recompute so the
+                // dashboard, customer debt widget, and split flow see the
+                // correct outstanding amount. Without this, partial
+                // refunds left balance=0/status=paid forever.
+                $invoice->fresh()->recomputeBalanceAfterRefund();
                 app(AccountingService::class)->recordRefundCompleted($refund);
             }
 
@@ -147,6 +152,7 @@ class RefundService
 
             // Now affect the ledger
             Invoice::whereKey($refund->invoice_id)->increment('refunded_total', $refund->amount);
+            Invoice::find($refund->invoice_id)?->recomputeBalanceAfterRefund();
             app(AccountingService::class)->recordRefundCompleted($refund);
 
             ActivityLog::log('refund.completed', "إتمام استرداد {$refund->number}", $refund);

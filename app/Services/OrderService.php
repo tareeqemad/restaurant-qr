@@ -79,6 +79,13 @@ class OrderService
                 'service_rate' => $this->configuredServiceRate(),
             ]);
 
+            // Eager-load customer ONCE so the per-item promo resolver
+            // (inside addItem) reads from a cached relation instead of
+            // firing one customer query per cart line (the G7 fix).
+            if ($order->customer_id) {
+                $order->load('customer');
+            }
+
             foreach ($cart as $row) {
                 $this->addItem($order, $row);
             }
@@ -301,8 +308,69 @@ class OrderService
         $modifiers = Modifier::with('group')->whereIn('id', $modifierIds)->get();
 
         $modifiersTotal = (float) $modifiers->sum('price_delta');
-        $unitPrice = (float) $item->price;
-        $subtotal = ($unitPrice + $modifiersTotal) * $quantity;
+        // Snapshot the EFFECTIVE price at order time. If a promo is live,
+        // we record both the original menu price (for receipts + reports)
+        // and the active promotion's id (for the audit trail). Once
+        // snapshotted, the order keeps this price forever — promo
+        // expiring or changing later doesn't drift the placed order.
+        //
+        // Promotion lookup is channel- AND customer-aware: "QR-only"
+        // promos never apply to a cashier line, and "birthday month"
+        // promos only fire for the identified customer.
+        //
+        // The customer is resolved through the Eloquent relation —
+        // callers (createFromCart, addItems) pre-load it on the Order
+        // instance so multi-item carts hit the customers table at most
+        // once, not N times. Direct `$order->customer` reads from the
+        // loaded relation when present.
+        $menuPrice = (float) $item->price;
+        $orderCustomer = $order->relationLoaded('customer')
+            ? $order->customer
+            : ($order->customer_id ? $order->loadMissing('customer')->customer : null);
+        $promotion = app(\App\Services\PromotionService::class)
+            ->resolveForItem($item, null, $order->branch_id, $order->order_source, $orderCustomer);
+
+        // Min-subtotal guard: if the promo requires a cart total of X
+        // and the order — INCLUDING this new line — wouldn't reach X,
+        // skip the discount for this line. Once we've cleared the
+        // threshold, every fresh line picks up the promo as usual.
+        if ($promotion && $promotion->min_subtotal !== null && (float) $promotion->min_subtotal > 0) {
+            $projectedSubtotal = (float) $order->items()
+                ->where('status', '!=', \App\Enums\OrderItemStatus::Cancelled->value)
+                ->sum('subtotal')
+                + (($menuPrice + $modifiersTotal) * $quantity);
+            if (! $promotion->meetsMinSubtotal($projectedSubtotal)) {
+                $promotion = null;
+            }
+        }
+
+        // Usage limit (#11): the promo has a hard cap on distinct orders.
+        // If the limit is set, we need an ATOMIC check-and-increment.
+        // The increment fires once per order — subsequent lines that
+        // hit the same promo on the same order do NOT re-increment.
+        if ($promotion && $promotion->usage_limit !== null) {
+            $alreadyClaimedByThisOrder = $order->items()
+                ->where('promotion_id', $promotion->id)
+                ->exists();
+            if (! $alreadyClaimedByThisOrder) {
+                // Atomic: update only if usage_count is still below the
+                // limit. Affected rows = 1 means we claimed a slot.
+                $affected = \App\Models\MenuPromotion::where('id', $promotion->id)
+                    ->where(function ($q) {
+                        $q->whereNull('usage_limit')
+                          ->orWhereColumn('usage_count', '<', 'usage_limit');
+                    })
+                    ->update(['usage_count' => \DB::raw('usage_count + 1')]);
+                if ($affected === 0) {
+                    // Exhausted between resolveForItem and now — drop the promo.
+                    $promotion = null;
+                }
+            }
+        }
+
+        $unitPrice = $promotion ? $promotion->applyTo($menuPrice) : $menuPrice;
+        $hasPromo  = $promotion !== null && $unitPrice < $menuPrice;
+        $subtotal  = ($unitPrice + $modifiersTotal) * $quantity;
 
         $oi = OrderItem::create([
             'order_id' => $order->id,
@@ -312,6 +380,8 @@ class OrderService
             'name_en_snapshot' => $item->name_en,
             'quantity' => $quantity,
             'unit_price' => $unitPrice,
+            'unit_price_original' => $hasPromo ? $menuPrice : null,
+            'promotion_id' => $hasPromo ? $promotion->id : null,
             'modifiers_total' => $modifiersTotal,
             'subtotal' => $subtotal,
             'notes' => $row['notes'] ?? null,
@@ -320,12 +390,31 @@ class OrderService
             'status' => OrderItemStatus::Pending->value,
         ]);
 
+        // Free-modifier list: when the active promotion lists a modifier
+        // id as "free with this item", we still record the modifier on
+        // the order (so the kitchen sees it + the receipt explains the
+        // perk) but charge price_delta=0. The audit trail keeps the
+        // modifier's original price for clarity later — AccountingService
+        // uses `price_delta_original` to credit the savings as a real
+        // sales discount instead of silently dropping revenue.
+        $freeModifierIds = $promotion?->free_modifier_ids ?? [];
         foreach ($modifiers as $m) {
+            $isFree = in_array((int) $m->id, array_map('intval', $freeModifierIds), true);
             OrderItemModifier::create([
                 'order_item_id' => $oi->id,
                 'modifier_id' => $m->id,
-                'name_snapshot' => $m->name,
-                'price_delta' => $m->price_delta,
+                'name_snapshot' => $isFree ? $m->name.' (هدية مع العرض)' : $m->name,
+                'price_delta' => $isFree ? 0 : $m->price_delta,
+                'price_delta_original' => $isFree ? $m->price_delta : null,
+            ]);
+        }
+        // If any modifier was zeroed out, re-sum + re-snapshot the line
+        // so the subtotal matches what the customer pays.
+        if (! empty($freeModifierIds)) {
+            $effectiveModTotal = (float) $oi->modifiers()->sum('price_delta');
+            $oi->update([
+                'modifiers_total' => $effectiveModTotal,
+                'subtotal'        => ($oi->unit_price + $effectiveModTotal) * $oi->quantity,
             ]);
         }
 
@@ -334,6 +423,12 @@ class OrderService
 
     public function recalculateTotals(Order $order): Order
     {
+        // Buy-N-Get-M promos discount the cart as a SET (not per item),
+        // so they're applied here — once item snapshots are stable — as
+        // a synthetic OrderDiscount row. Idempotent: re-running this
+        // method removes any previous BXGY discount and recomputes.
+        app(\App\Services\PromotionService::class)->applyBxgyToOrder($order);
+
         $subtotal = (float) $order->items()->where('status', '!=', OrderItemStatus::Cancelled->value)->sum('subtotal');
         $discountTotal = (float) $order->discounts()->sum('amount');
 

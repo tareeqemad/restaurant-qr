@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Admin;
 use App\Events\TableStatusChanged;
 use App\Helpers\SafeBroadcast;
 use App\Http\Controllers\Controller;
+use App\Models\Order;
 use App\Models\Scopes\BranchScope;
 use App\Models\Table;
+use App\Models\TableSession;
 use App\Services\TableSessionTransferService;
 use App\Support\BranchContext;
 use BaconQrCode\Renderer\ImageRenderer;
@@ -64,7 +66,23 @@ class TableController extends Controller
     {
         $this->authorize('update', $table);
         $previousStatus = $table->status;
+        $previousNumber = $table->number;
         $table->update($this->valid($request, $table->id));
+
+        // Renumber detection: if the displayed number changed and the
+        // table has historical orders or invoices, leave a notice so
+        // the manager understands the snapshot system keeps history
+        // accurate. (No data action needed — snapshots already protect
+        // every past record; this is purely an information message.)
+        if ($previousNumber !== $table->number) {
+            $hasHistory = TableSession::where('table_id', $table->id)->exists()
+                       || Order::where('table_id', $table->id)->exists();
+            if ($hasHistory) {
+                session()->flash('info',
+                    "تم تغيير رقم الطاولة من «{$previousNumber}» إلى «{$table->number}». "
+                    . "السجلات السابقة تحتفظ بالرقم الأصلي للحفاظ على دقة الإيصالات والتقارير.");
+            }
+        }
 
         // If the admin marks the table available but a stale (orderless)
         // session is still hanging on it, close that session in the same
@@ -144,11 +162,26 @@ class TableController extends Controller
     public function destroy(Table $table)
     {
         $this->authorize('delete', $table);
+
+        // Safety net: refuse to delete a table that's still mid-service.
+        // Even with the snapshot system in place, an active session means
+        // a real customer is being served right now — yanking the table
+        // out from under them would orphan the cashier UI and confuse
+        // the waiter. The manager must close the session first.
+        if ($table->activeSession) {
+            return back()->with('error',
+                "طاولة {$table->number} عليها جلسة نشطة حالياً — أغلق الجلسة من شاشة الكاشير أولاً ثم احذف.");
+        }
+
+        // Historical data is safe to keep: snapshots on orders/invoices/
+        // sessions preserve the table number for receipts and reports,
+        // and `table_id` FK on those rows is nullable + nullOnDelete, so
+        // a soft-delete here doesn't break any historical lookups.
         $previousStatus = $table->status;
         $table->delete();
-        // Deleted → broadcast with a sentinel status so the board refreshes and drops the card
         SafeBroadcast::dispatch(new TableStatusChanged($table, $previousStatus));
-        return back()->with('success', 'تم الحذف');
+        return back()->with('success',
+            "تم حذف الطاولة. السجلات التاريخية (الفواتير والطلبات) تحتفظ بالرقم الأصلي «{$table->number}».");
     }
 
     public function qr(Table $table)

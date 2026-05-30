@@ -72,7 +72,7 @@
                         @if($showBranchCol)
                             <td><x-admin.branch-tag :branch="$o->branch" /></td>
                         @endif
-                        <td>{{ $o->table?->number ?? '—' }}</td>
+                        <td>{{ $o->tableLabel() }}</td>
                         <td>{{ $o->items->count() }}</td>
                         <td>{{ \App\Helpers\Money::format($o->total) }}</td>
                         <td><span class="badge bg-{{ $o->statusColor() }}">{{ $o->statusLabel() }}</span></td>

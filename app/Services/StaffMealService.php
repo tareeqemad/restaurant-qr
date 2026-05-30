@@ -235,9 +235,29 @@ class StaffMealService
             );
 
             if (! $includeService && ((float) $order->service_rate > 0 || (float) $order->service_total > 0)) {
+                // Log the strip so a manager auditing the order later can
+                // explain the difference between the cashier-displayed
+                // total (with service) and the eventual tab amount.
+                // Without this, an order would silently drop, say, 11 ש"ח
+                // of service charge and nobody could tell why.
+                $strippedAmount = (float) $order->service_total;
+                $strippedRate   = (float) $order->service_rate;
                 $order->update(['service_rate' => 0]);
                 app(OrderService::class)->recalculateTotals($order);
                 $order->refresh();
+
+                ActivityLog::log(
+                    'staff_meal.service_stripped',
+                    "تم خصم رسوم الخدمة ({$strippedRate}% = "
+                        .number_format($strippedAmount, 2)." ش.إ) "
+                        ."من طلب الموظف {$order->number} قبل احتسابه على البدل",
+                    $order,
+                    [
+                        'service_rate_before'  => $strippedRate,
+                        'service_total_before' => $strippedAmount,
+                        'reason' => 'staff_meal_include_service=false',
+                    ],
+                );
             }
 
             $amount = (float) $order->total;

@@ -20,7 +20,7 @@ hr { border: 0; border-top: 1px dashed #333; }
         ? $invoice->tableSession->orders
         : collect([$invoice->order])->filter();
     $originLabel = $invoice->tableSession
-        ? 'طاولة '.($invoice->tableSession?->table?->number ?? '—')
+        ? 'طاولة '.$invoice->tableLabel()
         : (($invoice->order?->order_type === 'delivery' ? 'دليفري' : 'استلام/سفري').' - '.($invoice->order?->sourceLabel() ?? 'طلب مباشر'));
     $siteName = \App\Helpers\Brand::name();
     $legalName = \App\Models\Setting::get('legal_name');

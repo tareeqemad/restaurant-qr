@@ -335,6 +335,9 @@
                         @if($canAccounting)
                             <li class="slide"><a href="{{ route('admin.accounting.trial-balance') }}" class="side-menu__item {{ $isActive('admin.accounting.trial-balance') }}"><i class="bi bi-columns-gap submenu-icon"></i>ميزان المراجعة</a></li>
                             <li class="slide"><a href="{{ route('admin.accounting.journal') }}" class="side-menu__item {{ $isActive('admin.accounting.journal') }}"><i class="bi bi-journal-text submenu-icon"></i>القيود اليومية</a></li>
+                            @if(auth()->user()?->hasPermission('chart_of_accounts.viewAny'))
+                                <li class="slide"><a href="{{ route('admin.accounts.index') }}" class="side-menu__item {{ $isActive('admin.accounts.*') }}"><i class="bi bi-diagram-3-fill submenu-icon"></i>شجرة الحسابات</a></li>
+                            @endif
                         @endif
                         @if($canShifts)
                             <li class="slide">
@@ -368,6 +371,16 @@
                 @endif
                     </ul>
                 </li>
+                {{-- ↑ These two tags close the big "التشغيل" mega-menu
+                     <li> that opens around line 98 (with its nested
+                     <ul class="slide-menu child1">). Without them, every
+                     subsequent group (المخزون / التقارير / إدارة النظام
+                     / شجرة الحسابات) collapses INTO التشغيل as
+                     sub-items instead of standing as top-level
+                     dropdowns — which made the horizontal nav look
+                     almost empty on wider screens. Confirmed via tag
+                     balance: removing them produced exactly 1 missing
+                     </li> + 1 missing </ul>. --}}
 
                 {{-- ─── المخزون ───
                      The "القائمة" submenu (categories, items, modifiers,
@@ -510,6 +523,9 @@
                             <li class="slide"><a href="{{ route('admin.menu-items.index') }}" class="side-menu__item {{ $isActive('admin.menu-items.*') }}"><i class="bi bi-egg-fried submenu-icon"></i>الأصناف</a></li>
                             <li class="slide"><a href="{{ route('admin.modifiers.index') }}" class="side-menu__item {{ $isActive('admin.modifiers.*') }}"><i class="bi bi-plus-circle-fill submenu-icon"></i>الإضافات</a></li>
                             <li class="slide"><a href="{{ route('admin.allergens.index') }}" class="side-menu__item {{ $isActive('admin.allergens.*') }}"><i class="bi bi-exclamation-triangle-fill submenu-icon"></i>مسببات الحساسية</a></li>
+                            @if(auth()->user()?->hasPermission('promotions.viewAny'))
+                                <li class="slide"><a href="{{ route('admin.promotions.index') }}" class="side-menu__item {{ $isActive('admin.promotions.*') }}"><i class="bi bi-tag-fill submenu-icon"></i>عروض وخصومات</a></li>
+                            @endif
                         @endif
                         @if($canStations)
                             <li class="slide"><a href="{{ route('admin.stations.index') }}" class="side-menu__item {{ $isActive('admin.stations.*') }}"><i class="bi bi-fire submenu-icon"></i>المحطات</a></li>
@@ -551,6 +567,15 @@
                         @if($canRoles)
                             <li class="slide"><a href="{{ route('admin.roles.index') }}" class="side-menu__item {{ $isActive('admin.roles.*') }}"><i class="bi bi-shield-lock-fill submenu-icon"></i>الأدوار والصلاحيات</a></li>
                         @endif
+                        {{-- Dedicated page for tweaking PER-USER permission deviations.
+                             Gated INDEPENDENTLY of $canRoles (RolePolicy::viewAny uses
+                             a hardcoded role check, NOT the permission system) — so a
+                             manager who got `roles.update` granted as a per-user
+                             override can still find the link. This is literally the
+                             feature this page exists to serve. --}}
+                        @if(auth()->user()?->hasPermission('roles.update'))
+                            <li class="slide"><a href="{{ route('admin.permissions.index') }}" class="side-menu__item {{ $isActive('admin.permissions.*') }}"><i class="bi bi-person-fill-gear submenu-icon"></i>إدارة الصلاحيات</a></li>
+                        @endif
                     </ul>
                 </li>
                 @endif
@@ -578,6 +603,21 @@
                     <a href="{{ route('admin.settings.index') }}" class="side-menu__item">
                         <svg class="side-menu__icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
                         <span class="side-menu__label">الإعدادات</span>
+                    </a>
+                </li>
+                @endif
+
+                {{-- ─── شجرة الحسابات (chart of accounts) ───
+                     The chart is also linked from the "الحسابات" group
+                     (operational accounting menu), but super-admin /
+                     manager naturally look for system-level config
+                     items under "إدارة النظام". Duplicate link here
+                     so it's discoverable from both spots. --}}
+                @if(auth()->user()?->hasPermission('chart_of_accounts.viewAny'))
+                <li class="slide {{ $isActive('admin.accounts.*') }}">
+                    <a href="{{ route('admin.accounts.index') }}" class="side-menu__item">
+                        <svg class="side-menu__icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"></circle><line x1="12" y1="22" x2="12" y2="8"></line><path d="M5 12H2a10 10 0 0 0 20 0h-3"></path></svg>
+                        <span class="side-menu__label">شجرة الحسابات</span>
                     </a>
                 </li>
                 @endif

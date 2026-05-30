@@ -59,10 +59,27 @@ class AccountingService
     {
         $invoice->refresh();
 
+        // Per-item promo savings (sale_price / percent / fixed_off /
+        // free_modifier) are silent in `invoice.subtotal` because they
+        // already shrunk `order_item.unit_price`. To keep the income
+        // statement honest, we GROSS the revenue up and also DEBIT the
+        // SALES_DISCOUNTS account by the savings amount.
+        //
+        //   Without this: 100 burger sold at 25% off →
+        //       Revenue 4000 = 75, Discount 4090 = 0
+        //   With this:    same sale →
+        //       Revenue 4000 = 100 (gross), Discount 4090 = 25 (visible)
+        //
+        // BXGY + cashier ad-hoc discounts live in `invoice.discount_total`
+        // already and continue to debit 4090 — they're additive here.
+        $promoSavings = $invoice->promoSavings();
+        $grossSubtotal = (float) $invoice->subtotal + $promoSavings;
+        $totalDiscount = (float) $invoice->discount_total + $promoSavings;
+
         $lines = [
             $this->debit(self::ACCOUNTS_RECEIVABLE, (float) $invoice->total, 'إثبات إجمالي الفاتورة على الذمم المدينة'),
-            $this->debit(self::SALES_DISCOUNTS, (float) $invoice->discount_total, 'خصومات ومسموحات مبيعات'),
-            $this->credit(self::SALES_REVENUE, (float) $invoice->subtotal, 'إيراد المبيعات قبل الخصم'),
+            $this->debit(self::SALES_DISCOUNTS, $totalDiscount, 'خصومات ومسموحات مبيعات (يدوية + عروض الأصناف)'),
+            $this->credit(self::SALES_REVENUE, $grossSubtotal, 'إيراد المبيعات قبل الخصم (بالقيمة الاسمية)'),
             $this->credit(self::OUTPUT_VAT, (float) $invoice->tax_total, 'ضريبة قيمة مضافة - مخرجات'),
             $this->credit(self::SERVICE_REVENUE, (float) $invoice->service_total, 'إيرادات رسوم الخدمة'),
             $this->credit(self::DELIVERY_REVENUE, (float) $invoice->delivery_fee, 'إيرادات التوصيل'),
@@ -76,6 +93,7 @@ class AccountingService
             postedOn: $invoice->issued_at ?: $invoice->created_at ?: now(),
             description: "إثبات فاتورة {$invoice->number}",
             lines: $lines,
+            metadata: $promoSavings > 0 ? ['promo_savings' => $promoSavings] : [],
             createdBy: $invoice->issued_by_user_id,
         );
     }
@@ -90,6 +108,56 @@ class AccountingService
             description: "عكس فاتورة {$invoice->number}",
             createdBy: $userId,
             metadata: ['reason' => $reason],
+        );
+    }
+
+    /**
+     * Re-post an invoice's journal entry after its totals changed (a
+     * cashier applied/removed a discount post-issuance). Uses a unique
+     * event_type so the idempotency guard inside `post` doesn't no-op
+     * us — the previous `invoice_issued` entry has already been reversed
+     * by `OrderDiscountService::writeInvoiceTotals` before this call.
+     *
+     * Counted separately on the income statement (event_type starts with
+     * 'invoice_reissued_'), so accountants can audit how many invoices
+     * were touched mid-flight.
+     */
+    public function repostInvoiceWithDiscount(Invoice $invoice): ?JournalEntry
+    {
+        $invoice->refresh();
+
+        $promoSavings  = $invoice->promoSavings();
+        $grossSubtotal = (float) $invoice->subtotal + $promoSavings;
+        $totalDiscount = (float) $invoice->discount_total + $promoSavings;
+
+        $lines = [
+            $this->debit(self::ACCOUNTS_RECEIVABLE, (float) $invoice->total, 'إثبات إجمالي الفاتورة بعد تحديث الخصم'),
+            $this->debit(self::SALES_DISCOUNTS, $totalDiscount, 'خصومات ومسموحات مبيعات (محدّثة)'),
+            $this->credit(self::SALES_REVENUE, $grossSubtotal, 'إيراد المبيعات (بالقيمة الاسمية)'),
+            $this->credit(self::OUTPUT_VAT, (float) $invoice->tax_total, 'ضريبة قيمة مضافة - مخرجات'),
+            $this->credit(self::SERVICE_REVENUE, (float) $invoice->service_total, 'إيرادات رسوم الخدمة'),
+            $this->credit(self::DELIVERY_REVENUE, (float) $invoice->delivery_fee, 'إيرادات التوصيل'),
+            $this->credit(self::TIPS_PAYABLE, (float) $invoice->tip, 'إكراميات مستحقة للموظفين'),
+        ];
+
+        // Make the event_type unique by counting prior reposts on this
+        // invoice — first repost = invoice_reissued_1, second = _2, etc.
+        $reissueSeq = JournalEntry::where('source_type', $invoice::class)
+            ->where('source_id', $invoice->id)
+            ->where('event_type', 'like', 'invoice_reissued_%')
+            ->count() + 1;
+
+        return $this->post(
+            eventType: "invoice_reissued_{$reissueSeq}",
+            source: $invoice,
+            branchId: $invoice->branch_id,
+            postedOn: now(),
+            description: "إعادة إثبات فاتورة {$invoice->number} (المحاولة #{$reissueSeq})",
+            lines: $lines,
+            metadata: $promoSavings > 0
+                ? ['promo_savings' => $promoSavings, 'reason' => 'post_issuance_discount']
+                : ['reason' => 'post_issuance_discount'],
+            createdBy: $invoice->issued_by_user_id,
         );
     }
 
@@ -463,6 +531,40 @@ class AccountingService
                 $this->debit(self::WASTE_EXPENSE, $amount, 'هدر أو تالف مخزون'),
                 $this->credit(self::INVENTORY, $amount, 'تخفيض المخزون بسبب الهدر'),
             ],
+        );
+    }
+
+    /**
+     * Post a "convert COGS to waste" reclassification when a sold order
+     * item is cancelled mid-prep and the inventory cost should move
+     * from COGS to the Waste line.
+     *
+     *   DR 5400 WASTE_EXPENSE  — recognise as waste
+     *   CR 5000 COGS           — back out the original sale cost
+     *
+     * Inventory is left alone (the physical decrement already happened
+     * at the original `out` movement and the convert-to-waste path
+     * deliberately doesn't move stock again). Net P&L impact: zero
+     * change to total expense, just a category shift.
+     *
+     * Idempotent per (movement, event_type) via AccountingService::post.
+     */
+    public function recordWasteReclassification(InventoryMovement $movement, string $description): ?JournalEntry
+    {
+        $amount = abs((float) $movement->total_cost);
+        if ($amount <= 0.0001) return null;
+
+        return $this->post(
+            eventType: 'inventory_waste_reclassified',
+            source: $movement,
+            branchId: $movement->branch_id,
+            postedOn: $movement->occurred_at ?: now(),
+            description: $description,
+            lines: [
+                $this->debit(self::WASTE_EXPENSE, $amount, 'إعادة تصنيف تكلفة البيع كهدر'),
+                $this->credit(self::COST_OF_GOODS_SOLD, $amount, 'عكس تكلفة البضاعة المباعة'),
+            ],
+            createdBy: $movement->user_id,
         );
     }
 

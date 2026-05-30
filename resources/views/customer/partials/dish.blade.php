@@ -21,13 +21,22 @@
     $unavailReason     = ! $manuallyAvailable
         ? 'غير متوفر'
         : (! $inStock ? 'نفد المخزون' : null);
+
+    // Promotion lookup. If the item has a live promo, we render a
+    // strikethrough on the menu price + a "خصم X%" badge. The cart
+    // still uses effectivePrice() — never the raw price — so the
+    // amount the diner pays matches what the badge promised.
+    $promo          = $item->activePromotion();
+    $effectivePrice = $promo ? $promo->applyTo((float) $item->price) : (float) $item->price;
+    $discountPct    = $promo ? $item->discountPct() : null;
 @endphp
 
     $payload = [
         'id' => $item->id,
         'name' => $item->name,
         'description' => $item->description,
-        'price' => (float) $item->price,
+        'price' => $effectivePrice,
+        'original_price' => $promo ? (float) $item->price : null,
         'image' => $item->imageUrl(),
         'ingredients' => $ingredients->all(),
         'has_modifiers' => $item->modifierGroups->count() > 0,
@@ -66,6 +75,12 @@
         @endif
         @if($item->prep_time_minutes && $canOrder)
             <span class="badge-prep"><i class="bi bi-clock"></i> {{ $item->prep_time_minutes }} د</span>
+        @endif
+        @if($promo && $canOrder)
+            <span class="badge-promo" title="{{ $promo->name }}">
+                <i class="bi bi-tag-fill"></i>
+                @if($discountPct) خصم {{ rtrim(rtrim((string) $discountPct, '0'), '.') }}% @else عرض @endif
+            </span>
         @endif
         @if($hasModifiers && $canOrder)
             <span class="badge-options" title="هذا الصنف فيه خيارات (حجم/إضافات)">
@@ -110,7 +125,14 @@
              notes textarea inside the modifier modal). Keeps the menu clean. --}}
 
         <div class="dish-foot">
-            <span class="dish-price">{{ \App\Helpers\Money::format($item->price) }}</span>
+            @if($promo)
+                <div class="dish-price-wrap">
+                    <span class="dish-price-old">{{ \App\Helpers\Money::format($item->price) }}</span>
+                    <span class="dish-price dish-price-new">{{ \App\Helpers\Money::format($effectivePrice) }}</span>
+                </div>
+            @else
+                <span class="dish-price">{{ \App\Helpers\Money::format($item->price) }}</span>
+            @endif
 
             @if(! $canOrder)
                 {{-- Unavailable: no + button, just a disabled-looking

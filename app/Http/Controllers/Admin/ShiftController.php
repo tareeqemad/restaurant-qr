@@ -95,7 +95,19 @@ class ShiftController extends Controller
                 $cashSales = (float) $payments->where('method', 'cash')->sum('amount');
                 $cardSales = (float) $payments->where('method', 'card')->sum('amount');
                 $other     = (float) $payments->whereNotIn('method', ['cash', 'card'])->sum('amount');
-                $expected  = (float) $shift->cash_opening + $cashSales;
+
+                // Cash that left the drawer during the shift via refunds.
+                // The original `expected_cash = opening + cash_sales` math
+                // ignored refunds, so any cash returned to a customer mid-
+                // shift would surface as a phantom shortage. Refund::method
+                // tracks how the money LEFT the drawer (which is what we
+                // care about here), independent of the original payment
+                // method. NULL guard for the column rolls in NULL→0.
+                $cashRefunds = (float) \App\Models\Refund::where('shift_id', $shift->id)
+                    ->where('method', 'cash')
+                    ->sum('amount');
+
+                $expected  = (float) $shift->cash_opening + $cashSales - $cashRefunds;
                 $variance  = (float) $data['cash_closing'] - $expected;
 
                 $shift->update([
@@ -121,6 +133,7 @@ class ShiftController extends Controller
                         'cash_sales'    => $cashSales,
                         'card_sales'    => $cardSales,
                         'other_sales'   => $other,
+                        'cash_refunds'  => $cashRefunds,
                         'expected_cash' => $expected,
                         'cash_variance' => $variance,
                     ]

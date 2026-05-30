@@ -311,7 +311,7 @@ class InventoryService
             // current_stock, which would double-deduct. The original
             // `out` already did the physical decrement; this row is
             // purely a re-classification for reporting.
-            InventoryMovement::create([
+            $wasteMv = InventoryMovement::create([
                 'branch_id'           => $mv->branch_id,
                 'ingredient_id'       => $mv->ingredient_id,
                 'batch_id'            => $mv->batch_id,
@@ -333,10 +333,27 @@ class InventoryService
             ]);
 
             // Reclassify the original sale-deduction's accounting from
-            // COGS to waste. The AccountingService records the new
-            // waste movement on its own; we don't reverse the original
-            // because the inventory stays decremented either way and
-            // the net P&L impact (cost-of-loss) is correctly captured.
+            // COGS to waste. We post DR 5400 / CR 5000 so the waste
+            // report finally sees this cost (it was previously
+            // invisible — the COGS already-recorded was the only entry).
+            //
+            // Inventory (1200) is NOT touched again — the original `out`
+            // already decremented it; the convert-to-waste path is
+            // purely a P&L category shift.
+            try {
+                app(\App\Services\Accounting\AccountingService::class)
+                    ->recordWasteReclassification(
+                        $wasteMv,
+                        "إعادة تصنيف تكلفة صنف {$orderItem->name_snapshot} كهدر — {$reason}",
+                    );
+            } catch (\Throwable $e) {
+                // Accounting is best-effort here; the operational
+                // waste row is what the waste report reads.
+                \Log::warning('waste_reclassification.accounting_failed', [
+                    'movement_id' => $wasteMv->id,
+                    'error'       => $e->getMessage(),
+                ]);
+            }
         }
     }
 

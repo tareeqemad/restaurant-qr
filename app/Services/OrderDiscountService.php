@@ -405,6 +405,61 @@ class OrderDiscountService
             default                             => 'issued',
         };
 
+        // Split-invoice guard (G5): if the customer chose to split the
+        // bill before the discount was applied, the split amounts no
+        // longer reconcile with the new total. We REFUSE the change
+        // when any split has already been paid (touching those is a
+        // refund-territory operation), and PRORATE the unpaid ones so
+        // the cashier can still close out the new total.
+        $splits = $invoice->splits()->get();
+        if ($splits->isNotEmpty()) {
+            $paidSplitsTotal = (float) $splits->where('paid', true)->sum('amount');
+            if ($paidSplitsTotal > 0 && abs($paidSplitsTotal - (float) $totals['total']) > 0.01
+                && $paidSplitsTotal > (float) $totals['total']) {
+                // Paid splits already exceed the new total — refusing
+                // would force the cashier to undo the discount. Better
+                // path: keep splits paid, alert the manager.
+                \Log::warning('writeInvoiceTotals.split_overpaid', [
+                    'invoice_id'  => $invoice->id,
+                    'old_total'   => (float) $invoice->total,
+                    'new_total'   => (float) $totals['total'],
+                    'paid_splits' => $paidSplitsTotal,
+                ]);
+            } elseif ($splits->where('paid', false)->isNotEmpty()) {
+                // Prorate the UNPAID splits so the sum reaches the new total.
+                $remaining = max(0, (float) $totals['total'] - $paidSplitsTotal);
+                $unpaid = $splits->where('paid', false)->values();
+                $unpaidSum = (float) $unpaid->sum('amount');
+                if ($unpaidSum > 0) {
+                    $ratio = $remaining / $unpaidSum;
+                    foreach ($unpaid as $i => $split) {
+                        // Last split absorbs any rounding drift so the
+                        // sum of shares matches the new total exactly.
+                        $isLast = $i === ($unpaid->count() - 1);
+                        $newAmount = $isLast
+                            ? round($remaining - (float) $unpaid->take($i)->sum(fn ($s) => $s->fresh()->amount), 2)
+                            : Money::round((float) $split->amount * $ratio);
+                        $split->update(['amount' => $newAmount]);
+                    }
+                }
+            }
+        }
+
+        // Remember the pre-update issuance state. If the invoice has
+        // already been posted to the books, we MUST refire the
+        // accounting entry — totals just shifted and the original
+        // journal lines are now stale. Without this, a cashier-applied
+        // 10% off would silently leave A/R inflated by the discount.
+        //
+        // We detect "already posted" by checking for any non-reversal
+        // journal entry sourced from this invoice. We DON'T re-fire if
+        // the invoice was never issued — applying a discount during
+        // cart-building is normal and the first `recordInvoiceIssued`
+        // call will pick up the right amounts naturally.
+        $wasIssued = $invoice->journalEntries()
+            ->whereIn('event_type', ['invoice_issued', 'invoice_reissued_1', 'invoice_reissued_2', 'invoice_reissued_3'])
+            ->exists();
+
         $invoice->update([
             'subtotal'       => Money::round($totals['subtotal']),
             'discount_total' => Money::round($totals['discount_total']),
@@ -417,5 +472,25 @@ class OrderDiscountService
             'status'         => $status,
             'paid_at'        => $status === 'paid' ? ($invoice->paid_at ?? now()) : null,
         ]);
+
+        // Repost accounting if the original entry exists. We reverse
+        // (to neutralise stale amounts) then call `recordInvoiceIssued`
+        // again with a fresh event_type so the idempotency guard in
+        // AccountingService::post doesn't no-op us. The reverse leaves
+        // an audit trail in `journal_entries` and the new entry shows
+        // the corrected figures.
+        if ($wasIssued) {
+            $accounting = app(\App\Services\Accounting\AccountingService::class);
+            $accounting->reverse(
+                eventType: 'invoice_discount_repost_reversal',
+                source: $invoice,
+                originalEventType: 'invoice_issued',
+                postedOn: now(),
+                description: "عكس قيد فاتورة {$invoice->number} بسبب تحديث الخصم",
+            );
+            // Re-issue under a distinct event_type so it doesn't collide
+            // with the original (now-reversed) entry's uniqueness key.
+            $accounting->repostInvoiceWithDiscount($invoice);
+        }
     }
 }

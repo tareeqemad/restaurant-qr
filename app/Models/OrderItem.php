@@ -14,7 +14,11 @@ class OrderItem extends Model
 
     protected $fillable = [
         'order_id', 'menu_item_id', 'station_id', 'name_snapshot', 'name_en_snapshot',
-        'quantity', 'unit_price', 'modifiers_total', 'subtotal', 'notes',
+        'quantity', 'unit_price',
+        // Snapshotted at addItem-time when a promotion was active so receipts
+        // + reports can show "was 30 → now 25" even after the promo expires.
+        'unit_price_original', 'promotion_id',
+        'modifiers_total', 'subtotal', 'notes',
         'course', 'fire_order', 'status',
         'prepared_by_user_id', 'served_by_user_id', 'cancelled_by_user_id', 'cancelled_reason',
         'approved_at', 'prep_started_at', 'ready_at', 'served_at', 'cancelled_at',
@@ -23,6 +27,7 @@ class OrderItem extends Model
     protected $casts = [
         'quantity' => 'decimal:2',
         'unit_price' => 'decimal:2',
+        'unit_price_original' => 'decimal:2',
         'modifiers_total' => 'decimal:2',
         'subtotal' => 'decimal:2',
         'approved_at' => 'datetime',
@@ -50,6 +55,30 @@ class OrderItem extends Model
     public function modifiers(): HasMany
     {
         return $this->hasMany(OrderItemModifier::class);
+    }
+
+    /**
+     * The promotion that drove the discounted unit_price on this line —
+     * loaded so the cashier UI + receipt can show "خصم: <promo name>".
+     * Null when the line was ordered at full menu price.
+     */
+    public function promotion(): BelongsTo
+    {
+        return $this->belongsTo(MenuPromotion::class, 'promotion_id');
+    }
+
+    /** "Was this line discounted at order time?" — convenience for views. */
+    public function wasDiscounted(): bool
+    {
+        return $this->unit_price_original !== null
+            && (float) $this->unit_price_original > (float) $this->unit_price;
+    }
+
+    /** Total savings on this line (qty × per-unit discount). */
+    public function discountSavings(): float
+    {
+        if (! $this->wasDiscounted()) return 0.0;
+        return round(((float) $this->unit_price_original - (float) $this->unit_price) * (float) $this->quantity, 2);
     }
 
     public function statusLabel(): string

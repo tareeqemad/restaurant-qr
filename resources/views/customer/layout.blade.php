@@ -581,6 +581,16 @@ body { padding-bottom: env(safe-area-inset-bottom); min-height: 100vh; }
 .badge-today { position: absolute; top: 8px; right: 8px; background: var(--gold-gradient); color: #3d2a0f; padding: 4px 12px; border-radius: 99px; font-size: .65rem; font-weight: 800; box-shadow: 0 3px 10px rgba(var(--accent-rgb), .45); display: flex; align-items: center; gap: 3px; letter-spacing: .3px; }
 .badge-today::before { content: '⭐'; }
 .badge-prep { position: absolute; bottom: 6px; right: 6px; background: rgba(0,0,0,.65); color: white; padding: 3px 8px; border-radius: 99px; font-size: .65rem; font-weight: 700; backdrop-filter: blur(6px); }
+/* Promotion badge — eye-catching red so the discount stands out
+   among the gold "featured" + black "prep time" pills. Sits on the
+   top-left so it doesn't overlap with the today/featured pill on
+   the right. */
+.badge-promo { position: absolute; top: 8px; inset-inline-start: 8px; background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%); color: #fff; padding: 4px 10px; border-radius: 99px; font-size: .68rem; font-weight: 800; box-shadow: 0 3px 10px rgba(239,68,68,.4); display: inline-flex; align-items: center; gap: 4px; letter-spacing: .3px; z-index: 2; }
+/* Stacked old/new price layout — old price greyed out + struck-through,
+   new price wears the discount-red so it visually echoes the badge. */
+.dish-price-wrap { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; line-height: 1; }
+.dish-price-old { font-size: .78rem; color: #9ca3af; text-decoration: line-through; font-weight: 600; }
+.dish-price-new { color: #b91c1c !important; }
 .badge-unavail { position: absolute; inset: 0; background: rgba(0,0,0,.65); color: white; display: flex; align-items: center; justify-content: center; font-weight: 800; text-align: center; font-size: .85rem; }
 
 /* + button — generous tap target, stable (no transform on hover so the

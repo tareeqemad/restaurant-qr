@@ -15,7 +15,7 @@
         </div>
         <div class="card-body">
             <div class="row mb-3">
-                <div class="col-md-4"><strong>الطاولة:</strong> {{ $order->table?->number ?? '—' }}</div>
+                <div class="col-md-4"><strong>الطاولة:</strong> {{ $order->tableLabel() }}</div>
                 <div class="col-md-4"><strong>النوع:</strong>
                     @switch($order->order_type)@case('dine_in')جلوس@break @case('takeaway')تيك أواي@break @case('delivery')توصيل@break @endswitch
                 </div>

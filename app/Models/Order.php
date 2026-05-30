@@ -16,7 +16,7 @@ class Order extends Model
     use BelongsToBranch, HasFactory, SoftDeletes;
 
     protected $fillable = [
-        'number', 'table_id', 'table_session_id', 'customer_id', 'customer_name', 'customer_phone',
+        'number', 'table_id', 'table_number_snapshot', 'table_session_id', 'customer_id', 'customer_name', 'customer_phone',
         'customer_address_id', 'order_type', 'status',
         'order_source', 'external_reference', 'delivery_receiver', 'platform_commission_pct',
         'created_by_user_id', 'approved_by_user_id', 'cancelled_by_user_id',
@@ -70,7 +70,34 @@ class Order extends Model
                     ->whereKey($m->table_session_id)
                     ->value('customer_id');
             }
+            // Snapshot the table number at order creation. Three lookup
+            // paths in order of preference:
+            //   1. session's pre-snapshotted number (cheapest, already there)
+            //   2. live `tables` row (covers direct-order flows without a session)
+            //   3. nothing (no table assigned — e.g. takeaway / delivery)
+            if (empty($m->table_number_snapshot)) {
+                if (! empty($m->table_session_id)) {
+                    $m->table_number_snapshot = TableSession::query()
+                        ->whereKey($m->table_session_id)
+                        ->value('table_number_snapshot');
+                }
+                if (empty($m->table_number_snapshot) && $m->table_id) {
+                    $m->table_number_snapshot = Table::withTrashed()->find($m->table_id)?->number;
+                }
+            }
         });
+    }
+
+    /**
+     * Human label for this order's table. Prefers the snapshot so
+     * renaming/deleting the table doesn't rewrite history. Falls back
+     * to the live FK for legacy rows, then '—'.
+     */
+    public function tableLabel(): string
+    {
+        return $this->table_number_snapshot
+            ?? $this->table?->number
+            ?? '—';
     }
 
     public static function generateNumber(): string
@@ -119,6 +146,53 @@ class Order extends Model
     public function items(): HasMany
     {
         return $this->hasMany(OrderItem::class);
+    }
+
+    /**
+     * Total per-item promotion savings on this order.
+     *
+     * Two sources combine into ONE figure:
+     *   1. Line-level snapshot (`unit_price_original` vs `unit_price`) —
+     *      sale_price / percent / fixed_off promos.
+     *   2. Modifier snapshot (`price_delta_original` vs `price_delta`) —
+     *      free_modifier_ids promos.
+     *
+     * BXGY savings are NOT included here — those already live in
+     * `OrderDiscount` rows and surface via `discount_total` /
+     * `invoice.discount_total`. Counting them again would double-debit
+     * the SALES_DISCOUNTS account.
+     *
+     * Cancelled lines are excluded — they shouldn't carry revenue or
+     * discount weight on the books.
+     */
+    public function promoSavings(): float
+    {
+        $items = $this->relationLoaded('items')
+            ? $this->items
+            : $this->items()->with('modifiers')->get();
+
+        $total = 0.0;
+        foreach ($items as $line) {
+            if ($line->status === \App\Enums\OrderItemStatus::Cancelled->value) continue;
+
+            // Line-level savings
+            if ($line->unit_price_original !== null
+                && (float) $line->unit_price_original > (float) $line->unit_price) {
+                $total += ((float) $line->unit_price_original - (float) $line->unit_price)
+                          * (float) $line->quantity;
+            }
+
+            // Modifier-level savings
+            $mods = $line->relationLoaded('modifiers') ? $line->modifiers : $line->modifiers()->get();
+            foreach ($mods as $mod) {
+                if ($mod->price_delta_original !== null
+                    && (float) $mod->price_delta_original > (float) $mod->price_delta) {
+                    $total += ((float) $mod->price_delta_original - (float) $mod->price_delta)
+                              * (float) $line->quantity;
+                }
+            }
+        }
+        return round($total, 2);
     }
 
     public function creator(): BelongsTo

@@ -99,6 +99,8 @@ class Permissions
         'reports'        => ['label' => 'التقارير',           'icon' => 'bi-graph-up-arrow',       'order' => 40],
         'activity_logs'  => ['label' => 'سجل النشاطات',       'icon' => 'bi-journal-text',         'order' => 41],
         'staff_meals'    => ['label' => 'بدل وجبات الموظفين',  'icon' => 'bi-cup-hot-fill',         'order' => 42],
+        'promotions'     => ['label' => 'عروض وخصومات الأصناف', 'icon' => 'bi-tag-fill',             'order' => 27],
+        'chart_of_accounts' => ['label' => 'شجرة الحسابات',     'icon' => 'bi-diagram-3-fill',       'order' => 43],
 
         // Dynamic group — one permission per Station, auto-managed by
         // StationObserver. The tree shows a card per station with a single

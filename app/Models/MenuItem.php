@@ -48,6 +48,54 @@ class MenuItem extends Model
         return $this->belongsTo(Station::class);
     }
 
+    // ────────────────────────────────────────────────────────────────
+    // Promotion helpers
+    // ────────────────────────────────────────────────────────────────
+
+    /**
+     * The single best active promotion for this item right now. Defers
+     * to PromotionService so the conflict-resolution logic lives in one
+     * place. Returns null when no promo is live → callers should treat
+     * `price` as the effective price.
+     */
+    public function activePromotion(?\Carbon\Carbon $when = null, ?string $channel = null): ?MenuPromotion
+    {
+        return app(\App\Services\PromotionService::class)->resolveForItem($this, $when, null, $channel);
+    }
+
+    /**
+     * Price the customer actually pays right now (promo-aware).
+     * The cashier POS, customer menu, and OrderService::addItem all
+     * route through this so price displays + order snapshots stay
+     * consistent.
+     */
+    public function effectivePrice(?\Carbon\Carbon $when = null, ?string $channel = null): float
+    {
+        $promo = $this->activePromotion($when, $channel);
+        return $promo ? $promo->applyTo((float) $this->price) : (float) $this->price;
+    }
+
+    /** "Is there a live discount right now?" — a shortcut for views. */
+    public function isOnPromotion(?\Carbon\Carbon $when = null, ?string $channel = null): bool
+    {
+        return $this->activePromotion($when, $channel) !== null;
+    }
+
+    /**
+     * The discount percent (0-100) when on promo, or null when not.
+     * Computed against the menu price so a 30→25 sale_price shows
+     * "≈ 17%" off rather than the raw value. Used for the "خصم X%"
+     * badge on the customer menu and cashier POS.
+     */
+    public function discountPct(?\Carbon\Carbon $when = null): ?float
+    {
+        $base = (float) $this->price;
+        if ($base <= 0) return null;
+        $effective = $this->effectivePrice($when);
+        if ($effective >= $base) return null;
+        return round((($base - $effective) / $base) * 100, 1);
+    }
+
     public function allergens(): BelongsToMany
     {
         return $this->belongsToMany(Allergen::class, 'menu_item_allergens');

@@ -24,7 +24,7 @@ hr { border: 0; border-top: 1px dashed #333; margin: .5rem 0; }
         ? $invoice->tableSession->orders
         : collect([$invoice->order])->filter();
     $originLabel = $invoice->tableSession
-        ? 'طاولة '.($invoice->tableSession?->table?->number ?? '—')
+        ? 'طاولة '.$invoice->tableLabel()
         : (($invoice->order?->order_type === 'delivery' ? 'دليفري' : 'استلام/سفري').' - '.($invoice->order?->sourceLabel() ?? 'طلب مباشر'));
     $siteName = \App\Helpers\Brand::name();
     $legalName = \App\Models\Setting::get('legal_name');
@@ -54,6 +54,12 @@ hr { border: 0; border-top: 1px dashed #333; margin: .5rem 0; }
         <tr>
             <td>{{ $it->name_snapshot }}
                 @if($it->modifiers->count())<br><small>{{ $it->modifiers->pluck('name_snapshot')->join('، ') }}</small>@endif
+                @if($it->wasDiscounted())
+                    <br><small style="color:#b91c1c;">
+                        🏷️ خصم: −{{ number_format($it->discountSavings(), 2) }}
+                        (كان {{ number_format((float) $it->unit_price_original, 2) }})
+                    </small>
+                @endif
             </td>
             <td>{{ $it->quantity }}</td>
             <td>{{ number_format($it->unit_price + $it->modifiers_total, 2) }}</td>

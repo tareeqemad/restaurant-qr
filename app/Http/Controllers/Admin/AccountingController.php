@@ -194,4 +194,110 @@ class AccountingController extends Controller
             'expense' => 'مصروف',
         ];
     }
+
+    // ───────────────────────────────────────────────────────────────
+    // Manual journal entry — the bridge that gives custom accounts
+    // actual purpose. Without this, an accountant adds a new account
+    // to the chart but nothing in the operational flow ever writes
+    // to it. With this, they can post DR/CR pairs to any account
+    // they want (subject to active-status validation).
+    // ───────────────────────────────────────────────────────────────
+
+    public function createManualEntry()
+    {
+        abort_unless(auth()->user()?->hasPermission('chart_of_accounts.create'), 403);
+
+        // Only ACTIVE accounts can be posted to. System inactives are
+        // weeded out so the dropdown doesn't tempt accountants into
+        // bringing a deactivated account back into the books by accident.
+        $accounts = Account::where('is_active', true)
+            ->orderBy('type')
+            ->orderBy('code')
+            ->get();
+
+        return view('admin.accounting.manual-entry', compact('accounts'));
+    }
+
+    public function storeManualEntry(Request $request)
+    {
+        abort_unless(auth()->user()?->hasPermission('chart_of_accounts.create'), 403);
+
+        $data = $request->validate([
+            'posted_on'   => ['required', 'date'],
+            'description' => ['required', 'string', 'max:255'],
+            'lines'       => ['required', 'array', 'min:2'],
+            'lines.*.account_id'  => ['required', 'integer', 'exists:accounts,id'],
+            'lines.*.debit'       => ['nullable', 'numeric', 'min:0'],
+            'lines.*.credit'      => ['nullable', 'numeric', 'min:0'],
+            'lines.*.description' => ['nullable', 'string', 'max:255'],
+        ], [], [
+            'lines' => 'سطور القيد',
+        ]);
+
+        // Normalise: empty numbers → 0; verify each line has EITHER
+        // debit OR credit (never both, never neither).
+        $lines = collect($data['lines'])->map(function ($line) {
+            return [
+                'account'     => (int) $line['account_id'],
+                'debit'       => round((float) ($line['debit']  ?? 0), 4),
+                'credit'      => round((float) ($line['credit'] ?? 0), 4),
+                'description' => $line['description'] ?? null,
+            ];
+        })->filter(fn ($l) => $l['debit'] > 0.0001 || $l['credit'] > 0.0001);
+
+        if ($lines->count() < 2) {
+            return back()->withInput()->with('error',
+                'يلزم على الأقل سطرين (مدين + دائن) للقيد.');
+        }
+
+        foreach ($lines as $i => $l) {
+            if ($l['debit'] > 0.0001 && $l['credit'] > 0.0001) {
+                return back()->withInput()->with('error',
+                    'سطر #'.($i+1).': لا يمكن أن يكون مديناً ودائناً في نفس الوقت — اختر واحداً.');
+            }
+        }
+
+        // Convert to AccountingService::post() shape — we look up the
+        // account code from the id (post() uses code as the address).
+        $accountIds = $lines->pluck('account')->unique()->all();
+        $codeMap = Account::whereIn('id', $accountIds)->pluck('code', 'id');
+
+        $postLines = $lines->map(fn ($l) => [
+            'account'     => $codeMap[$l['account']] ?? null,
+            'debit'       => $l['debit'],
+            'credit'      => $l['credit'],
+            'description' => $l['description'],
+        ])->all();
+
+        // Wrap an arbitrary source so the journal_entries.source_* columns
+        // get filled — we use the user record as a pragmatic stand-in
+        // since "the user who posted this" is the most natural reference
+        // for a manual entry.
+        $source = auth()->user();
+
+        try {
+            $entry = app(\App\Services\Accounting\AccountingService::class)->post(
+                eventType:   'manual_journal',
+                source:      $source,
+                branchId:    BranchContext::current(),
+                postedOn:    $data['posted_on'],
+                description: $data['description'],
+                lines:       $postLines,
+                metadata:    ['posted_by_username' => $source->username ?? null],
+                createdBy:   $source->id,
+            );
+        } catch (\Throwable $e) {
+            return back()->withInput()->with('error', $e->getMessage());
+        }
+
+        \App\Models\ActivityLog::log(
+            'journal.manual_posted',
+            "قيد يدوي #{$entry->id}: {$data['description']}",
+            $entry,
+            ['lines' => $postLines],
+        );
+
+        return redirect()->route('admin.accounting.journal')
+            ->with('success', "تم تسجيل القيد رقم #{$entry->id} بنجاح.");
+    }
 }

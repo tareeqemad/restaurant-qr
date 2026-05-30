@@ -4,12 +4,14 @@ namespace App\Providers;
 
 use App\Models\ActivityLog;
 use App\Models\Attendance;
+use App\Models\Account;
 use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\Expense;
 use App\Models\Ingredient;
 use App\Models\Lookup;
 use App\Models\MenuItem;
+use App\Models\MenuPromotion;
 use App\Models\Announcement;
 use App\Models\Order;
 use App\Models\OrderDiscount;
@@ -30,6 +32,7 @@ use App\Models\User;
 use App\Observers\IngredientObserver;
 use App\Observers\RecipeItemObserver;
 use App\Observers\StationObserver;
+use App\Policies\AccountPolicy;
 use App\Policies\ActivityLogPolicy;
 use App\Policies\AttendancePolicy;
 use App\Policies\BranchPolicy;
@@ -38,6 +41,7 @@ use App\Policies\ExpensePolicy;
 use App\Policies\InventoryPolicy;
 use App\Policies\LookupPolicy;
 use App\Policies\MenuPolicy;
+use App\Policies\MenuPromotionPolicy;
 use App\Policies\AnnouncementPolicy;
 use App\Policies\OrderDiscountPolicy;
 use App\Policies\OrderPolicy;
@@ -90,9 +94,11 @@ class AppServiceProvider extends ServiceProvider
             \App\Http\Middleware\SetActiveBranch::class,
         ]);
 
+        Gate::policy(Account::class, AccountPolicy::class);
         Gate::policy(User::class, UserPolicy::class);
         Gate::policy(Role::class, RolePolicy::class);
         Gate::policy(MenuItem::class, MenuPolicy::class);
+        Gate::policy(MenuPromotion::class, MenuPromotionPolicy::class);
         Gate::policy(Order::class, OrderPolicy::class);
         Gate::policy(Table::class, TablePolicy::class);
         Gate::policy(Payment::class, PaymentPolicy::class);

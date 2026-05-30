@@ -48,6 +48,15 @@ class PermissionSeeder extends Seeder
             // a full manager promotion. `viewAny` covers dashboard + detail
             // pages; `quick_consume` is the only one floor staff need.
             'staff_meals' => ['viewAny', 'quick_consume', 'settle', 'waive', 'close_month'],
+            // Menu-item promotions (sale prices, scheduled campaigns,
+            // happy-hour windows). Cashier sees the live discounts so
+            // the POS lights up correctly; CRUD stays manager-only.
+            'promotions' => ['viewAny', 'create', 'update', 'delete'],
+            // Chart-of-accounts management — the accountant can add /
+            // rename / deactivate user accounts. System accounts
+            // (wired into AccountingService by code) are protected by
+            // the service layer regardless of who has these perms.
+            'chart_of_accounts' => ['viewAny', 'create', 'update', 'delete'],
         ];
 
         foreach ($groups as $group => $actions) {
@@ -141,6 +150,9 @@ class PermissionSeeder extends Seeder
                 // shift (cola, water) — settling debt / closing the month
                 // remains a manager action.
                 'staff_meals.quick_consume',
+                // Cashier sees active promotions so the POS lights up
+                // the discount badge correctly; create/update stays manager.
+                'promotions.viewAny',
             ])->pluck('id'));
         }
     }

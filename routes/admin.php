@@ -19,6 +19,12 @@ Route::middleware(['auth', 'admin', 'branch'])->group(function () {
     Route::resource('roles', Admin\RoleController::class);
     Route::post('roles/{role}/clone', [Admin\RoleController::class, 'clone'])->name('roles.clone');
 
+    // Standalone permissions management — pick a user from a dropdown,
+    // tweak their grants/revokes without going through the full user form.
+    // Gated by roles.update permission inside the controller.
+    Route::get ('permissions',              [Admin\PermissionManagementController::class, 'index'])->name('permissions.index');
+    Route::put ('permissions/{user}/sync',  [Admin\PermissionManagementController::class, 'sync'])->name('permissions.sync');
+
     // Multi-branch overview — partners + super admins only.
     Route::get('overview',
         [Admin\PartnerOverviewController::class, 'index'])->name('partner.overview');
@@ -114,6 +120,14 @@ Route::middleware(['auth', 'admin', 'branch'])->group(function () {
     // Menu Items
     Route::resource('menu-items', Admin\MenuItemController::class);
     Route::patch('menu-items/{menu_item}/toggle-availability', [Admin\MenuItemController::class, 'toggleAvailability'])->name('menu-items.toggle-availability');
+
+    // Menu-item promotions — permanent sale prices, scheduled campaigns,
+    // happy-hour windows. Full CRUD + a quick toggle so the manager can
+    // pause/resume without editing the schedule.
+    Route::resource('promotions', Admin\PromotionController::class)
+        ->parameters(['promotions' => 'promotion'])
+        ->except(['show']);
+    Route::patch('promotions/{promotion}/toggle', [Admin\PromotionController::class, 'toggle'])->name('promotions.toggle');
 
     // Modifiers
     Route::resource('modifiers', Admin\ModifierGroupController::class);
@@ -339,7 +353,19 @@ Route::middleware(['auth', 'admin', 'branch'])->group(function () {
     Route::prefix('accounting')->name('accounting.')->group(function () {
         Route::get('journal', [Admin\AccountingController::class, 'journal'])->name('journal');
         Route::get('trial-balance', [Admin\AccountingController::class, 'trialBalance'])->name('trial-balance');
+        // Manual journal entry — the bridge that lets accountants actually
+        // post to their custom chart accounts (otherwise the chart is read-only).
+        Route::get ('manual-entry',  [Admin\AccountingController::class, 'createManualEntry'])->name('manual-entry.create');
+        Route::post('manual-entry',  [Admin\AccountingController::class, 'storeManualEntry'])->name('manual-entry.store');
     });
+
+    // Chart of accounts — accountant CRUD with system-account guards.
+    // The tree UI hits the JSON endpoint via fetch() for the edit modal;
+    // store/update/destroy auto-detect XHR via request()->wantsJson()
+    // and return JSON instead of redirects.
+    Route::resource('accounts', Admin\AccountController::class)->except(['show']);
+    Route::get  ('accounts/{account}/json',   [Admin\AccountController::class, 'showJson'])->name('accounts.show_json');
+    Route::patch('accounts/{account}/toggle', [Admin\AccountController::class, 'toggle'])->name('accounts.toggle');
 
     // Currencies (multi-currency display)
     Route::get   ('currencies',              [Admin\CurrencyController::class, 'index'])->name('currencies.index');

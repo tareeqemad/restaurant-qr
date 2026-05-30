@@ -14,7 +14,8 @@ class TableSession extends Model
     use BelongsToBranch, HasFactory;
 
     protected $fillable = [
-        'table_id', 'customer_id', 'token', 'cover_count', 'status',
+        'table_id', 'table_number_snapshot',
+        'customer_id', 'token', 'cover_count', 'status',
         'customer_name', 'customer_phone', 'opened_by_user_id', 'assigned_waiter_id',
         'opened_at', 'closed_at', 'last_activity_at',
         'bill_requested_at', 'bill_request_note',
@@ -39,7 +40,25 @@ class TableSession extends Model
             if (empty($m->last_activity_at)) {
                 $m->last_activity_at = now();
             }
+            // Snapshot the table number so renaming/deleting the table
+            // later doesn't silently rewrite this session's display.
+            if (empty($m->table_number_snapshot) && $m->table_id) {
+                $m->table_number_snapshot = Table::withTrashed()->find($m->table_id)?->number;
+            }
         });
+    }
+
+    /**
+     * The human label for this session's table, in priority order:
+     *   1. snapshot (set at open, immune to rename/delete)
+     *   2. live FK lookup (for legacy rows pre-snapshot migration)
+     *   3. '—' fallback
+     */
+    public function tableLabel(): string
+    {
+        return $this->table_number_snapshot
+            ?? $this->table?->number
+            ?? '—';
     }
 
     public function table(): BelongsTo

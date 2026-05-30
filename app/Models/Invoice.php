@@ -14,7 +14,7 @@ class Invoice extends Model
     use BelongsToBranch, HasFactory, SoftDeletes;
 
     protected $fillable = [
-        'branch_id', 'number', 'table_session_id', 'order_id', 'customer_id', 'issued_by_user_id',
+        'branch_id', 'number', 'table_session_id', 'table_number_snapshot', 'order_id', 'customer_id', 'issued_by_user_id',
         'subtotal', 'discount_total', 'tax_total', 'service_total', 'delivery_fee', 'tip',
         'total', 'paid_total', 'refunded_total', 'balance', 'status',
         'customer_name', 'customer_phone', 'notes',
@@ -47,6 +47,21 @@ class Invoice extends Model
             if (empty($m->number)) {
                 $m->number = self::generateNumber();
             }
+            // Snapshot the table number so the printed receipt always
+            // shows what the customer ACTUALLY sat at, even if the
+            // table is renumbered or deleted years later.
+            if (empty($m->table_number_snapshot)) {
+                if (! empty($m->table_session_id)) {
+                    $m->table_number_snapshot = TableSession::query()
+                        ->whereKey($m->table_session_id)
+                        ->value('table_number_snapshot');
+                }
+                if (empty($m->table_number_snapshot) && ! empty($m->order_id)) {
+                    $m->table_number_snapshot = Order::query()
+                        ->whereKey($m->order_id)
+                        ->value('table_number_snapshot');
+                }
+            }
         });
 
         static::saving(function (self $m) {
@@ -74,6 +89,109 @@ class Invoice extends Model
     public function order(): BelongsTo
     {
         return $this->belongsTo(Order::class);
+    }
+
+    /**
+     * Total per-item promotion savings across EVERY order on this
+     * invoice. Dine-in invoices set `table_session_id` and leave
+     * `order_id` null (the session holds one or many orders), so a
+     * naive `$this->order?->promoSavings()` would silently zero out
+     * the entire restaurant's promo accounting.
+     *
+     * Resolution order:
+     *   1. `order_id` set → portal/cashier single-order invoice → ask the order directly.
+     *   2. `table_session_id` set → dine-in → sum across all orders in the session.
+     *   3. Neither set → orphan invoice (manual?), return 0.
+     *
+     * BXGY/cashier ad-hoc discounts are intentionally excluded — they
+     * already live in `OrderDiscount` rows that drive `discount_total`,
+     * and double-counting them on 4090 would silently double-debit
+     * the sales-discount account.
+     */
+    public function promoSavings(): float
+    {
+        if ($this->order_id && $this->order) {
+            return $this->order->promoSavings();
+        }
+        if ($this->table_session_id) {
+            $session = $this->tableSession()->with('orders.items.modifiers')->first();
+            if ($session) {
+                return round((float) $session->orders->sum(fn ($o) => $o->promoSavings()), 2);
+            }
+        }
+        return 0.0;
+    }
+
+    /**
+     * Every journal entry sourced from this invoice — original posting,
+     * reversals, and post-issuance re-posts. The `OrderDiscountService`
+     * uses this to decide whether a discount change should trigger a
+     * reverse+repost cycle (only when at least one un-reversed entry
+     * already exists).
+     */
+    public function journalEntries()
+    {
+        return $this->morphMany(\App\Models\JournalEntry::class, 'source');
+    }
+
+    /**
+     * Human label for the table this invoice belongs to. Prefers the
+     * snapshot frozen at issuance — that's the value the customer saw
+     * on their printed receipt and the cashier confirmed.
+     *
+     * If snapshot is missing (legacy row pre-migration), walk the FK
+     * chain: session → table, then order → table, then '—'.
+     */
+    public function tableLabel(): string
+    {
+        if (! empty($this->table_number_snapshot)) {
+            return $this->table_number_snapshot;
+        }
+        return $this->tableSession?->table?->number
+            ?? $this->order?->table?->number
+            ?? '—';
+    }
+
+    /**
+     * After a refund completes, the invoice's payment math changes:
+     *   netPaid    = paid_total − refunded_total
+     *   balance    = total − netPaid
+     *   status     = unpaid | partially_paid | paid (with refund nuance)
+     *
+     * Without this method, an invoice that's been refunded 30 of 100
+     * still reads `balance = 0, status = paid`, blocking any re-collect
+     * attempt and confusing the customer-debt widget.
+     *
+     * `paid_total` itself stays IMMUTABLE — it's a faithful sum of the
+     * Payment rows. Subtracting refunds from it would break that
+     * history. The derived `netPaid` is what the cashier UI should
+     * display going forward.
+     */
+    public function recomputeBalanceAfterRefund(): void
+    {
+        $this->refresh();
+        $net = $this->netPaid();
+        $balance = max(0, round((float) $this->total - $net, 2));
+
+        // Status transitions after refund:
+        //   - balance = 0 AND net > 0 → still "paid" (no money owed, all paid)
+        //   - balance > 0 AND net > 0 → "partially_paid" (refund opened owed amount)
+        //   - balance > 0 AND net = 0 → "issued" (fully refunded, but original invoice stands)
+        //   - balance = 0 AND net = 0 → "cancelled" (everything reversed — leave as-is, manual decision)
+        $status = match (true) {
+            $balance <= 0.001 && $net > 0      => 'paid',
+            $balance > 0 && $net > 0           => 'partially_paid',
+            $balance > 0 && $net <= 0.001      => 'issued',
+            default                             => $this->status,   // leave anything weird untouched
+        };
+
+        $this->update([
+            'balance'  => $balance,
+            'status'   => $status,
+            // Clear paid_at when balance reopens so the dashboards stop
+            // showing a misleading "paid X minutes ago" timestamp.
+            'paid_at'  => $status === 'paid' ? $this->paid_at : null,
+        ]);
     }
 
     /**

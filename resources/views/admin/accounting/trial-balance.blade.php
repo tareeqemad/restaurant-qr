@@ -8,7 +8,18 @@
     icon="bi-columns-gap"
     subtitle="مطابقة إجمالي المدين والدائن لكل الحسابات المرحّلة"
     :crumbs="[['label' => 'التقارير', 'url' => route('admin.reports.index')]]"
-/>
+>
+    @if(auth()->user()?->hasPermission('chart_of_accounts.viewAny'))
+        {{-- Direct shortcut for the accountant: gives a second discovery
+             path so they don't have to dig through the sidebar to find
+             "شجرة الحسابات". --}}
+        <x-slot:actions>
+            <a href="{{ route('admin.accounts.index') }}" class="btn btn-outline-primary">
+                <i class="bi bi-diagram-3-fill"></i> إدارة شجرة الحسابات
+            </a>
+        </x-slot:actions>
+    @endif
+</x-admin.breadcrumb>
 
 {{-- Plain-language explainer — accountants of all backgrounds open this
      page and the abstract "balanced/unbalanced" label means nothing

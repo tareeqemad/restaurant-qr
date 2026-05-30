@@ -7,8 +7,15 @@
     title="القيود اليومية"
     icon="bi-journal-text"
     subtitle="سجل الترحيل المحاسبي لكل فاتورة ودفعة ومصروف ومورد"
-    :crumbs="[['label' => 'الحسابات', 'url' => route('admin.cashier.index')]]"
-/>
+    :crumbs="[['label' => 'الحسابات', 'url' => route('admin.cashier.index')]]">
+    <x-slot:actions>
+        @if(auth()->user()?->hasPermission('chart_of_accounts.create'))
+            <a href="{{ route('admin.accounting.manual-entry.create') }}" class="btn btn-primary">
+                <i class="bi bi-journal-plus"></i> قيد يدوي جديد
+            </a>
+        @endif
+    </x-slot:actions>
+</x-admin.breadcrumb>
 
 <x-admin.data-panel title="القيود اليومية" icon="bi-journal-text" :count="$entries->total()">
     <x-slot:filters>

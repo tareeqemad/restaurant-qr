@@ -194,7 +194,23 @@
                                 @endif
                             </div>
                             <div class="text-end ms-3">
-                                <div class="fw-bold text-primary mb-1">{{ \App\Helpers\Money::format($item->price) }}</div>
+                                @php
+                                    // Promotion-aware price for the waiter. If a live
+                                    // promo is active, show the discounted price + the
+                                    // strikethrough so the floor staff know what the
+                                    // customer is actually being charged.
+                                    $waiterPromo  = $item->activePromotion();
+                                    $waiterPrice  = $waiterPromo ? $waiterPromo->applyTo((float) $item->price) : (float) $item->price;
+                                @endphp
+                                @if($waiterPromo)
+                                    <div class="small text-muted text-decoration-line-through">{{ \App\Helpers\Money::format($item->price) }}</div>
+                                    <div class="fw-bold text-danger mb-1" title="{{ $waiterPromo->name }}">
+                                        <i class="bi bi-tag-fill"></i>
+                                        {{ \App\Helpers\Money::format($waiterPrice) }}
+                                    </div>
+                                @else
+                                    <div class="fw-bold text-primary mb-1">{{ \App\Helpers\Money::format($item->price) }}</div>
+                                @endif
                                 @if($inStock)
                                     @if($hasMods)
                                         {{-- Modifier modal trigger --}}
