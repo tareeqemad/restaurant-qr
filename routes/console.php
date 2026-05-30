@@ -55,3 +55,19 @@ Schedule::command('app:snapshot-inventory')
     ->dailyAt('23:59')
     ->withoutOverlapping()
     ->runInBackground();
+
+/*
+|--------------------------------------------------------------------------
+| Database — nightly safety-net backup
+|--------------------------------------------------------------------------
+|
+| On a local/on-prem server the branch is the source of truth between cloud
+| syncs (see docs/offline-sync-architecture.md). A gzipped mysqldump — kept
+| locally and optionally pushed off-site (config/backup.php) — guards against
+| branch hardware failure losing the day's data. Runs at 03:30, after the
+| 23:59 inventory snapshot and at the quiet end of service.
+*/
+Schedule::command('backup:run')
+    ->dailyAt('03:30')
+    ->withoutOverlapping()
+    ->runInBackground();

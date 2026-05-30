@@ -56,8 +56,20 @@ class Table extends Model
         return $this->belongsTo(Lookup::class, 'zone_lookup_id')->withTrashed();
     }
 
+    /**
+     * Public URL the printed QR code points to.
+     *
+     * Prefers `restaurant.menu_base_url` (the LAN address on a local/on-prem
+     * server) so customers on the restaurant WiFi can scan and order even
+     * while the internet is down. Falls back to APP_URL via url() for pure
+     * cloud deployments.
+     */
     public function qrUrl(): string
     {
-        return url('/menu/'.$this->qr_token);
+        $base = trim((string) config('restaurant.menu_base_url'));
+
+        return $base !== ''
+            ? rtrim($base, '/').'/menu/'.$this->qr_token
+            : url('/menu/'.$this->qr_token);
     }
 }

@@ -5,6 +5,13 @@ return [
     'currency' => env('RESTAURANT_CURRENCY', 'ILS'),
     'currency_symbol' => env('RESTAURANT_CURRENCY_SYMBOL', '₪'),
 
+    // Base URL the customer QR codes resolve to. On a local/on-prem server
+    // set MENU_BASE_URL to the LAN address the restaurant WiFi can reach
+    // (e.g. http://relax.local or http://192.168.1.10) so customers can scan
+    // and order even while the internet is down. Falls back to APP_URL when
+    // unset — keep it empty for pure cloud deployments.
+    'menu_base_url' => env('MENU_BASE_URL'),
+
     // Customer-facing feature flags
     'customer' => [
         // Show a currency switcher in the customer topbar (dropdown).
@@ -76,9 +83,9 @@ return [
     'discounts' => [
         'caps' => [
             'cashier' => ['percent' => 10, 'fixed' => 5],
-            'waiter'  => ['percent' => 5,  'fixed' => 3],
+            'waiter' => ['percent' => 5,  'fixed' => 3],
             'manager' => ['percent' => 25, 'fixed' => 50],
-            'admin'   => ['percent' => 100, 'fixed' => 9999],
+            'admin' => ['percent' => 100, 'fixed' => 9999],
         ],
     ],
 ];
