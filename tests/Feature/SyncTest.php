@@ -20,11 +20,15 @@ class SyncTest extends TestCase
         config(['sync.role' => 'cloud', 'sync.accept_token' => 'secret']);
         Setting::create(['key' => 'tax_rate', 'value' => '16', 'group' => 'tax', 'type' => 'int']);
 
-        $this->withToken('secret')
+        $response = $this->withToken('secret')
             ->getJson('/api/sync/pull?stream=settings')
-            ->assertOk()
-            ->assertJsonPath('changes.0.key', 'tax_rate')
-            ->assertJsonPath('changes.0.value', '16');
+            ->assertOk();
+
+        // The DB may already hold seeded settings, so locate ours by key
+        // rather than assuming a position in the ordered batch.
+        $change = collect($response->json('changes'))->firstWhere('key', 'tax_rate');
+        $this->assertNotNull($change, 'tax_rate setting not present in pulled changes');
+        $this->assertSame('16', $change['value']);
     }
 
     public function test_cloud_pull_rejects_a_missing_or_wrong_token(): void
