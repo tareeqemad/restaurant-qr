@@ -54,6 +54,7 @@ class AccountingService
     public const SALES_RETURNS = '4100';
     public const INVENTORY_ADJUSTMENT_GAIN = '4200';
     public const CASH_OVER_SHORT_INCOME = '4210';
+    public const FOREIGN_EXCHANGE_GAIN = '4220';
     public const COST_OF_GOODS_SOLD = '5000';
     public const OPERATING_EXPENSES = '5100';
     public const BAD_DEBT_EXPENSE = '5200';
@@ -62,6 +63,7 @@ class AccountingService
     public const INVENTORY_SHRINKAGE_EXPENSE = '5410';
     public const PURCHASE_PRICE_VARIANCE = '5420';
     public const CASH_SHORTAGE_EXPENSE = '5510';
+    public const FOREIGN_EXCHANGE_LOSS = '5520';
 
     private ?Collection $accounts = null;
     private ?Collection $accountMappings = null;
@@ -216,6 +218,13 @@ class AccountingService
                 'types' => ['revenue'],
                 'group' => 'الصندوق',
             ],
+            'foreign_exchange_gain' => [
+                'label' => 'Foreign exchange gain',
+                'description' => 'Gain recognized when a foreign-currency receivable or payable is settled at a different exchange rate.',
+                'default' => self::FOREIGN_EXCHANGE_GAIN,
+                'types' => ['revenue'],
+                'group' => 'Currencies',
+            ],
             'cost_of_goods_sold' => [
                 'label' => 'تكلفة البضاعة المباعة',
                 'description' => 'تكلفة المكونات المصروفة عند بيع الأصناف.',
@@ -271,6 +280,13 @@ class AccountingService
                 'default' => self::CASH_SHORTAGE_EXPENSE,
                 'types' => ['expense'],
                 'group' => 'الصندوق',
+            ],
+            'foreign_exchange_loss' => [
+                'label' => 'Foreign exchange loss',
+                'description' => 'Loss recognized when a foreign-currency receivable or payable is settled at a different exchange rate.',
+                'default' => self::FOREIGN_EXCHANGE_LOSS,
+                'types' => ['expense'],
+                'group' => 'Currencies',
             ],
         ];
     }
@@ -391,10 +407,10 @@ class AccountingService
             branchId: $payment->branch_id ?: $payment->invoice?->branch_id,
             postedOn: $payment->paid_at ?: $payment->created_at ?: now(),
             description: "تحصيل دفعة على فاتورة {$payment->invoice?->number}",
-            lines: [
+            lines: array_merge([
                 $this->debit($this->cashAccountForMethod($payment->method), (float) $payment->amount, 'تحصيل عبر '.$this->paymentMethodLabel($payment->method)),
                 $this->credit($this->postingAccount('accounts_receivable'), (float) $payment->amount, 'تسوية ذمم مدينة للعملاء'),
-            ],
+            ], $this->receivableSettlementAdjustmentLines($payment)),
             createdBy: $payment->received_by_user_id,
         );
     }
@@ -512,10 +528,10 @@ class AccountingService
             branchId: $payment->invoice?->branch_id,
             postedOn: $payment->paid_on ?: $payment->created_at ?: now(),
             description: "سداد فاتورة مورد {$payment->invoice?->number}",
-            lines: [
+            lines: array_merge([
                 $this->debit($this->postingAccount('accounts_payable'), (float) $payment->amount, 'تسوية ذمم دائنة للمورد'),
                 $this->credit($this->cashAccountForMethod($payment->method), (float) $payment->amount, 'سداد عبر '.$this->paymentMethodLabel($payment->method)),
-            ],
+            ], $this->payableSettlementAdjustmentLines($payment)),
             createdBy: $payment->paid_by,
         );
     }
@@ -571,6 +587,101 @@ class AccountingService
             description: "تسوية فرق صندوق الشفت #{$shift->id}",
             lines: $lines,
             createdBy: auth()->id(),
+        );
+    }
+
+    public function recordTaxPayment(float $outputTax, float $inputTax, string $paymentMethod, ?int $branchId, mixed $postedOn, ?int $createdBy = null, array $metadata = []): ?JournalEntry
+    {
+        $outputTax = $this->round(max(0, $outputTax));
+        $inputTax = $this->round(max(0, $inputTax));
+        $cashPaid = $this->round($outputTax - $inputTax);
+
+        if ($outputTax <= 0 || $cashPaid <= 0) {
+            throw new \RuntimeException('Tax payment requires a positive payable tax balance.');
+        }
+
+        $lines = [
+            $this->baseDebit($this->postingAccount('output_vat'), $outputTax, 'Tax liability paid'),
+        ];
+
+        if ($inputTax > 0) {
+            $lines[] = $this->baseCredit($this->postingAccount('input_vat'), $inputTax, 'Input tax applied against tax payable');
+        }
+
+        $lines[] = $this->baseCredit($this->cashAccountForMethod($paymentMethod), $cashPaid, 'Tax payment by '.$this->paymentMethodLabel($paymentMethod));
+
+        return $this->post(
+            eventType: 'tax_payment',
+            source: null,
+            branchId: $branchId,
+            postedOn: $postedOn,
+            description: 'Tax payment',
+            lines: $lines,
+            metadata: $metadata,
+            createdBy: $createdBy,
+        );
+    }
+
+    public function recordTipPayout(float $amount, string $paymentMethod, ?int $branchId, mixed $postedOn, ?int $createdBy = null, ?string $notes = null): ?JournalEntry
+    {
+        $amount = $this->round($amount);
+        if ($amount <= 0) {
+            throw new \RuntimeException('Tip payout amount must be greater than zero.');
+        }
+
+        return $this->post(
+            eventType: 'tips_payout',
+            source: null,
+            branchId: $branchId,
+            postedOn: $postedOn,
+            description: 'Tips payout',
+            lines: [
+                $this->baseDebit($this->postingAccount('tips_payable'), $amount, 'Tips liability paid to staff'),
+                $this->baseCredit($this->cashAccountForMethod($paymentMethod), $amount, 'Tips payout by '.$this->paymentMethodLabel($paymentMethod)),
+            ],
+            metadata: $notes ? ['notes' => $notes] : [],
+            createdBy: $createdBy,
+        );
+    }
+
+    public function recordPaymentClearingSettlement(Account $clearingAccount, Account $depositAccount, float $grossAmount, float $feeAmount, ?int $branchId, mixed $postedOn, ?int $createdBy = null, ?string $notes = null): ?JournalEntry
+    {
+        if ($clearingAccount->type !== 'asset' || $depositAccount->type !== 'asset') {
+            throw new \RuntimeException('Payment clearing settlement requires asset accounts.');
+        }
+
+        $grossAmount = $this->round($grossAmount);
+        $feeAmount = $this->round(max(0, $feeAmount));
+        $netDeposit = $this->round($grossAmount - $feeAmount);
+
+        if ($grossAmount <= 0 || $netDeposit < 0) {
+            throw new \RuntimeException('Settlement gross amount must be greater than the fee amount.');
+        }
+
+        $lines = [];
+        if ($netDeposit > 0) {
+            $lines[] = $this->baseDebit($depositAccount->code, $netDeposit, 'Net payment processor deposit');
+        }
+        if ($feeAmount > 0) {
+            $lines[] = $this->baseDebit($this->postingAccount('bank_and_card_fees'), $feeAmount, 'Payment processor fee');
+        }
+        $lines[] = $this->baseCredit($clearingAccount->code, $grossAmount, 'Clear payment processor receivable');
+
+        return $this->post(
+            eventType: 'payment_clearing_settlement',
+            source: null,
+            branchId: $branchId,
+            postedOn: $postedOn,
+            description: 'Payment clearing settlement',
+            lines: $lines,
+            metadata: [
+                'clearing_account_id' => $clearingAccount->id,
+                'deposit_account_id' => $depositAccount->id,
+                'gross_amount' => $grossAmount,
+                'fee_amount' => $feeAmount,
+                'notes' => $notes,
+            ],
+            createdBy: $createdBy,
         );
     }
 
@@ -967,6 +1078,243 @@ class AccountingService
     private function credit(string $account, float $amount, ?string $description = null): array
     {
         return $this->transactionLine($account, $amount, 'credit', $description);
+    }
+
+    private function baseDebit(string $account, float $amount, ?string $description = null): array
+    {
+        return $this->baseLine($account, $amount, 'debit', $description);
+    }
+
+    private function baseCredit(string $account, float $amount, ?string $description = null): array
+    {
+        return $this->baseLine($account, $amount, 'credit', $description);
+    }
+
+    private function baseLine(string $account, float $amount, string $side, ?string $description = null): array
+    {
+        $amount = $this->round(abs($amount));
+        $baseCurrencyCode = $this->baseCurrencyCode();
+
+        return [
+            'account' => $account,
+            'debit' => 0.0,
+            'credit' => 0.0,
+            'currency_code' => $baseCurrencyCode,
+            'exchange_rate' => 1.0,
+            'foreign_debit' => $side === 'debit' ? $amount : 0.0,
+            'foreign_credit' => $side === 'credit' ? $amount : 0.0,
+            'description' => $description,
+        ];
+    }
+
+    private function receivableSettlementAdjustmentLines(Payment $payment): array
+    {
+        $payment->loadMissing('invoice');
+        if (! $payment->invoice || (float) $payment->amount <= 0) {
+            return [];
+        }
+
+        $baseCurrencyCode = $this->baseCurrencyCode();
+        $currencyCode = $this->transactionCurrencyCode();
+        if ($currencyCode === $baseCurrencyCode) {
+            return [];
+        }
+
+        $postedDate = Carbon::parse($payment->paid_at ?: $payment->created_at ?: now())->toDateString();
+        $currentBase = $this->round((float) $payment->amount * $this->exchangeRateForCurrency($currencyCode, $baseCurrencyCode, $postedDate));
+        $targetBase = $this->receivableBaseClearAmount($payment);
+        if ($targetBase <= 0) {
+            return [];
+        }
+
+        $difference = $this->round($currentBase - $targetBase);
+        if (abs($difference) <= 0.0001) {
+            return [];
+        }
+
+        return $difference > 0
+            ? [
+                $this->baseDebit($this->postingAccount('accounts_receivable'), $difference, 'Foreign exchange adjustment on customer receivable'),
+                $this->baseCredit($this->postingAccount('foreign_exchange_gain'), $difference, 'Foreign exchange gain on customer payment'),
+            ]
+            : [
+                $this->baseDebit($this->postingAccount('foreign_exchange_loss'), abs($difference), 'Foreign exchange loss on customer payment'),
+                $this->baseCredit($this->postingAccount('accounts_receivable'), abs($difference), 'Foreign exchange adjustment on customer receivable'),
+            ];
+    }
+
+    private function payableSettlementAdjustmentLines(SupplierPayment $payment): array
+    {
+        $payment->loadMissing('invoice');
+        if (! $payment->invoice || (float) $payment->amount <= 0) {
+            return [];
+        }
+
+        $baseCurrencyCode = $this->baseCurrencyCode();
+        $currencyCode = $this->transactionCurrencyCode();
+        if ($currencyCode === $baseCurrencyCode) {
+            return [];
+        }
+
+        $postedDate = Carbon::parse($payment->paid_on ?: $payment->created_at ?: now())->toDateString();
+        $currentBase = $this->round((float) $payment->amount * $this->exchangeRateForCurrency($currencyCode, $baseCurrencyCode, $postedDate));
+        $targetBase = $this->payableBaseClearAmount($payment);
+        if ($targetBase <= 0) {
+            return [];
+        }
+
+        $difference = $this->round($currentBase - $targetBase);
+        if (abs($difference) <= 0.0001) {
+            return [];
+        }
+
+        return $difference > 0
+            ? [
+                $this->baseDebit($this->postingAccount('foreign_exchange_loss'), $difference, 'Foreign exchange loss on supplier payment'),
+                $this->baseCredit($this->postingAccount('accounts_payable'), $difference, 'Foreign exchange adjustment on supplier payable'),
+            ]
+            : [
+                $this->baseDebit($this->postingAccount('accounts_payable'), abs($difference), 'Foreign exchange adjustment on supplier payable'),
+                $this->baseCredit($this->postingAccount('foreign_exchange_gain'), abs($difference), 'Foreign exchange gain on supplier payment'),
+            ];
+    }
+
+    private function receivableBaseClearAmount(Payment $payment): float
+    {
+        $invoice = $payment->invoice;
+        if (! $invoice) {
+            return 0.0;
+        }
+
+        $openBase = $this->documentBaseBalanceBeforePayment(
+            documentSourceType: Invoice::class,
+            documentId: (int) $invoice->id,
+            paymentSourceType: Payment::class,
+            paymentTable: 'payments',
+            paymentDocumentColumn: 'invoice_id',
+            currentPaymentId: (int) $payment->id,
+            role: 'accounts_receivable',
+            normalBalance: 'debit',
+        );
+
+        return $this->proportionalBaseClearAmount(
+            openBase: $openBase,
+            documentTotal: (float) $invoice->total,
+            paidBefore: (float) Payment::where('invoice_id', $invoice->id)
+                ->whereKeyNot($payment->id)
+                ->sum('amount'),
+            currentPaymentAmount: (float) $payment->amount,
+        );
+    }
+
+    private function payableBaseClearAmount(SupplierPayment $payment): float
+    {
+        $invoice = $payment->invoice;
+        if (! $invoice) {
+            return 0.0;
+        }
+
+        $openBase = $this->documentBaseBalanceBeforePayment(
+            documentSourceType: SupplierInvoice::class,
+            documentId: (int) $invoice->id,
+            paymentSourceType: SupplierPayment::class,
+            paymentTable: 'supplier_payments',
+            paymentDocumentColumn: 'supplier_invoice_id',
+            currentPaymentId: (int) $payment->id,
+            role: 'accounts_payable',
+            normalBalance: 'credit',
+        );
+
+        return $this->proportionalBaseClearAmount(
+            openBase: $openBase,
+            documentTotal: (float) $invoice->total,
+            paidBefore: (float) SupplierPayment::where('supplier_invoice_id', $invoice->id)
+                ->whereKeyNot($payment->id)
+                ->sum('amount'),
+            currentPaymentAmount: (float) $payment->amount,
+        );
+    }
+
+    private function proportionalBaseClearAmount(float $openBase, float $documentTotal, float $paidBefore, float $currentPaymentAmount): float
+    {
+        $openBase = $this->round($openBase);
+        if ($openBase <= 0 || $currentPaymentAmount <= 0) {
+            return 0.0;
+        }
+
+        $foreignOpenBefore = max(0.0, $documentTotal - $paidBefore);
+        if ($foreignOpenBefore <= 0) {
+            return min($openBase, $this->round($currentPaymentAmount));
+        }
+
+        $ratio = min(1.0, $currentPaymentAmount / $foreignOpenBefore);
+
+        return min($openBase, $this->round($openBase * $ratio));
+    }
+
+    private function documentBaseBalanceBeforePayment(
+        string $documentSourceType,
+        int $documentId,
+        string $paymentSourceType,
+        string $paymentTable,
+        string $paymentDocumentColumn,
+        int $currentPaymentId,
+        string $role,
+        string $normalBalance,
+    ): float {
+        $accountCodes = collect([$this->postingAccount($role), $this->postingRoleDefaultCode($role)])
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $direct = $this->ledgerBalanceForSource($documentSourceType, $documentId, $accountCodes, $normalBalance);
+
+        $paymentRows = DB::table('journal_lines')
+            ->join('journal_entries', 'journal_entries.id', '=', 'journal_lines.journal_entry_id')
+            ->join('accounts', 'accounts.id', '=', 'journal_lines.account_id')
+            ->join($paymentTable, "{$paymentTable}.id", '=', 'journal_entries.source_id')
+            ->where('journal_entries.status', 'posted')
+            ->where('journal_entries.source_type', $paymentSourceType)
+            ->where("{$paymentTable}.{$paymentDocumentColumn}", $documentId)
+            ->where("{$paymentTable}.id", '<>', $currentPaymentId)
+            ->whereIn('accounts.code', $accountCodes)
+            ->selectRaw('COALESCE(SUM(journal_lines.debit), 0) as debit, COALESCE(SUM(journal_lines.credit), 0) as credit')
+            ->first();
+
+        $payments = $this->normalBalanceAmount($paymentRows, $normalBalance);
+
+        return $this->round($direct + $payments);
+    }
+
+    private function ledgerBalanceForSource(string $sourceType, int $sourceId, array $accountCodes, string $normalBalance): float
+    {
+        $row = DB::table('journal_lines')
+            ->join('journal_entries', 'journal_entries.id', '=', 'journal_lines.journal_entry_id')
+            ->join('accounts', 'accounts.id', '=', 'journal_lines.account_id')
+            ->where('journal_entries.status', 'posted')
+            ->where('journal_entries.source_type', $sourceType)
+            ->where('journal_entries.source_id', $sourceId)
+            ->whereIn('accounts.code', $accountCodes)
+            ->selectRaw('COALESCE(SUM(journal_lines.debit), 0) as debit, COALESCE(SUM(journal_lines.credit), 0) as credit')
+            ->first();
+
+        return $this->normalBalanceAmount($row, $normalBalance);
+    }
+
+    private function normalBalanceAmount(?object $row, string $normalBalance): float
+    {
+        $debit = (float) ($row->debit ?? 0);
+        $credit = (float) ($row->credit ?? 0);
+
+        return $normalBalance === 'credit'
+            ? $this->round($credit - $debit)
+            : $this->round($debit - $credit);
+    }
+
+    private function postingRoleDefaultCode(string $role): ?string
+    {
+        return self::postingRoleDefinitions()[$role]['default'] ?? null;
     }
 
     private function transactionLine(string $account, float $amount, string $side, ?string $description = null): array

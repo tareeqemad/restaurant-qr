@@ -338,6 +338,9 @@
                                 <li class="slide"><a href="{{ route('admin.accounting.tax-jurisdictions') }}" class="side-menu__item {{ $isActive('admin.accounting.tax-jurisdictions') }}"><i class="bi bi-percent submenu-icon"></i>قواعد ضريبة المبيعات</a></li>
                                 <li class="slide"><a href="{{ route('admin.accounting.reconciliations') }}" class="side-menu__item {{ $isActive('admin.accounting.reconciliations') }}"><i class="bi bi-check2-square submenu-icon"></i>مطابقة الصندوق والبنك</a></li>
                             @endif
+                            @if(auth()->user()?->hasPermission('chart_of_accounts.update'))
+                                <li class="slide"><a href="{{ route('admin.accounting.settlements') }}" class="side-menu__item {{ $isActive('admin.accounting.settlements') }}"><i class="bi bi-arrow-left-right submenu-icon"></i>التسويات المحاسبية</a></li>
+                            @endif
                             @if(auth()->user()?->hasPermission('chart_of_accounts.create'))
                                 <li class="slide"><a href="{{ route('admin.accounting.opening-balances') }}" class="side-menu__item {{ $isActive('admin.accounting.opening-balances') }}"><i class="bi bi-door-open submenu-icon"></i>الأرصدة الافتتاحية</a></li>
                             @endif

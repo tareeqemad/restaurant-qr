@@ -592,6 +592,111 @@ class AccountingConceptsTest extends TestCase
         $this->assertEqualsWithDelta(-4, (float) $reconciliation->difference, 0.01);
     }
 
+    public function test_accounting_settlement_forms_post_tax_tips_and_card_clearing_entries(): void
+    {
+        $accounting = app(AccountingService::class);
+
+        $accounting->post(
+            eventType: 'tax_settlement_probe',
+            source: null,
+            branchId: $this->branch->id,
+            postedOn: '2026-05-20',
+            description: 'Tax settlement probe',
+            lines: [
+                ['account' => AccountingService::CASH, 'debit' => 70, 'credit' => 0],
+                ['account' => AccountingService::INPUT_VAT, 'debit' => 30, 'credit' => 0],
+                ['account' => AccountingService::OUTPUT_VAT, 'debit' => 0, 'credit' => 100],
+            ],
+            createdBy: $this->admin->id,
+        );
+
+        $this->actingAs($this->admin)
+            ->get(route('admin.accounting.settlements', [
+                'from' => '2026-05-01',
+                'to' => '2026-05-31',
+                'as_of' => '2026-06-02',
+            ]))
+            ->assertOk();
+
+        $this->actingAs($this->admin)
+            ->post(route('admin.accounting.settlements.tax-payment'), [
+                'from' => '2026-05-01',
+                'to' => '2026-05-31',
+                'posted_on' => '2026-06-01',
+                'payment_method' => 'bank_transfer',
+            ])
+            ->assertRedirect(route('admin.accounting.journal', ['event_type' => 'tax_payment']));
+
+        $taxEntry = JournalEntry::where('event_type', 'tax_payment')->with('lines.account')->firstOrFail();
+        $this->assertEntryAccountTotals($taxEntry, AccountingService::OUTPUT_VAT, 100, 0);
+        $this->assertEntryAccountTotals($taxEntry, AccountingService::INPUT_VAT, 0, 30);
+        $this->assertEntryAccountTotals($taxEntry, AccountingService::BANK, 0, 70);
+
+        $accounting->post(
+            eventType: 'tips_settlement_probe',
+            source: null,
+            branchId: $this->branch->id,
+            postedOn: '2026-06-02',
+            description: 'Tips settlement probe',
+            lines: [
+                ['account' => AccountingService::CASH, 'debit' => 12, 'credit' => 0],
+                ['account' => AccountingService::TIPS_PAYABLE, 'debit' => 0, 'credit' => 12],
+            ],
+            createdBy: $this->admin->id,
+        );
+
+        $this->actingAs($this->admin)
+            ->post(route('admin.accounting.settlements.tips-payout'), [
+                'posted_on' => '2026-06-02',
+                'amount' => 12,
+                'payment_method' => 'cash',
+            ])
+            ->assertRedirect(route('admin.accounting.journal', ['event_type' => 'tips_payout']));
+
+        $tipsEntry = JournalEntry::where('event_type', 'tips_payout')->with('lines.account')->firstOrFail();
+        $this->assertEntryAccountTotals($tipsEntry, AccountingService::TIPS_PAYABLE, 12, 0);
+        $this->assertEntryAccountTotals($tipsEntry, AccountingService::CASH, 0, 12);
+
+        $processorClearing = Account::create([
+            'code' => '1098',
+            'name' => 'Processor clearing',
+            'type' => 'asset',
+            'normal_balance' => 'debit',
+            'is_active' => true,
+        ]);
+        $bank = Account::where('code', AccountingService::BANK)->firstOrFail();
+        app()->forgetInstance(AccountingService::class);
+        $accounting = app(AccountingService::class);
+
+        $accounting->post(
+            eventType: 'processor_clearing_probe',
+            source: null,
+            branchId: $this->branch->id,
+            postedOn: '2026-06-03',
+            description: 'Processor clearing probe',
+            lines: [
+                ['account' => '1098', 'debit' => 100, 'credit' => 0],
+                ['account' => AccountingService::OPENING_BALANCE_EQUITY, 'debit' => 0, 'credit' => 100],
+            ],
+            createdBy: $this->admin->id,
+        );
+
+        $this->actingAs($this->admin)
+            ->post(route('admin.accounting.settlements.payment-clearing'), [
+                'posted_on' => '2026-06-03',
+                'clearing_account_id' => $processorClearing->id,
+                'deposit_account_id' => $bank->id,
+                'gross_amount' => 100,
+                'fee_amount' => 3,
+            ])
+            ->assertRedirect(route('admin.accounting.journal', ['event_type' => 'payment_clearing_settlement']));
+
+        $settlementEntry = JournalEntry::where('event_type', 'payment_clearing_settlement')->with('lines.account')->firstOrFail();
+        $this->assertEntryAccountTotals($settlementEntry, AccountingService::BANK, 97, 0);
+        $this->assertEntryAccountTotals($settlementEntry, AccountingService::BANK_AND_CARD_FEES, 3, 0);
+        $this->assertEntryAccountTotals($settlementEntry, '1098', 0, 100);
+    }
+
     public function test_aging_report_lists_open_customer_and_supplier_balances(): void
     {
         Setting::put('accounting_base_currency', 'USD', 'accounting', 'string');
@@ -658,6 +763,14 @@ class AccountingConceptsTest extends TestCase
             ->assertSee('Open Supplier')
             ->assertSee('25.00 $')
             ->assertSee('20.00 $');
+    }
+
+    private function assertEntryAccountTotals(JournalEntry $entry, string $accountCode, float $expectedDebit, float $expectedCredit): void
+    {
+        $lines = $entry->lines->filter(fn ($line) => $line->account?->code === $accountCode);
+
+        $this->assertEqualsWithDelta($expectedDebit, (float) $lines->sum('debit'), 0.01);
+        $this->assertEqualsWithDelta($expectedCredit, (float) $lines->sum('credit'), 0.01);
     }
 
     private function ledgerDebitMinusCredit(string $accountCode, string $from, string $to): float

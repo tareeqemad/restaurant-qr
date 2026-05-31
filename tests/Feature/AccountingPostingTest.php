@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\Branch;
 use App\Models\Category;
+use App\Models\Currency;
+use App\Models\CurrencyExchangeRate;
 use App\Models\Ingredient;
 use App\Models\IngredientStock;
 use App\Models\Invoice;
@@ -16,8 +18,13 @@ use App\Models\Lookup;
 use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\Payment;
+use App\Models\Setting;
 use App\Models\Shift;
 use App\Models\StorageLocation;
+use App\Models\Supplier;
+use App\Models\SupplierInvoice;
+use App\Models\SupplierPayment;
 use App\Models\Table;
 use App\Models\TableSession;
 use App\Models\Unit;
@@ -377,6 +384,79 @@ class AccountingPostingTest extends TestCase
             ->first(fn ($line) => $line->account?->code === AccountingService::BANK)?->debit, 0.0001);
     }
 
+    public function test_customer_payment_posts_foreign_exchange_gain_when_settlement_rate_increases(): void
+    {
+        $this->configureFxCurrencies();
+
+        $invoice = Invoice::create([
+            'branch_id' => $this->branch->id,
+            'table_session_id' => $this->session->id,
+            'issued_by_user_id' => $this->cashier->id,
+            'subtotal' => 100,
+            'tax_total' => 0,
+            'service_total' => 0,
+            'delivery_fee' => 0,
+            'tip' => 0,
+            'total' => 100,
+            'balance' => 100,
+            'status' => 'issued',
+            'issued_at' => '2026-05-01 10:00:00',
+        ]);
+        app(AccountingService::class)->recordInvoiceIssued($invoice);
+
+        $payment = Payment::create([
+            'branch_id' => $this->branch->id,
+            'invoice_id' => $invoice->id,
+            'method' => 'cash',
+            'amount' => 100,
+            'received_by_user_id' => $this->cashier->id,
+            'paid_at' => '2026-05-02 10:00:00',
+        ]);
+
+        $entry = app(AccountingService::class)->recordPaymentReceived($payment)->load('lines.account');
+
+        $this->assertEntryBalances($entry);
+        $this->assertAccountTotals($entry, AccountingService::CASH, 27, 0);
+        $this->assertAccountTotals($entry, AccountingService::ACCOUNTS_RECEIVABLE, 2, 27);
+        $this->assertAccountTotals($entry, AccountingService::FOREIGN_EXCHANGE_GAIN, 0, 2);
+    }
+
+    public function test_supplier_payment_posts_foreign_exchange_loss_when_settlement_rate_increases(): void
+    {
+        $this->configureFxCurrencies();
+
+        $supplier = Supplier::create(['name' => 'FX Supplier']);
+        $supplierInvoice = SupplierInvoice::create([
+            'branch_id' => $this->branch->id,
+            'supplier_id' => $supplier->id,
+            'number' => 'SUP-FX-001',
+            'subtotal' => 100,
+            'tax_total' => 0,
+            'total' => 100,
+            'paid_total' => 0,
+            'balance' => 100,
+            'status' => 'unpaid',
+            'invoice_date' => '2026-05-01',
+            'created_by' => $this->cashier->id,
+        ]);
+        app(AccountingService::class)->recordSupplierInvoiceCreated($supplierInvoice);
+
+        $payment = SupplierPayment::create([
+            'supplier_invoice_id' => $supplierInvoice->id,
+            'amount' => 100,
+            'method' => 'bank_transfer',
+            'paid_on' => '2026-05-02',
+            'paid_by' => $this->cashier->id,
+        ]);
+
+        $entry = app(AccountingService::class)->recordSupplierPayment($payment)->load('lines.account');
+
+        $this->assertEntryBalances($entry);
+        $this->assertAccountTotals($entry, AccountingService::BANK, 0, 27);
+        $this->assertAccountTotals($entry, AccountingService::ACCOUNTS_PAYABLE, 27, 2);
+        $this->assertAccountTotals($entry, AccountingService::FOREIGN_EXCHANGE_LOSS, 2, 0);
+    }
+
     public function test_expense_category_account_mapping_overrides_default_operating_expense_account(): void
     {
         $category = Lookup::create([
@@ -598,5 +678,55 @@ class AccountingPostingTest extends TestCase
             ->first(fn ($line) => $line->account?->code === $accountCode)?->{$side};
 
         $this->assertEqualsWithDelta($expected, $actual, 0.0001);
+    }
+
+    private function assertAccountTotals(JournalEntry $entry, string $accountCode, float $expectedDebit, float $expectedCredit): void
+    {
+        $lines = $entry->lines->filter(fn ($line) => $line->account?->code === $accountCode);
+
+        $this->assertEqualsWithDelta($expectedDebit, (float) $lines->sum('debit'), 0.0001);
+        $this->assertEqualsWithDelta($expectedCredit, (float) $lines->sum('credit'), 0.0001);
+    }
+
+    private function configureFxCurrencies(): void
+    {
+        Setting::put('accounting_base_currency', 'USD', 'accounting', 'string');
+        Setting::put('accounting_currency_symbol', '$', 'accounting', 'string');
+        Setting::put('sales_currency', 'ILS', 'billing', 'string');
+
+        Currency::query()->update(['is_base' => false]);
+        Currency::updateOrCreate(['code' => 'USD'], [
+            'name' => 'US Dollar',
+            'symbol' => '$',
+            'rate_to_base' => 1,
+            'is_base' => true,
+            'is_active' => true,
+        ]);
+        Currency::updateOrCreate(['code' => 'ILS'], [
+            'name' => 'Shekel',
+            'symbol' => 'ILS',
+            'rate_to_base' => 0.27,
+            'is_base' => false,
+            'is_active' => true,
+        ]);
+
+        CurrencyExchangeRate::create([
+            'currency_code' => 'ILS',
+            'base_currency_code' => 'USD',
+            'rate' => 0.25,
+            'valid_from' => '2026-05-01',
+            'valid_to' => '2026-05-01',
+            'is_active' => true,
+            'source' => 'test',
+        ]);
+        CurrencyExchangeRate::create([
+            'currency_code' => 'ILS',
+            'base_currency_code' => 'USD',
+            'rate' => 0.27,
+            'valid_from' => '2026-05-02',
+            'valid_to' => '2026-05-02',
+            'is_active' => true,
+            'source' => 'test',
+        ]);
     }
 }

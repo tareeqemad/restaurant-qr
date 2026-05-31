@@ -386,6 +386,10 @@ Route::middleware(['auth', 'setup.complete', 'admin', 'branch', 'license'])->gro
         Route::delete('tax-jurisdictions/{jurisdiction}', [Admin\AccountingController::class, 'destroyTaxJurisdiction'])->name('tax-jurisdictions.destroy');
         Route::get('reconciliations', [Admin\AccountingController::class, 'reconciliations'])->name('reconciliations');
         Route::post('reconciliations', [Admin\AccountingController::class, 'storeReconciliation'])->name('reconciliations.store');
+        Route::get('settlements', [Admin\AccountingController::class, 'settlements'])->name('settlements');
+        Route::post('settlements/tax-payment', [Admin\AccountingController::class, 'storeTaxPayment'])->name('settlements.tax-payment');
+        Route::post('settlements/tips-payout', [Admin\AccountingController::class, 'storeTipPayout'])->name('settlements.tips-payout');
+        Route::post('settlements/payment-clearing', [Admin\AccountingController::class, 'storePaymentClearingSettlement'])->name('settlements.payment-clearing');
         // Manual journal entry — the bridge that lets accountants actually
         // post to their custom chart accounts (otherwise the chart is read-only).
         Route::get('manual-entry', [Admin\AccountingController::class, 'createManualEntry'])->name('manual-entry.create');

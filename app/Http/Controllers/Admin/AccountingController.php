@@ -246,6 +246,9 @@ class AccountingController extends Controller
     private function eventLabels(): array
     {
         return [
+            'tax_payment' => 'سداد ضريبة',
+            'tips_payout' => 'صرف إكراميات',
+            'payment_clearing_settlement' => 'تسوية بوابة دفع',
             'invoice_issued' => 'إصدار فاتورة',
             'invoice_cancelled' => 'إلغاء فاتورة',
             'payment_received' => 'تحصيل دفعة',
@@ -1274,6 +1277,175 @@ class AccountingController extends Controller
         ])->with('success', 'تم حفظ المطابقة.');
     }
 
+    public function settlements(Request $request)
+    {
+        abort_unless(auth()->user()?->hasPermission('chart_of_accounts.update'), 403);
+
+        $filters = $request->validate([
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date'],
+            'as_of' => ['nullable', 'date'],
+        ]);
+
+        [$from, $to] = $this->dateRange($filters['from'] ?? now()->startOfMonth()->toDateString(), $filters['to'] ?? null);
+        $asOf = Carbon::parse($filters['as_of'] ?? now())->toDateString();
+        $taxAmounts = $this->taxSettlementAmounts($from, $to);
+        $tipsPayable = max(0, $this->bookBalanceForRole('tips_payable', 'credit', $asOf));
+
+        $assetAccounts = Account::where('is_active', true)
+            ->where('type', 'asset')
+            ->orderBy('code')
+            ->get();
+
+        $recentSettlements = $this->scopeToCurrentBranch(
+            JournalEntry::with(['lines.account', 'creator'])
+                ->whereIn('event_type', ['tax_payment', 'tips_payout', 'payment_clearing_settlement'])
+        )
+            ->orderByDesc('posted_on')
+            ->orderByDesc('id')
+            ->paginate(12)
+            ->withQueryString();
+
+        return view('admin.accounting.settlements', [
+            'from' => $from,
+            'to' => $to,
+            'asOf' => $asOf,
+            'taxAmounts' => $taxAmounts,
+            'tipsPayable' => round($tipsPayable, 2),
+            'assetAccounts' => $assetAccounts,
+            'paymentMethods' => $this->paymentMethodOptions(),
+            'recentSettlements' => $recentSettlements,
+        ]);
+    }
+
+    public function storeTaxPayment(Request $request)
+    {
+        abort_unless(auth()->user()?->hasPermission('chart_of_accounts.update'), 403);
+
+        $data = $request->validate([
+            'from' => ['required', 'date'],
+            'to' => ['required', 'date'],
+            'posted_on' => ['required', 'date'],
+            'payment_method' => ['required', 'string', Rule::in(array_keys($this->paymentMethodOptions()))],
+        ]);
+
+        [$from, $to] = $this->dateRange($data['from'], $data['to']);
+        $postedOn = Carbon::parse($data['posted_on'])->toDateString();
+        $taxAmounts = $this->taxSettlementAmounts($from, $to);
+
+        if ($taxAmounts['payable'] <= 0.01) {
+            return back()->withInput()->with('error', 'لا يوجد رصيد ضريبة مستحق لهذا المدى.');
+        }
+
+        try {
+            $entry = app(AccountingService::class)->recordTaxPayment(
+                outputTax: $taxAmounts['output_tax'],
+                inputTax: $taxAmounts['input_tax'],
+                paymentMethod: $data['payment_method'],
+                branchId: BranchContext::current(),
+                postedOn: $postedOn,
+                createdBy: auth()->id(),
+                metadata: [
+                    'from' => $from,
+                    'to' => $to,
+                    'tax_label' => $taxAmounts['tax_label'],
+                ],
+            );
+        } catch (\Throwable $exception) {
+            return back()->withInput()->with('error', $exception->getMessage());
+        }
+
+        ActivityLog::log('accounting.tax_payment_posted', 'سداد ضريبة', $entry);
+
+        return redirect()->route('admin.accounting.journal', ['event_type' => 'tax_payment'])
+            ->with('success', 'تم ترحيل قيد سداد الضريبة.');
+    }
+
+    public function storeTipPayout(Request $request)
+    {
+        abort_unless(auth()->user()?->hasPermission('chart_of_accounts.update'), 403);
+
+        $data = $request->validate([
+            'posted_on' => ['required', 'date'],
+            'amount' => ['required', 'numeric', 'gt:0'],
+            'payment_method' => ['required', 'string', Rule::in(array_keys($this->paymentMethodOptions()))],
+            'notes' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $postedOn = Carbon::parse($data['posted_on'])->toDateString();
+        $amount = round((float) $data['amount'], 4);
+        $tipsPayable = max(0, $this->bookBalanceForRole('tips_payable', 'credit', $postedOn));
+
+        if ($amount > $tipsPayable + 0.01) {
+            return back()->withInput()->with('error', 'مبلغ صرف الإكراميات أكبر من الرصيد المستحق.');
+        }
+
+        try {
+            $entry = app(AccountingService::class)->recordTipPayout(
+                amount: $amount,
+                paymentMethod: $data['payment_method'],
+                branchId: BranchContext::current(),
+                postedOn: $postedOn,
+                createdBy: auth()->id(),
+                notes: $data['notes'] ?? null,
+            );
+        } catch (\Throwable $exception) {
+            return back()->withInput()->with('error', $exception->getMessage());
+        }
+
+        ActivityLog::log('accounting.tips_payout_posted', 'صرف إكراميات', $entry);
+
+        return redirect()->route('admin.accounting.journal', ['event_type' => 'tips_payout'])
+            ->with('success', 'تم ترحيل قيد صرف الإكراميات.');
+    }
+
+    public function storePaymentClearingSettlement(Request $request)
+    {
+        abort_unless(auth()->user()?->hasPermission('chart_of_accounts.update'), 403);
+
+        $data = $request->validate([
+            'posted_on' => ['required', 'date'],
+            'clearing_account_id' => ['required', 'integer', 'exists:accounts,id'],
+            'deposit_account_id' => ['required', 'integer', 'exists:accounts,id'],
+            'gross_amount' => ['required', 'numeric', 'gt:0'],
+            'fee_amount' => ['required', 'numeric', 'min:0'],
+            'notes' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        if ((int) $data['clearing_account_id'] === (int) $data['deposit_account_id']) {
+            return back()->withInput()->with('error', 'حساب التحصيل وحساب الإيداع يجب أن يكونا مختلفين.');
+        }
+
+        $grossAmount = round((float) $data['gross_amount'], 4);
+        $feeAmount = round((float) $data['fee_amount'], 4);
+        if ($feeAmount > $grossAmount) {
+            return back()->withInput()->with('error', 'العمولة لا يمكن أن تكون أكبر من إجمالي التسوية.');
+        }
+
+        $clearingAccount = Account::where('is_active', true)->where('type', 'asset')->findOrFail($data['clearing_account_id']);
+        $depositAccount = Account::where('is_active', true)->where('type', 'asset')->findOrFail($data['deposit_account_id']);
+
+        try {
+            $entry = app(AccountingService::class)->recordPaymentClearingSettlement(
+                clearingAccount: $clearingAccount,
+                depositAccount: $depositAccount,
+                grossAmount: $grossAmount,
+                feeAmount: $feeAmount,
+                branchId: BranchContext::current(),
+                postedOn: Carbon::parse($data['posted_on'])->toDateString(),
+                createdBy: auth()->id(),
+                notes: $data['notes'] ?? null,
+            );
+        } catch (\Throwable $exception) {
+            return back()->withInput()->with('error', $exception->getMessage());
+        }
+
+        ActivityLog::log('accounting.payment_clearing_settlement_posted', 'تسوية بوابة دفع', $entry);
+
+        return redirect()->route('admin.accounting.journal', ['event_type' => 'payment_clearing_settlement'])
+            ->with('success', 'تم ترحيل قيد تسوية بوابة الدفع.');
+    }
+
     private function reversedEntryIds(): array
     {
         return $this->scopeToCurrentBranch(JournalEntry::query())
@@ -1684,6 +1856,33 @@ class AccountingController extends Controller
         return round($account->normal_balance === 'credit'
             ? (float) $row->credit - (float) $row->debit
             : (float) $row->debit - (float) $row->credit, 4);
+    }
+
+    private function bookBalanceForRole(string $role, string $normalBalance, string $asOf): float
+    {
+        return round($this->netForCodes(
+            $this->ledgerAccountRows(null, $asOf),
+            $this->postingRoleCodes($role),
+            $normalBalance,
+        ), 4);
+    }
+
+    private function taxSettlementAmounts(string $from, string $to): array
+    {
+        $rows = $this->ledgerAccountRows($from, $to);
+        $outputTax = round(max(0, $this->netForCodes($rows, $this->postingRoleCodes('output_vat'), 'credit')), 2);
+        $inputTax = MarketProfile::isUs()
+            ? 0.0
+            : round(max(0, $this->netForCodes($rows, $this->postingRoleCodes('input_vat'), 'debit')), 2);
+        $payable = round(max(0, $outputTax - $inputTax), 2);
+
+        return [
+            'output_tax' => $outputTax,
+            'input_tax' => $inputTax,
+            'payable' => $payable,
+            'tax_label' => MarketProfile::taxLabel(),
+            'is_us_market' => MarketProfile::isUs(),
+        ];
     }
 
     private function postingRoleCodes(string $role): array
