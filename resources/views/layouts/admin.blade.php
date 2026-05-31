@@ -1,6 +1,7 @@
 @php
     $settings = \App\Models\Setting::class;
     $theme = \App\Support\ThemePalette::current();
+    $market = \App\Support\MarketProfile::class;
     $siteName = $settings::get('site_name', config('restaurant.name', 'Relax'));
     $headerStyle = $theme['header_style'];
     $menuStyle = $theme['menu_style'];
@@ -13,7 +14,8 @@
 <!DOCTYPE html>
 {{-- Admin navigation is intentionally horizontal, matching the desired
      Dashtic switcher mode while keeping the switcher UI out of the app. --}}
-<html lang="ar" dir="rtl"
+<html lang="{{ $market::lang() }}" dir="{{ $market::direction() }}"
+      data-market="{{ $market::current() }}"
       data-nav-layout="horizontal"
       data-theme-mode="light"
       data-header-styles="{{ $headerStyle }}"
@@ -93,8 +95,8 @@
         } catch (e) {}
     </script>
 
-    <!-- Bootstrap RTL -->
-    <link id="style" href="{{ $optimizedAsset('assets/dashtic/libs/bootstrap/css/bootstrap.rtl.min.css') }}" rel="stylesheet">
+    <!-- Bootstrap -->
+    <link id="style" href="{{ $optimizedAsset($market::bootstrapCssPath()) }}" rel="stylesheet">
 
     <!-- Style Css -->
     <link href="{{ $optimizedAsset('assets/dashtic/css/styles.min.css') }}" rel="stylesheet">
@@ -122,12 +124,13 @@
     {{-- Runtime theme override. It is intentionally loaded after Relax CSS so
          dashboard settings win over the compiled default palette. --}}
     <style>
+        @include('partials.market-vars')
         @include('partials.theme-vars', ['theme' => $theme])
     </style>
 
-    {{-- Arabic typography: load after first paint; do not block dashboard CSS. --}}
-    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&family=Cinzel:wght@600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
-    <noscript><link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&family=Cinzel:wght@600;700&display=swap" rel="stylesheet"></noscript>
+    {{-- Market typography: load after first paint; do not block dashboard CSS. --}}
+    <link rel="preload" as="style" href="{{ $market::fontUrl() }}" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link href="{{ $market::fontUrl() }}" rel="stylesheet"></noscript>
 
     @stack('head-scripts')
     @vite(['resources/js/app.js'])
@@ -181,7 +184,7 @@
     <script src="{{ asset('assets/dashtic/js/simplebar.js') }}"></script>
     <script src="{{ asset('assets/dashtic/libs/choices.js/public/assets/scripts/choices.min.js') }}"></script>
     <script src="{{ asset('assets/dashtic/libs/flatpickr/flatpickr.min.js') }}"></script>
-    @if(file_exists(public_path('assets/dashtic/libs/flatpickr/l10n/ar.js')))
+    @if($market::isRtl() && file_exists(public_path('assets/dashtic/libs/flatpickr/l10n/ar.js')))
         <script src="{{ asset('assets/dashtic/libs/flatpickr/l10n/ar.js') }}"></script>
     @endif
     <script src="{{ asset('assets/dashtic/js/admin-datepicker.js') }}"></script>

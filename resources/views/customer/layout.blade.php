@@ -1,21 +1,22 @@
 @php
     $theme = \App\Support\ThemePalette::current();
     $brandName = \App\Helpers\Brand::name();
+    $market = \App\Support\MarketProfile::class;
 @endphp
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="{{ $market::lang() }}" dir="{{ $market::direction() }}" data-market="{{ $market::current() }}">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="{{ $theme['primary'] }}">
 <meta name="csrf-token" content="{{ csrf_token() }}">
-<title>@yield('title', 'قائمة الطعام') · {{ $brandName }}</title>
+<title>@yield('title', __('ui.customer_menu.default_title')) · {{ $brandName }}</title>
 <link rel="icon" href="{{ \App\Helpers\Brand::faviconUrl() }}">
-<link href="{{ asset('assets/dashtic/libs/bootstrap/css/bootstrap.rtl.min.css') }}" rel="stylesheet">
+<link href="{{ asset($market::bootstrapCssPath()) }}" rel="stylesheet">
 <link href="{{ asset('assets/dashtic/icon-fonts/feather/feather.css') }}" rel="stylesheet">
 <link href="{{ asset('assets/dashtic/icon-fonts/bootstrap-icons/icons/font/bootstrap-icons.css') }}" rel="stylesheet">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link href="{{ $market::fontUrl() }}" rel="stylesheet">
 @vite(['resources/js/app.js'])
 {{-- Livewire bundles its own Alpine — don't load a second copy from CDN
      or Alpine will double-init and break reactivity. @livewireStyles goes in
@@ -48,8 +49,9 @@
     --gold-gradient: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
 }
 @include('partials.theme-vars', ['theme' => $theme])
+@include('partials.market-vars')
 * { -webkit-tap-highlight-color: transparent; }
-html, body { background: var(--bg); color: var(--ink); font-family: 'Tajawal', sans-serif; }
+html, body { background: var(--bg); color: var(--ink); font-family: var(--market-font-family); }
 body { padding-bottom: env(safe-area-inset-bottom); min-height: 100vh; }
 /* ── Topbar — restaurant brand strip on top of the QR menu ─────
    Refined dark-forest gradient + hand-painted gold accents. The bar
@@ -1162,11 +1164,11 @@ body { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
                 </span>
                 <span class="brand-text">
                     <span class="brand-text__name">{{ $brandName }}</span>
-                    <span class="brand-text__tag"><i class="bi bi-geo-alt-fill"></i> {{ $session->table?->branch?->name ?: 'فرعنا' }}</span>
+                    <span class="brand-text__tag"><i class="bi bi-geo-alt-fill"></i> {{ $session->table?->branch?->localizedName() ?: __('ui.customer_menu.branch_default') }}</span>
                 </span>
             </h4>
             <div class="sub">
-                <span class="table-big"><i class="bi bi-grid-3x3-gap-fill"></i> طاولة {{ $session->table->number ?? '—' }}</span>
+                <span class="table-big"><i class="bi bi-grid-3x3-gap-fill"></i> {{ __('ui.customer_menu.table_short', ['number' => $session->table->number ?? '—']) }}</span>
                 @if($session->customer_name)
                     <span class="chip"><i class="bi bi-person-circle"></i> {{ $session->customer_name }}</span>
                 @endif
@@ -1189,7 +1191,7 @@ body { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
                             {{ $currentCurrency->code }}
                         </button>
                         <ul class="dropdown-menu dropdown-menu-end" style="min-width: 200px;">
-                            <li class="dropdown-header small">اختر العملة</li>
+                            <li class="dropdown-header small">{{ __('ui.customer_menu.choose_currency') }}</li>
                             @foreach($activeCurrencies as $cur)
                                 <li>
                                     <form method="POST" action="{{ route('customer.currency.switch') }}" class="m-0">
@@ -1208,9 +1210,9 @@ body { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
             @endif
 
             @if($activeOrdersCount > 0)
-                <a href="{{ route('customer.track') }}" class="chip chip-orders" title="تتبع طلبك">
+                <a href="{{ route('customer.track') }}" class="chip chip-orders" title="{{ __('ui.customer_menu.track_order') }}">
                     <i class="bi bi-receipt-cutoff"></i>
-                    تتبّع الطلب
+                    {{ __('ui.customer_menu.track_order') }}
                     <span class="chip-badge">{{ $activeOrdersCount }}</span>
                 </a>
             @endif
@@ -1299,22 +1301,30 @@ setTimeout(() => {
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const sessionToken = @json($session->token ?? null);
+    const customerLayoutI18n = @json(__('ui.customer_menu'));
+    const t = (key, replacements = {}) => {
+        let text = customerLayoutI18n[key] || key;
+        Object.entries(replacements).forEach(([name, value]) => {
+            text = text.replaceAll(':' + name, value);
+        });
+        return text;
+    };
     if (! sessionToken) return;
     const wait = setInterval(() => {
         if (window.Echo) {
             clearInterval(wait);
             window.Echo.channel('session.' + sessionToken)
                 .listen('.order.status_changed', (e) => {
-                    showToast(`طلب ${e.order_number || ''} → ${e.status_label}`, 'info');
+                    showToast(t('order_status_changed', { number: e.order_number || '', status: e.status_label }), 'info');
                     if (window.location.pathname.includes('/track')) setTimeout(()=>location.reload(), 800);
                 })
                 .listen('.item.status_changed', (e) => {
-                    if (e.status === 'ready') showToast(`${e.name} جاهز 🎉`, 'success');
-                    else if (e.status === 'preparing') showToast(`${e.name} قيد التحضير 👨‍🍳`, 'info');
+                    if (e.status === 'ready') showToast(t('item_ready', { name: e.name }), 'success');
+                    else if (e.status === 'preparing') showToast(t('item_preparing', { name: e.name }), 'info');
                     if (window.location.pathname.includes('/track')) setTimeout(()=>location.reload(), 800);
                 })
                 .listen('.invoice.paid', () => {
-                    showToast('تم الدفع بنجاح. شكراً! ❤️', 'success');
+                    showToast(t('payment_success'), 'success');
                 });
         }
     }, 100);

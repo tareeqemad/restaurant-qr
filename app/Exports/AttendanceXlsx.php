@@ -6,6 +6,8 @@ use App\Models\Attendance;
 use App\Models\Branch;
 use App\Models\User;
 use App\Support\BranchContext;
+use App\Support\MarketProfile;
+use App\Support\MarketSpreadsheetLocalizer;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -56,6 +58,7 @@ class AttendanceXlsx
         $this->buildRecordsSheet($book->createSheet(), $rows);
         $this->buildPerEmployeeSheet($book->createSheet(), $rows);
 
+        MarketSpreadsheetLocalizer::apply($book);
         $book->setActiveSheetIndex(0);
 
         $stamp    = now()->format('Y-m-d_H-i');
@@ -146,13 +149,13 @@ class AttendanceXlsx
             ->diffInDays(Carbon::parse($this->period['to'])) + 1;
 
         $meta = [
-            ['الفترة', Carbon::parse($this->period['from'])->locale('ar')->isoFormat('D MMMM YYYY')
-                . ' — ' . Carbon::parse($this->period['to'])->locale('ar')->isoFormat('D MMMM YYYY')
+            ['الفترة', Carbon::parse($this->period['from'])->locale(MarketProfile::lang())->isoFormat('D MMMM YYYY')
+                . ' — ' . Carbon::parse($this->period['to'])->locale(MarketProfile::lang())->isoFormat('D MMMM YYYY')
                 . " ({$days} يوم)"],
             ['الفرع',   $this->period['branch_label']],
             ['الموظف',  $userLabel],
             ['الحالة',  $statusLabel],
-            ['تاريخ التقرير', now()->locale('ar')->isoFormat('D MMMM YYYY · HH:mm')],
+            ['تاريخ التقرير', now()->locale(MarketProfile::lang())->isoFormat('D MMMM YYYY · HH:mm')],
         ];
         $row = 3;
         foreach ($meta as $pair) {

@@ -1,20 +1,21 @@
 @php
     $theme = \App\Support\ThemePalette::current();
     $siteName = \App\Helpers\Brand::name();
+    $market = \App\Support\MarketProfile::class;
 @endphp
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="{{ $market::lang() }}" dir="{{ $market::direction() }}" data-market="{{ $market::current() }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <meta name="theme-color" content="{{ $theme['primary'] }}">
-    <title>@yield('title', 'بوابة الزبون') · {{ $siteName }}</title>
+    <title>@yield('title', __('portal.layout.title')) · {{ $siteName }}</title>
     <link rel="icon" href="{{ \App\Helpers\Brand::faviconUrl() }}">
     <link href="{{ asset('assets/dashtic/icon-fonts/bootstrap-icons/icons/font/bootstrap-icons.css') }}" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+    <link href="{{ $market::fontUrl() }}" rel="stylesheet">
     <style>
         :root {
             --green-primary: {{ $theme['primary'] }};
@@ -30,10 +31,11 @@
             --paper:         #FFFFFF;
         }
         @include('partials.theme-vars', ['theme' => $theme])
+        @include('partials.market-vars')
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         html, body { margin: 0; padding: 0; }
         body {
-            font-family: 'Tajawal', system-ui, sans-serif;
+            font-family: var(--market-font-family);
             color: var(--ink);
             background:
                 radial-gradient(circle at 90% -10%, rgba(var(--primary-rgb), .10), transparent 55%),
@@ -598,7 +600,7 @@
         @endphp
         <header class="pf-header">
             <div class="pf-header-inner">
-                <button type="button" class="pf-burger" onclick="pfOpenDrawer()" aria-label="القائمة" aria-controls="pfDrawer">
+                <button type="button" class="pf-burger" onclick="pfOpenDrawer()" aria-label="{{ __('portal.layout.menu') }}" aria-controls="pfDrawer">
                     <i class="bi bi-list"></i>
                 </button>
                 <a href="{{ route('portal.dashboard') }}" class="pf-brand">
@@ -607,15 +609,15 @@
                 </a>
                 <div class="pf-spacer"></div>
                 <a href="{{ route('portal.dashboard') }}"
-                   class="pf-link {{ request()->routeIs('portal.dashboard') ? 'is-active' : '' }}">الرئيسية</a>
+                   class="pf-link {{ request()->routeIs('portal.dashboard') ? 'is-active' : '' }}">{{ __('portal.layout.home') }}</a>
                 <a href="{{ route('portal.order.history') }}"
                    class="pf-link {{ request()->routeIs('portal.order.*') ? 'is-active' : '' }}">
-                    <i class="bi bi-bag-fill"></i> طلباتي
+                    <i class="bi bi-bag-fill"></i> {{ __('portal.layout.my_orders') }}
                 </a>
                 <a href="{{ route('portal.reservations.index') }}"
-                   class="pf-link {{ request()->routeIs('portal.reservations.*') ? 'is-active' : '' }}">حجوزاتي</a>
+                   class="pf-link {{ request()->routeIs('portal.reservations.*') ? 'is-active' : '' }}">{{ __('portal.layout.my_reservations') }}</a>
                 <a href="{{ route('portal.reviews.index') }}"
-                   class="pf-link {{ request()->routeIs('portal.reviews.*') ? 'is-active' : '' }}">تقييماتي</a>
+                   class="pf-link {{ request()->routeIs('portal.reviews.*') ? 'is-active' : '' }}">{{ __('portal.layout.my_reviews') }}</a>
 
                 {{-- Notification bell — visible on every viewport (next to
                      the burger on mobile, in the link row on desktop). The
@@ -623,8 +625,8 @@
                 <a href="{{ route('portal.notifications.index') }}"
                    class="pf-bell {{ request()->routeIs('portal.notifications.*') ? 'is-active' : '' }}"
                    id="pfBell"
-                   title="الإشعارات والعروض"
-                   aria-label="الإشعارات">
+                   title="{{ __('portal.layout.notifications_offers') }}"
+                   aria-label="{{ __('portal.layout.notifications') }}">
                     <i class="bi bi-bell-fill"></i>
                     <span class="pf-bell__count" id="pfBellCount" data-count="{{ $unreadNotifs }}"
                           @if($unreadNotifs === 0) style="display:none;" @endif>
@@ -634,7 +636,7 @@
 
                 <form method="POST" action="{{ route('portal.logout') }}" class="d-inline" style="margin:0;">
                     @csrf
-                    <button class="pf-logout"><i class="bi bi-box-arrow-right"></i> خروج</button>
+                    <button class="pf-logout"><i class="bi bi-box-arrow-right"></i> {{ __('portal.layout.logout') }}</button>
                 </form>
             </div>
         </header>
@@ -643,9 +645,9 @@
              hamburger button above; closes on overlay click, ESC, or
              a tap on any inner link. --}}
         <div class="pf-drawer-overlay" id="pfOverlay" onclick="pfCloseDrawer()"></div>
-        <aside class="pf-drawer" id="pfDrawer" role="dialog" aria-modal="true" aria-label="قائمة التنقل">
+        <aside class="pf-drawer" id="pfDrawer" role="dialog" aria-modal="true" aria-label="{{ __('portal.layout.navigation') }}">
             <div class="pf-drawer__head">
-                <button type="button" class="pf-drawer__close" onclick="pfCloseDrawer()" aria-label="إغلاق">
+                <button type="button" class="pf-drawer__close" onclick="pfCloseDrawer()" aria-label="{{ __('portal.layout.close') }}">
                     <i class="bi bi-x-lg"></i>
                 </button>
                 <div class="pf-drawer__brand">
@@ -655,7 +657,7 @@
                 @if($customer)
                     <div class="pf-drawer__user">
                         <i class="bi bi-person-circle"></i>
-                        <span>{{ $customer->name ?? $customer->phone ?? 'زبوننا الكريم' }}</span>
+                        <span>{{ $customer->name ?? $customer->phone ?? __('portal.layout.valued_customer') }}</span>
                     </div>
                 @endif
             </div>
@@ -664,27 +666,27 @@
                 <a href="{{ route('portal.dashboard') }}"
                    class="pf-drawer__link {{ request()->routeIs('portal.dashboard') ? 'is-active' : '' }}">
                     <i class="bi bi-house-fill"></i>
-                    <span>الرئيسية</span>
+                    <span>{{ __('portal.layout.home') }}</span>
                 </a>
                 <a href="{{ route('portal.order.history') }}"
                    class="pf-drawer__link {{ request()->routeIs('portal.order.*') ? 'is-active' : '' }}">
                     <i class="bi bi-bag-fill"></i>
-                    <span>طلباتي</span>
+                    <span>{{ __('portal.layout.my_orders') }}</span>
                 </a>
                 <a href="{{ route('portal.reservations.index') }}"
                    class="pf-drawer__link {{ request()->routeIs('portal.reservations.*') ? 'is-active' : '' }}">
                     <i class="bi bi-calendar-heart-fill"></i>
-                    <span>حجوزاتي</span>
+                    <span>{{ __('portal.layout.my_reservations') }}</span>
                 </a>
                 <a href="{{ route('portal.reviews.index') }}"
                    class="pf-drawer__link {{ request()->routeIs('portal.reviews.*') ? 'is-active' : '' }}">
                     <i class="bi bi-stars"></i>
-                    <span>تقييماتي</span>
+                    <span>{{ __('portal.layout.my_reviews') }}</span>
                 </a>
                 <a href="{{ route('portal.notifications.index') }}"
                    class="pf-drawer__link {{ request()->routeIs('portal.notifications.*') ? 'is-active' : '' }}">
                     <i class="bi bi-bell-fill"></i>
-                    <span>الإشعارات والعروض</span>
+                    <span>{{ __('portal.layout.notifications_offers') }}</span>
                     @if($unreadNotifs > 0)
                         <span class="pf-drawer__badge">{{ $unreadNotifs > 99 ? '99+' : $unreadNotifs }}</span>
                     @endif
@@ -696,7 +698,7 @@
                     @csrf
                     <button type="submit" class="pf-drawer__logout">
                         <i class="bi bi-box-arrow-right"></i>
-                        <span>تسجيل الخروج</span>
+                        <span>{{ __('portal.layout.logout') }}</span>
                     </button>
                 </form>
             </div>

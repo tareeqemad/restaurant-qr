@@ -61,9 +61,11 @@
                 <table class="table mb-0 align-middle">
                     <thead class="bg-light">
                         <tr>
-                            <th style="width:50%">الحساب</th>
-                            <th style="width:18%" class="text-end">مدين</th>
-                            <th style="width:18%" class="text-end">دائن</th>
+                            <th style="min-width:260px">الحساب</th>
+                            <th style="min-width:130px" class="text-end">مدين</th>
+                            <th style="min-width:130px" class="text-end">دائن</th>
+                            <th style="min-width:110px">العملة</th>
+                            <th style="min-width:120px">سعر الصرف</th>
                             <th>وصف السطر (اختياري)</th>
                             <th style="width:50px"></th>
                         </tr>
@@ -90,15 +92,28 @@
                                 </td>
                                 <td>
                                     <input type="number" step="0.01" min="0"
-                                           :name="`lines[${idx}][debit]`" x-model.number="line.debit"
-                                           @input="if (line.debit > 0) line.credit = 0"
+                                           :name="`lines[${idx}][foreign_debit]`" x-model.number="line.foreign_debit"
+                                           @input="if (line.foreign_debit > 0) line.foreign_credit = 0"
                                            class="form-control form-control-sm text-end" placeholder="0.00">
                                 </td>
                                 <td>
                                     <input type="number" step="0.01" min="0"
-                                           :name="`lines[${idx}][credit]`" x-model.number="line.credit"
-                                           @input="if (line.credit > 0) line.debit = 0"
+                                           :name="`lines[${idx}][foreign_credit]`" x-model.number="line.foreign_credit"
+                                           @input="if (line.foreign_credit > 0) line.foreign_debit = 0"
                                            class="form-control form-control-sm text-end" placeholder="0.00">
+                                </td>
+                                <td>
+                                    <select :name="`lines[${idx}][currency_code]`" x-model="line.currency_code"
+                                            class="form-select form-select-sm">
+                                        @foreach($currencies as $currency)
+                                            <option value="{{ $currency->code }}">{{ $currency->code }}</option>
+                                        @endforeach
+                                    </select>
+                                </td>
+                                <td>
+                                    <input type="number" step="0.000001" min="0.000001"
+                                           :name="`lines[${idx}][exchange_rate]`" x-model.number="line.exchange_rate"
+                                           class="form-control form-control-sm text-end">
                                 </td>
                                 <td>
                                     <input type="text" :name="`lines[${idx}][description]`" x-model="line.description"
@@ -120,7 +135,7 @@
                             <td class="text-end">الإجمالي</td>
                             <td class="text-end" x-text="totalDebit().toFixed(2)"></td>
                             <td class="text-end" x-text="totalCredit().toFixed(2)"></td>
-                            <td>
+                            <td colspan="3">
                                 <span x-show="isBalanced()" class="badge bg-success">
                                     <i class="bi bi-check-circle"></i> متوازن
                                 </span>
@@ -154,13 +169,22 @@ function manualEntry() {
         lines: [],
         nextKey: 1,
         addLine() {
-            this.lines.push({ key: this.nextKey++, account_id: '', debit: 0, credit: 0, description: '' });
+            this.lines.push({
+                key: this.nextKey++,
+                account_id: '',
+                foreign_debit: 0,
+                foreign_credit: 0,
+                currency_code: @js($baseCurrencyCode),
+                exchange_rate: '',
+                description: ''
+            });
         },
         removeLine(idx) {
             if (this.lines.length > 2) this.lines.splice(idx, 1);
         },
-        totalDebit()  { return this.lines.reduce((s, l) => s + (parseFloat(l.debit)  || 0), 0); },
-        totalCredit() { return this.lines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0); },
+        baseAmount(amount, rate) { return (parseFloat(amount) || 0) * (parseFloat(rate) || 1); },
+        totalDebit()  { return this.lines.reduce((s, l) => s + this.baseAmount(l.foreign_debit, l.exchange_rate), 0); },
+        totalCredit() { return this.lines.reduce((s, l) => s + this.baseAmount(l.foreign_credit, l.exchange_rate), 0); },
         isBalanced() {
             const d = this.totalDebit(), c = this.totalCredit();
             return Math.abs(d - c) < 0.01 && d > 0;

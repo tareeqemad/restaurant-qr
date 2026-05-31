@@ -16,6 +16,9 @@ class JournalEntry extends Model
         'entry_no',
         'posted_on',
         'description',
+        'base_currency_code',
+        'currency_code',
+        'exchange_rate',
         'source_type',
         'source_id',
         'event_type',
@@ -27,6 +30,7 @@ class JournalEntry extends Model
     protected $casts = [
         'posted_on' => 'date',
         'metadata' => 'array',
+        'exchange_rate' => 'decimal:8',
     ];
 
     protected static function booted(): void

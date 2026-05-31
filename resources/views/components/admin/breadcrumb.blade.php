@@ -19,8 +19,8 @@
     subtitle (kept for back-compat, unused in Dashtic's native style)
     crumbs   Intermediate links — accepts both formats:
                - [ ['label' => '...', 'url' => '...'], ... ]
-               - [ 'الأقسام' => route(...), 'فرعي' => null ]
-    home     Prepend "الرئيسية" link with house icon. Default true.
+               - [ 'Categories' => route(...), 'Child' => null ]
+    home     Prepend a home link with house icon. Default true.
   Slot:
     actions  Optional right-hand buttons (rendered on the opposite side of the title).
 --}}
@@ -85,7 +85,7 @@
                                 <path d="M12 3L2 12h3v8h6v-6h2v6h6v-8h3L12 3zm5 15h-2v-6H9v6H7v-7.81l5-4.5 5 4.5V18z"></path>
                                 <path d="M7 10.19V18h2v-6h6v6h2v-7.81l-5-4.5z" opacity=".3"></path>
                             </svg>
-                            <span class="breadcrumb-icon"> الرئيسية</span>
+                            <span class="breadcrumb-icon"> {{ __('admin.common.home') }}</span>
                         </a>
                     </li>
                 @endif

@@ -9,6 +9,7 @@ use App\Models\Category;
 use App\Models\Ingredient;
 use App\Models\IngredientStock;
 use App\Models\InventoryMovement;
+use App\Models\Invoice;
 use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\OrderItem;
@@ -16,6 +17,7 @@ use App\Models\Payment;
 use App\Models\Permission;
 use App\Models\RecipeItem;
 use App\Models\Role;
+use App\Models\Setting;
 use App\Models\Station;
 use App\Models\StorageLocation;
 use App\Models\Table;
@@ -228,6 +230,109 @@ class RestaurantCriticalWorkflowTest extends TestCase
         $this->assertSame(8.0, (float) $this->ingredient->fresh()->current_stock);
     }
 
+    public function test_cashier_screen_and_split_flow_use_enabled_payment_methods(): void
+    {
+        Setting::put('payment_method_cash_enabled', false, 'payments', 'bool');
+        Setting::put('payment_method_card_enabled', false, 'payments', 'bool');
+        Setting::put('payment_method_transfer_enabled', false, 'payments', 'bool');
+        Setting::put('payment_method_app_enabled', true, 'payments', 'bool');
+        Setting::put('payment_method_credit_enabled', true, 'payments', 'bool');
+
+        $table = Table::create([
+            'number' => '11',
+            'capacity' => 4,
+            'status' => 'occupied',
+            'active' => true,
+        ]);
+
+        $session = TableSession::create([
+            'table_id' => $table->id,
+            'cover_count' => 2,
+            'status' => 'active',
+        ]);
+
+        app(OrderService::class)->createFromCart($session, [[
+            'menu_item_id' => $this->menuItem->id,
+            'quantity' => 1,
+            'modifier_ids' => [],
+        ]]);
+
+        $invoice = app(BillingService::class)->issueInvoice($session, $this->cashier->id);
+
+        $this->actingAs($this->cashier)
+            ->get(route('admin.cashier.show', $session))
+            ->assertOk()
+            ->assertSee(__('admin.payment_methods.app'), false)
+            ->assertSee(__('admin.payment_methods.credit'), false);
+
+        $firstShare = round((float) $invoice->total / 2, 2);
+        $secondShare = round((float) $invoice->total - $firstShare, 2);
+
+        $this->post(route('admin.cashier.split', $invoice), [
+            'splits' => [
+                ['label' => 'Guest 1', 'amount' => $firstShare, 'method' => 'app'],
+                ['label' => 'Guest 2', 'amount' => $secondShare, 'method' => 'credit'],
+            ],
+        ])
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('invoice_splits', [
+            'invoice_id' => $invoice->id,
+            'method' => 'app',
+        ]);
+        $this->assertDatabaseHas('invoice_splits', [
+            'invoice_id' => $invoice->id,
+            'method' => 'credit',
+        ]);
+    }
+
+    public function test_cashier_service_blocks_closed_invoice_edge_cases(): void
+    {
+        $billing = app(BillingService::class);
+
+        $paidInvoice = $this->createDirectInvoice();
+        $billing->addPayment($paidInvoice, (float) $paidInvoice->balance, 'cash', $this->cashier->id);
+
+        $writeOffBlocked = false;
+        try {
+            $billing->writeOffInvoice($paidInvoice->fresh(), $this->cashier->id, 'No balance left');
+        } catch (\RuntimeException) {
+            $writeOffBlocked = true;
+        }
+        $this->assertTrue($writeOffBlocked);
+
+        $splitBlocked = false;
+        try {
+            $billing->splitInvoice($paidInvoice->fresh(), [
+                ['label' => 'A', 'amount' => 10, 'method' => 'cash'],
+                ['label' => 'B', 'amount' => 10, 'method' => 'cash'],
+            ]);
+        } catch (\RuntimeException) {
+            $splitBlocked = true;
+        }
+        $this->assertTrue($splitBlocked);
+
+        $splitInvoice = $this->createDirectInvoice();
+        $splitFirstShare = round((float) $splitInvoice->total / 2, 2);
+        $splitSecondShare = round((float) $splitInvoice->total - $splitFirstShare, 2);
+        $billing->splitInvoice($splitInvoice, [
+            ['label' => 'Guest 1', 'amount' => $splitFirstShare, 'method' => 'cash'],
+            ['label' => 'Guest 2', 'amount' => $splitSecondShare, 'method' => 'cash'],
+        ]);
+
+        $split = $splitInvoice->fresh()->splits()->firstOrFail();
+        $billing->paySplit($split, $this->cashier->id);
+
+        $duplicateSplitBlocked = false;
+        try {
+            $billing->paySplit($split->fresh(), $this->cashier->id);
+        } catch (\RuntimeException) {
+            $duplicateSplitBlocked = true;
+        }
+        $this->assertTrue($duplicateSplitBlocked);
+    }
+
     public function test_direct_order_cannot_be_cancelled_after_invoice_is_issued(): void
     {
         $this->actingAs($this->cashier);
@@ -282,5 +387,23 @@ class RestaurantCriticalWorkflowTest extends TestCase
         ]);
 
         return $user;
+    }
+
+    protected function createDirectInvoice(): Invoice
+    {
+        $order = app(OrderService::class)->createCashierOrder(
+            customer: null,
+            branch: $this->branch,
+            type: 'takeaway',
+            source: 'other',
+            cart: [[
+                'menu_item_id' => $this->menuItem->id,
+                'quantity' => 1,
+                'modifier_ids' => [],
+            ]],
+            createdByUserId: $this->cashier->id,
+        );
+
+        return app(BillingService::class)->issueInvoiceForOrder($order, $this->cashier->id);
     }
 }

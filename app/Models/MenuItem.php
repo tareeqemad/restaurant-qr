@@ -2,7 +2,12 @@
 
 namespace App\Models;
 
+use App\Helpers\UnitConverter;
 use App\Models\Concerns\BelongsToBranch;
+use App\Models\Concerns\HasLocalizedFields;
+use App\Services\InventoryService;
+use App\Services\PromotionService;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -13,7 +18,7 @@ use Illuminate\Support\Str;
 
 class MenuItem extends Model
 {
-    use BelongsToBranch, HasFactory, SoftDeletes;
+    use BelongsToBranch, HasFactory, HasLocalizedFields, SoftDeletes;
 
     protected $fillable = [
         'branch_id', 'category_id', 'station_id', 'sku', 'slug', 'name', 'name_en',
@@ -58,9 +63,9 @@ class MenuItem extends Model
      * place. Returns null when no promo is live → callers should treat
      * `price` as the effective price.
      */
-    public function activePromotion(?\Carbon\Carbon $when = null, ?string $channel = null): ?MenuPromotion
+    public function activePromotion(?Carbon $when = null, ?string $channel = null): ?MenuPromotion
     {
-        return app(\App\Services\PromotionService::class)->resolveForItem($this, $when, null, $channel);
+        return app(PromotionService::class)->resolveForItem($this, $when, null, $channel);
     }
 
     /**
@@ -69,14 +74,15 @@ class MenuItem extends Model
      * route through this so price displays + order snapshots stay
      * consistent.
      */
-    public function effectivePrice(?\Carbon\Carbon $when = null, ?string $channel = null): float
+    public function effectivePrice(?Carbon $when = null, ?string $channel = null): float
     {
         $promo = $this->activePromotion($when, $channel);
+
         return $promo ? $promo->applyTo((float) $this->price) : (float) $this->price;
     }
 
     /** "Is there a live discount right now?" — a shortcut for views. */
-    public function isOnPromotion(?\Carbon\Carbon $when = null, ?string $channel = null): bool
+    public function isOnPromotion(?Carbon $when = null, ?string $channel = null): bool
     {
         return $this->activePromotion($when, $channel) !== null;
     }
@@ -87,12 +93,17 @@ class MenuItem extends Model
      * "≈ 17%" off rather than the raw value. Used for the "خصم X%"
      * badge on the customer menu and cashier POS.
      */
-    public function discountPct(?\Carbon\Carbon $when = null): ?float
+    public function discountPct(?Carbon $when = null): ?float
     {
         $base = (float) $this->price;
-        if ($base <= 0) return null;
+        if ($base <= 0) {
+            return null;
+        }
         $effective = $this->effectivePrice($when);
-        if ($effective >= $base) return null;
+        if ($effective >= $base) {
+            return null;
+        }
+
         return round((($base - $effective) / $base) * 100, 1);
     }
 
@@ -150,10 +161,10 @@ class MenuItem extends Model
             return [];   // No recipe → not a tracked item (e.g. wifi card)
         }
 
-        return app(\App\Services\InventoryService::class)
+        return app(InventoryService::class)
             ->checkStockForOrderPreview([[
                 'menu_item_id' => $this->id,
-                'quantity'     => $quantity,
+                'quantity' => $quantity,
                 'modifier_ids' => [],
             ]]);
     }
@@ -173,7 +184,10 @@ class MenuItem extends Model
      */
     public function availableToOrder(float $quantity = 1.0): bool
     {
-        if (! $this->is_available) return false;
+        if (! $this->is_available) {
+            return false;
+        }
+
         return $this->isInStock($quantity);
     }
 
@@ -182,11 +196,13 @@ class MenuItem extends Model
         if (! $this->image) {
             // SVG data URI food placeholder (gradient + utensil icon)
             $color = urlencode('#fecaca');
+
             return "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 225'%3E%3Crect fill='{$color}' width='300' height='225'/%3E%3Ctext x='50%25' y='55%25' text-anchor='middle' font-size='72'%3E🍽️%3C/text%3E%3C/svg%3E";
         }
         if (str_starts_with($this->image, 'http')) {
             return $this->image;
         }
+
         return asset('storage/'.$this->image);
     }
 
@@ -211,9 +227,11 @@ class MenuItem extends Model
         $total = 0.0;
         foreach ($this->recipeItems as $r) {
             $ing = $r->ingredient;
-            if (! $ing) continue;
+            if (! $ing) {
+                continue;
+            }
 
-            $qtyBase = \App\Helpers\UnitConverter::convert(
+            $qtyBase = UnitConverter::convert(
                 (float) $r->quantity, $r->unit_id, (int) $ing->base_unit_id
             );
             $total += $qtyBase * $ing->costAtBranch($branchId);

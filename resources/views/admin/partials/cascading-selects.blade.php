@@ -15,9 +15,9 @@
         'generationUnitRequired' => true,             // Optional: is generation unit required?
         'generatorRequired' => true,                  // Optional: is generator required?
         'colClass' => 'col-md-3',                     // Optional: column class for each select (default: col-md-3)
-        'operatorLabel' => 'المشغل',                  // Optional: custom labels
-        'generationUnitLabel' => 'وحدة التوليد',
-        'generatorLabel' => 'المولد',
+        'operatorLabel' => __('admin.common.operator'),                  // Optional: custom labels
+        'generationUnitLabel' => __('admin.common.generation_unit'),
+        'generatorLabel' => __('admin.common.generator'),
         'idPrefix' => '',                             // Optional: prefix for IDs (for multiple instances)
         'useSelect2' => true,                         // Optional: use Select2 styling
         'generationUnits' => null,                    // Optional: pre-loaded generation units (for affiliated users)
@@ -32,9 +32,9 @@
     $generationUnitRequired = $generationUnitRequired ?? true;
     $generatorRequired = $generatorRequired ?? true;
     $colClass = $colClass ?? 'col-md-3';
-    $operatorLabel = $operatorLabel ?? 'المشغل';
-    $generationUnitLabel = $generationUnitLabel ?? 'وحدة التوليد';
-    $generatorLabel = $generatorLabel ?? 'المولد';
+    $operatorLabel = $operatorLabel ?? __('admin.common.operator');
+    $generationUnitLabel = $generationUnitLabel ?? __('admin.common.generation_unit');
+    $generatorLabel = $generatorLabel ?? __('admin.common.generator');
     $idPrefix = $idPrefix ?? '';
     $useSelect2 = $useSelect2 ?? true;
     $selectClass = $useSelect2 ? 'form-select select2' : 'form-select';
@@ -43,20 +43,20 @@
     $selectedGenerationUnitId = $selectedGenerationUnitId ?? old('generation_unit_id') ?? request('generation_unit_id');
     $selectedGeneratorId = $selectedGeneratorId ?? old('generator_id') ?? request('generator_id');
     
-    // تحديد إذا كان المستخدم يستطيع اختيار المشغل
-    // المستخدم المرتبط بمشغل (CompanyOwner, Employee, Technician, أو دور مخصص تابع لمشغل) لا يستطيع اختيار المشغل
+    // Determine whether the user can choose an operator.
+    // Users affiliated with an operator cannot choose another operator.
     $canSelectOperator = $canSelectOperator ?? (!auth()->user()->isAffiliatedWithOperator());
     
-    // الحصول على المشغل المرتبط بالمستخدم (إذا لم يتم تمريره)
+    // Resolve the operator affiliated with the user when not passed in.
     $affiliatedOperator = $affiliatedOperator ?? auth()->user()->getAffiliatedOperator();
     
-    // وحدات التوليد والمولدات (للمستخدمين المرتبطين)
+    // Generation units and generators for affiliated users.
     $generationUnits = $generationUnits ?? ($affiliatedOperator?->generationUnits ?? collect());
     $generators = $generators ?? collect();
 @endphp
 
 @if($canSelectOperator)
-    {{-- المستخدم يستطيع اختيار أي مشغل (SuperAdmin, Admin, EnergyAuthority) --}}
+    {{-- User can choose any operator. --}}
     <div class="{{ $colClass }}" id="{{ $idPrefix }}operator_wrapper">
         <label class="form-label fw-semibold">
             <i class="bi bi-building text-primary me-1"></i>
@@ -65,9 +65,9 @@
         </label>
         <select name="operator_id" id="{{ $idPrefix }}operator_id" 
                 class="{{ $selectClass }} @error('operator_id') is-invalid @enderror"
-                data-placeholder="-- اختر {{ $operatorLabel }} --"
+                data-placeholder="{{ __('admin.common.choose_value', ['label' => $operatorLabel]) }}"
                 @if($operatorRequired) required @endif>
-            <option value="">-- اختر {{ $operatorLabel }} --</option>
+            <option value="">{{ __('admin.common.choose_value', ['label' => $operatorLabel]) }}</option>
             @foreach($operators as $operator)
                 <option value="{{ $operator->id }}" 
                         {{ $selectedOperatorId == $operator->id ? 'selected' : '' }}>
@@ -90,10 +90,10 @@
             </label>
             <select name="generation_unit_id" id="{{ $idPrefix }}generation_unit_id" 
                     class="{{ $selectClass }} @error('generation_unit_id') is-invalid @enderror"
-                    data-placeholder="-- اختر {{ $generationUnitLabel }} --"
+                    data-placeholder="{{ __('admin.common.choose_value', ['label' => $generationUnitLabel]) }}"
                     @if($generationUnitRequired) required @endif
                     @if(!$generationUnits->isNotEmpty()) disabled @endif>
-                <option value="">-- اختر {{ $generationUnitLabel }} --</option>
+                <option value="">{{ __('admin.common.choose_value', ['label' => $generationUnitLabel]) }}</option>
                 @foreach($generationUnits as $unit)
                     <option value="{{ $unit->id }}" {{ (string)$selectedGenerationUnitId === (string)$unit->id ? 'selected' : '' }}>
                         {{ $unit->name }} ({{ $unit->unit_code ?? $unit->unit_number ?? '' }})
@@ -106,9 +106,9 @@
             <small class="form-text text-muted" id="{{ $idPrefix }}generation_unit_help">
                 <i class="bi bi-info-circle me-1"></i>
                 @if($generationUnits->isNotEmpty())
-                    {{ $generationUnits->count() }} وحدة متاحة
+                    {{ trans_choice('admin.common.available_generation_units', $generationUnits->count(), ['count' => $generationUnits->count()]) }}
                 @else
-                    اختر {{ $operatorLabel }} أولاً
+                    {{ __('admin.common.choose_first', ['label' => $operatorLabel]) }}
                 @endif
             </small>
         </div>
@@ -123,10 +123,10 @@
             </label>
             <select name="generator_id" id="{{ $idPrefix }}generator_id" 
                     class="{{ $selectClass }} @error('generator_id') is-invalid @enderror"
-                    data-placeholder="-- اختر {{ $generatorLabel }} --"
+                    data-placeholder="{{ __('admin.common.choose_value', ['label' => $generatorLabel]) }}"
                     @if($generatorRequired) required @endif
                     @if(!$generators->isNotEmpty()) disabled @endif>
-                <option value="">-- اختر {{ $generatorLabel }} --</option>
+                <option value="">{{ __('admin.common.choose_value', ['label' => $generatorLabel]) }}</option>
                 @foreach($generators as $gen)
                     <option value="{{ $gen->id }}" {{ (string)$selectedGeneratorId === (string)$gen->id ? 'selected' : '' }}>
                         {{ $gen->name }} ({{ $gen->generator_number ?? $gen->id }})
@@ -139,15 +139,15 @@
             <small class="form-text text-muted" id="{{ $idPrefix }}generator_help">
                 <i class="bi bi-info-circle me-1"></i>
                 @if($generators->isNotEmpty())
-                    {{ $generators->count() }} مولد متاح
+                    {{ trans_choice('admin.common.available_generators', $generators->count(), ['count' => $generators->count()]) }}
                 @else
-                    اختر {{ $generationUnitLabel }} أولاً
+                    {{ __('admin.common.choose_first', ['label' => $generationUnitLabel]) }}
                 @endif
             </small>
         </div>
     @endif
 @else
-    {{-- المستخدم تابع لمشغل (CompanyOwner, Employee, Technician) - المشغل محدد تلقائياً --}}
+    {{-- User is affiliated with an operator; operator is selected automatically. --}}
     <input type="hidden" name="operator_id" id="{{ $idPrefix }}operator_id" value="{{ $affiliatedOperator->id }}">
     
     <div class="{{ $colClass }}" id="{{ $idPrefix }}operator_wrapper">
@@ -165,7 +165,7 @@
         </div>
         <small class="form-text text-success">
             <i class="bi bi-check-circle me-1"></i>
-            محدد تلقائياً
+            {{ __('admin.common.auto_selected') }}
         </small>
     </div>
 
@@ -178,9 +178,9 @@
             </label>
             <select name="generation_unit_id" id="{{ $idPrefix }}generation_unit_id" 
                     class="{{ $selectClass }} @error('generation_unit_id') is-invalid @enderror"
-                    data-placeholder="-- اختر {{ $generationUnitLabel }} --"
+                    data-placeholder="{{ __('admin.common.choose_value', ['label' => $generationUnitLabel]) }}"
                     @if($generationUnitRequired) required @endif>
-                <option value="">-- اختر {{ $generationUnitLabel }} --</option>
+                <option value="">{{ __('admin.common.choose_value', ['label' => $generationUnitLabel]) }}</option>
                 @foreach($generationUnits as $unit)
                     <option value="{{ $unit->id }}" 
                             {{ $selectedGenerationUnitId == $unit->id ? 'selected' : '' }}>
@@ -203,18 +203,18 @@
             </label>
             <select name="generator_id" id="{{ $idPrefix }}generator_id" 
                     class="{{ $selectClass }} @error('generator_id') is-invalid @enderror"
-                    data-placeholder="-- اختر {{ $generatorLabel }} --"
+                    data-placeholder="{{ __('admin.common.choose_value', ['label' => $generatorLabel]) }}"
                     @if($generatorRequired) required @endif
                     disabled>
-                <option value="">-- اختر {{ $generatorLabel }} --</option>
-                {{-- لا نضع المولدات هنا - سيتم تحميلها عبر AJAX عند اختيار وحدة التوليد --}}
+                <option value="">{{ __('admin.common.choose_value', ['label' => $generatorLabel]) }}</option>
+                {{-- Generators are loaded over AJAX after choosing a generation unit. --}}
             </select>
             @error('generator_id')
                 <div class="invalid-feedback d-block">{{ $message }}</div>
             @enderror
             <small class="form-text text-muted" id="{{ $idPrefix }}generator_help">
                 <i class="bi bi-info-circle me-1"></i>
-                اختر {{ $generationUnitLabel }} أولاً
+                {{ __('admin.common.choose_first', ['label' => $generationUnitLabel]) }}
             </small>
         </div>
     @endif

@@ -45,13 +45,13 @@
     <div class="col-md-3">
         <div class="accounting-metric">
             <span>إجمالي المدين</span>
-            <strong>{{ \App\Helpers\Money::format($totalBalanceDebit) }}</strong>
+            <strong>{{ \App\Helpers\Money::formatAccounting($totalBalanceDebit) }}</strong>
         </div>
     </div>
     <div class="col-md-3">
         <div class="accounting-metric">
             <span>إجمالي الدائن</span>
-            <strong>{{ \App\Helpers\Money::format($totalBalanceCredit) }}</strong>
+            <strong>{{ \App\Helpers\Money::formatAccounting($totalBalanceCredit) }}</strong>
         </div>
     </div>
     <div class="col-md-3">
@@ -137,10 +137,10 @@
                         </td>
                         <td>{{ $typeLabels[$account->type] ?? $account->type }}</td>
                         <td>{{ $normalBalanceLabels[$account->normal_balance] ?? $account->normal_balance }}</td>
-                        <td class="text-end">{{ \App\Helpers\Money::format($account->movement_debit) }}</td>
-                        <td class="text-end">{{ \App\Helpers\Money::format($account->movement_credit) }}</td>
-                        <td class="text-end fw-bold">{{ \App\Helpers\Money::format($account->balance_debit) }}</td>
-                        <td class="text-end fw-bold">{{ \App\Helpers\Money::format($account->balance_credit) }}</td>
+                        <td class="text-end">{{ \App\Helpers\Money::formatAccounting($account->movement_debit) }}</td>
+                        <td class="text-end">{{ \App\Helpers\Money::formatAccounting($account->movement_credit) }}</td>
+                        <td class="text-end fw-bold">{{ \App\Helpers\Money::formatAccounting($account->balance_debit) }}</td>
+                        <td class="text-end fw-bold">{{ \App\Helpers\Money::formatAccounting($account->balance_credit) }}</td>
                     </tr>
                 @empty
                     <tr>
@@ -154,10 +154,10 @@
             <tfoot class="bg-light fw-bold">
                 <tr>
                     <td colspan="4">المجموع</td>
-                    <td class="text-end">{{ \App\Helpers\Money::format($totalMovementDebit) }}</td>
-                    <td class="text-end">{{ \App\Helpers\Money::format($totalMovementCredit) }}</td>
-                    <td class="text-end">{{ \App\Helpers\Money::format($totalBalanceDebit) }}</td>
-                    <td class="text-end">{{ \App\Helpers\Money::format($totalBalanceCredit) }}</td>
+                    <td class="text-end">{{ \App\Helpers\Money::formatAccounting($totalMovementDebit) }}</td>
+                    <td class="text-end">{{ \App\Helpers\Money::formatAccounting($totalMovementCredit) }}</td>
+                    <td class="text-end">{{ \App\Helpers\Money::formatAccounting($totalBalanceDebit) }}</td>
+                    <td class="text-end">{{ \App\Helpers\Money::formatAccounting($totalBalanceCredit) }}</td>
                 </tr>
             </tfoot>
         </table>

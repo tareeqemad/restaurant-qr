@@ -6,7 +6,10 @@ use App\Enums\ReservationStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\Reservation;
+use App\Models\Table;
+use App\Services\NotifyService;
 use App\Support\BranchContext;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -37,11 +40,11 @@ class ReservationController extends Controller
                 ->where('customer_id', $customer->id)
                 ->where(function ($q) {
                     $q->where('reserved_for', '<', now())
-                      ->orWhereIn('status', [
-                          ReservationStatus::Cancelled->value,
-                          ReservationStatus::Completed->value,
-                          ReservationStatus::NoShow->value,
-                      ]);
+                        ->orWhereIn('status', [
+                            ReservationStatus::Cancelled->value,
+                            ReservationStatus::Completed->value,
+                            ReservationStatus::NoShow->value,
+                        ]);
                 })
                 ->latest('reserved_for')
                 ->limit(20)
@@ -68,9 +71,9 @@ class ReservationController extends Controller
         $customer = $request->user('customer');
 
         $data = $request->validate([
-            'branch_id'      => ['required', Rule::exists('branches', 'id')->where('is_active', true)],
-            'reserved_for'   => ['required', 'date', 'after:now'],
-            'party_size'     => ['required', 'integer', 'min:1', 'max:30'],
+            'branch_id' => ['required', Rule::exists('branches', 'id')->where('is_active', true)],
+            'reserved_for' => ['required', 'date', 'after:now'],
+            'party_size' => ['required', 'integer', 'min:1', 'max:30'],
             'customer_notes' => ['nullable', 'string', 'max:500'],
         ]);
 
@@ -78,26 +81,26 @@ class ReservationController extends Controller
 
         $reservation = BranchContext::forBranch($branchId, function () use ($customer, $data, $branchId) {
             return Reservation::create([
-                'branch_id'        => $branchId,
-                'customer_id'      => $customer->id,
-                'party_size'       => $data['party_size'],
-                'reserved_for'     => $data['reserved_for'],
+                'branch_id' => $branchId,
+                'customer_id' => $customer->id,
+                'party_size' => $data['party_size'],
+                'reserved_for' => $data['reserved_for'],
                 'duration_minutes' => 90,
-                'customer_notes'   => $data['customer_notes'] ?? null,
-                'status'           => $this->resolveInitialStatus($branchId, $data),
+                'customer_notes' => $data['customer_notes'] ?? null,
+                'status' => $this->resolveInitialStatus($branchId, $data),
             ]);
         });
 
         // Notify branch staff there's a new reservation to triage. Done outside
         // the BranchContext block so the loaded relations on $reservation
         // resolve cleanly for the notification body.
-        app(\App\Services\NotifyService::class)->newReservation($reservation->load('customer'));
+        app(NotifyService::class)->newReservation($reservation->load('customer'));
 
         return redirect()->route('portal.reservations.index')
             ->with('success',
                 $reservation->status === ReservationStatus::Confirmed
-                    ? "تم تأكيد حجزك (رقم {$reservation->reference})."
-                    : "تم استلام طلب الحجز (رقم {$reservation->reference}). سنُؤكّده قريباً."
+                    ? __('portal.reservations.confirmed_message', ['reference' => $reservation->reference])
+                    : __('portal.reservations.received_message', ['reference' => $reservation->reference])
             );
     }
 
@@ -107,16 +110,16 @@ class ReservationController extends Controller
         abort_unless($reservation->customer_id === $customer->id, 403);
 
         if (! $reservation->status->isCancellableByCustomer()) {
-            return back()->with('error', 'لا يمكن إلغاء هذا الحجز في حالته الحالية.');
+            return back()->with('error', __('portal.reservations.cannot_cancel'));
         }
 
         BranchContext::forBranch($reservation->branch_id, function () use ($reservation) {
             $reservation->transitionTo(ReservationStatus::Cancelled, [
-                'cancelled_reason' => 'ألغاه الزبون',
+                'cancelled_reason' => __('portal.reservations.cancelled_reason'),
             ]);
         });
 
-        return back()->with('success', 'تم إلغاء الحجز.');
+        return back()->with('success', __('portal.reservations.cancelled'));
     }
 
     /**
@@ -130,13 +133,13 @@ class ReservationController extends Controller
     protected function resolveInitialStatus(int $branchId, array $data): string
     {
         $totalTables = BranchContext::forBranch($branchId,
-            fn () => \App\Models\Table::where('branch_id', $branchId)->count()
+            fn () => Table::where('branch_id', $branchId)->count()
         );
         if ($totalTables === 0) {
             return ReservationStatus::Pending->value;
         }
 
-        $when     = \Carbon\Carbon::parse($data['reserved_for']);
+        $when = Carbon::parse($data['reserved_for']);
         $duration = 90;
 
         $overlap = BranchContext::forBranch($branchId, function () use ($branchId, $when, $duration) {
@@ -152,6 +155,7 @@ class ReservationController extends Controller
         });
 
         $cap = (int) floor($totalTables * 0.80);
+
         return $overlap >= $cap
             ? ReservationStatus::Pending->value
             : ReservationStatus::Confirmed->value;

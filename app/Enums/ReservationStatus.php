@@ -24,34 +24,34 @@ namespace App\Enums;
  */
 enum ReservationStatus: string
 {
-    case Pending   = 'pending';
+    case Pending = 'pending';
     case Confirmed = 'confirmed';
-    case Seated    = 'seated';
+    case Seated = 'seated';
     case Completed = 'completed';
     case Cancelled = 'cancelled';
-    case NoShow    = 'no_show';
+    case NoShow = 'no_show';
 
     public function label(): string
     {
         return match ($this) {
-            self::Pending   => 'بانتظار التأكيد',
-            self::Confirmed => 'مؤكَّد',
-            self::Seated    => 'تمّ الجلوس',
-            self::Completed => 'مكتمل',
-            self::Cancelled => 'ملغى',
-            self::NoShow    => 'لم يحضر',
+            self::Pending => __('portal.reservations.status_pending'),
+            self::Confirmed => __('portal.reservations.status_confirmed'),
+            self::Seated => __('portal.reservations.status_seated'),
+            self::Completed => __('portal.reservations.status_completed'),
+            self::Cancelled => __('portal.reservations.status_cancelled'),
+            self::NoShow => __('portal.reservations.status_no_show'),
         };
     }
 
     public function color(): string
     {
         return match ($this) {
-            self::Pending   => 'warning',
+            self::Pending => 'warning',
             self::Confirmed => 'success',
-            self::Seated    => 'info',
+            self::Seated => 'info',
             self::Completed => 'secondary',
             self::Cancelled => 'danger',
-            self::NoShow    => 'dark',
+            self::NoShow => 'dark',
         };
     }
 
@@ -71,10 +71,10 @@ enum ReservationStatus: string
     public function nextStates(): array
     {
         return match ($this) {
-            self::Pending   => [self::Confirmed, self::Cancelled],
+            self::Pending => [self::Confirmed, self::Cancelled],
             self::Confirmed => [self::Seated, self::Cancelled, self::NoShow],
-            self::Seated    => [self::Completed, self::Cancelled],
-            default         => [],
+            self::Seated => [self::Completed, self::Cancelled],
+            default => [],
         };
     }
 }

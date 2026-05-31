@@ -41,6 +41,7 @@ class AccountingSeeder extends Seeder
             ['code' => '2300', 'name' => 'استلامات مخزون غير مفوترة', 'type' => 'liability', 'normal_balance' => 'credit', 'description' => 'بضاعة تم استلامها في المخزن ولم تصل فاتورة المورد الخاصة بها بعد.'],
             ['code' => '3000', 'name' => 'رأس المال وحقوق الملكية', 'type' => 'equity', 'normal_balance' => 'credit', 'description' => 'حقوق مالك المنشأة وصافي الاستثمار.'],
             ['code' => '3010', 'name' => 'أرصدة افتتاحية', 'type' => 'equity', 'normal_balance' => 'credit', 'description' => 'رصيد افتتاحي للمخزون أو النقد عند بدء استخدام النظام.'],
+            ['code' => '3020', 'name' => 'أرباح محتجزة', 'type' => 'equity', 'normal_balance' => 'credit', 'description' => 'صافي أرباح أو خسائر الفترات المقفلة بعد ترحيل حسابات الإيراد والمصاريف.'],
             ['code' => '4000', 'name' => 'إيرادات المبيعات', 'type' => 'revenue', 'normal_balance' => 'credit', 'description' => 'إيرادات بيع الأصناف قبل الخصومات والمردودات.'],
             ['code' => '4010', 'name' => 'إيرادات رسوم الخدمة', 'type' => 'revenue', 'normal_balance' => 'credit', 'description' => 'رسوم الخدمة المحملة على الفواتير.'],
             ['code' => '4020', 'name' => 'إيرادات التوصيل', 'type' => 'revenue', 'normal_balance' => 'credit', 'description' => 'رسوم التوصيل المحملة على الطلبات.'],

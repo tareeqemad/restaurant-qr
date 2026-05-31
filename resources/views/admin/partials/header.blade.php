@@ -81,14 +81,14 @@
 
             <!-- Start::header-element (notifications bell — real inbox + polling) -->
             <div class="header-element notifications-dropdown">
-                <a aria-label="الإشعارات"
+                <a aria-label="{{ __('admin.common.notifications') }}"
                    href="javascript:void(0);"
                    id="headerNotifications"
                    class="header-link dropdown-toggle no-caret"
                    data-bs-toggle="dropdown"
                    data-bs-auto-close="outside"
                    aria-expanded="false"
-                   title="الإشعارات">
+                   title="{{ __('admin.common.notifications') }}">
                     <svg class="header-link-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" height="24" width="24"><path opacity=".3" d="M12 6.5c-2.49 0-4 2.02-4 4.5v6h8v-6c0-2.48-1.51-4.5-4-4.5z"></path><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-11c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2v-5zm-2 6H8v-6c0-2.48 1.51-4.5 4-4.5s4 2.02 4 4.5v6z"></path></svg>
                     <span class="badge bg-danger rounded-pill header-icon-badge pulse pulse-danger"
                           id="notif-badge"
@@ -101,14 +101,14 @@
                     <div class="d-flex align-items-center justify-content-between px-3 py-2 border-bottom">
                         <h6 class="fw-semibold mb-0 fs-14 text-dark">
                             <i class="bi bi-bell-fill text-accent me-1"></i>
-                            الإشعارات
+                            {{ __('admin.common.notifications') }}
                         </h6>
                         <button type="button"
                                 id="notif-mark-all"
                                 class="btn btn-sm btn-link text-decoration-none p-0 fs-12 fw-semibold"
                                 style="{{ $unreadCount > 0 ? '' : 'display:none;' }}"
                                 onclick="window.notifBell.markAllRead()">
-                            <i class="bi bi-check2-all me-1"></i> تحديد الكل كمقروء
+                            <i class="bi bi-check2-all me-1"></i> {{ __('admin.common.mark_all_read') }}
                         </button>
                     </div>
 
@@ -133,7 +133,7 @@
                                     </span>
                                     <div class="flex-fill min-w-0">
                                         <div class="d-flex justify-content-between align-items-baseline">
-                                            <span class="fw-semibold fs-13 text-dark">{{ $data['title'] ?? 'إشعار' }}</span>
+                                            <span class="fw-semibold fs-13 text-dark">{{ $data['title'] ?? __('admin.common.notification') }}</span>
                                             <small class="text-muted fs-11">{{ optional($n->created_at)->diffForHumans() }}</small>
                                         </div>
                                         <div class="text-muted fs-12 text-truncate">{{ $data['body'] ?? '' }}</div>
@@ -143,7 +143,7 @@
                         @empty
                             <li class="text-center text-muted py-4 px-3" id="notif-empty">
                                 <i class="bi bi-bell-slash fs-3 d-block mb-2 op-5"></i>
-                                <span class="fs-13">لا إشعارات حالياً</span>
+                                <span class="fs-13">{{ __('admin.common.no_notifications') }}</span>
                             </li>
                         @endforelse
                     </ul>
@@ -151,7 +151,7 @@
                     <div class="border-top text-center py-2">
                         <a href="{{ route('admin.notifications.index') }}"
                            class="text-decoration-none fw-semibold fs-13 text-primary">
-                            افتح صندوق الإشعارات <i class="bi bi-arrow-left ms-1"></i>
+                            {{ __('admin.common.open_notifications') }} <i class="bi bi-arrow-left ms-1"></i>
                         </a>
                     </div>
                 </div>
@@ -191,7 +191,7 @@
                                 <svg class="profile-icon me-3" viewBox="0 0 24 24" height="100%" width="100%">
                                     <path d="M12 16c-2.69 0-5.77 1.28-6 2h12c-.2-.71-3.3-2-6-2z" opacity=".3"></path><circle cx="12" cy="8" opacity=".3" r="2"></circle><path d="M12 14c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4zm-6 4c.22-.72 3.31-2 6-2 2.7 0 5.8 1.29 6 2H6zm6-6c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0-6c1.1 0 2 .9 2 2s-.9 2-2 2-2-.9-2-2 .9-2 2-2z"></path>
                                 </svg>
-                                الملف الشخصي
+                                {{ __('admin.common.profile') }}
                             </a>
                         </li>
                         <li class="dropdown-item">
@@ -199,7 +199,7 @@
                                 @csrf
                                 <button type="submit" class="d-flex align-items-center w-100 border-0 bg-transparent p-0 text-danger">
                                     <svg class="profile-icon me-3" viewBox="0 0 24 24" height="100%" width="100%"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M12 4c-4.41 0-8 3.59-8 8s3.59 8 8 8 8-3.59 8-8-3.59-8-8-8zm1 13h-2v-6h2v6zm0-8h-2V7h2v2z" opacity=".3"/><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>
-                                    تسجيل الخروج
+                                    {{ __('admin.common.logout') }}
                                 </button>
                             </form>
                         </li>
@@ -298,7 +298,7 @@
                 list.innerHTML = `
                     <li class="text-center text-muted py-4 px-3">
                         <i class="bi bi-bell-slash fs-3 d-block mb-2 op-5"></i>
-                        <span class="fs-13">لا إشعارات حالياً</span>
+                        <span class="fs-13">{{ __('admin.common.no_notifications') }}</span>
                     </li>`;
             } else {
                 list.innerHTML = data.items.map(renderItem).join('');

@@ -13,6 +13,7 @@ use App\Helpers\SafeBroadcast;
 use App\Models\ActivityLog;
 use App\Models\Branch;
 use App\Models\Customer;
+use App\Models\InventoryMovement;
 use App\Models\MenuItem;
 use App\Models\Modifier;
 use App\Models\Order;
@@ -29,9 +30,7 @@ class OrderService
 
     protected function configuredTaxRate(): float
     {
-        $enabled = (bool) Setting::get('tax_enabled', config('restaurant.tax.enabled', true));
-
-        return $enabled ? (float) Setting::get('tax_rate', config('restaurant.tax.rate', 16)) : 0.0;
+        return app(SalesTaxService::class)->rateForBranch(BranchContext::current());
     }
 
     protected function configuredServiceRate(): float
@@ -53,6 +52,89 @@ class OrderService
         return in_array($stage, ['approve', 'preparing', 'ready', 'served'], true)
             ? $stage
             : 'approve';
+    }
+
+    protected function lockOrderItemForWorkflow(OrderItem $item): OrderItem
+    {
+        $locked = OrderItem::with(['order.tableSession.invoice', 'order.invoice'])
+            ->whereKey($item->id)
+            ->lockForUpdate()
+            ->firstOrFail();
+
+        if ($locked->order_id) {
+            $order = Order::with(['tableSession.invoice', 'invoice'])
+                ->whereKey($locked->order_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $locked->setRelation('order', $order);
+        }
+
+        return $locked;
+    }
+
+    protected function assertItemCanMove(OrderItem $item, string $expectedStatus, string $actionKey): void
+    {
+        $orderStatus = $item->order?->status;
+        $action = __("ui.customer_order.workflow_action_{$actionKey}");
+
+        if (in_array($orderStatus, [OrderStatus::Cancelled->value, OrderStatus::Completed->value], true)) {
+            throw new \RuntimeException(__('ui.customer_order.workflow_order_closed', [
+                'action' => $action,
+                'status' => $orderStatus,
+            ]));
+        }
+
+        if ($item->status !== $expectedStatus) {
+            throw new \RuntimeException(__('ui.customer_order.workflow_item_wrong_status', [
+                'action' => $action,
+                'status' => $item->status,
+            ]));
+        }
+    }
+
+    protected function itemHasInventoryDeduction(OrderItem $item): bool
+    {
+        return InventoryMovement::where('reference_type', OrderItem::class)
+            ->where('reference_id', $item->id)
+            ->where('type', 'out')
+            ->exists();
+    }
+
+    protected function assertOrderCanTransitionTo(Order $order, string $target): void
+    {
+        $activeItems = $order->items->where('status', '!=', OrderItemStatus::Cancelled->value);
+
+        if ($activeItems->isEmpty()) {
+            throw new \RuntimeException(__('ui.customer_order.workflow_order_has_no_active_items'));
+        }
+
+        if ($target === OrderStatus::Ready->value
+            && ! $activeItems->every(fn ($item) => in_array($item->status, [
+                OrderItemStatus::Ready->value,
+                OrderItemStatus::Served->value,
+            ], true))
+        ) {
+            throw new \RuntimeException(__('ui.customer_order.workflow_order_ready_blocked'));
+        }
+
+        if ($target === OrderStatus::Delivered->value
+            && ! $activeItems->every(fn ($item) => $item->status === OrderItemStatus::Served->value)
+        ) {
+            throw new \RuntimeException(__('ui.customer_order.workflow_order_delivered_blocked'));
+        }
+
+        if ($target === OrderStatus::Completed->value) {
+            $invoice = $order->tableSession?->invoice ?? $order->invoice;
+
+            if (! $activeItems->every(fn ($item) => $item->status === OrderItemStatus::Served->value)) {
+                throw new \RuntimeException(__('ui.customer_order.workflow_order_completed_items_blocked'));
+            }
+
+            if (! $invoice || ! in_array($invoice->status, ['paid', 'unpaid_writeoff'], true)) {
+                throw new \RuntimeException(__('ui.customer_order.workflow_order_completed_invoice_blocked'));
+            }
+        }
     }
 
     /**
@@ -593,10 +675,17 @@ class OrderService
         }
 
         return DB::transaction(function () use ($order, $target, $userId) {
+            $order = Order::with(['items', 'tableSession.invoice', 'invoice'])
+                ->whereKey($order->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
             $previous = $order->status;
             if ($previous === OrderStatus::Cancelled->value) {
                 throw new \RuntimeException('لا يمكن تغيير حالة طلب ملغى.');
             }
+
+            $this->assertOrderCanTransitionTo($order, $target);
 
             $order->update([
                 'status' => $target,
@@ -677,18 +766,22 @@ class OrderService
         }
 
         return DB::transaction(function () use ($item, $userId, $reason, $skipRecalculate, $disposition, $wasteReason) {
+            $item = $this->lockOrderItemForWorkflow($item);
             $this->assertInvoiceCanStillChange($item->order);
 
             if ($item->status === OrderItemStatus::Cancelled->value) return $item;
             $userId = $userId ?: null;
             $previousItemStatus = $item->status;
 
-            $wasDeducted = in_array($item->status, [
-                OrderItemStatus::Approved->value,
-                OrderItemStatus::Preparing->value,
-                OrderItemStatus::Ready->value,
-                OrderItemStatus::Served->value,
-            ], true);
+            $wasDeducted = $this->itemHasInventoryDeduction($item);
+
+            if ($disposition === 'waste'
+                && ! $wasDeducted
+                && $item->status !== OrderItemStatus::Pending->value
+            ) {
+                $this->inventory->ensureDeducted($item);
+                $wasDeducted = $this->itemHasInventoryDeduction($item);
+            }
 
             if ($wasDeducted) {
                 if ($disposition === 'return') {
@@ -731,49 +824,64 @@ class OrderService
 
     public function startPreparing(OrderItem $item, int $userId): OrderItem
     {
-        $previous = $item->status;
-        $item->update([
-            'status' => OrderItemStatus::Preparing->value,
-            'prep_started_at' => now(),
-            'prepared_by_user_id' => $userId,
-        ]);
-        if ($this->inventoryDeductionStage() === 'preparing') {
-            $this->inventory->ensureDeducted($item);
-        }
-        $this->syncOrderStatus($item->order);
-        $this->broadcastItemChange($item, $previous);
-        return $item->refresh();
+        return DB::transaction(function () use ($item, $userId) {
+            $item = $this->lockOrderItemForWorkflow($item);
+            $this->assertItemCanMove($item, OrderItemStatus::Approved->value, 'start_preparing');
+
+            $previous = $item->status;
+            $item->update([
+                'status' => OrderItemStatus::Preparing->value,
+                'prep_started_at' => now(),
+                'prepared_by_user_id' => $userId,
+            ]);
+            if ($this->inventoryDeductionStage() === 'preparing') {
+                $this->inventory->ensureDeducted($item);
+            }
+            $this->syncOrderStatus($item->order);
+            $this->broadcastItemChange($item, $previous);
+            return $item->refresh();
+        });
     }
 
     public function markItemReady(OrderItem $item): OrderItem
     {
-        $previous = $item->status;
-        $item->update([
-            'status' => OrderItemStatus::Ready->value,
-            'ready_at' => now(),
-        ]);
-        if ($this->inventoryDeductionStage() === 'ready') {
-            $this->inventory->ensureDeducted($item);
-        }
-        $this->syncOrderStatus($item->order);
-        $this->broadcastItemChange($item, $previous);
-        return $item->refresh();
+        return DB::transaction(function () use ($item) {
+            $item = $this->lockOrderItemForWorkflow($item);
+            $this->assertItemCanMove($item, OrderItemStatus::Preparing->value, 'mark_ready');
+
+            $previous = $item->status;
+            $item->update([
+                'status' => OrderItemStatus::Ready->value,
+                'ready_at' => now(),
+            ]);
+            if ($this->inventoryDeductionStage() === 'ready') {
+                $this->inventory->ensureDeducted($item);
+            }
+            $this->syncOrderStatus($item->order);
+            $this->broadcastItemChange($item, $previous);
+            return $item->refresh();
+        });
     }
 
     public function markItemServed(OrderItem $item, int $userId): OrderItem
     {
-        $previous = $item->status;
-        $item->update([
-            'status' => OrderItemStatus::Served->value,
-            'served_at' => now(),
-            'served_by_user_id' => $userId,
-        ]);
-        if ($this->inventoryDeductionStage() === 'served') {
-            $this->inventory->ensureDeducted($item);
-        }
-        $this->syncOrderStatus($item->order);
-        $this->broadcastItemChange($item, $previous);
-        return $item->refresh();
+        return DB::transaction(function () use ($item, $userId) {
+            $item = $this->lockOrderItemForWorkflow($item);
+            $this->assertItemCanMove($item, OrderItemStatus::Ready->value, 'mark_served');
+
+            $previous = $item->status;
+            $item->update([
+                'status' => OrderItemStatus::Served->value,
+                'served_at' => now(),
+                'served_by_user_id' => $userId,
+            ]);
+            if ($this->inventoryDeductionStage() === 'served') {
+                $this->inventory->ensureDeducted($item);
+            }
+            $this->syncOrderStatus($item->order);
+            $this->broadcastItemChange($item, $previous);
+            return $item->refresh();
+        });
     }
 
     protected function broadcastItemChange(OrderItem $item, string $previous): void

@@ -4,6 +4,7 @@
 @php
     use App\Helpers\Brand;
     use App\Models\Setting;
+    use App\Support\MarketProfile;
     use App\Support\ThemePalette;
 
     $themeDefaults = config('restaurant.theme', []);
@@ -12,6 +13,10 @@
     $checked = fn (string $key, mixed $default = false) => (bool) Setting::get($key, $default);
     $canEditSettings = auth()->user()->hasAnyRole(['super_admin', 'admin']);
     $baseCurrency = $currencies->firstWhere('is_base');
+    $marketLabel = config('market.label');
+    $taxLabel = MarketProfile::taxLabel();
+    $taxNumberLabel = MarketProfile::taxNumberLabel();
+    $serviceLabel = MarketProfile::serviceLabel();
 @endphp
 
 @push('styles')
@@ -209,20 +214,28 @@
                                     <div class="setting-hint mt-1">اختياري، لكنه مهم لو بدك يظهر على الفواتير الرسمية.</div>
                                 </div>
                                 <div class="col-md-4">
-                                    <label class="form-label">الرقم الضريبي</label>
+                                    <label class="form-label">{{ $taxNumberLabel }}</label>
                                     <input name="tax_number" class="form-control" maxlength="80"
                                         value="{{ $read('tax_number') }}" placeholder="اختياري">
                                 </div>
                                 <div class="col-md-4">
-                                    <label class="form-label">رمز العملة الأساسي <span class="text-danger">*</span></label>
+                                    <label class="form-label">{{ MarketProfile::isUs() ? 'Currency symbol' : 'رمز العملة الأساسي' }} <span class="text-danger">*</span></label>
                                     <input name="currency_symbol" class="form-control" required maxlength="10"
                                         value="{{ $read('currency_symbol', config('restaurant.currency_symbol')) }}">
                                     <div class="setting-hint mt-1">هذا الرمز يستخدم في الفواتير والتقارير. جدول العملات للعرض المتعدد فقط.</div>
                                 </div>
                                 <div class="col-md-4">
-                                    <label class="form-label">العملة الأساسية</label>
+                                    <label class="form-label">{{ MarketProfile::isUs() ? 'Base currency' : 'العملة الأساسية' }}</label>
                                     <input class="form-control" value="{{ $baseCurrency?->code ?? config('restaurant.currency') }}" disabled>
                                     <div class="setting-hint mt-1">تتغير من جدول العملات وليس من هذا الحقل.</div>
+                                </div>
+                                <div class="col-12">
+                                    <div class="alert alert-light border mb-0 py-2">
+                                        <i class="bi bi-globe2"></i>
+                                        {{ MarketProfile::isUs()
+                                            ? 'Active market profile: '.$marketLabel.'. Defaults use USD, LTR layout, US phone region, and sales-tax wording.'
+                                            : 'ملف السوق الحالي: '.$marketLabel.'. يمكن تغيير السوق من MARKET_PROFILE في ملف البيئة.' }}
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -232,12 +245,12 @@
                 <div class="tab-pane fade" id="tab-billing">
                     <div class="settings-card card">
                         <div class="card-header">
-                            <h5 class="mb-0"><i class="bi bi-receipt-cutoff text-accent"></i> الضريبة، الخدمة، والفاتورة</h5>
+                            <h5 class="mb-0"><i class="bi bi-receipt-cutoff text-accent"></i> {{ MarketProfile::isUs() ? 'Sales tax, gratuity, and receipts' : 'الضريبة، الخدمة، والفاتورة' }}</h5>
                         </div>
                         <div class="card-body">
                             <div class="row g-3">
                                 <div class="col-md-3">
-                                    <label class="form-label">نسبة الضريبة %</label>
+                                    <label class="form-label">{{ $taxLabel }} %</label>
                                     <input type="number" step="0.01" min="0" max="100" name="tax_rate" class="form-control"
                                         value="{{ $read('tax_rate', config('restaurant.tax.rate')) }}" required>
                                 </div>
@@ -246,7 +259,7 @@
                                         <input type="hidden" name="tax_enabled" value="0">
                                         <input type="checkbox" id="tax_enabled" name="tax_enabled" value="1" class="form-check-input"
                                             @checked($checked('tax_enabled', config('restaurant.tax.enabled')))>
-                                        <label for="tax_enabled" class="form-check-label fw-bold">تفعيل الضريبة</label>
+                                        <label for="tax_enabled" class="form-check-label fw-bold">{{ MarketProfile::isUs() ? 'Enable sales tax' : 'تفعيل الضريبة' }}</label>
                                     </div>
                                 </div>
                                 <div class="col-md-3">
@@ -258,7 +271,7 @@
                                     </select>
                                 </div>
                                 <div class="col-md-3">
-                                    <label class="form-label">نسبة الخدمة %</label>
+                                    <label class="form-label">{{ $serviceLabel }} %</label>
                                     <input type="number" step="0.01" min="0" max="100" name="service_rate" class="form-control"
                                         value="{{ $read('service_rate', config('restaurant.service_charge.rate')) }}" required>
                                 </div>
@@ -267,7 +280,7 @@
                                         <input type="hidden" name="service_enabled" value="0">
                                         <input type="checkbox" id="service_enabled" name="service_enabled" value="1" class="form-check-input"
                                             @checked($checked('service_enabled', config('restaurant.service_charge.enabled')))>
-                                        <label for="service_enabled" class="form-check-label fw-bold">تفعيل الخدمة للصالة</label>
+                                        <label for="service_enabled" class="form-check-label fw-bold">{{ MarketProfile::isUs() ? 'Enable gratuity/service charge' : 'تفعيل الخدمة للصالة' }}</label>
                                     </div>
                                 </div>
                                 <div class="col-md-9">
@@ -936,6 +949,102 @@
                             </button>
                         </div>
                     </form>
+                </div>
+
+                @php
+                    $nonBaseCurrencies = $currencies->where('is_base', false);
+                    $exchangeRatesList = $exchangeRates ?? collect();
+                @endphp
+
+                <div class="settings-card card mb-3" id="exchange-rates">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-calendar-range text-accent"></i> أسعار الصرف حسب التاريخ</h5>
+                        <span class="badge bg-light text-dark">من/إلى أو تحديث يومي</span>
+                    </div>
+                    <div class="card-body border-bottom">
+                        <form method="POST" action="{{ route('admin.currencies.exchange-rates.store') }}">
+                            @csrf
+                            <div class="row g-2 align-items-end">
+                                <div class="col-md-2">
+                                    <label class="form-label">العملة</label>
+                                    <select name="currency_code" class="form-select" required>
+                                        @foreach($nonBaseCurrencies as $currency)
+                                            <option value="{{ $currency->code }}">{{ $currency->code }} - {{ $currency->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label">سعر الصرف</label>
+                                    <input type="number" step="0.000001" min="0.000001" name="rate" class="form-control" placeholder="0.270000" required>
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label">من تاريخ</label>
+                                    <input type="date" name="valid_from" class="form-control" value="{{ now()->toDateString() }}" required>
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label">إلى تاريخ</label>
+                                    <input type="date" name="valid_to" class="form-control" placeholder="اختياري">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">ملاحظة</label>
+                                    <input type="text" name="note" class="form-control" maxlength="500" placeholder="مثلا: سعر البنك لهذا اليوم">
+                                </div>
+                                <div class="col-md-1">
+                                    <button class="btn btn-primary w-100" @disabled(!$canEditSettings || $nonBaseCurrencies->isEmpty())>
+                                        <i class="bi bi-plus-lg"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="bg-light">
+                                <tr>
+                                    <th>العملة</th>
+                                    <th>عملة الدفاتر</th>
+                                    <th>السعر</th>
+                                    <th>من</th>
+                                    <th>إلى</th>
+                                    <th>المصدر</th>
+                                    <th>ملاحظة</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @forelse($exchangeRatesList as $rate)
+                                    <tr>
+                                        <td><strong>{{ $rate->currency_code }}</strong></td>
+                                        <td>{{ $rate->base_currency_code }}</td>
+                                        <td dir="ltr">{{ number_format((float) $rate->rate, 6, '.', '') }}</td>
+                                        <td>{{ $rate->valid_from?->toDateString() }}</td>
+                                        <td>{{ $rate->valid_to?->toDateString() ?? 'مفتوح' }}</td>
+                                        <td><span class="badge bg-light text-dark">{{ $rate->source }}</span></td>
+                                        <td class="small text-muted">{{ $rate->note }}</td>
+                                        <td class="text-end">
+                                            <form method="POST" action="{{ route('admin.currencies.exchange-rates.destroy', $rate) }}"
+                                                  onsubmit="return confirm('حذف سعر الصرف؟')">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button class="btn btn-sm btn-outline-danger" @disabled(!$canEditSettings)>
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="8">
+                                            <x-admin.empty-state icon="bi-calendar-x" message="لا توجد أسعار صرف تاريخية بعد" compact />
+                                        </td>
+                                    </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card-footer small text-muted">
+                        عند ترحيل قيد بتاريخ معين، يختار النظام أحدث سعر يبدأ قبل أو في تاريخ القيد وما زال ضمن فترة الصلاحية. إذا لم يجد سعرا يغطي التاريخ، يوقف العملية ويطلب تحديث سعر الصرف.
+                    </div>
                 </div>
 
                 @foreach($currencies as $currency)

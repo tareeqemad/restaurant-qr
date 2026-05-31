@@ -9,6 +9,9 @@ use App\Models\OrderItem;
 use App\Models\PurchaseOrder;
 use App\Models\Shift;
 use App\Support\BranchContext;
+use App\Support\MarketHtmlTranslator;
+use App\Support\MarketProfile;
+use App\Support\MarketSpreadsheetLocalizer;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -833,9 +836,10 @@ class ReportController extends Controller
         $from = $request->get('from', now()->startOfMonth()->toDateString());
         $to   = $request->get('to',   now()->toDateString());
         $branchId = BranchContext::current();
+        $source = $request->get('source', 'ledger');
         $usePerBranchCost = $branchId && $request->boolean('per_branch_cost');
 
-        return new \App\Services\Reports\ProfitLossReport($from, $to, $branchId, $usePerBranchCost);
+        return new \App\Services\Reports\ProfitLossReport($from, $to, $branchId, $usePerBranchCost, $source);
     }
 
     /**
@@ -1064,7 +1068,7 @@ class ReportController extends Controller
             ['التاريخ',         $effDate . ($asOf ? ' (وضع تاريخي)' : ' (الصورة الحالية)')],
             ['عدد الأصناف',     $rows->count()],
             ['إجمالي القيمة',   $totalValue],
-            ['تاريخ التقرير',   now()->locale('ar')->isoFormat('D MMMM YYYY · HH:mm')],
+            ['تاريخ التقرير',   now()->locale(MarketProfile::lang())->isoFormat('D MMMM YYYY · HH:mm')],
         ];
         $row = 3;
         foreach ($meta as $pair) {
@@ -1236,6 +1240,7 @@ class ReportController extends Controller
         }
         $sheet->freezePane('A2');
 
+        MarketSpreadsheetLocalizer::apply($book);
         $book->setActiveSheetIndex(0);
 
         return response()->streamDownload(function () use ($book) {
@@ -1455,7 +1460,7 @@ class ReportController extends Controller
                     false => 'lower = better',
                     null  => '',
                 };
-                $line = [$kpi['label'], $direction];
+                $line = [MarketHtmlTranslator::translate($kpi['label']), $direction];
                 foreach ($rows as $row) {
                     $value = $row->{$kpi['key']};
                     if (is_null($value)) {

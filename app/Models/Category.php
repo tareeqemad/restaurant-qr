@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToBranch;
+use App\Models\Concerns\HasLocalizedFields;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -12,7 +13,7 @@ use Illuminate\Support\Str;
 
 class Category extends Model
 {
-    use BelongsToBranch, HasFactory, SoftDeletes;
+    use BelongsToBranch, HasFactory, HasLocalizedFields, SoftDeletes;
 
     protected $fillable = [
         'branch_id', 'slug', 'name', 'name_en', 'description', 'description_en',
@@ -50,6 +51,7 @@ class Category extends Model
         if (str_starts_with($this->image, 'http')) {
             return $this->image;
         }
+
         return asset('storage/'.$this->image);
     }
 }

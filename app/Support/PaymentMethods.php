@@ -18,13 +18,13 @@ use App\Models\Setting;
  */
 class PaymentMethods
 {
-    /** All methods the schema supports, with their Arabic labels and icons. */
+    /** All methods the schema supports, with their labels and icons. */
     protected const CATALOG = [
-        'cash'     => ['label' => 'نقداً',         'icon' => 'bi-cash-stack',     'default' => true],
-        'card'     => ['label' => 'بطاقة (فيزا)',  'icon' => 'bi-credit-card',    'default' => true],
-        'transfer' => ['label' => 'تحويل بنكي',    'icon' => 'bi-bank',           'default' => true],
-        'app'      => ['label' => 'تطبيق دفع',     'icon' => 'bi-phone',          'default' => false],
-        'credit'   => ['label' => 'على الحساب',    'icon' => 'bi-journal-text',   'default' => false],
+        'cash'     => ['label_key' => 'admin.payment_methods.cash',     'icon' => 'bi-cash-stack',   'default' => true],
+        'card'     => ['label_key' => 'admin.payment_methods.card',     'icon' => 'bi-credit-card',  'default' => true],
+        'transfer' => ['label_key' => 'admin.payment_methods.transfer', 'icon' => 'bi-bank',         'default' => true],
+        'app'      => ['label_key' => 'admin.payment_methods.app',      'icon' => 'bi-phone',        'default' => false],
+        'credit'   => ['label_key' => 'admin.payment_methods.credit',   'icon' => 'bi-journal-text', 'default' => false],
     ];
 
     /** All known methods + metadata, including their current enabled state. */
@@ -32,7 +32,10 @@ class PaymentMethods
     {
         $out = [];
         foreach (self::CATALOG as $code => $meta) {
-            $out[$code] = $meta + ['enabled' => self::isEnabled($code)];
+            $out[$code] = $meta + [
+                'label' => self::label($code),
+                'enabled' => self::isEnabled($code),
+            ];
         }
         return $out;
     }
@@ -65,10 +68,12 @@ class PaymentMethods
         return (bool) Setting::get(self::settingKey($code), $default);
     }
 
-    /** Arabic label for a method (falls back to the raw code). */
+    /** Localized label for a method (falls back to the raw code). */
     public static function label(string $code): string
     {
-        return self::CATALOG[$code]['label'] ?? $code;
+        $key = self::CATALOG[$code]['label_key'] ?? null;
+
+        return is_string($key) ? __($key) : $code;
     }
 
     /** Validation `in:` rule built from the currently-enabled methods. */

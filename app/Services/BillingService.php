@@ -10,6 +10,7 @@ use App\Helpers\Money;
 use App\Helpers\SafeBroadcast;
 use App\Models\ActivityLog;
 use App\Models\Invoice;
+use App\Models\InvoiceSplit;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\TableSession;
@@ -506,6 +507,14 @@ class BillingService
             $invoice = Invoice::whereKey($invoice->id)->lockForUpdate()->firstOrFail();
             $writeoffAmount = Money::round((float) $invoice->balance);
 
+            if (in_array($invoice->status, ['paid', 'cancelled', 'unpaid_writeoff'], true)) {
+                throw new \RuntimeException('لا يمكن شطب فاتورة مغلقة أو ملغاة.');
+            }
+
+            if ($writeoffAmount <= 0.001) {
+                throw new \RuntimeException('لا يوجد رصيد متبقٍ لشطبه على هذه الفاتورة.');
+            }
+
             $invoice->update([
                 'status' => 'unpaid_writeoff',
                 'balance' => 0,
@@ -550,11 +559,21 @@ class BillingService
     }
     public function splitInvoice(Invoice $invoice, array $splits): Invoice
     {
-        if ($invoice->payments()->exists()) {
-            throw new \RuntimeException('لا يمكن تقسيم فاتورة فيها دفعات مسجلة');
-        }
-
         return DB::transaction(function () use ($invoice, $splits) {
+            $invoice = Invoice::whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+
+            if (in_array($invoice->status, ['paid', 'cancelled', 'unpaid_writeoff'], true)) {
+                throw new \RuntimeException('لا يمكن تقسيم فاتورة مغلقة أو ملغاة.');
+            }
+
+            if ($invoice->payments()->exists()) {
+                throw new \RuntimeException('لا يمكن تقسيم فاتورة فيها دفعات مسجلة');
+            }
+
+            if (Money::round((float) $invoice->balance) <= 0.001) {
+                throw new \RuntimeException('لا يوجد رصيد متبقٍ لتقسيمه على هذه الفاتورة.');
+            }
+
             $invoice->splits()->delete();
 
             $total = (float) $invoice->total;
@@ -582,14 +601,25 @@ class BillingService
         });
     }
 
-    public function paySplit(\App\Models\InvoiceSplit $split, int $userId, ?string $reference = null): Payment
+    public function paySplit(InvoiceSplit $split, int $userId, ?string $reference = null): Payment
     {
-        if ($split->paid) {
-            throw new \RuntimeException('الجزء مدفوع مسبقاً');
-        }
-
         return DB::transaction(function () use ($split, $userId, $reference) {
-            $payment = $this->addPayment($split->invoice, (float) $split->amount, $split->method, $userId, $reference, "دفعة جزء: {$split->label}");
+            $splitId = $split->id;
+            $invoiceId = InvoiceSplit::whereKey($splitId)->value('invoice_id');
+
+            $invoice = Invoice::whereKey($invoiceId)->lockForUpdate()->firstOrFail();
+            $split = InvoiceSplit::whereKey($splitId)->lockForUpdate()->firstOrFail();
+            $split->setRelation('invoice', $invoice);
+
+            if ($split->paid) {
+                throw new \RuntimeException('الجزء مدفوع مسبقاً');
+            }
+
+            if (in_array($invoice->status, ['paid', 'cancelled', 'unpaid_writeoff'], true)) {
+                throw new \RuntimeException('لا يمكن دفع جزء من فاتورة مغلقة أو ملغاة.');
+            }
+
+            $payment = $this->addPayment($invoice, (float) $split->amount, $split->method, $userId, $reference, "دفعة جزء: {$split->label}");
             $split->update(['paid' => true, 'paid_at' => now()]);
             return $payment;
         });

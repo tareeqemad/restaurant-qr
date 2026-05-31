@@ -9,6 +9,11 @@
     subtitle="سجل الترحيل المحاسبي لكل فاتورة ودفعة ومصروف ومورد"
     :crumbs="[['label' => 'الحسابات', 'url' => route('admin.cashier.index')]]">
     <x-slot:actions>
+        @if(auth()->user()?->hasPermission('chart_of_accounts.update'))
+            <a href="{{ route('admin.accounting.mappings') }}" class="btn btn-outline-primary">
+                <i class="bi bi-diagram-3"></i> خرائط الحسابات
+            </a>
+        @endif
         @if(auth()->user()?->hasPermission('chart_of_accounts.create'))
             <a href="{{ route('admin.accounting.manual-entry.create') }}" class="btn btn-primary">
                 <i class="bi bi-journal-plus"></i> قيد يدوي جديد
@@ -69,6 +74,7 @@
                         <th>الوصف</th>
                         <th class="text-end">مدين</th>
                         <th class="text-end">دائن</th>
+                        <th class="text-end">إجراء</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -86,12 +92,24 @@
                             <td>
                                 <div class="fw-bold">{{ $entry->description }}</div>
                                 <small class="text-muted">{{ class_basename($entry->source_type) }} #{{ $entry->source_id }}</small>
+                                @if(in_array((int) $entry->id, $reversedEntryIds ?? [], true))
+                                    <span class="badge bg-warning-transparent text-warning ms-1">معكوس</span>
+                                @endif
                             </td>
-                            <td class="text-end fw-bold">{{ \App\Helpers\Money::format($debit) }}</td>
-                            <td class="text-end fw-bold">{{ \App\Helpers\Money::format($credit) }}</td>
+                            <td class="text-end fw-bold">{{ \App\Helpers\Money::formatAccounting($debit) }}</td>
+                            <td class="text-end fw-bold">{{ \App\Helpers\Money::formatAccounting($credit) }}</td>
+                            <td class="text-end">
+                                @if(auth()->user()?->hasPermission('chart_of_accounts.create') && ! in_array((int) $entry->id, $reversedEntryIds ?? [], true))
+                                    <a href="{{ route('admin.accounting.journal.adjust.create', $entry) }}" class="btn btn-sm btn-outline-warning">
+                                        <i class="bi bi-arrow-counterclockwise"></i> عكس/تصحيح
+                                    </a>
+                                @else
+                                    <span class="text-muted small">-</span>
+                                @endif
+                            </td>
                         </tr>
                         <tr class="accounting-lines-row">
-                            <td colspan="7">
+                            <td colspan="8">
                                 <div class="journal-lines-grid">
                                     @foreach($entry->lines->sortBy('line_no') as $line)
                                         <div class="journal-line-item">
@@ -101,9 +119,15 @@
                                             </div>
                                             <div class="journal-line-description">{{ $line->description ?: $entry->description }}</div>
                                             <div class="journal-line-amounts">
-                                                <span>مدين: {{ \App\Helpers\Money::format($line->debit) }}</span>
-                                                <span>دائن: {{ \App\Helpers\Money::format($line->credit) }}</span>
+                                                <span>مدين: {{ \App\Helpers\Money::formatAccounting($line->debit) }}</span>
+                                                <span>دائن: {{ \App\Helpers\Money::formatAccounting($line->credit) }}</span>
                                             </div>
+                                            @if($line->currency_code && $line->currency_code !== $entry->base_currency_code)
+                                                <div class="journal-line-amounts">
+                                                    <span>أصلي: {{ number_format((float) $line->foreign_debit, 2) }} / {{ number_format((float) $line->foreign_credit, 2) }} {{ $line->currency_code }}</span>
+                                                    <span>@ {{ rtrim(rtrim(number_format((float) $line->exchange_rate, 6, '.', ''), '0'), '.') }}</span>
+                                                </div>
+                                            @endif
                                         </div>
                                     @endforeach
                                 </div>

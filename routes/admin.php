@@ -5,7 +5,7 @@ use App\Models\PurchaseOrder;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware(['auth', 'admin', 'branch', 'license'])->group(function () {
+Route::middleware(['auth', 'setup.complete', 'admin', 'branch', 'license'])->group(function () {
     // Dashboard
     Route::get('/', [Admin\DashboardController::class, 'index'])->name('dashboard');
 
@@ -50,6 +50,8 @@ Route::middleware(['auth', 'admin', 'branch', 'license'])->group(function () {
     Route::post('licenses/{license}/renew', [Admin\LicenseController::class, 'renew'])->name('licenses.renew');
     Route::post('licenses/{license}/suspend', [Admin\LicenseController::class, 'suspend'])->name('licenses.suspend');
     Route::post('licenses/{license}/activate', [Admin\LicenseController::class, 'activate'])->name('licenses.activate');
+    Route::post('licenses/{license}/activations/{activation}/revoke', [Admin\LicenseController::class, 'revokeActivation'])->name('licenses.activations.revoke');
+    Route::post('licenses/{license}/activations/{activation}/activate', [Admin\LicenseController::class, 'activateActivation'])->name('licenses.activations.activate');
 
     // Branches (Super Admin only — gated by BranchPolicy)
     Route::resource('branches', Admin\BranchController::class)->except(['show']);
@@ -364,11 +366,34 @@ Route::middleware(['auth', 'admin', 'branch', 'license'])->group(function () {
     // Accounting review
     Route::prefix('accounting')->name('accounting.')->group(function () {
         Route::get('journal', [Admin\AccountingController::class, 'journal'])->name('journal');
+        Route::get('journal/export.csv', [Admin\AccountingController::class, 'exportJournalCsv'])->name('journal.export.csv');
         Route::get('trial-balance', [Admin\AccountingController::class, 'trialBalance'])->name('trial-balance');
+        Route::get('balance-sheet', [Admin\AccountingController::class, 'balanceSheet'])->name('balance-sheet');
+        Route::get('tax-report', [Admin\AccountingController::class, 'taxReport'])->name('tax-report');
+        Route::get('aging', [Admin\AccountingController::class, 'aging'])->name('aging');
+        Route::get('opening-balances', [Admin\AccountingController::class, 'openingBalances'])->name('opening-balances');
+        Route::post('opening-balances', [Admin\AccountingController::class, 'storeOpeningBalances'])->name('opening-balances.store');
+        Route::get('periods', [Admin\AccountingController::class, 'periods'])->name('periods');
+        Route::post('periods', [Admin\AccountingController::class, 'storePeriod'])->name('periods.store');
+        Route::post('periods/{period}/close', [Admin\AccountingController::class, 'closePeriod'])->name('periods.close');
+        Route::post('periods/{period}/reopen', [Admin\AccountingController::class, 'reopenPeriod'])->name('periods.reopen');
+        Route::get('fiscal-years', [Admin\AccountingController::class, 'fiscalYears'])->name('fiscal-years');
+        Route::post('fiscal-years', [Admin\AccountingController::class, 'storeFiscalYear'])->name('fiscal-years.store');
+        Route::post('fiscal-years/{year}/close', [Admin\AccountingController::class, 'closeFiscalYear'])->name('fiscal-years.close');
+        Route::post('fiscal-years/{year}/reopen', [Admin\AccountingController::class, 'reopenFiscalYear'])->name('fiscal-years.reopen');
+        Route::get('tax-jurisdictions', [Admin\AccountingController::class, 'taxJurisdictions'])->name('tax-jurisdictions');
+        Route::post('tax-jurisdictions', [Admin\AccountingController::class, 'storeTaxJurisdiction'])->name('tax-jurisdictions.store');
+        Route::delete('tax-jurisdictions/{jurisdiction}', [Admin\AccountingController::class, 'destroyTaxJurisdiction'])->name('tax-jurisdictions.destroy');
+        Route::get('reconciliations', [Admin\AccountingController::class, 'reconciliations'])->name('reconciliations');
+        Route::post('reconciliations', [Admin\AccountingController::class, 'storeReconciliation'])->name('reconciliations.store');
         // Manual journal entry — the bridge that lets accountants actually
         // post to their custom chart accounts (otherwise the chart is read-only).
         Route::get('manual-entry', [Admin\AccountingController::class, 'createManualEntry'])->name('manual-entry.create');
         Route::post('manual-entry', [Admin\AccountingController::class, 'storeManualEntry'])->name('manual-entry.store');
+        Route::get('mappings', [Admin\AccountingController::class, 'accountMappings'])->name('mappings');
+        Route::post('mappings', [Admin\AccountingController::class, 'storeAccountMappings'])->name('mappings.store');
+        Route::get('journal/{entry}/adjust', [Admin\AccountingController::class, 'createEntryAdjustment'])->name('journal.adjust.create');
+        Route::post('journal/{entry}/adjust', [Admin\AccountingController::class, 'storeEntryAdjustment'])->name('journal.adjust.store');
     });
 
     // Chart of accounts — accountant CRUD with system-account guards.
@@ -383,6 +408,8 @@ Route::middleware(['auth', 'admin', 'branch', 'license'])->group(function () {
     Route::get('currencies', [Admin\CurrencyController::class, 'index'])->name('currencies.index');
     Route::post('currencies', [Admin\CurrencyController::class, 'store'])->name('currencies.store');
     Route::post('currencies/update-rates', [Admin\CurrencyController::class, 'updateRates'])->name('currencies.update-rates');
+    Route::post('currencies/exchange-rates', [Admin\CurrencyController::class, 'storeExchangeRate'])->name('currencies.exchange-rates.store');
+    Route::delete('currencies/exchange-rates/{exchangeRate}', [Admin\CurrencyController::class, 'destroyExchangeRate'])->name('currencies.exchange-rates.destroy');
     Route::delete('currencies/{currency}', [Admin\CurrencyController::class, 'destroy'])->name('currencies.destroy');
 
     // Lookups (soft-enum management — categories etc.)

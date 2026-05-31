@@ -50,7 +50,7 @@ return new class extends Migration
             $table->id();
             $table->string('license_key', 80)->nullable();
             $table->json('payload')->nullable();
-            $table->string('signature', 128)->nullable();
+            $table->text('signature')->nullable();
             $table->string('status', 30)->default('missing')->index();
             $table->date('starts_at')->nullable();
             $table->date('expires_at')->nullable();

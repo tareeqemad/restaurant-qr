@@ -22,6 +22,7 @@ class CartController extends Controller
         $session = $request->attributes->get('table_session');
         $session->loadMissing('table.branch');
         $cart = session('cart.'.$session->token, []);
+
         return view('customer.cart', compact('cart', 'session'));
     }
 
@@ -29,7 +30,7 @@ class CartController extends Controller
     {
         $session = $request->attributes->get('table_session');
         if ($this->hasIssuedInvoice($session)) {
-            $message = 'الفاتورة صدرت بالفعل. اطلب من الجرسون إلغاءها إذا بدك تضيف طلب جديد.';
+            $message = __('ui.customer_order.invoice_already_issued_add');
 
             if ($request->expectsJson() || $request->ajax()) {
                 return response()->json([
@@ -52,7 +53,7 @@ class CartController extends Controller
 
         $item = MenuItem::with('recipeItems.ingredient')->findOrFail($data['menu_item_id']);
         if (! $item->is_available) {
-            return $this->rejectAdd($request, 'الصنف غير متوفر حالياً');
+            return $this->rejectAdd($request, __('ui.customer_order.item_currently_unavailable'));
         }
 
         $cart = session('cart.'.$session->token, []);
@@ -67,18 +68,19 @@ class CartController extends Controller
         $virtualCart = $cart;
         $virtualCart[] = [
             'menu_item_id' => (int) $item->id,
-            'quantity'     => (float) $data['quantity'],
+            'quantity' => (float) $data['quantity'],
             'modifier_ids' => $data['modifier_ids'] ?? [],
         ];
         $issues = $this->inventory->checkStockForOrderPreview($virtualCart);
         if (! empty($issues)) {
             $short = collect($issues)
-                ->map(fn ($i) => $i['ingredient'].' (متاح '.rtrim(rtrim(number_format($i['available'],2),'0'),'.')
-                    .'، مطلوب '.rtrim(rtrim(number_format($i['required'],2),'0'),'.').')')
+                ->map(fn ($i) => $i['ingredient'].' ('.__('ui.customer_order.available_qty', ['qty' => rtrim(rtrim(number_format($i['available'], 2), '0'), '.')])
+                    .', '.__('ui.customer_order.required_qty', ['qty' => rtrim(rtrim(number_format($i['required'], 2), '0'), '.')]).')')
                 ->take(3)
-                ->join('، ');
+                ->join(', ');
+
             return $this->rejectAdd($request,
-                "نفد المخزون من: {$short}. اختر صنفاً آخر أو راجع الكاشير.");
+                __('ui.customer_order.stock_out_detail', ['items' => $short]));
         }
 
         $modifiers = Modifier::whereIn('id', $data['modifier_ids'] ?? [])->get();
@@ -86,12 +88,12 @@ class CartController extends Controller
         $row = [
             'id' => uniqid(),
             'menu_item_id' => (int) $item->id,
-            'name' => $item->name,
+            'name' => $item->localizedName(),
             'image' => $item->imageUrl(),
             'quantity' => (int) $data['quantity'],                // force int — avoids "1"+1="11" on client
             'unit_price' => (float) $item->price,
             'modifier_ids' => $data['modifier_ids'] ?? [],
-            'modifiers' => $modifiers->map(fn($m) => ['id'=>(int)$m->id, 'name'=>$m->name, 'price_delta'=>(float)$m->price_delta])->values()->toArray(),
+            'modifiers' => $modifiers->map(fn ($m) => ['id' => (int) $m->id, 'name' => $m->localizedName(), 'price_delta' => (float) $m->price_delta])->values()->toArray(),
             'modifiers_total' => (float) $modifiers->sum('price_delta'),
             'notes' => $data['notes'] ?? null,
         ];
@@ -107,7 +109,7 @@ class CartController extends Controller
             return response()->json(['ok' => true, 'row' => $row]);
         }
 
-        return redirect()->route('customer.cart.view')->with('success', 'تمت إضافة الصنف للسلة');
+        return redirect()->route('customer.cart.view')->with('success', __('ui.customer_order.cart_item_added'));
     }
 
     public function update(Request $request)
@@ -129,9 +131,10 @@ class CartController extends Controller
                 if ($row['id'] === $data['row_id']) {
                     $row['quantity'] = (int) $data['quantity'];
                 }
+
                 return [
                     'menu_item_id' => (int) $row['menu_item_id'],
-                    'quantity'     => (float) $row['quantity'],
+                    'quantity' => (float) $row['quantity'],
                     'modifier_ids' => $row['modifier_ids'] ?? [],
                 ];
             })->all();
@@ -139,12 +142,13 @@ class CartController extends Controller
             $issues = $this->inventory->checkStockForOrderPreview($virtualCart);
             if (! empty($issues)) {
                 $short = collect($issues)
-                    ->map(fn ($i) => $i['ingredient'].' (متاح '.rtrim(rtrim(number_format($i['available'],2),'0'),'.').')')
-                    ->take(2)->join('، ');
+                    ->map(fn ($i) => $i['ingredient'].' ('.__('ui.customer_order.available_qty', ['qty' => rtrim(rtrim(number_format($i['available'], 2), '0'), '.')]).')')
+                    ->take(2)->join(', ');
+
                 return response()->json([
-                    'ok'      => false,
-                    'error'   => 'stock_short',
-                    'message' => "لا يمكن زيادة الكمية — {$short}.",
+                    'ok' => false,
+                    'error' => 'stock_short',
+                    'message' => __('ui.customer_order.cannot_increase_qty', ['items' => $short]),
                 ], 422);
             }
         }
@@ -164,6 +168,7 @@ class CartController extends Controller
         }
         session()->put('cart.'.$session->token, $cart);
         $session->touch();
+
         return response()->json(['ok' => true]);
     }
 
@@ -176,6 +181,7 @@ class CartController extends Controller
         if ($request->expectsJson() || $request->ajax()) {
             return response()->json(['ok' => false, 'error' => $message, 'message' => $message], 422);
         }
+
         return back()->with('error', $message);
     }
 
@@ -183,9 +189,10 @@ class CartController extends Controller
     {
         $session = $request->attributes->get('table_session');
         $data = $request->validate(['row_id' => ['required', 'string']]);
-        $cart = collect(session('cart.'.$session->token, []))->reject(fn($r) => $r['id'] === $data['row_id'])->values()->toArray();
+        $cart = collect(session('cart.'.$session->token, []))->reject(fn ($r) => $r['id'] === $data['row_id'])->values()->toArray();
         session()->put('cart.'.$session->token, $cart);
         $session->touch();
+
         return back();
     }
 
@@ -194,11 +201,13 @@ class CartController extends Controller
         $session = $request->attributes->get('table_session');
         if ($this->hasIssuedInvoice($session)) {
             return redirect()->route('customer.bill')
-                ->with('error', 'الفاتورة صدرت بالفعل. أي طلب إضافي يحتاج إلغاء الفاتورة الحالية من الكاشير أولاً.');
+                ->with('error', __('ui.customer_order.invoice_already_issued_extra'));
         }
 
         $cart = session('cart.'.$session->token, []);
-        if (empty($cart)) return back()->with('error', 'السلة فارغة');
+        if (empty($cart)) {
+            return back()->with('error', __('ui.customer_order.empty_cart'));
+        }
 
         $data = $request->validate([
             'customer_name' => ['nullable', 'string', 'max:100'],
@@ -219,12 +228,14 @@ class CartController extends Controller
         }
 
         $update = array_filter([
-            'customer_name'  => $data['customer_name']  ?? null,
+            'customer_name' => $data['customer_name'] ?? null,
             'customer_phone' => $data['customer_phone'] ?? null,
-            'cover_count'    => $data['cover_count']    ?? null,
-            'customer_id'    => $linkedCustomer?->id,
-        ], fn($v) => $v !== null && $v !== '');
-        if (! empty($update)) $session->update($update);
+            'cover_count' => $data['cover_count'] ?? null,
+            'customer_id' => $linkedCustomer?->id,
+        ], fn ($v) => $v !== null && $v !== '');
+        if (! empty($update)) {
+            $session->update($update);
+        }
 
         // Resolve who this session ultimately belongs to: portal-authenticated
         // > phone-matched at submit > already-linked at session open.
@@ -233,8 +244,11 @@ class CartController extends Controller
 
         $issues = $this->inventory->checkStockForOrderPreview($cart);
         if (! empty($issues)) {
-            $msg = collect($issues)->map(fn($i) => "{$i['ingredient']}: متاح {$i['available']}، مطلوب {$i['required']}")->join(' | ');
-            return back()->with('error', 'نقص في المخزون: '.$msg);
+            $msg = collect($issues)
+                ->map(fn ($i) => $i['ingredient'].': '.__('ui.customer_order.available_qty', ['qty' => $i['available']]).', '.__('ui.customer_order.required_qty', ['qty' => $i['required']]))
+                ->join(' | ');
+
+            return back()->with('error', __('ui.customer_order.stock_shortage', ['items' => $msg]));
         }
 
         $order = $this->orders->createFromCart($session, $cart, null, $data['notes'] ?? null);
@@ -242,13 +256,13 @@ class CartController extends Controller
         session()->forget('cart.'.$session->token);
 
         $response = redirect()->route('customer.track')
-            ->with('success', "تم إرسال طلبك #{$order->number} — الجرسون سيعتمده قريباً");
+            ->with('success', __('ui.customer_order.order_sent_success', ['number' => $order->number]));
 
         // Remember WHO this device belongs to so next QR scan recognises
         // them silently. Cookie is encrypted by Laravel (EncryptCookies
         // middleware) and good for a year. MenuController::open reads it on
-        // a fresh session and pre-links — diner sees "أهلاً يا أحمد" the
-        // moment they open the menu, with zero clicks. Lost device cleanup
+        // a fresh session and pre-links, so the greeting appears the moment
+        // they open the menu with zero clicks. Lost device cleanup
         // is the standard portal password reset flow.
         if ($customerForCookie) {
             $response->cookie(cookie(

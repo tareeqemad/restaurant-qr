@@ -9,12 +9,15 @@ use App\Models\Invoice;
 use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\Payment;
+use App\Models\Refund;
 use App\Models\TableSession;
 use App\Services\BillingService;
 use App\Services\OrderService;
 use App\Services\RefundService;
 use App\Support\BranchContext;
+use App\Support\PaymentMethods;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
 use Livewire\Component;
@@ -90,6 +93,8 @@ new class extends Component
 
         $this->selectedSessionId = $session;
         $this->platformCommissionPct = '0';
+        $this->paymentMethod = $this->defaultPaymentMethod();
+        $this->refundMethod = $this->defaultRefundMethod();
     }
 
     // ─── Computed (reactive) ──────────────────────────────────────────
@@ -320,15 +325,57 @@ new class extends Component
     #[Computed]
     public function todayStats(): array
     {
+        $methodTotals = Payment::query()
+            ->whereDate('created_at', today())
+            ->selectRaw('method, SUM(amount) as total')
+            ->groupBy('method')
+            ->pluck('total', 'method')
+            ->map(fn ($total) => (float) $total)
+            ->all();
+
+        foreach (array_keys(PaymentMethods::catalog()) as $method) {
+            $methodTotals[$method] ??= 0.0;
+        }
+
         return [
             'invoices' => Invoice::whereDate('created_at', today())->count(),
             'revenue'  => (float) Invoice::whereDate('created_at', today())
                                 ->where('status', 'paid')->sum('paid_total'),
-            'cash'     => (float) \App\Models\Payment::whereDate('created_at', today())
-                                ->where('method', 'cash')->sum('amount'),
-            'card'     => (float) \App\Models\Payment::whereDate('created_at', today())
-                                ->where('method', 'card')->sum('amount'),
+            'cash'     => $methodTotals['cash'] ?? 0.0,
+            'non_cash' => collect($methodTotals)->except('cash')->sum(),
+            'methods'  => $methodTotals,
         ];
+    }
+
+    #[Computed]
+    public function paymentMethods(): array
+    {
+        return collect(PaymentMethods::catalog())
+            ->filter(fn (array $meta) => (bool) $meta['enabled'])
+            ->all();
+    }
+
+    #[Computed]
+    public function refundMethods(): array
+    {
+        return collect(Refund::ACTIVE_METHODS)
+            ->mapWithKeys(fn (string $method) => [$method => Refund::METHODS[$method] ?? $method])
+            ->all();
+    }
+
+    protected function enabledPaymentMethods(): array
+    {
+        return PaymentMethods::enabled() ?: ['cash'];
+    }
+
+    protected function defaultPaymentMethod(): string
+    {
+        return $this->enabledPaymentMethods()[0] ?? 'cash';
+    }
+
+    protected function defaultRefundMethod(): string
+    {
+        return Refund::ACTIVE_METHODS[0] ?? 'cash';
     }
 
     // ─── Actions ──────────────────────────────────────────────────────
@@ -341,7 +388,8 @@ new class extends Component
 
         $this->viewMode = $mode;
         $this->reset(['search', 'paymentAmount', 'paymentReference', 'paymentNotes', 'refundOpen', 'refundAmount', 'refundReason']);
-        $this->paymentMethod = 'cash';
+        $this->paymentMethod = $this->defaultPaymentMethod();
+        $this->refundMethod = $this->defaultRefundMethod();
 
         if ($mode === 'tables') {
             $this->selectedRemoteOrderId = null;
@@ -360,7 +408,8 @@ new class extends Component
         $this->selectedSessionId = $id;
         $this->selectedRemoteOrderId = null;
         $this->reset(['paymentAmount', 'paymentReference', 'paymentNotes', 'refundOpen', 'refundAmount', 'refundReason']);
-        $this->paymentMethod = 'cash';
+        $this->paymentMethod = $this->defaultPaymentMethod();
+        $this->refundMethod = $this->defaultRefundMethod();
 
         // Pre-fill amount with balance on the next render
         $session = $this->selectedSession;
@@ -375,7 +424,8 @@ new class extends Component
         $this->selectedRemoteOrderId = $id;
         $this->selectedSessionId = null;
         $this->reset(['paymentAmount', 'paymentReference', 'paymentNotes', 'refundOpen', 'refundAmount', 'refundReason']);
-        $this->paymentMethod = 'cash';
+        $this->paymentMethod = $this->defaultPaymentMethod();
+        $this->refundMethod = $this->defaultRefundMethod();
 
         $order = $this->selectedRemoteOrder;
         if ($order?->invoice && $order->invoice->balance > 0) {
@@ -388,6 +438,8 @@ new class extends Component
         $this->selectedSessionId = null;
         $this->selectedRemoteOrderId = null;
         $this->reset(['paymentAmount', 'paymentReference', 'paymentNotes', 'refundOpen']);
+        $this->paymentMethod = $this->defaultPaymentMethod();
+        $this->refundMethod = $this->defaultRefundMethod();
     }
 
     public function setAmount(string|float $amount): void
@@ -397,6 +449,10 @@ new class extends Component
 
     public function setMethod(string $method): void
     {
+        if (! in_array($method, $this->enabledPaymentMethods(), true)) {
+            return;
+        }
+
         $this->paymentMethod = $method;
     }
 
@@ -760,7 +816,7 @@ new class extends Component
 
         $this->validate([
             'paymentAmount' => ['required', 'numeric', 'min:0.01'],
-            'paymentMethod' => ['required', 'in:cash,card,transfer'],
+            'paymentMethod' => ['required', Rule::in($this->enabledPaymentMethods())],
         ], attributes: [
             'paymentAmount' => 'قيمة الدفعة',
             'paymentMethod' => 'طريقة الدفع',
@@ -803,7 +859,7 @@ new class extends Component
         $this->refundOpen = true;
         $refundable = max(0, (float) $invoice->paid_total - (float) ($invoice->refunded_total ?? 0));
         $this->refundAmount = (string) number_format($refundable, 2, '.', '');
-        $this->refundMethod = 'cash';
+        $this->refundMethod = $this->defaultRefundMethod();
         $this->refundReason = '';
     }
 
@@ -817,7 +873,7 @@ new class extends Component
     {
         $this->validate([
             'refundAmount' => ['required', 'numeric', 'min:0.01'],
-            'refundMethod' => ['required', 'in:cash,card,transfer,other'],
+            'refundMethod' => ['required', Rule::in(Refund::ACTIVE_METHODS)],
             'refundReason' => ['required', 'string', 'max:500'],
         ], attributes: [
             'refundAmount' => 'المبلغ',
@@ -1244,8 +1300,8 @@ new class extends Component
             <div class="cx-kpi cx-kpi-info">
                 <div class="cx-kpi-icon"><i class="bi bi-credit-card"></i></div>
                 <div>
-                    <div class="cx-kpi-label">بطاقات</div>
-                    <div class="cx-kpi-value">{{ \App\Helpers\Money::format($this->todayStats['card']) }}</div>
+                    <div class="cx-kpi-label">غير نقدي</div>
+                    <div class="cx-kpi-value">{{ \App\Helpers\Money::format($this->todayStats['non_cash']) }}</div>
                 </div>
             </div>
         </div>
@@ -1915,23 +1971,13 @@ new class extends Component
                                             <span class="cx-amount-symbol">{{ \App\Models\Setting::get('currency_symbol', config('restaurant.currency_symbol')) }}</span>
                                         </div>
                                         <div class="cx-methods">
-                                            @php
-                                                // Only the three real-world settlement channels — see
-                                                // memory/project_accounting_simplification.md for why
-                                                // 'app' (wallet) and 'credit' (deferred) were dropped.
-                                                $methods = [
-                                                    'cash' => ['bi-cash-stack', 'نقدا'],
-                                                    'card' => ['bi-credit-card', 'فيزا'],
-                                                    'transfer' => ['bi-bank', 'تحويل بنكي'],
-                                                ];
-                                            @endphp
-                                            @foreach($methods as $m => [$icon, $label])
+                                            @foreach($this->paymentMethods as $m => $meta)
                                                 <button type="button" wire:click="setMethod('{{ $m }}')" class="cx-method {{ $paymentMethod === $m ? 'is-active' : '' }}">
-                                                    <i class="bi {{ $icon }}"></i><span>{{ $label }}</span>
+                                                    <i class="bi {{ $meta['icon'] }}"></i><span>{{ $meta['label'] }}</span>
                                                 </button>
                                             @endforeach
                                         </div>
-                                        @if(in_array($paymentMethod, ['card', 'transfer']))
+                                        @if($paymentMethod !== 'cash')
                                             <input type="text" wire:model.blur="paymentReference" placeholder="رقم المرجع (اختياري)" class="form-control mb-2">
                                         @endif
                                         <button wire:click="recordPayment" wire:loading.attr="disabled" class="cx-btn-lg cx-btn-success">
@@ -1948,7 +1994,7 @@ new class extends Component
                                         @foreach($invoice->payments as $p)
                                             <div class="cx-payment-row">
                                                 <strong>{{ \App\Helpers\Money::format($p->amount) }}</strong>
-                                                <small class="text-muted">{{ $p->method }} · {{ $p->paid_at?->format('H:i') ?? $p->created_at->format('H:i') }}</small>
+                                                <small class="text-muted">{{ \App\Support\PaymentMethods::label($p->method) }} · {{ $p->paid_at?->format('H:i') ?? $p->created_at->format('H:i') }}</small>
                                             </div>
                                         @endforeach
                                     </div>
@@ -2262,24 +2308,17 @@ new class extends Component
 
                                     {{-- Method selector --}}
                                     <div class="cx-methods">
-                                        @php
-                                            $methods = [
-                                                'cash'     => ['bi-cash-stack', 'نقدا'],
-                                                'card'     => ['bi-credit-card', 'فيزا'],
-                                                'transfer' => ['bi-bank', 'تحويل بنكي'],
-                                            ];
-                                        @endphp
-                                        @foreach($methods as $m => [$icon, $label])
+                                        @foreach($this->paymentMethods as $m => $meta)
                                             <button type="button"
                                                 wire:click="setMethod('{{ $m }}')"
                                                 class="cx-method {{ $paymentMethod === $m ? 'is-active' : '' }}">
-                                                <i class="bi {{ $icon }}"></i>
-                                                <span>{{ $label }}</span>
+                                                <i class="bi {{ $meta['icon'] }}"></i>
+                                                <span>{{ $meta['label'] }}</span>
                                             </button>
                                         @endforeach
                                     </div>
 
-                                    @if(in_array($paymentMethod, ['card', 'transfer']))
+                                    @if($paymentMethod !== 'cash')
                                         <input type="text" wire:model.blur="paymentReference"
                                             placeholder="رقم المرجع (اختياري)"
                                             class="form-control mb-2">
@@ -2303,10 +2342,7 @@ new class extends Component
                                         <div class="cx-payment-row">
                                             <div>
                                                 <strong>{{ \App\Helpers\Money::format($p->amount) }}</strong>
-                                                <span class="badge bg-secondary ms-1">{{ match($p->method) {
-                                                    'cash' => 'نقدي', 'card' => 'بطاقة', 'transfer' => 'تحويل',
-                                                    'app' => 'تطبيق', 'credit' => 'دين', default => $p->method,
-                                                } }}</span>
+                                                <span class="badge bg-secondary ms-1">{{ \App\Support\PaymentMethods::label($p->method) }}</span>
                                                 @if($p->reference)<small class="text-muted">#{{ $p->reference }}</small>@endif
                                             </div>
                                             <small class="text-muted">{{ $p->paid_at?->format('H:i') ?? $p->created_at->format('H:i') }}</small>
@@ -2348,9 +2384,9 @@ new class extends Component
                                             <div class="mb-2">
                                                 <label class="form-label small">الطريقة</label>
                                                 <select wire:model="refundMethod" class="form-select">
-                                                    <option value="cash">نقدا</option>
-                                                    <option value="card">فيزا</option>
-                                                    <option value="transfer">تحويل بنكي</option>
+                                                    @foreach($this->refundMethods as $method => $label)
+                                                        <option value="{{ $method }}">{{ $label }}</option>
+                                                    @endforeach
                                                 </select>
                                             </div>
                                             <div class="mb-2">

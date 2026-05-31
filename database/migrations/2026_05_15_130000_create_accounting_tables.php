@@ -29,6 +29,9 @@ return new class extends Migration
             $table->string('entry_no', 40)->unique();
             $table->date('posted_on');
             $table->string('description');
+            $table->string('base_currency_code', 5)->nullable();
+            $table->string('currency_code', 5)->nullable();
+            $table->decimal('exchange_rate', 18, 8)->default(1);
             $table->string('source_type')->nullable();
             $table->unsignedBigInteger('source_id')->nullable();
             $table->string('event_type', 80)->nullable();
@@ -51,9 +54,14 @@ return new class extends Migration
             $table->string('description')->nullable();
             $table->decimal('debit', 14, 4)->default(0);
             $table->decimal('credit', 14, 4)->default(0);
+            $table->string('currency_code', 5)->nullable();
+            $table->decimal('exchange_rate', 18, 8)->default(1);
+            $table->decimal('foreign_debit', 18, 4)->default(0);
+            $table->decimal('foreign_credit', 18, 4)->default(0);
             $table->timestamps();
 
             $table->index(['account_id', 'branch_id']);
+            $table->index('currency_code');
             $table->index(['journal_entry_id', 'line_no']);
         });
 
@@ -87,6 +95,7 @@ return new class extends Migration
             ['2300', 'استلامات مخزون غير مفوترة', 'liability', 'credit', 'بضاعة تم استلامها في المخزن ولم تصل فاتورة المورد الخاصة بها بعد.'],
             ['3000', 'رأس المال وحقوق الملكية', 'equity', 'credit', 'حقوق مالك المنشأة وصافي الاستثمار.'],
             ['3010', 'أرصدة افتتاحية', 'equity', 'credit', 'رصيد افتتاحي للمخزون أو النقد عند بدء استخدام النظام.'],
+            ['3020', 'أرباح محتجزة', 'equity', 'credit', 'صافي أرباح أو خسائر الفترات المقفلة بعد ترحيل حسابات الإيراد والمصاريف.'],
             ['4000', 'إيرادات المبيعات', 'revenue', 'credit', 'إيرادات بيع الأصناف قبل الخصومات والمردودات.'],
             ['4010', 'إيرادات رسوم الخدمة', 'revenue', 'credit', 'رسوم الخدمة المحملة على الفواتير.'],
             ['4020', 'إيرادات التوصيل', 'revenue', 'credit', 'رسوم التوصيل المحملة على الطلبات.'],

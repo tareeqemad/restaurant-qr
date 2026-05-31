@@ -15,6 +15,11 @@ class SettingController extends Controller
         return view('admin.settings.index', [
             'defaults'      => config('restaurant.theme'),
             'currencies'    => \App\Models\Currency::orderBy('display_order')->orderBy('code')->get(),
+            'exchangeRates' => \App\Models\CurrencyExchangeRate::query()
+                ->orderByDesc('valid_from')
+                ->orderByDesc('id')
+                ->limit(50)
+                ->get(),
             'cappableRoles' => $this->cappableRoles(),
         ]);
     }
@@ -124,6 +129,21 @@ class SettingController extends Controller
             'payment_method_app_enabled'      => ['sometimes', 'boolean'],
             'payment_method_credit_enabled'   => ['sometimes', 'boolean'],
         ]));
+
+        $paymentMethodKeys = [
+            'payment_method_cash_enabled',
+            'payment_method_card_enabled',
+            'payment_method_transfer_enabled',
+            'payment_method_app_enabled',
+            'payment_method_credit_enabled',
+        ];
+
+        if ($request->hasAny($paymentMethodKeys)
+            && ! collect($paymentMethodKeys)->contains(fn (string $key) => $request->boolean($key))) {
+            return back()
+                ->withErrors(['payment_method_cash_enabled' => 'يجب تفعيل طريقة دفع واحدة على الأقل حتى لا يتعطل الكاشير.'])
+                ->withInput();
+        }
 
         // Encrypt the SMS password before persisting. An empty submit
         // keeps the existing value — otherwise editing any other field

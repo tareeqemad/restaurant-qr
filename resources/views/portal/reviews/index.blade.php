@@ -1,14 +1,14 @@
 @extends('portal.layout')
-@section('title', 'تقييماتي')
+@section('title', __('portal.reviews.title'))
 
 @section('content')
 <header class="pf-hero">
     <div class="pf-hero__lead">
-        <h1 class="pf-hero__title">تقييماتي</h1>
+        <h1 class="pf-hero__title">{{ __('portal.reviews.title') }}</h1>
         <p class="pf-hero__subtitle">
-            {{ $mine->count() }} تقييم سابق
+            {{ trans_choice('portal.reviews.previous_count', $mine->count(), ['count' => $mine->count()]) }}
             @if($eligible->isNotEmpty())
-                · <strong style="color: var(--gold);">{{ $eligible->count() }} زيارة بانتظار تقييمك</strong>
+                · <strong style="color: var(--gold);">{{ trans_choice('portal.reviews.awaiting_count', $eligible->count(), ['count' => $eligible->count()]) }}</strong>
             @endif
         </p>
     </div>
@@ -16,7 +16,7 @@
 
 @if($eligible->isNotEmpty())
     <div class="pf-section-head">
-        <h2>زيارات تنتظر تقييمك</h2>
+        <h2>{{ __('portal.reviews.awaiting_visits') }}</h2>
     </div>
     @foreach($eligible as $r)
         <div class="pf-res">
@@ -27,7 +27,7 @@
             <div class="pf-res__body">
                 <div class="pf-res__head">
                     <span class="pf-res__branch">{{ $r->branch->name }}</span>
-                    <span class="pf-pill pf-pill--warning">بانتظار تقييمك</span>
+                    <span class="pf-pill pf-pill--warning">{{ __('portal.reviews.awaiting_badge') }}</span>
                 </div>
                 <div class="pf-res__meta">
                     <span><i class="bi bi-clock"></i> {{ $r->reserved_for->format('Y/m/d H:i') }}</span>
@@ -36,7 +36,7 @@
                 </div>
                 <a href="{{ route('portal.reviews.create', $r) }}"
                    class="pf-btn mt-2" style="padding: 7px 14px; font-size:.85rem;">
-                    <i class="bi bi-star"></i> اكتب تقييماً
+                    <i class="bi bi-star"></i> {{ __('portal.reviews.write_review') }}
                 </a>
             </div>
         </div>
@@ -44,7 +44,7 @@
 @endif
 
 <div class="pf-section-head">
-    <h2>تقييماتك السابقة</h2>
+    <h2>{{ __('portal.reviews.previous_reviews') }}</h2>
 </div>
 
 @forelse($mine as $review)
@@ -57,7 +57,7 @@
             </div>
             <span class="pf-res__branch">{{ $review->branch->name }}</span>
             @if($review->isHidden())
-                <span class="pf-pill pf-pill--secondary">مخفي مؤقتاً</span>
+                <span class="pf-pill pf-pill--secondary">{{ __('portal.reviews.temporarily_hidden') }}</span>
             @endif
         </div>
 
@@ -71,12 +71,12 @@
         <div class="d-flex align-items-center justify-content-between" style="font-size: .78rem; color: var(--muted);">
             <span>{{ $review->created_at->translatedFormat('d M Y') }}</span>
             <form method="POST" action="{{ route('portal.reviews.destroy', $review) }}"
-                  onsubmit="return confirm('حذف تقييمك؟ لا يمكن التراجع.');">
+                  onsubmit="return confirm(@js(__('portal.reviews.delete_confirm')));">
                 @csrf @method('DELETE')
                 <button type="submit"
                         class="pf-btn pf-btn--danger"
                         style="padding: 5px 10px; font-size: .78rem;">
-                    <i class="bi bi-trash"></i> حذف
+                    <i class="bi bi-trash"></i> {{ __('portal.reviews.delete') }}
                 </button>
             </form>
         </div>
@@ -85,7 +85,7 @@
     <div class="pf-card">
         <div class="pf-empty">
             <i class="bi bi-star"></i>
-            <div>لم تكتب أي تقييم بعد. أكمل زيارتك أولاً ثم شاركنا تجربتك.</div>
+            <div>{{ __('portal.reviews.empty') }}</div>
         </div>
     </div>
 @endforelse

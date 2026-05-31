@@ -1,5 +1,21 @@
 <?php
 
+$marketProfile = env('MARKET_PROFILE', 'palestine');
+$isUsMarket = $marketProfile === 'us';
+$envOrMarket = static function (string $key, mixed $default, mixed $legacyDefault = null) use ($isUsMarket): mixed {
+    $value = env($key);
+
+    if ($value === null || $value === '') {
+        return $default;
+    }
+
+    if ($isUsMarket && $legacyDefault !== null && (string) $value === (string) $legacyDefault) {
+        return $default;
+    }
+
+    return $value;
+};
+
 return [
 
     /*
@@ -80,7 +96,7 @@ return [
     |
     */
 
-    'timezone' => env('APP_TIMEZONE', 'Asia/Hebron'),
+    'timezone' => $envOrMarket('APP_TIMEZONE', $isUsMarket ? 'America/New_York' : 'Asia/Hebron', 'Asia/Hebron'),
 
     /*
     |--------------------------------------------------------------------------
@@ -93,11 +109,11 @@ return [
     |
     */
 
-    'locale' => env('APP_LOCALE', 'en'),
+    'locale' => $isUsMarket ? 'en' : 'ar',
 
-    'fallback_locale' => env('APP_FALLBACK_LOCALE', 'en'),
+    'fallback_locale' => 'en',
 
-    'faker_locale' => env('APP_FAKER_LOCALE', 'en_US'),
+    'faker_locale' => 'en_US',
 
     /*
     |--------------------------------------------------------------------------

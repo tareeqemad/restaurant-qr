@@ -9,15 +9,17 @@ use Illuminate\Validation\ValidationException;
 /**
  * Safe CRUD layer over the chart of accounts.
  *
- * Why this exists: the operational `AccountingService` posts to
- * hard-coded codes (CASH='1000', SALES_REVENUE='4000', etc.). If the
- * accountant renames code 1000 or deactivates it, every future
- * invoice posting throws. This service enforces invariants so the
- * UI can give the accountant a sandbox without breaking the books:
+ * Why this exists: the operational `AccountingService` has canonical
+ * fallback codes (CASH='1000', SALES_REVENUE='4000', etc.) even when
+ * accountants remap posting roles to custom accounts. If those fallback
+ * codes are renamed or deactivated, future posting and historical reporting
+ * can break. This service enforces invariants so the UI can give the
+ * accountant a sandbox without breaking the books:
  *
  *   - Code is IMMUTABLE on system accounts (is_system=true)
  *   - System accounts can be RENAMED (display) but never DEACTIVATED
  *   - User-created accounts: full flexibility
+ *   - Posted custom accounts keep their code/type/normal balance locked
  *   - Delete: only if zero history + zero children + not system
  *
  * Sub-account hierarchy:
@@ -47,12 +49,21 @@ class AccountService
 
     public function update(Account $account, array $data): Account
     {
+        if ($account->isProtected()) {
+            $data['code'] = $account->code;
+            $data['type'] = $account->type;
+            $data['normal_balance'] = $account->normal_balance;
+            $data['is_active'] = true;
+        } elseif ($account->hasJournalLines()) {
+            $this->assertPostedAccountCoreFieldsUnchanged($account, $data);
+        }
+
         $clean = $this->validateAndNormalize($data, $account);
 
-        // CODE LOCK: system accounts have their code wired into
-        // operational services. Silently strip any attempt to change it.
+        // CODE LOCK: system accounts remain the canonical fallback and
+        // historical reporting anchor. Silently strip any attempt to change it.
         if ($account->isProtected()) {
-            unset($clean['code']);
+            unset($clean['code'], $clean['type'], $clean['normal_balance'], $clean['is_active']);
         }
         // is_system flag is admin-only metadata; never let user UI flip it.
         unset($clean['is_system']);
@@ -158,9 +169,52 @@ class AccountService
             }
         }
 
+        if ($existing && $existing->children()->where('type', '!=', $clean['type'])->exists()) {
+            throw ValidationException::withMessages([
+                'type' => 'لا يمكن تغيير نوع حساب لديه حسابات فرعية من نوع مختلف. انقل الحسابات الفرعية أو عدلها أولا.',
+            ]);
+        }
+
+        $expectedNormalBalance = $this->expectedNormalBalanceForType($clean['type']);
+        if ($clean['normal_balance'] !== $expectedNormalBalance) {
+            throw ValidationException::withMessages([
+                'normal_balance' => "ط§ظ„ط·ط¨ظٹط¹ط© ط§ظ„ظ…ط­ط§ط³ط¨ظٹط© ظ„ظ†ظˆط¹ {$clean['type']} ظٹط¬ط¨ ط£ظ† طھظƒظˆظ† {$expectedNormalBalance}.",
+            ]);
+        }
+
         $clean['is_active'] = (bool) ($clean['is_active'] ?? true);
         $clean['display_order'] = (int) ($clean['display_order'] ?? 0);
         return $clean;
+    }
+
+    protected function expectedNormalBalanceForType(string $type): string
+    {
+        return match ($type) {
+            'asset', 'expense', 'contra_revenue' => 'debit',
+            'liability', 'equity', 'revenue' => 'credit',
+            default => 'debit',
+        };
+    }
+
+    protected function assertPostedAccountCoreFieldsUnchanged(Account $account, array $data): void
+    {
+        $errors = [];
+
+        $labels = [
+            'code' => 'الكود',
+            'type' => 'النوع',
+            'normal_balance' => 'طبيعة الرصيد',
+        ];
+
+        foreach (['code', 'type', 'normal_balance'] as $field) {
+            if (array_key_exists($field, $data) && (string) $data[$field] !== (string) $account->{$field}) {
+                $errors[$field] = "لا يمكن تغيير {$labels[$field]} بعد وجود قيود محاسبية على الحساب {$account->code}.";
+            }
+        }
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
     }
 
     /**

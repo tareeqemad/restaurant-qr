@@ -17,6 +17,9 @@
     @if(session('success'))
         <div class="alert alert-success">{{ session('success') }}</div>
     @endif
+    @if(session('warning'))
+        <div class="alert alert-warning">{{ session('warning') }}</div>
+    @endif
 
     <div class="row g-3">
         <div class="col-lg-7">
@@ -70,6 +73,61 @@
                                 <i class="bi bi-play-circle"></i> تفعيل
                             </button>
                         </form>
+                    @endif
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h2 class="h6 mb-3">تفعيلات الفروع</h2>
+                    @if($license->activations->isEmpty())
+                        <p class="text-muted mb-0">لا توجد فروع مفعلة بعد.</p>
+                    @else
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>الفرع</th>
+                                        <th>الحالة</th>
+                                        <th>الرابط</th>
+                                        <th>آخر فحص</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($license->activations as $activation)
+                                        <tr>
+                                            <td>
+                                                <code>{{ $activation->branch_uuid }}</code>
+                                                @if($activation->branch_id)
+                                                    <div class="text-muted small">{{ $activation->branch_id }}</div>
+                                                @endif
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-{{ $activation->status === \App\Models\LicenseActivation::STATUS_ACTIVE ? 'success' : 'secondary' }}">
+                                                    {{ $activation->status === \App\Models\LicenseActivation::STATUS_ACTIVE ? 'فعال' : 'موقوف' }}
+                                                </span>
+                                            </td>
+                                            <td class="text-truncate" style="max-width: 220px;">{{ $activation->app_url ?: '—' }}</td>
+                                            <td>{{ $activation->last_seen_at?->format('Y-m-d H:i') ?: '—' }}</td>
+                                            <td class="text-end">
+                                                @if($activation->status === \App\Models\LicenseActivation::STATUS_ACTIVE)
+                                                    <form method="POST" action="{{ route('admin.licenses.activations.revoke', [$license, $activation]) }}">
+                                                        @csrf
+                                                        <button type="submit" class="btn btn-sm btn-outline-danger">إيقاف</button>
+                                                    </form>
+                                                @else
+                                                    <form method="POST" action="{{ route('admin.licenses.activations.activate', [$license, $activation]) }}">
+                                                        @csrf
+                                                        <button type="submit" class="btn btn-sm btn-outline-success">تفعيل</button>
+                                                    </form>
+                                                @endif
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
                     @endif
                 </div>
             </div>

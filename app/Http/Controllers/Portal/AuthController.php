@@ -34,19 +34,19 @@ class AuthController extends Controller
     {
         $data = $request->validate([
             'identifier' => ['required', 'string', 'max:255'],
-            'password'   => ['required', 'string'],
+            'password' => ['required', 'string'],
         ]);
 
         $customer = Customer::findForLogin($data['identifier']);
         if (! $customer || ! Hash::check($data['password'], $customer->password)) {
             throw ValidationException::withMessages([
-                'identifier' => 'بيانات الدخول غير صحيحة.',
+                'identifier' => __('portal.auth.invalid_credentials'),
             ]);
         }
 
         if ($customer->isBlocked()) {
             throw ValidationException::withMessages([
-                'identifier' => 'حسابك معطَّل حالياً. تواصل مع المطعم.',
+                'identifier' => __('portal.auth.blocked'),
             ]);
         }
 
@@ -73,27 +73,27 @@ class AuthController extends Controller
     public function register(Request $request)
     {
         $data = $request->validate([
-            'name'              => ['required', 'string', 'max:120'],
-            'phone'             => ['required', 'string', 'max:32', 'unique:customers,phone'],
-            'email'             => ['nullable', 'email', 'max:255', 'unique:customers,email'],
-            'password'          => ['required', 'string', 'min:8', 'confirmed'],
+            'name' => ['required', 'string', 'max:120'],
+            'phone' => ['required', 'string', 'max:32', 'unique:customers,phone'],
+            'email' => ['nullable', 'email', 'max:255', 'unique:customers,email'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
             'default_branch_id' => ['nullable', Rule::exists('branches', 'id')->where('is_active', true)],
         ]);
 
         $customer = Customer::create([
-            'name'              => $data['name'],
-            'phone'             => $data['phone'],
-            'email'             => $data['email'] ?? null,
-            'password'          => $data['password'],   // hashed cast
+            'name' => $data['name'],
+            'phone' => $data['phone'],
+            'email' => $data['email'] ?? null,
+            'password' => $data['password'],   // hashed cast
             'default_branch_id' => $data['default_branch_id'] ?? null,
-            'status'            => 'active',
+            'status' => 'active',
         ]);
 
         Auth::guard('customer')->login($customer);
         $request->session()->regenerate();
 
         return redirect()->intended(route('portal.dashboard'))
-            ->with('success', "أهلاً بك {$customer->name}!");
+            ->with('success', __('portal.auth.welcome', ['name' => $customer->name]));
     }
 
     public function logout(Request $request)

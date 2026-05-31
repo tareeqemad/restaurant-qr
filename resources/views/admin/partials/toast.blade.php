@@ -15,7 +15,7 @@
     if (! window.Swal) return; // CDN failure — degrade silently rather than break.
 
     // ─── Toast helper ─────────────────────────────────────────────────
-    // Position: top-start → top-left in RTL (المستخدم طلبها على اليسار).
+    // Position: top-start, which maps to the start side in the current direction.
     // Custom compact design with our own classes — overrides SwAl defaults
     // to a slim pill rather than the bulky default popup.
     const Toast = Swal.mixin({
@@ -66,12 +66,12 @@
     // ─── Confirm modal helper ─────────────────────────────────────────
     window.confirmAction = function ({ title, text, confirmText, cancelText, icon } = {}) {
         return Swal.fire({
-            title: title || 'تأكيد العملية',
+            title: title || @json(__('admin.common.confirm_title')),
             text:  text  || '',
             icon:  icon  || 'warning',
             showCancelButton: true,
-            confirmButtonText: confirmText || 'نعم، تأكيد',
-            cancelButtonText:  cancelText  || 'إلغاء',
+            confirmButtonText: confirmText || @json(__('admin.common.confirm_yes')),
+            cancelButtonText:  cancelText  || @json(__('admin.common.cancel')),
             confirmButtonColor: '#dc3545',
             cancelButtonColor: '#6c757d',
             reverseButtons: true,

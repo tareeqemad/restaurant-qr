@@ -1,5 +1,5 @@
 @extends('portal.layout')
-@section('title', 'طلباتي')
+@section('title', __('portal.order.history_title'))
 
 @php
     $currency = config('restaurant.currency_symbol', '₪');
@@ -17,14 +17,14 @@
     {{-- Hero strip with primary CTA ─────────────────────── --}}
     <div class="poh-hero">
         <div class="poh-hero__text">
-            <span class="poh-hero__eyebrow"><i class="bi bi-bag-heart-fill"></i> طلباتي</span>
-            <h1 class="poh-hero__title">جوعان؟ اطلب جديد</h1>
+            <span class="poh-hero__eyebrow"><i class="bi bi-bag-heart-fill"></i> {{ __('portal.order.hero_eyebrow') }}</span>
+            <h1 class="poh-hero__title">{{ __('portal.order.hero_title') }}</h1>
             <p class="poh-hero__sub">
-                تصفّح القائمة من أي فرع، اختر طلبك، وادفع نقداً عند الاستلام أو التوصيل.
+                {{ __('portal.order.hero_subtitle') }}
             </p>
             <a href="{{ route('portal.order.branches') }}" class="poh-cta">
                 <i class="bi bi-bag-plus-fill"></i>
-                <span>اطلب الآن</span>
+                <span>{{ __('portal.order.order_now') }}</span>
                 <i class="bi bi-arrow-left poh-cta__arrow"></i>
             </a>
         </div>
@@ -40,21 +40,21 @@
                 <span class="poh-stat__icon poh-stat__icon--all"><i class="bi bi-receipt"></i></span>
                 <div>
                     <div class="poh-stat__value">{{ $orders->total() }}</div>
-                    <div class="poh-stat__label">إجمالي الطلبات</div>
+                    <div class="poh-stat__label">{{ __('portal.order.total_orders') }}</div>
                 </div>
             </div>
             <div class="poh-stat">
                 <span class="poh-stat__icon poh-stat__icon--active"><i class="bi bi-clock-history"></i></span>
                 <div>
                     <div class="poh-stat__value">{{ $activeCount }}</div>
-                    <div class="poh-stat__label">قيد التنفيذ</div>
+                    <div class="poh-stat__label">{{ __('portal.order.in_progress') }}</div>
                 </div>
             </div>
             <div class="poh-stat">
                 <span class="poh-stat__icon poh-stat__icon--spent"><i class="bi bi-coin"></i></span>
                 <div>
                     <div class="poh-stat__value">{{ number_format($totalSpent, 2) }} <small>{{ $currency }}</small></div>
-                    <div class="poh-stat__label">إجمالي ما أنفقته</div>
+                    <div class="poh-stat__label">{{ __('portal.order.total_spent') }}</div>
                 </div>
             </div>
         </div>
@@ -64,17 +64,17 @@
     @if($orders->isEmpty())
         <div class="poh-empty">
             <div class="poh-empty__shape"><i class="bi bi-bag"></i></div>
-            <h2>لم تطلب من التطبيق بعد</h2>
-            <p>ابدأ بتصفّح القائمة واختر ما يعجبك — الطلب يصلك للبيت أو تستلمه من الفرع.</p>
+            <h2>{{ __('portal.order.empty_history_title') }}</h2>
+            <p>{{ __('portal.order.empty_history_body') }}</p>
             <a href="{{ route('portal.order.branches') }}" class="poh-cta poh-cta--block">
                 <i class="bi bi-bag-plus-fill"></i>
-                ابدأ طلبك الأول
+                {{ __('portal.order.start_first_order') }}
                 <i class="bi bi-arrow-left poh-cta__arrow"></i>
             </a>
         </div>
     @else
         <div class="poh-list-head">
-            <h2>طلباتك السابقة</h2>
+            <h2>{{ __('portal.order.previous_orders') }}</h2>
         </div>
 
         <div class="poh-list">
@@ -82,9 +82,9 @@
                 @php
                     $isActive = in_array($o->status, $activeStatuses, true);
                     // Source = how the order was placed:
-                    //   - dine_in (table_session_id present) → جلسة في المطعم
-                    //   - takeaway → استلام من الفرع (طلب من التطبيق)
-                    //   - delivery → توصيل (طلب من التطبيق)
+                    //   - dine_in (table_session_id present) = in-restaurant session
+                    //   - takeaway = pickup from branch (app order)
+                    //   - delivery = delivery (app order)
                     $source = match (true) {
                         $o->table_session_id !== null => 'dine_in',
                         $o->order_type === 'takeaway' => 'takeaway',
@@ -92,10 +92,10 @@
                         default                       => 'other',
                     };
                     $sourceMeta = [
-                        'dine_in'  => ['icon' => 'bi-grid-3x3-gap-fill', 'label' => 'في المطعم', 'sub' => 'طاولة',     'tone' => 'mint'],
-                        'takeaway' => ['icon' => 'bi-bag-fill',          'label' => 'استلام',     'sub' => 'من التطبيق', 'tone' => 'gold'],
-                        'delivery' => ['icon' => 'bi-truck',             'label' => 'توصيل',      'sub' => 'من التطبيق', 'tone' => 'blue'],
-                        'other'    => ['icon' => 'bi-receipt',           'label' => 'طلب',        'sub' => '',           'tone' => 'mint'],
+                        'dine_in'  => ['icon' => 'bi-grid-3x3-gap-fill', 'label' => __('portal.order.source_dine_in'), 'sub' => __('portal.order.source_table'), 'tone' => 'mint'],
+                        'takeaway' => ['icon' => 'bi-bag-fill',          'label' => __('portal.order.source_takeaway'), 'sub' => __('portal.order.source_from_app'), 'tone' => 'gold'],
+                        'delivery' => ['icon' => 'bi-truck',             'label' => __('portal.order.source_delivery'), 'sub' => __('portal.order.source_from_app'), 'tone' => 'blue'],
+                        'other'    => ['icon' => 'bi-receipt',           'label' => __('portal.order.source_other'), 'sub' => '', 'tone' => 'mint'],
                     ][$source];
                 @endphp
                 <a href="{{ route('portal.order.placed', $o) }}" class="poh-row {{ $isActive ? 'poh-row--active' : '' }}">
@@ -117,8 +117,8 @@
                             </span>
                         </div>
                         <div class="poh-row__meta">
-                            <span><i class="bi bi-shop"></i> {{ $o->branch->name }}</span>
-                            <span><i class="bi bi-basket"></i> {{ $o->items->count() }} صنف</span>
+                            <span><i class="bi bi-shop"></i> {{ $o->branch->localizedName() }}</span>
+                            <span><i class="bi bi-basket"></i> {{ trans_choice('portal.order.item_count', $o->items->count(), ['count' => $o->items->count()]) }}</span>
                             <span><i class="bi bi-clock"></i> {{ $o->created_at->diffForHumans() }}</span>
                         </div>
                     </div>

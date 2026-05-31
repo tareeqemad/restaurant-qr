@@ -1,10 +1,10 @@
 @extends('portal.layout')
-@section('title', 'اختر الفرع')
+@section('title', __('portal.order.pick_branch_title'))
 
 @section('content')
 <div class="pf-section">
-    <h1 class="pf-h1">من أي فرع تطلب اليوم؟</h1>
-    <p class="pf-sub">القائمة والأسعار قد تختلف بين الفروع — اختر الأقرب إليك.</p>
+    <h1 class="pf-h1">{{ __('portal.order.pick_branch_heading') }}</h1>
+    <p class="pf-sub">{{ __('portal.order.pick_branch_subtitle') }}</p>
 
     <div class="pob-grid">
         @foreach($branches as $b)
@@ -12,12 +12,12 @@
             <a href="{{ route('portal.order.menu', $b) }}" class="pob-card" style="--hue: {{ $hue }};">
                 <span class="pob-avatar">{{ mb_substr($b->name, 0, 1, 'UTF-8') }}</span>
                 <div class="pob-body">
-                    <h3>{{ $b->name }}</h3>
+                    <h3>{{ $b->localizedName() }}</h3>
                     @if($b->city)<span class="pob-city"><i class="bi bi-geo-alt"></i> {{ $b->city }}</span>@endif
                     @if($b->phone)<span class="pob-phone" dir="ltr">{{ $b->phone }}</span>@endif
                 </div>
                 @if($isDefault)
-                    <span class="pob-default" title="فرعك المفضّل">
+                    <span class="pob-default" title="{{ __('portal.order.default_branch') }}">
                         <i class="bi bi-star-fill"></i>
                     </span>
                 @endif

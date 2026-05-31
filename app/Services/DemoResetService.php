@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Support\BranchContext;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use RuntimeException;
 
 /**
@@ -44,12 +45,14 @@ class DemoResetService
 {
     /**
      * @param  ?User  $keepUser  The user to preserve (typically auth()->user()).
-     *                           Pass null when running from CLI / tests where
-     *                           "the actor" is the deployment itself and
+     *                           Pass null when running from CLI / setup where
      *                           wiping every user is intended.
+     * @param  bool  $wipeBusinessReferenceData  True for demo-to-live setup:
+     *                           also remove suppliers, ingredients, custom
+     *                           accounts/roles/lookups, sync, and license rows.
      * @return array{branches:int, users_deleted:int, customers:int}
      */
-    public function reset(?User $keepUser = null): array
+    public function reset(?User $keepUser = null, bool $wipeBusinessReferenceData = false): array
     {
         $keepUserId = $keepUser?->id;
 
@@ -57,11 +60,11 @@ class DemoResetService
         // is DDL and implicitly commits any open transaction, which would
         // leave the wrapper in an invalid state. We use DELETE FROM throughout
         // (slower for huge tables but irrelevant for a one-shot cleanup) and
-        // toggle FOREIGN_KEY_CHECKS to skip dependency-order gymnastics.
+        // temporarily disable FK constraints to skip dependency-order gymnastics.
         $branchesDeleted = 0;
         $usersDeleted    = 0;
 
-        DB::statement('SET FOREIGN_KEY_CHECKS = 0');
+        Schema::disableForeignKeyConstraints();
         try {
             // 1) Tables that are independent or whose FKs are nullable —
             //    wipe them first so the cascade from branches doesn't have
@@ -69,6 +72,9 @@ class DemoResetService
             DB::table('activity_logs')->delete();
             DB::table('loyalty_transactions')->delete();
             DB::table('loyalty_customers')->delete();
+            if (\Schema::hasTable('customer_addresses')) {
+                DB::table('customer_addresses')->delete();
+            }
             DB::table('customers')->delete();
 
             // 2) Operational + per-branch data. We list every operational
@@ -76,23 +82,32 @@ class DemoResetService
             //    gets wiped. Order is leaf → root to keep things tidy even
             //    though FK_CHECKS is off.
             $operational = [
+                'notifications', 'announcements',
+                'delivery_assignments',
                 'order_item_modifiers', 'order_discounts', 'order_items', 'orders',
                 'invoice_splits', 'invoices',
                 'payments', 'refunds',
                 'cash_movements',
                 'shifts', 'attendances',
                 'reservations', 'reviews',
+                'branch_transfer_items', 'branch_transfers',
+                'purchase_receipt_items', 'purchase_receipts',
                 'purchase_order_items', 'purchase_orders',
-                'supplier_invoice_items', 'supplier_invoices',
+                'supplier_payments', 'supplier_invoice_items', 'supplier_invoices',
                 'stock_count_items', 'stock_counts',
                 'inventory_movements',
+                'inventory_snapshots',
                 'ingredient_batches',
+                'ingredient_stock',
                 'storage_locations',
                 'table_sessions',
+                'pending_transfers',
+                'staff_meal_charges', 'staff_meal_month_closures',
                 'recipe_items', 'modifier_recipe_items',
                 'menu_item_allergens', 'menu_item_modifier_group',
                 'modifiers', 'modifier_groups',
                 'menu_items', 'categories',
+                'menu_promotions',
                 'tables',
                 'discounts',
                 'expenses',
@@ -107,12 +122,49 @@ class DemoResetService
 
             // 3) Per-branch lookups (zones). Global ones (expense_categories,
             //    branch_id IS NULL) stay.
-            DB::table('lookups')->whereNotNull('branch_id')->delete();
+            if ($wipeBusinessReferenceData) {
+                DB::table('lookups')->delete();
+            } else {
+                DB::table('lookups')->whereNotNull('branch_id')->delete();
+            }
 
             // 4) Per-branch roles (overrides). Global role templates
             //    (branch_id IS NULL) stay so the next setup flow can
             //    assign them.
-            DB::table('roles')->whereNotNull('branch_id')->delete();
+            if ($wipeBusinessReferenceData) {
+                DB::table('role_permission')->delete();
+                DB::table('user_permission')->delete();
+                DB::table('permissions')->delete();
+                DB::table('roles')->delete();
+            } else {
+                DB::table('roles')->whereNotNull('branch_id')->delete();
+                DB::table('user_permission')->delete();
+            }
+
+            if ($wipeBusinessReferenceData) {
+                $businessReference = [
+                    'ingredient_units',
+                    'ingredient_supplier_prices',
+                    'branch_supplier',
+                    'ingredients',
+                    'suppliers',
+                    'journal_lines',
+                    'journal_entries',
+                    'currency_exchange_rates',
+                    'accounts',
+                    'sync_states',
+                    'license_activations',
+                    'license_payments',
+                    'licenses',
+                    'local_license_states',
+                ];
+
+                foreach ($businessReference as $table) {
+                    if (\Schema::hasTable($table)) {
+                        DB::table($table)->delete();
+                    }
+                }
+            }
 
             // 5) branch_user pivot — explicit (FK cascade SHOULD handle it
             //    when branches are deleted, but explicit is safer).
@@ -130,20 +182,18 @@ class DemoResetService
             }
             $usersDeleted = $usersQuery->count();
             $usersQuery->delete();
-
-            // Per-user permission overrides (FK cascade handles this when
-            // user is deleted, but explicit for clarity).
-            if (\Schema::hasTable('user_permission') && $keepUserId !== null) {
-                DB::table('user_permission')->where('user_id', '!=', $keepUserId)->delete();
+            if (\Schema::hasTable('password_reset_tokens')) {
+                DB::table('password_reset_tokens')->delete();
             }
 
             Log::info('DemoResetService: wipe complete', [
                 'kept_user_id'   => $keepUserId,
                 'branches'       => $branchesDeleted,
                 'users_deleted'  => $usersDeleted,
+                'full_business_wipe' => $wipeBusinessReferenceData,
             ]);
         } finally {
-            DB::statement('SET FOREIGN_KEY_CHECKS = 1');
+            Schema::enableForeignKeyConstraints();
         }
 
         // Clear BranchContext — there are no branches to be in any more.

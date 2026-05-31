@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
+use App\Services\NotifyService;
+use App\Support\BranchContext;
 use Illuminate\Http\Request;
 
 class BillController extends Controller
@@ -34,11 +36,11 @@ class BillController extends Controller
         ]);
 
         if ($session->invoice && ! in_array($session->invoice->status, ['cancelled'], true)) {
-            return back()->with('info', 'الفاتورة صدرت بالفعل. الكاشير يتابع الدفع الآن.');
+            return back()->with('info', __('ui.customer_order.invoice_already_issued_payment'));
         }
 
         if ($session->bill_requested_at && $session->bill_requested_at->gt(now()->subMinutes(2))) {
-            return back()->with('info', 'طلب الفاتورة وصل للكاشير بالفعل.');
+            return back()->with('info', __('ui.customer_order.bill_already_requested'));
         }
 
         $session->update([
@@ -49,7 +51,7 @@ class BillController extends Controller
 
         ActivityLog::log(
             'session.bill_requested',
-            "طلب فاتورة من طاولة {$session->table?->number}",
+            __('ui.customer_order.bill_activity', ['table' => $session->table?->number]),
             $session,
             ['note' => $data['note'] ?? null]
         );
@@ -57,11 +59,11 @@ class BillController extends Controller
         // Notify cashier + waiter so the bill is prepared without delay.
         // Customer requests run outside the admin BranchContext, so we pin
         // the session's branch when dispatching.
-        \App\Support\BranchContext::forBranch($session->branch_id, function () use ($session) {
-            app(\App\Services\NotifyService::class)
+        BranchContext::forBranch($session->branch_id, function () use ($session) {
+            app(NotifyService::class)
                 ->billRequested($session->fresh()->load('table'));
         });
 
-        return back()->with('success', 'وصل طلب الفاتورة للكاشير. سنجهزها لك بأقرب وقت.');
+        return back()->with('success', __('ui.customer_order.bill_request_received'));
     }
 }

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Currency extends Model
 {
@@ -30,6 +31,11 @@ class Currency extends Model
     public static function byCode(string $code): ?self
     {
         return self::where('code', strtoupper($code))->first();
+    }
+
+    public function exchangeRates(): HasMany
+    {
+        return $this->hasMany(CurrencyExchangeRate::class, 'currency_code', 'code');
     }
 
     public function convertFromBase(float $baseAmount): float

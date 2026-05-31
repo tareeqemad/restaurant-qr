@@ -13,8 +13,12 @@
     @section('accent')        CSS accent color for this specific error
                                (defaults to gold — override with a valid CSS color)
 --}}
+@php
+    $market = \App\Support\MarketProfile::class;
+    $brandName = \App\Helpers\Brand::name();
+@endphp
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="{{ $market::lang() }}" dir="{{ $market::direction() }}" data-market="{{ $market::current() }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -25,7 +29,7 @@
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Tajawal:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <link href="{{ $market::fontUrl() }}" rel="stylesheet">
 
     <style>
         :root {
@@ -38,12 +42,13 @@
             --cream:       #faf5eb;
             --accent:      @yield('accent', '#d4a550');
         }
+        @include('partials.market-vars')
 
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         html, body { margin: 0; padding: 0; }
 
         body {
-            font-family: 'Tajawal', Arial, sans-serif;
+            font-family: var(--market-font-family);
             min-height: 100vh;
             background:
                 linear-gradient(135deg, rgba(13,35,23,.92) 0%, rgba(18,45,30,.85) 50%, rgba(31,71,51,.92) 100%),
@@ -266,10 +271,6 @@
             @yield('actions')
         </div>
     </div>
-
-    @php
-        $brandName = \App\Helpers\Brand::name();
-    @endphp
     <div class="error-footer">
         <img src="{{ \App\Helpers\Brand::logoUrl() }}" alt="{{ $brandName }}">
         <span class="brand-name">{{ $brandName }}</span>

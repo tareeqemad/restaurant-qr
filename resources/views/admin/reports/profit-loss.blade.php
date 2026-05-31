@@ -10,10 +10,16 @@
     $profit = $r['profit'];
     $branchId = $period['branch_id'];
     $perBranchCost = $period['per_branch_cost'];
+    $source = $period['source'] ?? 'ledger';
+    $sourceQs = $source !== 'ledger' ? '&source='.urlencode($source) : '';
+    $money = fn ($amount) => $source === 'ledger'
+        ? Money::formatAccounting($amount)
+        : Money::format($amount);
 
     $exportQs = http_build_query(array_filter([
         'from' => $period['from'],
         'to'   => $period['to'],
+        'source' => $source !== 'ledger' ? $source : null,
         'per_branch_cost' => $perBranchCost ? 1 : null,
     ]));
 @endphp
@@ -36,21 +42,28 @@
             <label class="form-label small fw-bold mb-1">إلى تاريخ</label>
             <input type="date" name="to" value="{{ $period['to'] }}" class="form-control form-control-sm">
         </div>
-        <div class="col-md-5">
+        <div class="col-md-2">
+            <label class="form-label small fw-bold mb-1">مصدر التقرير</label>
+            <select name="source" class="form-select form-select-sm" onchange="this.form.submit()">
+                <option value="ledger" @selected($source === 'ledger')>دفتر القيود</option>
+                <option value="operations" @selected($source === 'operations')>تشغيلي</option>
+            </select>
+        </div>
+        <div class="col-md-3">
             <label class="form-label small fw-bold mb-1">اختصارات سريعة</label>
             <div class="btn-group w-100">
-                <a href="?from={{ now()->toDateString() }}&to={{ now()->toDateString() }}{{ $perBranchCost ? '&per_branch_cost=1' : '' }}" class="btn btn-outline-secondary btn-sm">اليوم</a>
-                <a href="?from={{ now()->subDays(6)->toDateString() }}&to={{ now()->toDateString() }}{{ $perBranchCost ? '&per_branch_cost=1' : '' }}" class="btn btn-outline-secondary btn-sm">٧ أيام</a>
-                <a href="?from={{ now()->startOfMonth()->toDateString() }}&to={{ now()->toDateString() }}{{ $perBranchCost ? '&per_branch_cost=1' : '' }}" class="btn btn-outline-secondary btn-sm">الشهر</a>
-                <a href="?from={{ now()->subMonth()->startOfMonth()->toDateString() }}&to={{ now()->subMonth()->endOfMonth()->toDateString() }}{{ $perBranchCost ? '&per_branch_cost=1' : '' }}" class="btn btn-outline-secondary btn-sm">الشهر السابق</a>
-                <a href="?from={{ now()->startOfYear()->toDateString() }}&to={{ now()->toDateString() }}{{ $perBranchCost ? '&per_branch_cost=1' : '' }}" class="btn btn-outline-secondary btn-sm">السنة</a>
+                <a href="?from={{ now()->toDateString() }}&to={{ now()->toDateString() }}{{ $sourceQs }}{{ $perBranchCost ? '&per_branch_cost=1' : '' }}" class="btn btn-outline-secondary btn-sm">اليوم</a>
+                <a href="?from={{ now()->subDays(6)->toDateString() }}&to={{ now()->toDateString() }}{{ $sourceQs }}{{ $perBranchCost ? '&per_branch_cost=1' : '' }}" class="btn btn-outline-secondary btn-sm">٧ أيام</a>
+                <a href="?from={{ now()->startOfMonth()->toDateString() }}&to={{ now()->toDateString() }}{{ $sourceQs }}{{ $perBranchCost ? '&per_branch_cost=1' : '' }}" class="btn btn-outline-secondary btn-sm">الشهر</a>
+                <a href="?from={{ now()->subMonth()->startOfMonth()->toDateString() }}&to={{ now()->subMonth()->endOfMonth()->toDateString() }}{{ $sourceQs }}{{ $perBranchCost ? '&per_branch_cost=1' : '' }}" class="btn btn-outline-secondary btn-sm">الشهر السابق</a>
+                <a href="?from={{ now()->startOfYear()->toDateString() }}&to={{ now()->toDateString() }}{{ $sourceQs }}{{ $perBranchCost ? '&per_branch_cost=1' : '' }}" class="btn btn-outline-secondary btn-sm">السنة</a>
             </div>
         </div>
         <div class="col-md-3 d-grid">
             <button class="btn btn-primary btn-sm"><i class="bi bi-search"></i> استعلام</button>
         </div>
 
-        @if($branchId)
+        @if($branchId && $source === 'operations')
             <div class="col-12">
                 <label class="pl-cost-toggle d-flex align-items-start gap-2 p-2 rounded mt-1"
                        style="background: rgba(184,135,42,.08); border: 1px solid rgba(184,135,42,.25); cursor: pointer;">
@@ -105,10 +118,13 @@
             <i class="bi bi-printer-fill"></i> تقرير للطباعة
         </a>
         <span class="ms-auto text-muted small">
+            <span class="badge bg-light text-dark border me-2">
+                {{ $source === 'ledger' ? 'دفتر القيود' : 'تشغيلي' }}
+            </span>
             <i class="bi bi-calendar-range"></i>
-            {{ \Carbon\Carbon::parse($period['from'])->locale('ar')->isoFormat('D MMMM YYYY') }}
+            {{ \Carbon\Carbon::parse($period['from'])->locale(\App\Support\MarketProfile::lang())->isoFormat('D MMMM YYYY') }}
             —
-            {{ \Carbon\Carbon::parse($period['to'])->locale('ar')->isoFormat('D MMMM YYYY') }}
+            {{ \Carbon\Carbon::parse($period['to'])->locale(\App\Support\MarketProfile::lang())->isoFormat('D MMMM YYYY') }}
             ({{ $period['days'] }} يوم)
         </span>
     </div>
@@ -122,10 +138,10 @@
             <span>صافي المبيعات</span>
             <button type="button" class="pl-help" data-tip="ما تبقى من الإيرادات بعد طرح الخصومات. هذا هو الدخل الحقيقي قبل التكاليف.">ⓘ</button>
         </div>
-        <div class="pl-kpi__value">{{ Money::format($sales['net_sales']) }}</div>
+        <div class="pl-kpi__value">{{ $money($sales['net_sales']) }}</div>
         <div class="pl-kpi__sub">
-            من إجمالي {{ Money::format($sales['gross_sales']) }}
-            <span class="pl-kpi__chip text-danger">−{{ Money::format($sales['discounts_total']) }} خصم</span>
+            من إجمالي {{ $money($sales['gross_sales']) }}
+            <span class="pl-kpi__chip text-danger">−{{ $money($sales['discounts_total']) }} خصم</span>
         </div>
     </div>
 
@@ -135,7 +151,7 @@
             <span>الربح الإجمالي</span>
             <button type="button" class="pl-help" data-tip="صافي المبيعات − تكلفة البضاعة المباعة − الهدر. الربح قبل المصروفات التشغيلية.">ⓘ</button>
         </div>
-        <div class="pl-kpi__value">{{ Money::format($profit['gross_profit']) }}</div>
+        <div class="pl-kpi__value">{{ $money($profit['gross_profit']) }}</div>
         <div class="pl-kpi__sub">
             هامش {{ number_format($profit['gross_margin_pct'], 1) }}%
             @if($profit['gross_margin_pct'] >= 50)
@@ -155,7 +171,7 @@
             <button type="button" class="pl-help" data-tip="مجموع كل ما خُصم من الإيراد للوصول لصافي الربح: تكلفة البضاعة + الهدر + المصروفات + العمولات + الاستردادات.">ⓘ</button>
         </div>
         @php $totalCosts = $costs['cogs'] + $costs['waste'] + $costs['expenses'] + $costs['platform_commission'] + $costs['refunds']; @endphp
-        <div class="pl-kpi__value">{{ Money::format($totalCosts) }}</div>
+        <div class="pl-kpi__value">{{ $money($totalCosts) }}</div>
         <div class="pl-kpi__sub">
             {{ $sales['net_sales'] > 0 ? number_format(($totalCosts / $sales['net_sales']) * 100, 1) : 0 }}% من المبيعات
         </div>
@@ -167,7 +183,7 @@
             <span>صافي الربح</span>
             <button type="button" class="pl-help" data-tip="الربح النهائي بعد كل التكاليف والمصروفات والعمولات والاستردادات. هذا ما يدخل جيب صاحب المطعم فعلاً.">ⓘ</button>
         </div>
-        <div class="pl-kpi__value">{{ Money::format($profit['net_profit']) }}</div>
+        <div class="pl-kpi__value">{{ $money($profit['net_profit']) }}</div>
         <div class="pl-kpi__sub">
             هامش صافي {{ number_format($profit['net_margin_pct'], 1) }}%
         </div>
@@ -186,56 +202,56 @@
             <div class="pl-row pl-row--positive">
                 <span>الإيرادات الإجمالية</span>
                 <button type="button" class="pl-help" data-tip="مجموع الفواتير المُصدرة في الفترة (المُحصَّلة كلياً أو جزئياً) قبل خصم أي خصومات أو إضافة ضريبة. أساس قياس النشاط التجاري.">ⓘ</button>
-                <strong>{{ Money::format($sales['gross_sales']) }}</strong>
+                <strong>{{ $money($sales['gross_sales']) }}</strong>
             </div>
 
             <div class="pl-row pl-row--negative pl-row--indent">
                 <span>− الخصومات</span>
                 <button type="button" class="pl-help" data-tip="مجموع الخصومات المُمنوحة على الفواتير في هذه الفترة (يدوية من الكاشير، تلقائية للعملاء الدائمين، كوبونات).">ⓘ</button>
-                <strong class="text-danger">−{{ Money::format($sales['discounts_total']) }}</strong>
+                <strong class="text-danger">−{{ $money($sales['discounts_total']) }}</strong>
             </div>
 
             <div class="pl-row pl-row--subtotal">
                 <span>= صافي المبيعات</span>
                 <button type="button" class="pl-help" data-tip="الإيراد الحقيقي قبل التكاليف. كل النسب لاحقاً تُحسب من هذا الرقم.">ⓘ</button>
-                <strong>{{ Money::format($sales['net_sales']) }}</strong>
+                <strong>{{ $money($sales['net_sales']) }}</strong>
             </div>
 
             <div class="pl-row pl-row--negative pl-row--indent">
                 <span>− تكلفة البضاعة المباعة (COGS)</span>
                 <button type="button" class="pl-help" data-tip="تكلفة المكوّنات الفعلية للأصناف التي بِيعت = الكمية × تكلفة المكوّن. لا يشمل المصروفات التشغيلية.{{ $perBranchCost ? ' (محسوبة بأسعار شراء الفرع)' : '' }}">ⓘ</button>
-                <strong class="text-danger">−{{ Money::format($costs['cogs']) }}</strong>
+                <strong class="text-danger">−{{ $money($costs['cogs']) }}</strong>
             </div>
 
             <div class="pl-row pl-row--negative pl-row--indent">
                 <span>− الهدر</span>
                 <button type="button" class="pl-help" data-tip="قيمة المكوّنات التي سُجِّلت كتالف/منتهي الصلاحية. خسارة مباشرة لا يقابلها بيع.">ⓘ</button>
-                <strong class="text-danger">−{{ Money::format($costs['waste']) }}</strong>
+                <strong class="text-danger">−{{ $money($costs['waste']) }}</strong>
             </div>
 
             <div class="pl-row pl-row--subtotal pl-row--gross">
                 <span>= الربح الإجمالي</span>
                 <button type="button" class="pl-help" data-tip="الربح من بيع الطعام قبل أي مصروفات إدارية أو تشغيلية. مؤشر صحة قائمة الطعام نفسها.">ⓘ</button>
-                <strong>{{ Money::format($profit['gross_profit']) }}</strong>
+                <strong>{{ $money($profit['gross_profit']) }}</strong>
                 <span class="pl-row__pct">{{ number_format($profit['gross_margin_pct'], 1) }}%</span>
             </div>
 
             <div class="pl-row pl-row--negative pl-row--indent">
                 <span>− المصروفات التشغيلية</span>
                 <button type="button" class="pl-help" data-tip="مصروفات المعتمدة في هذه الفترة (إيجار، رواتب، فواتير كهرباء وماء، مشتريات يدوية، نقدية صغيرة). تأتي من شاشة المصروفات.">ⓘ</button>
-                <strong class="text-danger">−{{ Money::format($costs['expenses']) }}</strong>
+                <strong class="text-danger">−{{ $money($costs['expenses']) }}</strong>
             </div>
 
             <div class="pl-row pl-row--negative pl-row--indent">
                 <span>− عمولات منصات التوصيل</span>
                 <button type="button" class="pl-help" data-tip="ما تأخذه منصات التوصيل (طلبات، كريم، أوبر) كنسبة من قيمة الطلب. محسوبة من نسبة العمولة المسجَّلة على كل طلب.">ⓘ</button>
-                <strong class="text-danger">−{{ Money::format($costs['platform_commission']) }}</strong>
+                <strong class="text-danger">−{{ $money($costs['platform_commission']) }}</strong>
             </div>
 
             <div class="pl-row pl-row--subtotal">
                 <span>= الربح من العمليات</span>
                 <button type="button" class="pl-help" data-tip="الربح بعد كل التكاليف التشغيلية، قبل الاستردادات الاستثنائية. مؤشر فعالية الإدارة اليومية.">ⓘ</button>
-                <strong>{{ Money::format($profit['operating_profit']) }}</strong>
+                <strong>{{ $money($profit['operating_profit']) }}</strong>
                 <span class="pl-row__pct">{{ number_format($profit['operating_margin_pct'], 1) }}%</span>
             </div>
 
@@ -247,14 +263,14 @@
                 <span>− الاستردادات</span>
                 <button type="button" class="pl-help" data-tip="مبالغ أُعيدت للزبائن (شكاوى، أخطاء، إلخ). تظهر منفصلة لتمييز الخسائر الاستثنائية عن المصروفات الاعتيادية.">ⓘ</button>
                 <strong class="{{ $costs['refunds'] > 0 ? 'text-danger' : 'text-muted' }}">
-                    {{ $costs['refunds'] > 0 ? '−' : '' }}{{ Money::format($costs['refunds']) }}
+                    {{ $costs['refunds'] > 0 ? '−' : '' }}{{ $money($costs['refunds']) }}
                 </strong>
             </div>
 
             <div class="pl-row pl-row--final {{ $profit['net_profit'] < 0 ? 'is-loss' : '' }}">
                 <span>= صافي الربح</span>
                 <button type="button" class="pl-help" data-tip="الرقم النهائي. هذا ما يستطيع المالك سحبه أو إعادة استثماره.">ⓘ</button>
-                <strong>{{ Money::format($profit['net_profit']) }}</strong>
+                <strong>{{ $money($profit['net_profit']) }}</strong>
                 <span class="pl-row__pct">{{ number_format($profit['net_margin_pct'], 1) }}%</span>
             </div>
         </div>
@@ -268,27 +284,27 @@
             <div class="pl-row pl-row--neutral">
                 <span>الضريبة المحصَّلة</span>
                 <button type="button" class="pl-help" data-tip="الضريبة المضافة المحصَّلة من الزبائن. تُورَّد للجهة الضريبية، ليست دخلاً.">ⓘ</button>
-                <strong>{{ Money::format($sales['tax_collected']) }}</strong>
+                <strong>{{ $money($sales['tax_collected']) }}</strong>
             </div>
             @if($sales['service_collected'] > 0)
                 <div class="pl-row pl-row--neutral">
                     <span>رسوم الخدمة</span>
                     <button type="button" class="pl-help" data-tip="رسم الخدمة المُضاف (عادةً 10%). يُعتبر دخلاً للمطعم في النموذج المحاسبي الكامل، لكنه يظهر هنا منفصلاً للوضوح.">ⓘ</button>
-                    <strong>{{ Money::format($sales['service_collected']) }}</strong>
+                    <strong>{{ $money($sales['service_collected']) }}</strong>
                 </div>
             @endif
             @if($sales['tip_collected'] > 0)
                 <div class="pl-row pl-row--neutral">
                     <span>الإكراميات</span>
                     <button type="button" class="pl-help" data-tip="الإكراميات المُسجَّلة على الفواتير. عادةً تُمرَّر للموظفين، ليست دخلاً للمطعم.">ⓘ</button>
-                    <strong>{{ Money::format($sales['tip_collected']) }}</strong>
+                    <strong>{{ $money($sales['tip_collected']) }}</strong>
                 </div>
             @endif
             @if($sales['delivery_collected'] > 0)
                 <div class="pl-row pl-row--neutral">
                     <span>رسوم التوصيل</span>
                     <button type="button" class="pl-help" data-tip="ما يدفعه الزبون مقابل التوصيل. يقابل تكلفة المندوب أو رسوم المنصة.">ⓘ</button>
-                    <strong>{{ Money::format($sales['delivery_collected']) }}</strong>
+                    <strong>{{ $money($sales['delivery_collected']) }}</strong>
                 </div>
             @endif
         </div>
@@ -312,16 +328,16 @@
             </div>
             <div class="pl-row pl-row--neutral">
                 <span>إجمالي الفواتير</span>
-                <strong>{{ Money::format($sales['total_billed']) }}</strong>
+                <strong>{{ $money($sales['total_billed']) }}</strong>
             </div>
             <div class="pl-row pl-row--positive">
                 <span>المُحصَّل فعلاً</span>
-                <strong>{{ Money::format($sales['total_collected']) }}</strong>
+                <strong>{{ $money($sales['total_collected']) }}</strong>
             </div>
             @if($sales['unpaid_balance'] > 0)
                 <div class="pl-row pl-row--negative">
                     <span>متبقٍ على الزبائن (دين)</span>
-                    <strong class="text-warning">{{ Money::format($sales['unpaid_balance']) }}</strong>
+                    <strong class="text-warning">{{ $money($sales['unpaid_balance']) }}</strong>
                 </div>
             @endif
             <div class="pl-row pl-row--subtotal">
@@ -330,11 +346,11 @@
             </div>
             <div class="pl-row pl-row--neutral">
                 <span>متوسط قيمة الفاتورة</span>
-                <strong>{{ Money::format($sales['average_ticket']) }}</strong>
+                <strong>{{ $money($sales['average_ticket']) }}</strong>
             </div>
             <div class="pl-row pl-row--neutral">
                 <span>متوسط المبيعات اليومية</span>
-                <strong>{{ Money::format($sales['daily_average']) }}</strong>
+                <strong>{{ $money($sales['daily_average']) }}</strong>
             </div>
         </div>
     </div>
@@ -346,7 +362,7 @@
         <div class="pl-card">
             <div class="pl-card__head">
                 <strong><i class="bi bi-percent"></i> تفصيل الخصومات</strong>
-                <small class="text-muted">{{ $r['discounts']['count'] }} خصم بإجمالي {{ Money::format($r['discounts']['total']) }}</small>
+                <small class="text-muted">{{ $r['discounts']['count'] }} خصم بإجمالي {{ $money($r['discounts']['total']) }}</small>
             </div>
             <div class="pl-card__body">
                 @if(empty($r['discounts']['by_category']))
@@ -364,7 +380,7 @@
                                         {{ $row['label'] }}
                                     </td>
                                     <td class="text-center">{{ $row['count'] }}</td>
-                                    <td class="text-end fw-bold">{{ Money::format($row['total']) }}</td>
+                                    <td class="text-end fw-bold">{{ $money($row['total']) }}</td>
                                     <td class="text-end text-muted">{{ $sales['net_sales'] > 0 ? number_format(($row['total'] / $sales['net_sales']) * 100, 2) : '0.00' }}%</td>
                                 </tr>
                             @endforeach
@@ -380,7 +396,7 @@
                                     <tr>
                                         <td>{{ $row['name'] }}</td>
                                         <td class="text-center text-muted">{{ $row['count'] }} خصم</td>
-                                        <td class="text-end fw-bold">{{ Money::format($row['total']) }}</td>
+                                        <td class="text-end fw-bold">{{ $money($row['total']) }}</td>
                                     </tr>
                                 @endforeach
                             </tbody>
@@ -396,7 +412,7 @@
         <div class="pl-card">
             <div class="pl-card__head">
                 <strong><i class="bi bi-cash-coin"></i> تفصيل المصروفات التشغيلية</strong>
-                <small class="text-muted">{{ Money::format($costs['expenses']) }} موزَّعة على {{ count($r['expenses_breakdown']['by_category']) }} تصنيف</small>
+                <small class="text-muted">{{ $money($costs['expenses']) }} موزَّعة على {{ count($r['expenses_breakdown']['by_category']) }} تصنيف</small>
             </div>
             <div class="pl-card__body">
                 @if(empty($r['expenses_breakdown']['by_category']))
@@ -414,7 +430,7 @@
                                         {{ $row['label'] }}
                                     </td>
                                     <td class="text-center">{{ $row['count'] }}</td>
-                                    <td class="text-end fw-bold">{{ Money::format($row['total']) }}</td>
+                                    <td class="text-end fw-bold">{{ $money($row['total']) }}</td>
                                     <td class="text-end text-muted">{{ $sales['net_sales'] > 0 ? number_format(($row['total'] / $sales['net_sales']) * 100, 2) : '0.00' }}%</td>
                                 </tr>
                             @endforeach
@@ -427,7 +443,7 @@
                         <div class="d-flex flex-wrap gap-2">
                             @foreach($r['expenses_breakdown']['by_method'] as $row)
                                 <span class="badge bg-light text-dark border" style="padding: 6px 10px;">
-                                    {{ $row['label'] }}: <strong>{{ Money::format($row['total']) }}</strong> ({{ $row['count'] }})
+                                    {{ $row['label'] }}: <strong>{{ $money($row['total']) }}</strong> ({{ $row['count'] }})
                                 </span>
                             @endforeach
                         </div>
@@ -466,9 +482,9 @@
                                 <strong>{{ $it->name }}</strong>
                             </td>
                             <td class="text-center">{{ rtrim(rtrim(number_format((float) $it->qty, 2), '0'), '.') }}</td>
-                            <td class="text-end">{{ Money::format($it->revenue) }}</td>
-                            <td class="text-end text-danger">{{ Money::format($it->cogs) }}</td>
-                            <td class="text-end fw-bold text-success">{{ Money::format($it->profit) }}</td>
+                            <td class="text-end">{{ $money($it->revenue) }}</td>
+                            <td class="text-end text-danger">{{ $money($it->cogs) }}</td>
+                            <td class="text-end fw-bold text-success">{{ $money($it->profit) }}</td>
                             <td class="text-end">
                                 <span class="badge bg-{{ $margin >= 50 ? 'success' : ($margin >= 30 ? 'warning text-dark' : 'danger') }}">
                                     {{ number_format($margin, 1) }}%
@@ -710,6 +726,9 @@ document.addEventListener('DOMContentLoaded', function () {
     const ctx = document.getElementById('plTrend');
     if (!ctx) return;
     const data = @json($r['trend']);
+    const marketDirection = @json(\App\Support\MarketProfile::direction());
+    const marketLocale = @json(\App\Support\MarketProfile::lang());
+    const marketFontFamily = @json(\App\Support\MarketProfile::fontFamily());
     new Chart(ctx, {
         type: 'line',
         data: {
@@ -724,12 +743,12 @@ document.addEventListener('DOMContentLoaded', function () {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                legend: { position: 'bottom', labels: { font: { family: 'Cairo, sans-serif', size: 11 } } },
-                tooltip: { rtl: true, bodyFont: { family: 'Cairo, sans-serif' }, titleFont: { family: 'Cairo, sans-serif' } },
+                legend: { position: 'bottom', labels: { font: { family: marketFontFamily, size: 11 } } },
+                tooltip: { rtl: marketDirection === 'rtl', bodyFont: { family: marketFontFamily }, titleFont: { family: marketFontFamily } },
             },
             scales: {
-                x: { ticks: { font: { family: 'Cairo, sans-serif', size: 10 } } },
-                y: { ticks: { font: { family: 'Cairo, sans-serif' }, callback: v => v.toLocaleString('ar') } },
+                x: { ticks: { font: { family: marketFontFamily, size: 10 } } },
+                y: { ticks: { font: { family: marketFontFamily }, callback: v => v.toLocaleString(marketLocale) } },
             },
         }
     });

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToBranch;
+use App\Models\Concerns\HasLocalizedFields;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -11,7 +12,7 @@ use Illuminate\Support\Str;
 
 class ModifierGroup extends Model
 {
-    use BelongsToBranch, HasFactory;
+    use BelongsToBranch, HasFactory, HasLocalizedFields;
 
     protected $fillable = ['branch_id', 'slug', 'name', 'name_en', 'min_select', 'max_select', 'required', 'display_order', 'active'];
 

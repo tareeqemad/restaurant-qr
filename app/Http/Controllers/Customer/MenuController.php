@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Customer;
 use App\Events\TableStatusChanged;
 use App\Helpers\SafeBroadcast;
 use App\Http\Controllers\Controller;
+use App\Models\Announcement;
 use App\Models\Category;
 use App\Models\Customer;
 use App\Models\MenuItem;
@@ -40,7 +41,8 @@ class MenuController extends Controller
         }
 
         if ($session && ! $request->query('join')) {
-            $activeOrders = $session->orders()->whereIn('status', ['pending','approved','preparing','ready','delivered'])->count();
+            $activeOrders = $session->orders()->whereIn('status', ['pending', 'approved', 'preparing', 'ready', 'delivered'])->count();
+
             return response()->view('customer.busy', [
                 'table' => $table,
                 'session' => $session,
@@ -56,8 +58,8 @@ class MenuController extends Controller
             //   2. `qr_customer_id` cookie set on a previous QR submit → the
             //      "soft remember-me" path: someone who scanned, gave their
             //      phone last time, and is now back from the same device.
-            // Neither requires the diner to lift a finger — they get greeted
-            // by name and the cashier sees "زبون دائم" automatically.
+            // Neither requires the diner to lift a finger; they get greeted
+            // by name and the cashier sees a returning-customer label.
             $portalCustomerId = Auth::guard('customer')->id();
             $rememberedCustomerId = null;
             $rememberedCustomer = null;
@@ -79,16 +81,16 @@ class MenuController extends Controller
             $resolvedCustomerId = $portalCustomerId ?? $rememberedCustomerId;
 
             $session = TableSession::create([
-                'table_id'    => $table->id,
+                'table_id' => $table->id,
                 'customer_id' => $resolvedCustomerId,   // null for true walk-ins
                 // Stamp the diner's name on the session so the menu hero,
                 // waiter board, and cashier all show the right greeting
                 // without an extra round-trip.
-                'customer_name'  => $rememberedCustomer?->name,
+                'customer_name' => $rememberedCustomer?->name,
                 'customer_phone' => $rememberedCustomer?->phone,
                 'cover_count' => 1,
-                'status'      => 'active',
-                'opened_at'   => now(),
+                'status' => 'active',
+                'opened_at' => now(),
             ]);
             $previousStatus = $table->status;
             $table->update(['status' => 'occupied']);
@@ -106,11 +108,11 @@ class MenuController extends Controller
         $session->loadMissing(['table.branch', 'customer']);
 
         $categories = Category::where('active', true)
-            ->with(['menuItems' => fn($q) => $q->where('is_available', true)->orderBy('display_order')
+            ->with(['menuItems' => fn ($q) => $q->where('is_available', true)->orderBy('display_order')
                 ->with('allergens', 'modifierGroups.modifiers', 'recipeItems.ingredient')])
             ->orderBy('display_order')
             ->get()
-            ->filter(fn($c) => $c->menuItems->count() > 0)
+            ->filter(fn ($c) => $c->menuItems->count() > 0)
             ->values();
 
         $featured = MenuItem::where('is_available', true)
@@ -149,7 +151,7 @@ class MenuController extends Controller
      */
     public function dismissGuestPromo(Request $request, int $id)
     {
-        $exists = \App\Models\Announcement::withoutGlobalScopes()
+        $exists = Announcement::withoutGlobalScopes()
             ->where('id', $id)
             ->where('audience_type', 'guests')
             ->exists();

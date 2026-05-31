@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers\Auth;
 
+use App\Helpers\Brand;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
+use App\Models\Setting;
 use App\Models\User;
 use App\Services\SmsService;
 use Illuminate\Http\Request;
@@ -52,7 +54,7 @@ class ForgotPasswordController extends Controller
         $data = $request->validate([
             'identifier' => ['required', 'string', 'max:120'],
         ], [
-            'identifier.required' => 'أدخل رقم الجوال أو اسم المستخدم.',
+            'identifier.required' => __('ui.auth.forgot_identifier_required'),
         ]);
 
         $identifier = trim($data['identifier']);
@@ -61,8 +63,9 @@ class ForgotPasswordController extends Controller
         $ipKey = 'forgot-pw-ip:'.$request->ip();
         if (RateLimiter::tooManyAttempts($ipKey, 5)) {
             $seconds = RateLimiter::availableIn($ipKey);
+
             return back()
-                ->withErrors(['identifier' => "تم تجاوز الحد المسموح. حاول بعد {$seconds} ثانية."])
+                ->withErrors(['identifier' => __('ui.auth.forgot_too_many', ['seconds' => $seconds])])
                 ->withInput();
         }
 
@@ -70,8 +73,9 @@ class ForgotPasswordController extends Controller
         $idKey = 'forgot-pw-id:'.mb_strtolower($identifier);
         if (RateLimiter::tooManyAttempts($idKey, 1)) {
             $seconds = RateLimiter::availableIn($idKey);
+
             return back()
-                ->withErrors(['identifier' => "أُرسلت رسالة لهذا الحساب مؤخراً. حاول بعد {$seconds} ثانية."])
+                ->withErrors(['identifier' => __('ui.auth.forgot_sent_recently', ['seconds' => $seconds])])
                 ->withInput();
         }
 
@@ -83,10 +87,11 @@ class ForgotPasswordController extends Controller
         RateLimiter::hit($idKey, 60);
 
         if (! $user || ! $user->canLogin() || empty($user->phone)) {
-            ActivityLog::log('forgot_password.miss', "محاولة استرجاع لـ '{$identifier}'", null, [
+            ActivityLog::log('forgot_password.miss', __('ui.auth.forgot_miss_log', ['identifier' => $identifier]), null, [
                 'identifier' => $identifier,
-                'ip'         => $request->ip(),
+                'ip' => $request->ip(),
             ]);
+
             // Generic response regardless of outcome (anti-enumeration).
             return back()->with('success', $this->successMessage());
         }
@@ -100,9 +105,10 @@ class ForgotPasswordController extends Controller
                 "forgot_password:user:{$user->id}"
             );
         } catch (\Throwable $e) {
-            ActivityLog::log('forgot_password.sms_failed', "فشل إرسال SMS للمستخدم #{$user->id}", $user, [
+            ActivityLog::log('forgot_password.sms_failed', __('ui.auth.forgot_sms_failed_log', ['id' => $user->id]), $user, [
                 'error' => $e->getMessage(),
             ]);
+
             return back()->withErrors(['identifier' => $e->getMessage()])->withInput();
         }
 
@@ -111,7 +117,7 @@ class ForgotPasswordController extends Controller
         // with a password they never received.
         $user->update(['password' => Hash::make($tempPassword)]);
 
-        ActivityLog::log('forgot_password.sent', "إرسال كلمة مرور جديدة للمستخدم #{$user->id}", $user, [
+        ActivityLog::log('forgot_password.sent', __('ui.auth.forgot_sent_log', ['id' => $user->id]), $user, [
             'phone' => $user->phone,
         ]);
 
@@ -134,7 +140,9 @@ class ForgotPasswordController extends Controller
             $user = User::where('phone', $identifier)
                 ->orWhere('phone', $digits)
                 ->first();
-            if ($user) return $user;
+            if ($user) {
+                return $user;
+            }
         }
 
         return User::where('username', $identifier)->first();
@@ -148,6 +156,7 @@ class ForgotPasswordController extends Controller
         for ($i = 0; $i < self::TEMP_LENGTH; $i++) {
             $out .= $alphabet[random_int(0, $max)];
         }
+
         return $out;
     }
 
@@ -161,18 +170,18 @@ class ForgotPasswordController extends Controller
      */
     protected function formatMessage(User $user, string $password): string
     {
-        $template = trim((string) \App\Models\Setting::get('sms_template_forgot_staff'))
+        $template = trim((string) Setting::get('sms_template_forgot_staff'))
             ?: "{brand}\nYour account password has been changed.\nNew password: {password}\nLogin: {login_url}";
 
         return strtr($template, [
-            '{brand}'     => \App\Helpers\Brand::name(),
-            '{password}'  => $password,
+            '{brand}' => Brand::name(),
+            '{password}' => $password,
             '{login_url}' => route('login'),
         ]);
     }
 
     protected function successMessage(): string
     {
-        return 'إذا كان الحساب موجوداً، تم إرسال كلمة مرور جديدة عبر SMS لرقم الجوال المسجل.';
+        return __('ui.auth.forgot_success_generic');
     }
 }

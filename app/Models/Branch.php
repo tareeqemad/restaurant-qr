@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasLocalizedFields;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Branch extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, HasLocalizedFields, SoftDeletes;
 
     protected $fillable = [
         'code',
@@ -27,7 +28,7 @@ class Branch extends Model
     ];
 
     protected $casts = [
-        'settings'  => 'array',
+        'settings' => 'array',
         'is_active' => 'boolean',
     ];
 
@@ -78,6 +79,7 @@ class Branch extends Model
     public function settingValue(string $key, mixed $default = null): mixed
     {
         $bag = $this->settings ?? [];
+
         return $bag[$key] ?? $default;
     }
 

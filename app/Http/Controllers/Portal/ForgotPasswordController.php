@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers\Portal;
 
+use App\Helpers\Brand;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\Customer;
+use App\Models\Setting;
 use App\Services\SmsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -21,7 +23,8 @@ use Illuminate\Support\Facades\RateLimiter;
  */
 class ForgotPasswordController extends Controller
 {
-    protected const ALPHABET    = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+    protected const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+
     protected const TEMP_LENGTH = 8;
 
     public function show()
@@ -34,7 +37,7 @@ class ForgotPasswordController extends Controller
         $data = $request->validate([
             'phone' => ['required', 'string', 'max:32'],
         ], [
-            'phone.required' => 'أدخل رقم جوالك.',
+            'phone.required' => __('portal.forgot.phone_required'),
         ]);
 
         $phone = trim($data['phone']);
@@ -42,16 +45,18 @@ class ForgotPasswordController extends Controller
         $ipKey = 'portal-forgot-ip:'.$request->ip();
         if (RateLimiter::tooManyAttempts($ipKey, 5)) {
             $seconds = RateLimiter::availableIn($ipKey);
+
             return back()
-                ->withErrors(['phone' => "تم تجاوز الحد. حاول بعد {$seconds} ثانية."])
+                ->withErrors(['phone' => __('portal.forgot.too_many', ['seconds' => $seconds])])
                 ->withInput();
         }
 
         $idKey = 'portal-forgot-phone:'.$phone;
         if (RateLimiter::tooManyAttempts($idKey, 1)) {
             $seconds = RateLimiter::availableIn($idKey);
+
             return back()
-                ->withErrors(['phone' => "أُرسلت رسالة لهذا الرقم مؤخراً. حاول بعد {$seconds} ثانية."])
+                ->withErrors(['phone' => __('portal.forgot.sent_recently', ['seconds' => $seconds])])
                 ->withInput();
         }
 
@@ -61,10 +66,11 @@ class ForgotPasswordController extends Controller
         RateLimiter::hit($idKey, 60);
 
         if (! $customer || ! $customer->isActive() || empty($customer->phone)) {
-            ActivityLog::log('portal_forgot.miss', "محاولة استرجاع لرقم {$phone}", null, [
+            ActivityLog::log('portal_forgot.miss', __('portal.forgot.miss_log', ['phone' => $phone]), null, [
                 'phone' => $phone,
-                'ip'    => $request->ip(),
+                'ip' => $request->ip(),
             ]);
+
             return back()->with('success', $this->successMessage());
         }
 
@@ -77,15 +83,16 @@ class ForgotPasswordController extends Controller
                 "portal_forgot_password:customer:{$customer->id}"
             );
         } catch (\Throwable $e) {
-            ActivityLog::log('portal_forgot.sms_failed', "فشل إرسال SMS للزبون #{$customer->id}", $customer, [
+            ActivityLog::log('portal_forgot.sms_failed', __('portal.forgot.sms_failed_log', ['id' => $customer->id]), $customer, [
                 'error' => $e->getMessage(),
             ]);
+
             return back()->withErrors(['phone' => $e->getMessage()])->withInput();
         }
 
         $customer->update(['password' => Hash::make($tempPassword)]);
 
-        ActivityLog::log('portal_forgot.sent', "إرسال كلمة مرور جديدة للزبون #{$customer->id}", $customer, [
+        ActivityLog::log('portal_forgot.sent', __('portal.forgot.sent_log', ['id' => $customer->id]), $customer, [
             'phone' => $customer->phone,
         ]);
 
@@ -100,6 +107,7 @@ class ForgotPasswordController extends Controller
         for ($i = 0; $i < self::TEMP_LENGTH; $i++) {
             $out .= $alphabet[random_int(0, $max)];
         }
+
         return $out;
     }
 
@@ -110,18 +118,18 @@ class ForgotPasswordController extends Controller
      */
     protected function formatMessage(Customer $customer, string $password): string
     {
-        $template = trim((string) \App\Models\Setting::get('sms_template_forgot_customer'))
+        $template = trim((string) Setting::get('sms_template_forgot_customer'))
             ?: "{brand}\nYour account password has been changed.\nNew password: {password}\nLogin: {login_url}";
 
         return strtr($template, [
-            '{brand}'     => \App\Helpers\Brand::name(),
-            '{password}'  => $password,
+            '{brand}' => Brand::name(),
+            '{password}' => $password,
             '{login_url}' => route('portal.login'),
         ]);
     }
 
     protected function successMessage(): string
     {
-        return 'إذا كان الرقم مسجلاً لدينا، تم إرسال كلمة مرور جديدة عبر SMS.';
+        return __('portal.forgot.success');
     }
 }

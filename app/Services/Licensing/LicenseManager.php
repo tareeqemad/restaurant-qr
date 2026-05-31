@@ -64,12 +64,19 @@ class LicenseManager
             return $state;
         }
 
+        $branchUuid = trim((string) config('sync.branch_uuid'));
+        if ($branchUuid === '') {
+            $state->markProblem('missing_branch', 'Branch UUID is not configured for license activation.');
+
+            return $state;
+        }
+
         try {
             $response = Http::timeout((int) config('license.timeout', 8))
                 ->acceptJson()
                 ->post($cloudUrl.'/api/license/check', [
                     'license_key' => $licenseKey,
-                    'branch_uuid' => config('sync.branch_uuid'),
+                    'branch_uuid' => $branchUuid,
                     'branch_id' => config('sync.branch_id'),
                     'app_url' => config('app.url'),
                 ]);
@@ -86,7 +93,10 @@ class LicenseManager
         }
 
         if (! $response->successful()) {
-            $state->markProblem($state->payload ? $state->status : 'offline', 'License cloud returned HTTP '.$response->status().'.');
+            $state->markProblem(
+                $response->json('status') ?: ($state->payload ? $state->status : 'offline'),
+                $response->json('message') ?: 'License cloud returned HTTP '.$response->status().'.'
+            );
 
             return $state;
         }
@@ -148,6 +158,10 @@ class LicenseManager
             'suspended' => $this->blocked('suspended', 'الترخيص موقوف من السحابة.'),
             'cancelled' => $this->blocked('cancelled', 'الترخيص ملغى.'),
             'expired' => $this->expiredSummary($state, $now),
+            'activation_limit', 'activation_invalid', 'missing_branch' => $this->blocked(
+                $state->status,
+                $state->last_error ?: 'تعذر تفعيل هذا الفرع على الترخيص.'
+            ),
             default => $this->blocked($state->status ?: 'unknown', 'حالة الترخيص غير معروفة.'),
         };
     }
@@ -207,6 +221,8 @@ class LicenseManager
                 'cancelled' => 'ملغى',
                 'expired' => 'منتهي',
                 'clock_mismatch' => 'مشكلة بالوقت',
+                'missing_branch' => 'فرع غير مضبوط',
+                'activation_limit', 'activation_invalid' => 'تفعيل مرفوض',
                 default => 'غير متاح',
             },
             'color' => 'danger',

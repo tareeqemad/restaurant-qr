@@ -193,7 +193,7 @@
     .eod-print-header {
         text-align: center;
         margin-bottom: 6mm;
-        font-family: 'Tajawal', sans-serif;
+        font-family: var(--market-font-family);
     }
     .eod-print-brand   { font-size: 16pt; }
     .eod-print-title   { font-size: 20pt; font-weight: 900; margin-top: 2mm; }

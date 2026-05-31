@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Support\FirstRunSetup;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -10,6 +11,10 @@ class LoginController extends Controller
 {
     public function show(Request $request)
     {
+        if (FirstRunSetup::shouldRunWizard() && ! FirstRunSetup::hasUsers()) {
+            return redirect()->route('setup.show');
+        }
+
         if ($user = Auth::user()) {
             if ($user->canLogin() && $user->canAccessAdmin()) {
                 return redirect()->route('admin.dashboard');
@@ -36,18 +41,24 @@ class LoginController extends Controller
             : ['username' => $data['username'], 'password' => $data['password']];
 
         if (! Auth::attempt($credentials, (bool) ($data['remember'] ?? false))) {
-            return back()->withErrors(['username' => 'بيانات الدخول غير صحيحة'])->withInput($request->only('username'));
+            return back()->withErrors(['username' => __('ui.auth.invalid_credentials')])->withInput($request->only('username'));
         }
 
         $user = Auth::user();
 
         if (! $user->canLogin()) {
             Auth::logout();
-            return back()->withErrors(['username' => 'حسابك معطل. يرجى التواصل مع الإدارة.']);
+
+            return back()->withErrors(['username' => __('ui.auth.account_disabled')]);
         }
 
         $user->update(['last_login_at' => now()]);
         $request->session()->regenerate();
+
+        if (FirstRunSetup::shouldRunWizard()) {
+            return redirect()->route('setup.show');
+        }
+
         return redirect()->intended(route('admin.dashboard'));
     }
 
@@ -56,6 +67,7 @@ class LoginController extends Controller
         Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
+
         return redirect()->route('login');
     }
 }

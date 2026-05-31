@@ -1,5 +1,5 @@
 @extends('customer.layout')
-@section('title', 'الفاتورة')
+@section('title', __('ui.customer_order.bill_title'))
 
 @push('styles')
 <style>
@@ -306,19 +306,19 @@
         <div class="bill-head">
             <div class="bill-head-inner">
                 <div class="bill-icon"><i class="bi bi-receipt-cutoff"></i></div>
-                <h3 class="bill-title">فاتورتك</h3>
+                <h3 class="bill-title">{{ __('ui.customer_order.your_bill') }}</h3>
                 <div class="bill-meta">
                     @if(!empty($session?->table?->number))
                         <span class="bill-table-num">
                             <i class="bi bi-grid-3x3-gap-fill"></i>
-                            طاولة {{ $session->table->number }}
+                            {{ __('ui.customer_menu.table_short', ['number' => $session->table->number]) }}
                         </span>
                         <span class="sep">•</span>
                     @endif
                     <span>{{ now()->format('Y-m-d · H:i') }}</span>
                     @if($orders->isNotEmpty())
                         <span class="sep">•</span>
-                        <span>{{ $orders->count() }} {{ $orders->count() === 1 ? 'طلب' : 'طلبات' }}</span>
+                        <span>{{ $orders->count() }} {{ $orders->count() === 1 ? __('ui.customer_order.order_singular') : __('ui.customer_order.order_plural') }}</span>
                     @endif
                 </div>
             </div>
@@ -328,12 +328,12 @@
             <div class="bill-status bill-status--issued" style="margin-inline:1.25rem;">
                 <i class="bi bi-check-circle-fill"></i>
                 <div>
-                    <strong>الفاتورة صدرت للكاشير</strong>
-                    رقم الفاتورة {{ $invoice->number }}.
+                    <strong>{{ __('ui.customer_order.invoice_issued') }}</strong>
+                    {{ __('ui.customer_order.invoice_number', ['number' => $invoice->number]) }}
                     @if((float) $invoice->balance > 0)
-                        المتبقي للدفع: <strong>{{ \App\Helpers\Money::format($invoice->balance) }}</strong>.
+                        {{ __('ui.customer_order.balance_due') }} <strong>{{ \App\Helpers\Money::format($invoice->balance) }}</strong>.
                     @else
-                        تم تسجيل الدفع وسيتم إغلاق الجلسة قريباً.
+                        {{ __('ui.customer_order.payment_recorded') }}
                     @endif
                 </div>
             </div>
@@ -341,8 +341,8 @@
             <div class="bill-status bill-status--waiting" style="margin-inline:1.25rem;">
                 <i class="bi bi-hourglass-split"></i>
                 <div>
-                    <strong>طلب الفاتورة وصل للكاشير</strong>
-                    تم الإرسال {{ $session->bill_requested_at->diffForHumans() }}. يرجى انتظار الجرسون أو الكاشير.
+                    <strong>{{ __('ui.customer_order.bill_request_sent') }}</strong>
+                    {{ __('ui.customer_order.bill_request_sent_at', ['time' => $session->bill_requested_at->diffForHumans()]) }}
                 </div>
             </div>
         @endif
@@ -352,8 +352,8 @@
                 <div class="bill-empty-icon">
                     <i class="bi bi-receipt"></i>
                 </div>
-                <h4>لا توجد طلبات بعد</h4>
-                <p>لم تقم بأي طلب على هذه الطاولة حتى الآن.</p>
+                <h4>{{ __('ui.customer_order.no_orders_yet') }}</h4>
+                <p>{{ __('ui.customer_order.no_table_orders') }}</p>
             </div>
         @else
             {{-- Orders --}}
@@ -375,9 +375,9 @@
                                 <div class="bill-item-body">
                                     <div class="bill-item-name">
                                         <span class="bill-item-qty-pill">×{{ $it->quantity }}</span>
-                                        {{ $it->name_snapshot }}
+                                        {{ app()->getLocale() === 'en' && $it->name_en_snapshot ? $it->name_en_snapshot : $it->name_snapshot }}
                                         @if($it->status === 'cancelled')
-                                            <span style="color:var(--danger); font-size:.72rem; font-weight:800;">(ملغى)</span>
+                                            <span style="color:var(--danger); font-size:.72rem; font-weight:800;">{{ __('ui.customer_order.cancelled') }}</span>
                                         @endif
                                     </div>
                                     @php
@@ -386,7 +386,7 @@
                                     @if($mods->count())
                                         <div class="bill-item-modifiers">
                                             <i class="bi bi-plus-circle-fill"></i>
-                                            {{ $mods->pluck('name_snapshot')->filter()->join(' • ') }}
+                                            {{ $mods->map(fn ($modifier) => app()->getLocale() === 'en' && $modifier->name_en_snapshot ? $modifier->name_en_snapshot : $modifier->name_snapshot)->filter()->join(' • ') }}
                                         </div>
                                     @endif
                                     @if(!empty($it->notes))
@@ -408,24 +408,24 @@
             {{-- Totals --}}
             <div class="bill-totals">
                 <div class="bill-row">
-                    <span>الفرعي</span>
+                    <span>{{ __('ui.customer_order.subtotal') }}</span>
                     <span>{{ \App\Helpers\Money::format($totals['subtotal']) }}</span>
                 </div>
                 @if(!empty($totals['tax']) && $totals['tax'] > 0)
                     <div class="bill-row">
-                        <span>الضريبة</span>
+                        <span>{{ __('ui.customer_order.tax') }}</span>
                         <span>{{ \App\Helpers\Money::format($totals['tax']) }}</span>
                     </div>
                 @endif
                 @if(!empty($totals['service']) && $totals['service'] > 0)
                     <div class="bill-row">
-                        <span>الخدمة</span>
+                        <span>{{ __('ui.customer_order.service') }}</span>
                         <span>{{ \App\Helpers\Money::format($totals['service']) }}</span>
                     </div>
                 @endif
 
                 <div class="bill-grand">
-                    <span class="bill-grand-label">الإجمالي</span>
+                    <span class="bill-grand-label">{{ __('ui.customer_order.grand_total') }}</span>
                     <span class="bill-grand-amount">{{ \App\Helpers\Money::format($totals['total']) }}</span>
                 </div>
             </div>
@@ -436,18 +436,18 @@
         <div class="bill-note">
             <i class="bi bi-info-circle-fill"></i>
             <div>
-                <strong>للدفع والمغادرة</strong>
-                اطلب من الجرسون استلام الفاتورة والدفع. شكراً لاختيارك {{ config('restaurant.name') }} ✨
+                <strong>{{ __('ui.customer_order.pay_and_leave') }}</strong>
+                {{ __('ui.customer_order.pay_and_leave_body', ['restaurant' => config('restaurant.name')]) }}
             </div>
         </div>
     @endif
     @if(! $hasActiveInvoice)
         <form method="POST" action="{{ route('customer.bill.request') }}" class="bill-request-form">
             @csrf
-            <textarea name="note" maxlength="500" placeholder="ملاحظة اختيارية للكاشير: طريقة دفع، استعجال، تقسيم الفاتورة...">{{ old('note', $session->bill_request_note) }}</textarea>
+            <textarea name="note" maxlength="500" placeholder="{{ __('ui.customer_order.cashier_note_placeholder') }}">{{ old('note', $session->bill_request_note) }}</textarea>
             <button class="bill-request-btn" {{ $billRequested ? 'disabled' : '' }}>
                 <i class="bi {{ $billRequested ? 'bi-check2-circle' : 'bi-receipt-cutoff' }}"></i>
-                {{ $billRequested ? 'تم طلب الفاتورة' : ($orders->isEmpty() ? 'طلب إنهاء الجلسة' : 'طلب الفاتورة من الكاشير') }}
+                {{ $billRequested ? __('ui.customer_order.bill_requested') : ($orders->isEmpty() ? __('ui.customer_order.request_close_session') : __('ui.customer_order.request_bill_from_cashier')) }}
             </button>
         </form>
     @endif

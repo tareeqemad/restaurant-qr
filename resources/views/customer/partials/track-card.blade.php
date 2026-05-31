@@ -8,16 +8,20 @@
         default => 0,
     };
     $steps = [
-        ['label' => 'تم الإرسال'],
-        ['label' => 'قيد التحضير'],
-        ['label' => 'جاهز للتقديم'],
+        ['label' => __('ui.customer_order.step_sent')],
+        ['label' => __('ui.customer_order.step_preparing')],
+        ['label' => __('ui.customer_order.step_ready')],
     ];
     $fillPct = $stepIndex <= 0 ? 0 : ($stepIndex / 2) * 84;  // 84% accounts for padding
 
-    // Pick a "title" for the order: first non-cancelled item name, or "طلبك"
-    $title = optional($order->items->firstWhere('status', '!=', 'cancelled'))->name_snapshot
-        ?? $order->items->first()?->name_snapshot
-        ?? 'طلبك';
+    $localizedItemName = fn ($item) => app()->getLocale() === 'en' && $item?->name_en_snapshot
+        ? $item->name_en_snapshot
+        : $item?->name_snapshot;
+
+    // Pick a title for the order: first non-cancelled item name, or fallback.
+    $title = $localizedItemName($order->items->firstWhere('status', '!=', 'cancelled'))
+        ?? $localizedItemName($order->items->first())
+        ?? __('ui.customer_order.your_order');
     if ($order->items->count() > 1) $title .= ' + ' . ($order->items->count() - 1);
 @endphp
 
@@ -28,7 +32,7 @@
         <div class="track-meta">
             <i class="bi bi-clock"></i> {{ $order->created_at->diffForHumans() }}
             @if($order->items->count() > 0)
-                · {{ $order->items->count() }} صنف
+                · {{ __('ui.customer_order.item_count', ['count' => $order->items->count()]) }}
             @endif
         </div>
     </div>
@@ -36,7 +40,7 @@
     @if($order->status === 'cancelled')
         <div class="track-cancelled">
             <i class="bi bi-x-circle fs-4"></i>
-            <div>تم إلغاء الطلب</div>
+            <div>{{ __('ui.customer_order.order_cancelled') }}</div>
             @if($order->cancelled_reason)
                 <small class="fw-normal mt-1 d-block opacity-75">{{ $order->cancelled_reason }}</small>
             @endif
@@ -44,7 +48,7 @@
     @elseif($order->status === 'completed')
         <div class="track-cancelled" style="background: var(--brand-soft); color: var(--brand-dark); border-color: var(--brand);">
             <i class="bi bi-check-circle-fill fs-4"></i>
-            <div>طلب مكتمل · تم الدفع</div>
+            <div>{{ __('ui.customer_order.order_completed_paid') }}</div>
         </div>
     @else
         {{-- 3-step progress tracker --}}
@@ -63,7 +67,7 @@
              OrderTimingService stamped `estimated_ready_at` on the moment
              status flipped to preparing; we ship that as an ISO timestamp
              to a tiny JS ticker. When time runs out the badge swaps to
-             "جاهز قريباً" instead of negative numbers (less anxiety). --}}
+             the localized "ready soon" text instead of negative numbers. --}}
         @if($order->status === 'preparing' && $order->estimated_ready_at)
             @php
                 $etaIso       = $order->estimated_ready_at->toIso8601String();
@@ -79,13 +83,13 @@
                     <i class="bi bi-stopwatch-fill"></i>
                 </div>
                 <div class="track-eta__body">
-                    <div class="track-eta__label">الوقت المتبقي للتجهيز</div>
+                    <div class="track-eta__label">{{ __('ui.customer_order.eta_label') }}</div>
                     <div class="track-eta__time" data-track-eta-display>
                         @if($initialSecs > 0)
                             <span class="track-eta__num">{{ $initialMins }}</span>
-                            <span class="track-eta__unit">دقيقة تقريباً</span>
+                            <span class="track-eta__unit">{{ __('ui.customer_order.minutes_about') }}</span>
                         @else
-                            <span class="track-eta__soon">جاهز قريباً…</span>
+                            <span class="track-eta__soon">{{ __('ui.customer_order.ready_soon') }}</span>
                         @endif
                     </div>
                 </div>
@@ -96,9 +100,9 @@
                     <i class="bi bi-bag-check-fill"></i>
                 </div>
                 <div class="track-eta__body">
-                    <div class="track-eta__label">طلبك جاهز!</div>
+                    <div class="track-eta__label">{{ __('ui.customer_order.order_ready') }}</div>
                     <div class="track-eta__time">
-                        <span class="track-eta__soon">يُسلَّم لك حالاً</span>
+                        <span class="track-eta__soon">{{ __('ui.customer_order.served_now') }}</span>
                     </div>
                 </div>
             </div>
@@ -110,9 +114,11 @@
         @foreach($order->items as $it)
             <div class="track-item {{ $it->status }}">
                 <div class="track-item-left">
-                    <div class="track-item-name">{{ $it->name_snapshot }}</div>
+                    <div class="track-item-name">{{ $localizedItemName($it) }}</div>
                     @if($it->modifiers->count())
-                        <div class="track-item-mods">{{ $it->modifiers->pluck('name_snapshot')->join('، ') }}</div>
+                        <div class="track-item-mods">
+                            {{ $it->modifiers->map(fn ($modifier) => app()->getLocale() === 'en' && $modifier->name_en_snapshot ? $modifier->name_en_snapshot : $modifier->name_snapshot)->join(', ') }}
+                        </div>
                     @endif
                     @if($it->notes)
                         <div class="track-item-notes">📝 {{ $it->notes }}</div>
@@ -120,7 +126,7 @@
                     @if($it->status === 'cancelled' && $it->cancelled_reason)
                         <div class="track-item-cancel-reason">
                             <i class="bi bi-info-circle-fill"></i>
-                            <span>سبب الإلغاء: {{ $it->cancelled_reason }}</span>
+                            <span>{{ __('ui.customer_order.cancel_reason', ['reason' => $it->cancelled_reason]) }}</span>
                         </div>
                     @endif
                 </div>
@@ -130,12 +136,12 @@
                     <div class="mt-1">
                         <span class="track-item-badge badge-{{ $it->status }}">
                             @switch($it->status)
-                                @case('pending') بانتظار @break
-                                @case('approved') معتمد @break
-                                @case('preparing') <i class="bi bi-fire"></i> تحضير @break
-                                @case('ready') <i class="bi bi-bag-check"></i> جاهز @break
-                                @case('served') قُدّم @break
-                                @case('cancelled') ملغى @break
+                                @case('pending') {{ __('ui.customer_order.status_pending') }} @break
+                                @case('approved') {{ __('ui.customer_order.status_approved') }} @break
+                                @case('preparing') <i class="bi bi-fire"></i> {{ __('ui.customer_order.status_preparing') }} @break
+                                @case('ready') <i class="bi bi-bag-check"></i> {{ __('ui.customer_order.status_ready') }} @break
+                                @case('served') {{ __('ui.customer_order.status_served') }} @break
+                                @case('cancelled') {{ __('ui.customer_order.status_cancelled') }} @break
                             @endswitch
                         </span>
                     </div>
@@ -146,7 +152,7 @@
 
     {{-- Summary --}}
     <div class="track-summary">
-        <span class="label">الإجمالي</span>
+        <span class="label">{{ __('ui.customer_order.grand_total') }}</span>
         <span class="amount">{{ \App\Helpers\Money::format($order->total) }}</span>
     </div>
 
@@ -219,8 +225,8 @@
             // Live ETA ticker — updates the "X minutes remaining" badge
             // every 5s. Five seconds is fine: we display minutes, not
             // seconds, so finer ticks waste CPU without visible effect.
-            // When time runs out the badge swaps to the "جاهز قريباً..."
-            // pulse — no negative numbers / "متأخر" anxiety for the
+            // When time runs out the badge swaps to ready-soon text:
+            // no negative numbers / "late" anxiety for the
             // customer. The Livewire poll on the parent component
             // refreshes the actual order data every 5s independently.
             (function () {
@@ -232,12 +238,12 @@
                         if (! display || ! target) return;
                         const remaining = target - now;
                         if (remaining <= 0) {
-                            display.innerHTML = '<span class="track-eta__soon">جاهز قريباً…</span>';
+                            display.innerHTML = @js('<span class="track-eta__soon">'.__('ui.customer_order.ready_soon').'</span>');
                         } else {
                             const minutes = Math.max(1, Math.ceil(remaining / 60));
                             display.innerHTML =
                                 '<span class="track-eta__num">' + minutes + '</span>' +
-                                '<span class="track-eta__unit">دقيقة تقريباً</span>';
+                                '<span class="track-eta__unit">' + @js(__('ui.customer_order.minutes_about')) + '</span>';
                         }
                     });
                 }
@@ -258,7 +264,7 @@
         <div class="track-actions">
             <button type="button" class="btn-track-cancel" data-bs-toggle="modal" data-bs-target="#cancel{{ $order->id }}">
                 <i class="bi bi-x-circle"></i>
-                إلغاء الطلب
+                {{ __('ui.customer_order.cancel_order') }}
             </button>
         </div>
 
@@ -268,17 +274,17 @@
                 <div class="modal-content" style="border-radius: 20px; border: 0;">
                     <form action="{{ route('customer.orders.cancel', $order) }}" method="POST">@csrf
                         <div class="modal-header" style="border: 0;">
-                            <h5 class="modal-title fw-bold">إلغاء {{ $order->number }}</h5>
+                            <h5 class="modal-title fw-bold">{{ __('ui.customer_order.cancel_order_number', ['number' => $order->number]) }}</h5>
                             <button class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
                         <div class="modal-body">
-                            <p>هل أنت متأكد من إلغاء هذا الطلب؟</p>
-                            <label class="form-label fw-bold">سبب الإلغاء (اختياري)</label>
-                            <textarea name="reason" class="form-control" rows="2" placeholder="مثلاً: غيّرت رأيي"></textarea>
+                            <p>{{ __('ui.customer_order.cancel_confirm_question') }}</p>
+                            <label class="form-label fw-bold">{{ __('ui.customer_order.cancel_reason_optional') }}</label>
+                            <textarea name="reason" class="form-control" rows="2" placeholder="{{ __('ui.customer_order.cancel_reason_placeholder') }}"></textarea>
                         </div>
                         <div class="modal-footer" style="border: 0;">
-                            <button type="button" class="btn btn-light fw-bold" data-bs-dismiss="modal">تراجع</button>
-                            <button class="btn-track-cancel" style="width: auto; padding: 8px 20px;">تأكيد الإلغاء</button>
+                            <button type="button" class="btn btn-light fw-bold" data-bs-dismiss="modal">{{ __('ui.customer_menu.back') }}</button>
+                            <button class="btn-track-cancel" style="width: auto; padding: 8px 20px;">{{ __('ui.customer_order.confirm_cancel') }}</button>
                         </div>
                     </form>
                 </div>

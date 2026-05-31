@@ -4,9 +4,13 @@ use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\BrandAssetController;
 use App\Http\Controllers\OptimizedAssetController;
+use App\Http\Controllers\SetupController;
+use App\Support\FirstRunSetup;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', fn () => redirect()->route('login'));
+Route::get('/', fn () => FirstRunSetup::shouldRunWizard()
+    ? redirect()->route('setup.show')
+    : redirect()->route('login'));
 Route::get('/brand-assets/{key}', BrandAssetController::class)->name('brand.asset');
 Route::get('/optimized-assets/{path}', OptimizedAssetController::class)
     ->where('path', '.*')
@@ -18,6 +22,11 @@ Route::get('/optimized-assets/{path}', OptimizedAssetController::class)
         \Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class,
     ])
     ->name('optimized.asset');
+
+Route::get('/setup', [SetupController::class, 'show'])->name('setup.show');
+Route::post('/setup', [SetupController::class, 'store'])
+    ->middleware('throttle:10,1')
+    ->name('setup.store');
 
 Route::get('/login', [LoginController::class, 'show'])->name('login');
 

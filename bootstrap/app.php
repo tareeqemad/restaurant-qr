@@ -1,9 +1,11 @@
 <?php
 
 use App\Http\Middleware\AdminMiddleware;
+use App\Http\Middleware\EnsureFirstRunSetupComplete;
 use App\Http\Middleware\EnsureValidLicense;
 use App\Http\Middleware\SetActiveBranch;
 use App\Http\Middleware\TableSessionMiddleware;
+use App\Http\Middleware\TranslateMarketHtml;
 use App\Http\Middleware\VerifySyncToken;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -32,9 +34,14 @@ return Application::configure(basePath: dirname(__DIR__))
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->web(append: [
+            TranslateMarketHtml::class,
+        ]);
+
         $middleware->alias([
             'admin' => AdminMiddleware::class,
             'branch' => SetActiveBranch::class,
+            'setup.complete' => EnsureFirstRunSetupComplete::class,
             'license' => EnsureValidLicense::class,
             'table.session' => TableSessionMiddleware::class,
             'sync.token' => VerifySyncToken::class,

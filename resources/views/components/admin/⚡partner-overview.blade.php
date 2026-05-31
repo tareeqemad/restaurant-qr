@@ -336,7 +336,7 @@ new class extends Component
                 $date = now()->subDays($i);
                 $key = $date->toDateString();
                 $rows[] = [
-                    'label' => $date->locale('ar')->isoFormat('ddd'),
+                    'label' => $date->locale(\App\Support\MarketProfile::lang())->isoFormat('ddd'),
                     'value' => (float) ($salesByDay[$key] ?? 0),
                 ];
             }

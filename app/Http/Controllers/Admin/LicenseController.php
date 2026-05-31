@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\License;
+use App\Models\LicenseActivation;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -93,7 +94,7 @@ class LicenseController extends Controller
         $this->guardCloudAdmin();
 
         return view('admin.licenses.show', [
-            'license' => $license->load('payments.receivedBy'),
+            'license' => $license->load(['payments.receivedBy', 'activations']),
         ]);
     }
 
@@ -139,6 +140,35 @@ class LicenseController extends Controller
         $license->forceFill(['status' => License::STATUS_ACTIVE])->save();
 
         return back()->with('success', 'تم تفعيل الترخيص.');
+    }
+
+    public function revokeActivation(License $license, LicenseActivation $activation): RedirectResponse
+    {
+        $this->guardCloudAdmin();
+        abort_unless($activation->license_id === $license->id, 404);
+
+        $activation->forceFill(['status' => LicenseActivation::STATUS_REVOKED])->save();
+
+        return back()->with('success', 'تم إيقاف تفعيل الفرع.');
+    }
+
+    public function activateActivation(License $license, LicenseActivation $activation): RedirectResponse
+    {
+        $this->guardCloudAdmin();
+        abort_unless($activation->license_id === $license->id, 404);
+
+        $activeCount = $license->activations()
+            ->where('status', LicenseActivation::STATUS_ACTIVE)
+            ->whereKeyNot($activation->id)
+            ->count();
+
+        if ($activeCount >= max(1, (int) $license->max_branches)) {
+            return back()->with('warning', 'لا يمكن إعادة التفعيل لأن الترخيص وصل إلى عدد الفروع المسموح.');
+        }
+
+        $activation->forceFill(['status' => LicenseActivation::STATUS_ACTIVE])->save();
+
+        return back()->with('success', 'تم إعادة تفعيل الفرع.');
     }
 
     private function guardCloudAdmin(): void

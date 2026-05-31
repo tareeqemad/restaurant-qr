@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * One row in the chart of accounts. System accounts (is_system=true)
- * are wired into `AccountingService` by code — the accountant can edit
+ * are canonical fallback accounts for `AccountingService` — the accountant can edit
  * their NAME / DESCRIPTION but never their CODE or core flags. Custom
  * accounts (is_system=false) are fully editable and may be organised
  * as sub-accounts of any existing account via `parent_account_id`.
@@ -101,10 +101,9 @@ class Account extends Model
 
     /**
      * "Does the AccountingService rely on this account's code?"
-     * System accounts are the ones seeded by the canonical migrations
-     * — operational flows (invoice, payment, refund, shift, etc.)
-     * post to them by hard-coded code. Deactivating or renaming the
-     * code of any such row would break runtime accounting.
+     * System accounts are the canonical fallback accounts seeded by
+     * migrations. Deactivating or renaming the code of any such row
+     * would break fallback posting or historical reporting.
      */
     public function isProtected(): bool
     {

@@ -9,6 +9,10 @@ use App\Models\IngredientStock;
 use App\Models\Invoice;
 use App\Models\JournalEntry;
 use App\Models\JournalLine;
+use App\Models\Account;
+use App\Models\AccountMapping;
+use App\Models\Expense;
+use App\Models\Lookup;
 use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\OrderItem;
@@ -21,6 +25,7 @@ use App\Models\User;
 use App\Services\Accounting\AccountingService;
 use App\Services\BillingService;
 use App\Services\InventoryService;
+use App\Services\Reports\ProfitLossReport;
 use App\Support\BranchContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -115,6 +120,83 @@ class AccountingPostingTest extends TestCase
 
         $this->assertEntryBalances($paymentEntry->load('lines'));
         $this->assertSame('paid', $invoice->fresh()->status);
+    }
+
+    public function test_posting_role_account_mapping_overrides_invoice_revenue_account(): void
+    {
+        $customRevenue = Account::create([
+            'code' => '4999',
+            'name' => 'Custom Food Revenue',
+            'type' => 'revenue',
+            'normal_balance' => 'credit',
+            'is_active' => true,
+        ]);
+        AccountMapping::create([
+            'context' => AccountMapping::CONTEXT_POSTING_ROLE,
+            'key' => 'sales_revenue',
+            'account_id' => $customRevenue->id,
+        ]);
+
+        $invoice = Invoice::create([
+            'branch_id' => $this->branch->id,
+            'table_session_id' => $this->session->id,
+            'issued_by_user_id' => $this->cashier->id,
+            'subtotal' => 100,
+            'discount_total' => 0,
+            'tax_total' => 0,
+            'service_total' => 0,
+            'delivery_fee' => 0,
+            'tip' => 0,
+            'total' => 100,
+            'balance' => 100,
+            'status' => 'issued',
+            'issued_at' => now(),
+        ]);
+
+        $entry = app(AccountingService::class)->recordInvoiceIssued($invoice);
+
+        $this->assertEntryBalances($entry->load('lines.account'));
+        $this->assertLineAmount($entry, '4999', 'credit', 100);
+        $this->assertEqualsWithDelta(0.0, (float) $entry->lines
+            ->first(fn ($line) => $line->account?->code === AccountingService::SALES_REVENUE)?->credit, 0.0001);
+    }
+
+    public function test_posting_role_mapping_with_wrong_type_falls_back_to_default_account(): void
+    {
+        $wrongTypeAccount = Account::create([
+            'code' => '1999',
+            'name' => 'Not Revenue',
+            'type' => 'asset',
+            'normal_balance' => 'debit',
+            'is_active' => true,
+        ]);
+        AccountMapping::create([
+            'context' => AccountMapping::CONTEXT_POSTING_ROLE,
+            'key' => 'sales_revenue',
+            'account_id' => $wrongTypeAccount->id,
+        ]);
+
+        $invoice = Invoice::create([
+            'branch_id' => $this->branch->id,
+            'table_session_id' => $this->session->id,
+            'issued_by_user_id' => $this->cashier->id,
+            'subtotal' => 40,
+            'tax_total' => 0,
+            'service_total' => 0,
+            'delivery_fee' => 0,
+            'tip' => 0,
+            'total' => 40,
+            'balance' => 40,
+            'status' => 'issued',
+            'issued_at' => now(),
+        ]);
+
+        $entry = app(AccountingService::class)->recordInvoiceIssued($invoice);
+
+        $this->assertEntryBalances($entry->load('lines.account'));
+        $this->assertLineAmount($entry, AccountingService::SALES_REVENUE, 'credit', 40);
+        $this->assertEqualsWithDelta(0.0, (float) $entry->lines
+            ->first(fn ($line) => $line->account?->code === '1999')?->credit, 0.0001);
     }
 
     public function test_inventory_movements_create_restaurant_accounting_entries(): void
@@ -251,6 +333,194 @@ class AccountingPostingTest extends TestCase
             'Card payments must NOT touch the (now inactive) 1020 clearing account.');
     }
 
+    public function test_payment_method_account_mapping_overrides_default_bank_account(): void
+    {
+        $visaDeposits = Account::create([
+            'code' => '1099',
+            'name' => 'Visa Deposits',
+            'type' => 'asset',
+            'normal_balance' => 'debit',
+            'is_active' => true,
+        ]);
+        AccountMapping::create([
+            'context' => AccountMapping::CONTEXT_PAYMENT_METHOD,
+            'key' => 'card',
+            'account_id' => $visaDeposits->id,
+        ]);
+
+        $invoice = Invoice::create([
+            'branch_id' => $this->branch->id,
+            'table_session_id' => $this->session->id,
+            'subtotal' => 80,
+            'tax_total' => 0,
+            'service_total' => 0,
+            'total' => 80,
+            'balance' => 80,
+            'status' => 'issued',
+            'issued_at' => now(),
+        ]);
+
+        $payment = \App\Models\Payment::create([
+            'branch_id' => $this->branch->id,
+            'invoice_id' => $invoice->id,
+            'method' => 'card',
+            'amount' => 80,
+            'received_by_user_id' => $this->cashier->id,
+            'paid_at' => now(),
+        ]);
+
+        $entry = app(AccountingService::class)->recordPaymentReceived($payment);
+
+        $this->assertEntryBalances($entry->load('lines.account'));
+        $this->assertLineAmount($entry, '1099', 'debit', 80);
+        $this->assertEqualsWithDelta(0.0, (float) $entry->lines
+            ->first(fn ($line) => $line->account?->code === AccountingService::BANK)?->debit, 0.0001);
+    }
+
+    public function test_expense_category_account_mapping_overrides_default_operating_expense_account(): void
+    {
+        $category = Lookup::create([
+            'group' => 'expense_categories',
+            'code' => 'utilities',
+            'label' => 'Utilities',
+            'is_active' => true,
+            'is_system' => true,
+        ]);
+        $utilities = Account::create([
+            'code' => '5199',
+            'name' => 'Utilities Expense',
+            'type' => 'expense',
+            'normal_balance' => 'debit',
+            'is_active' => true,
+        ]);
+        AccountMapping::create([
+            'context' => AccountMapping::CONTEXT_EXPENSE_CATEGORY,
+            'key' => AccountMapping::keyForLookup($category),
+            'account_id' => $utilities->id,
+        ]);
+
+        $expense = Expense::create([
+            'branch_id' => $this->branch->id,
+            'expense_category_id' => $category->id,
+            'description' => 'Electricity',
+            'amount' => 45,
+            'payment_method' => 'cash',
+            'expense_date' => now()->toDateString(),
+            'status' => 'approved',
+            'created_by_user_id' => $this->cashier->id,
+            'approved_by_user_id' => $this->cashier->id,
+            'approved_at' => now(),
+        ]);
+
+        $entry = app(AccountingService::class)->recordExpenseApproved($expense);
+
+        $this->assertEntryBalances($entry->load('lines.account'));
+        $this->assertLineAmount($entry, '5199', 'debit', 45);
+        $this->assertLineAmount($entry, AccountingService::CASH, 'credit', 45);
+        $this->assertEqualsWithDelta(0.0, (float) $entry->lines
+            ->first(fn ($line) => $line->account?->code === AccountingService::OPERATING_EXPENSES)?->debit, 0.0001);
+    }
+
+    public function test_profit_loss_report_can_be_built_from_journal_ledger(): void
+    {
+        $date = now()->toDateString();
+        $accounting = app(AccountingService::class);
+
+        $accounting->post(
+            eventType: 'ledger_report_revenue_probe',
+            source: null,
+            branchId: $this->branch->id,
+            postedOn: $date,
+            description: 'Ledger report revenue probe',
+            lines: [
+                ['account' => AccountingService::ACCOUNTS_RECEIVABLE, 'debit' => 90, 'credit' => 0],
+                ['account' => AccountingService::SALES_DISCOUNTS, 'debit' => 10, 'credit' => 0],
+                ['account' => AccountingService::SALES_REVENUE, 'debit' => 0, 'credit' => 100],
+            ],
+        );
+
+        $accounting->post(
+            eventType: 'ledger_report_cogs_probe',
+            source: null,
+            branchId: $this->branch->id,
+            postedOn: $date,
+            description: 'Ledger report COGS probe',
+            lines: [
+                ['account' => AccountingService::COST_OF_GOODS_SOLD, 'debit' => 30, 'credit' => 0],
+                ['account' => AccountingService::INVENTORY, 'debit' => 0, 'credit' => 30],
+            ],
+        );
+
+        $accounting->post(
+            eventType: 'ledger_report_expense_probe',
+            source: null,
+            branchId: $this->branch->id,
+            postedOn: $date,
+            description: 'Ledger report expense probe',
+            lines: [
+                ['account' => AccountingService::OPERATING_EXPENSES, 'debit' => 12, 'credit' => 0],
+                ['account' => AccountingService::CASH, 'debit' => 0, 'credit' => 12],
+            ],
+        );
+
+        $report = (new ProfitLossReport($date, $date, $this->branch->id, false, 'ledger'))->compute();
+
+        $this->assertSame('ledger', $report['period']['source']);
+        $this->assertEqualsWithDelta(100.0, $report['sales']['gross_sales'], 0.01);
+        $this->assertEqualsWithDelta(10.0, $report['sales']['discounts_total'], 0.01);
+        $this->assertEqualsWithDelta(90.0, $report['sales']['net_sales'], 0.01);
+        $this->assertEqualsWithDelta(30.0, $report['costs']['cogs'], 0.01);
+        $this->assertEqualsWithDelta(12.0, $report['costs']['expenses'], 0.01);
+        $this->assertEqualsWithDelta(48.0, $report['profit']['net_profit'], 0.01);
+    }
+
+    public function test_profit_loss_report_classifies_mapped_cogs_account_from_ledger(): void
+    {
+        $date = now()->toDateString();
+        $mappedCogs = Account::create([
+            'code' => '5099',
+            'name' => 'Mapped COGS',
+            'type' => 'expense',
+            'normal_balance' => 'debit',
+            'is_active' => true,
+        ]);
+        AccountMapping::create([
+            'context' => AccountMapping::CONTEXT_POSTING_ROLE,
+            'key' => 'cost_of_goods_sold',
+            'account_id' => $mappedCogs->id,
+        ]);
+
+        $accounting = app(AccountingService::class);
+        $accounting->post(
+            eventType: 'ledger_report_mapped_revenue_probe',
+            source: null,
+            branchId: $this->branch->id,
+            postedOn: $date,
+            description: 'Mapped ledger report revenue probe',
+            lines: [
+                ['account' => AccountingService::ACCOUNTS_RECEIVABLE, 'debit' => 100, 'credit' => 0],
+                ['account' => AccountingService::SALES_REVENUE, 'debit' => 0, 'credit' => 100],
+            ],
+        );
+        $accounting->post(
+            eventType: 'ledger_report_mapped_cogs_probe',
+            source: null,
+            branchId: $this->branch->id,
+            postedOn: $date,
+            description: 'Mapped ledger report COGS probe',
+            lines: [
+                ['account' => '5099', 'debit' => 35, 'credit' => 0],
+                ['account' => AccountingService::INVENTORY, 'debit' => 0, 'credit' => 35],
+            ],
+        );
+
+        $report = (new ProfitLossReport($date, $date, $this->branch->id, false, 'ledger'))->compute();
+
+        $this->assertEqualsWithDelta(35.0, $report['costs']['cogs'], 0.01);
+        $this->assertEqualsWithDelta(0.0, $report['costs']['expenses'], 0.01);
+        $this->assertEqualsWithDelta(65.0, $report['profit']['net_profit'], 0.01);
+    }
+
     public function test_shift_cash_variance_creates_accounting_entry(): void
     {
         $shift = Shift::create([
@@ -270,6 +540,47 @@ class AccountingPostingTest extends TestCase
         $this->assertEntryBalances($entry->load('lines.account'));
         $this->assertLineAmount($entry, AccountingService::CASH, 'debit', 12);
         $this->assertLineAmount($entry, AccountingService::CASH_OVER_SHORT_INCOME, 'credit', 12);
+    }
+
+    public function test_accounting_service_rejects_negative_journal_line_amounts(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessageMatches('/سالبة|negative/u');
+
+        app(AccountingService::class)->post(
+            eventType: 'negative_line_probe',
+            source: null,
+            branchId: $this->branch->id,
+            postedOn: now(),
+            description: 'negative line probe',
+            lines: [
+                ['account' => AccountingService::CASH, 'debit' => -10, 'credit' => 0],
+                ['account' => AccountingService::BANK, 'debit' => 0, 'credit' => 10],
+            ],
+        );
+    }
+
+    public function test_journal_line_model_rejects_two_sided_lines(): void
+    {
+        $entry = JournalEntry::create([
+            'branch_id' => $this->branch->id,
+            'posted_on' => now()->toDateString(),
+            'description' => 'two-sided line probe',
+            'status' => 'posted',
+        ]);
+        $cash = \App\Models\Account::where('code', AccountingService::CASH)->firstOrFail();
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/مدينا ودائنا|both debit and credit/u');
+
+        JournalLine::create([
+            'journal_entry_id' => $entry->id,
+            'account_id' => $cash->id,
+            'branch_id' => $this->branch->id,
+            'line_no' => 1,
+            'debit' => 10,
+            'credit' => 10,
+        ]);
     }
 
     private function assertEntryBalances(JournalEntry $entry): void

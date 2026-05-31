@@ -7,27 +7,27 @@ namespace App\Enums;
  */
 enum OrderSource: string
 {
-    case DineIn   = 'dine_in';
-    case Portal   = 'portal';      // customer placed via /portal (own pickup or delivery)
+    case DineIn = 'dine_in';
+    case Portal = 'portal';      // customer placed via /portal (own pickup or delivery)
     case Delivery = 'delivery';    // restaurant's own delivery — receiver name stored on the order
-    case Phone    = 'phone';
-    case Other    = 'other';
+    case Phone = 'phone';
+    case Other = 'other';
     // Legacy external-platform cases — kept for historical orders, removed from the cashier UI.
-    case Talabat  = 'talabat';
-    case Careem   = 'careem';
+    case Talabat = 'talabat';
+    case Careem = 'careem';
     case UberEats = 'uber_eats';
 
     public function label(): string
     {
         return match ($this) {
-            self::DineIn   => 'من الطاولة',
-            self::Portal   => 'تطبيق المطعم',
-            self::Delivery => 'دليفري',
-            self::Phone    => 'اتصال هاتفي',
-            self::Other    => 'مباشر',
-            self::Talabat  => 'طلبات',
-            self::Careem   => 'كريم ناو',
-            self::UberEats => 'أوبر إيتس',
+            self::DineIn => __('ui.customer_order.source_dine_in'),
+            self::Portal => __('ui.customer_order.source_portal'),
+            self::Delivery => __('ui.customer_order.source_delivery'),
+            self::Phone => __('ui.customer_order.source_phone'),
+            self::Other => __('ui.customer_order.source_other'),
+            self::Talabat => __('ui.customer_order.source_talabat'),
+            self::Careem => __('ui.customer_order.source_careem'),
+            self::UberEats => __('ui.customer_order.source_uber_eats'),
         };
     }
 
@@ -37,13 +37,13 @@ enum OrderSource: string
     public function color(): string
     {
         return match ($this) {
-            self::DineIn   => '#1f4733',   // forest green
-            self::Portal   => '#0ea5e9',   // sky blue — our brand channel
+            self::DineIn => '#1f4733',   // forest green
+            self::Portal => '#0ea5e9',   // sky blue — our brand channel
             self::Delivery => '#b97818',   // accent — own delivery
-            self::Phone    => '#6366f1',   // indigo
-            self::Other    => '#6b7280',   // slate
-            self::Talabat  => '#ff5a00',
-            self::Careem   => '#49b24c',
+            self::Phone => '#6366f1',   // indigo
+            self::Other => '#6b7280',   // slate
+            self::Talabat => '#ff5a00',
+            self::Careem => '#49b24c',
             self::UberEats => '#06c167',
         };
     }
@@ -51,13 +51,13 @@ enum OrderSource: string
     public function icon(): string
     {
         return match ($this) {
-            self::DineIn   => 'bi-grid-3x3-gap-fill',
-            self::Portal   => 'bi-phone-fill',
+            self::DineIn => 'bi-grid-3x3-gap-fill',
+            self::Portal => 'bi-phone-fill',
             self::Delivery => 'bi-truck',
-            self::Phone    => 'bi-telephone-fill',
-            self::Other    => 'bi-lightning-charge-fill',
-            self::Talabat  => 'bi-bag-fill',
-            self::Careem   => 'bi-scooter',
+            self::Phone => 'bi-telephone-fill',
+            self::Other => 'bi-lightning-charge-fill',
+            self::Talabat => 'bi-bag-fill',
+            self::Careem => 'bi-scooter',
             self::UberEats => 'bi-truck',
         };
     }

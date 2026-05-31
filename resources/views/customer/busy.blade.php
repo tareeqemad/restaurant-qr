@@ -1,16 +1,18 @@
+@php($market = \App\Support\MarketProfile::class)
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="{{ $market::lang() }}" dir="{{ $market::direction() }}" data-market="{{ $market::current() }}">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#1f4733">
-<title>الطاولة مشغولة · {{ config('restaurant.name') }}</title>
+<title>{{ __('ui.customer_status.table_busy_title') }} · {{ config('restaurant.name') }}</title>
 <link rel="icon" href="{{ \App\Helpers\Brand::faviconUrl() }}">
-<link href="{{ asset('assets/dashtic/libs/bootstrap/css/bootstrap.rtl.min.css') }}" rel="stylesheet">
+<link href="{{ asset($market::bootstrapCssPath()) }}" rel="stylesheet">
 <link href="{{ asset('assets/dashtic/icon-fonts/bootstrap-icons/icons/font/bootstrap-icons.css') }}" rel="stylesheet">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&family=Cinzel:wght@600;700&display=swap" rel="stylesheet">
+<link href="{{ $market::fontUrl() }}" rel="stylesheet">
 <style>
+@include('partials.market-vars')
 :root {
     --brand: #1f4733;
     --brand-dark: #122d1e;
@@ -24,7 +26,7 @@
 }
 * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
 body {
-    font-family: 'Tajawal', Arial, sans-serif;
+    font-family: var(--market-font-family);
     background:
         linear-gradient(135deg, rgba(13,35,23,.9) 0%, rgba(31,71,51,.85) 100%),
         url("{{ asset('assets/brand/pattern.svg') }}"),
@@ -133,7 +135,7 @@ body::after  { background: radial-gradient(circle, var(--gold-light), transparen
     border-right: 4px solid var(--accent);
     border-radius: 14px;
     padding: 1rem 1.1rem;
-    text-align: right;
+    text-align: start;
     color: var(--brand-dark);
     font-size: .92rem;
     line-height: 1.6;
@@ -221,37 +223,37 @@ body::after  { background: radial-gradient(circle, var(--gold-light), transparen
         <div class="card-top">
             <div class="icon-circle"><i class="bi bi-hourglass-split"></i></div>
             <h3>
-                الطاولة <span class="table-num">{{ $table->number }}</span> مشغولة
+                {{ __('ui.customer_status.table_busy_heading_prefix') }} <span class="table-num">{{ $table->number }}</span> {{ __('ui.customer_status.table_busy_heading_suffix') }}
             </h3>
             <div class="meta">
-                جلسة نشطة منذ {{ $session->opened_at->diffForHumans() }}
+                {{ __('ui.customer_status.active_since', ['time' => $session->opened_at->diffForHumans()]) }}
                 @if($active_orders > 0)
-                    · <strong>{{ $active_orders }}</strong> طلب جارٍ
+                    · <strong>{{ trans_choice('ui.customer_status.active_orders', $active_orders, ['count' => $active_orders]) }}</strong>
                 @endif
             </div>
         </div>
 
         <div class="card-body">
             <div class="info-box">
-                <strong><i class="bi bi-people-fill"></i> هل أنت مع نفس المجموعة؟</strong>
-                يمكنك الانضمام للجلسة الحالية لإضافة أصناف للطلب الموجود أو إنشاء طلب جديد على نفس الطاولة.
+                <strong><i class="bi bi-people-fill"></i> {{ __('ui.customer_status.same_group_title') }}</strong>
+                {{ __('ui.customer_status.same_group_body') }}
             </div>
 
             <a href="{{ url('/menu/'.$token.'?join=1') }}" class="btn-join">
                 <i class="bi bi-check2-circle"></i>
-                انضم للجلسة (نفس المجموعة)
+                {{ __('ui.customer_status.join_session') }}
             </a>
 
             <div class="foot-note">
                 <i class="bi bi-info-circle-fill"></i>
-                إذا كنت زبون جديد والطاولة مفترض أنها فارغة، الرجاء التواصل مع الجرسون.
+                {{ __('ui.customer_status.new_customer_busy_help') }}
             </div>
         </div>
     </div>
 
     <div class="brand-footer">
         <span class="brand-name">RELAX</span>
-        <span>نظام إدارة المطعم</span>
+        <span>{{ __('ui.customer_status.system_footer') }}</span>
     </div>
 </div>
 </body>

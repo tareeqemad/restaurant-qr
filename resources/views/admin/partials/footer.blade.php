@@ -1,5 +1,5 @@
 @php
-    $siteName = config('restaurant.name', 'مطعم');
+    $siteName = \App\Helpers\Brand::name();
 @endphp
 <footer class="footer mt-auto py-3 bg-white text-center border-top">
     <div class="container">
@@ -9,7 +9,7 @@
                 <span>
                     © {{ date('Y') }}
                     <span class="text-primary fw-semibold">{{ $siteName }}</span>
-                    — جميع الحقوق محفوظة.
+                    - {{ __('admin.common.all_rights_reserved') }}
                 </span>
             </span>
             <span class="text-muted">|</span>

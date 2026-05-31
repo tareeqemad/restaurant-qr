@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Portal;
 
+use App\Enums\OrderStatus;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\Branch;
@@ -33,7 +34,7 @@ use Illuminate\Support\Facades\DB;
 class OrderController extends Controller
 {
     public function __construct(
-        protected OrderService     $orders,
+        protected OrderService $orders,
         protected InventoryService $inventory,
     ) {}
 
@@ -102,38 +103,39 @@ class OrderController extends Controller
         BranchContext::set($branch->id);
 
         $data = $request->validate([
-            'menu_item_id'   => ['required', 'exists:menu_items,id'],
-            'quantity'       => ['required', 'integer', 'min:1', 'max:50'],
-            'modifier_ids'   => ['array'],
+            'menu_item_id' => ['required', 'exists:menu_items,id'],
+            'quantity' => ['required', 'integer', 'min:1', 'max:50'],
+            'modifier_ids' => ['array'],
             'modifier_ids.*' => ['integer', 'exists:modifiers,id'],
-            'notes'          => ['nullable', 'string', 'max:300'],
+            'notes' => ['nullable', 'string', 'max:300'],
         ]);
 
         $item = MenuItem::findOrFail($data['menu_item_id']);
         if (! $item->is_available) {
             if ($request->wantsJson()) {
-                return response()->json(['ok' => false, 'message' => 'الصنف غير متوفر حالياً.'], 422);
+                return response()->json(['ok' => false, 'message' => __('portal.order.item_unavailable')], 422);
             }
-            return back()->with('error', 'الصنف غير متوفر حالياً.');
+
+            return back()->with('error', __('portal.order.item_unavailable'));
         }
 
         $modifiers = Modifier::whereIn('id', $data['modifier_ids'] ?? [])->get();
 
         $row = [
-            'id'              => uniqid('row_'),
-            'menu_item_id'    => (int) $item->id,
-            'name'            => $item->name,
-            'image'           => $item->imageUrl(),
-            'quantity'        => (int) $data['quantity'],
-            'unit_price'      => (float) $item->price,
-            'modifier_ids'    => $data['modifier_ids'] ?? [],
-            'modifiers'       => $modifiers->map(fn ($m) => [
-                'id'          => (int) $m->id,
-                'name'        => $m->name,
+            'id' => uniqid('row_'),
+            'menu_item_id' => (int) $item->id,
+            'name' => $item->localizedName(),
+            'image' => $item->imageUrl(),
+            'quantity' => (int) $data['quantity'],
+            'unit_price' => (float) $item->price,
+            'modifier_ids' => $data['modifier_ids'] ?? [],
+            'modifiers' => $modifiers->map(fn ($m) => [
+                'id' => (int) $m->id,
+                'name' => $m->localizedName(),
                 'price_delta' => (float) $m->price_delta,
             ])->all(),
             'modifiers_total' => (float) $modifiers->sum('price_delta'),
-            'notes'           => $data['notes'] ?? null,
+            'notes' => $data['notes'] ?? null,
         ];
         $row['subtotal'] = ($row['unit_price'] + $row['modifiers_total']) * $row['quantity'];
 
@@ -143,18 +145,19 @@ class OrderController extends Controller
 
         if ($request->wantsJson()) {
             return response()->json([
-                'ok'      => true,
-                'message' => 'أُضيف للسلة',
-                'cart'    => $this->cartPayload($branch, $cart),
+                'ok' => true,
+                'message' => __('portal.order.added_to_cart'),
+                'cart' => $this->cartPayload($branch, $cart),
             ]);
         }
-        return back()->with('success', 'أُضيف للسلة');
+
+        return back()->with('success', __('portal.order.added_to_cart'));
     }
 
     public function removeFromCart(Request $request, Branch $branch)
     {
         $rowId = (string) $request->input('row_id');
-        $cart  = collect($this->cart($branch))
+        $cart = collect($this->cart($branch))
             ->reject(fn ($r) => $r['id'] === $rowId)
             ->values()
             ->all();
@@ -162,10 +165,11 @@ class OrderController extends Controller
 
         if ($request->wantsJson()) {
             return response()->json([
-                'ok'   => true,
+                'ok' => true,
                 'cart' => $this->cartPayload($branch, $cart),
             ]);
         }
+
         return back();
     }
 
@@ -174,8 +178,9 @@ class OrderController extends Controller
     {
         $count = collect($cart)->sum('quantity');
         $total = collect($cart)->sum('subtotal');
+
         return [
-            'rows'  => $cart,
+            'rows' => $cart,
             'count' => (int) $count,
             'total' => round((float) $total, 2),
         ];
@@ -189,13 +194,13 @@ class OrderController extends Controller
         $cart = $this->cart($branch);
         if (empty($cart)) {
             return redirect()->route('portal.order.menu', $branch)
-                ->with('error', 'السلة فارغة — أضف أصناف أولاً.');
+                ->with('error', __('portal.order.empty_cart_add_items'));
         }
 
         return view('portal.order.checkout', [
-            'branch'    => $branch,
-            'customer'  => auth('customer')->user(),
-            'cart'      => $cart,
+            'branch' => $branch,
+            'customer' => auth('customer')->user(),
+            'cart' => $cart,
             'cartTotal' => collect($cart)->sum('subtotal'),
         ]);
     }
@@ -212,52 +217,57 @@ class OrderController extends Controller
         BranchContext::set($branch->id);
 
         $data = $request->validate([
-            'order_type'        => ['required', 'in:takeaway,delivery'],
-            'delivery_address'  => ['required_if:order_type,delivery', 'nullable', 'string', 'max:500'],
-            'scheduled_for'     => ['nullable', 'date', 'after:now'],
-            'customer_notes'    => ['nullable', 'string', 'max:500'],
+            'order_type' => ['required', 'in:takeaway,delivery'],
+            'delivery_address' => ['required_if:order_type,delivery', 'nullable', 'string', 'max:500'],
+            'scheduled_for' => ['nullable', 'date', 'after:now'],
+            'customer_notes' => ['nullable', 'string', 'max:500'],
         ], [
-            'order_type.required'         => 'اختر نوع الطلب (استلام أو توصيل).',
-            'order_type.in'                => 'نوع الطلب غير صالح.',
-            'delivery_address.required_if' => 'عنوان التوصيل مطلوب لأن نوع الطلب توصيل.',
-            'delivery_address.max'         => 'عنوان التوصيل طويل جداً (الحد 500 حرف).',
-            'scheduled_for.date'           => 'صيغة الوقت غير صحيحة.',
-            'scheduled_for.after'          => 'الوقت المحدد يجب أن يكون في المستقبل.',
-            'customer_notes.max'           => 'الملاحظات طويلة جداً (الحد 500 حرف).',
+            'order_type.required' => __('portal.order.validation_order_type_required'),
+            'order_type.in' => __('portal.order.validation_order_type_invalid'),
+            'delivery_address.required_if' => __('portal.order.validation_delivery_required'),
+            'delivery_address.max' => __('portal.order.validation_delivery_max'),
+            'scheduled_for.date' => __('portal.order.validation_scheduled_date'),
+            'scheduled_for.after' => __('portal.order.validation_scheduled_after'),
+            'customer_notes.max' => __('portal.order.validation_notes_max'),
         ]);
 
         $cart = $this->cart($branch);
         if (empty($cart)) {
             return redirect()->route('portal.order.menu', $branch)
-                ->with('error', 'السلة فارغة.');
+                ->with('error', __('portal.order.empty_cart'));
         }
 
         $issues = $this->inventory->checkStockForOrderPreview($cart);
         if (! empty($issues)) {
             $msg = collect($issues)
-                ->map(fn ($i) => "{$i['ingredient']}: متاح {$i['available']}، مطلوب {$i['required']}")
+                ->map(fn ($i) => __('portal.order.stock_line', [
+                    'ingredient' => $i['ingredient'],
+                    'available' => $i['available'],
+                    'required' => $i['required'],
+                ]))
                 ->join(' | ');
-            return back()->with('error', 'نقص في المخزون: '.$msg);
+
+            return back()->with('error', __('portal.order.stock_shortage', ['items' => $msg]));
         }
 
         $customer = auth('customer')->user();
 
         $order = $this->orders->createRemoteOrder(
             customer: $customer,
-            branch:   $branch,
-            type:     $data['order_type'],
-            cart:     $cart,
-            opts:     [
-                'customer_notes'   => $data['customer_notes'] ?? null,
+            branch: $branch,
+            type: $data['order_type'],
+            cart: $cart,
+            opts: [
+                'customer_notes' => $data['customer_notes'] ?? null,
                 'delivery_address' => $data['delivery_address'] ?? null,
-                'scheduled_for'    => $data['scheduled_for'] ?? null,
+                'scheduled_for' => $data['scheduled_for'] ?? null,
             ],
         );
 
         $this->saveCart($branch, []);   // cart cleared on success only
 
         return redirect()->route('portal.order.placed', $order)
-            ->with('success', "تم استلام طلبك {$order->number}!");
+            ->with('success', __('portal.order.order_received', ['number' => $order->number]));
     }
 
     /**
@@ -282,8 +292,7 @@ class OrderController extends Controller
         // Use unscoped — the customer's orders span every branch they ever
         // ordered from, and BranchScope would hide branches they're not
         // currently switched into.
-        $orders = BranchContext::unscoped(fn () =>
-            $customer->orders()->with(['branch:id,name', 'items'])->paginate(15)
+        $orders = BranchContext::unscoped(fn () => $customer->orders()->with(['branch:id,name', 'items'])->paginate(15)
         );
 
         return view('portal.order.history', compact('orders'));
@@ -320,8 +329,8 @@ class OrderController extends Controller
         $this->ensureOwnedAndEditable($order);
 
         $data = $request->validate([
-            'items'         => ['required', 'array'],
-            'items.*.qty'   => ['required', 'integer', 'min:0', 'max:50'],
+            'items' => ['required', 'array'],
+            'items.*.qty' => ['required', 'integer', 'min:0', 'max:50'],
         ]);
 
         BranchContext::set($order->branch_id);
@@ -330,12 +339,15 @@ class OrderController extends Controller
             $order->loadMissing('items');
             foreach ($order->items as $item) {
                 $row = $data['items'][$item->id] ?? null;
-                if (! $row) continue;
+                if (! $row) {
+                    continue;
+                }
 
                 $qty = (int) $row['qty'];
                 if ($qty <= 0) {
                     $item->modifiers()->delete();
                     $item->delete();
+
                     continue;
                 }
 
@@ -350,21 +362,22 @@ class OrderController extends Controller
         $order->load('items');
 
         if ($order->items->isEmpty()) {
-            $service->cancel($order, null, 'الزبون أزال كل الأصناف من الطلب');
+            $service->cancel($order, null, __('portal.order.customer_removed_all'));
+
             return redirect()->route('portal.order.history')
-                ->with('success', "تم إلغاء طلبك {$order->number} لأنه أصبح فارغاً.");
+                ->with('success', __('portal.order.cancelled_empty', ['number' => $order->number]));
         }
 
         $service->recalculateTotals($order);
         $service->refreshEta($order);
 
         ActivityLog::log('order.customer_edited',
-            "الزبون عدّل أصناف الطلب {$order->number}",
+            __('portal.order.customer_edited_log', ['number' => $order->number]),
             $order
         );
 
         return redirect()->route('portal.order.placed', $order)
-            ->with('success', 'تم حفظ التعديل.');
+            ->with('success', __('portal.order.changes_saved'));
     }
 
     /**
@@ -378,10 +391,10 @@ class OrderController extends Controller
         $this->ensureOwnedAndEditable($order);
 
         BranchContext::set($order->branch_id);
-        $service->cancel($order, null, 'ألغاه الزبون من التطبيق');
+        $service->cancel($order, null, __('portal.order.cancelled_by_customer'));
 
         return redirect()->route('portal.order.history')
-            ->with('success', "تم إلغاء طلبك {$order->number}.");
+            ->with('success', __('portal.order.order_cancelled', ['number' => $order->number]));
     }
 
     /**
@@ -395,8 +408,8 @@ class OrderController extends Controller
         $customer = auth('customer')->user();
         abort_unless($order->customer_id === $customer->id, 404);
 
-        if ($order->status !== \App\Enums\OrderStatus::Pending->value) {
-            abort(403, 'لا يمكن تعديل أو إلغاء الطلب بعد اعتماده من الفرع.');
+        if ($order->status !== OrderStatus::Pending->value) {
+            abort(403, __('portal.order.cannot_edit_after_approval'));
         }
     }
 
@@ -409,6 +422,7 @@ class OrderController extends Controller
     protected function cartKey(Branch $branch): string
     {
         $customerId = auth('customer')->id() ?? 'guest';
+
         return "portal_cart.{$customerId}.{$branch->id}";
     }
 

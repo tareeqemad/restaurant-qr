@@ -3,8 +3,12 @@
 namespace App\Services\Accounting;
 
 use App\Models\Account;
+use App\Models\AccountMapping;
+use App\Models\AccountingPeriod;
 use App\Models\BranchTransferItem;
+use App\Models\Currency;
 use App\Models\Expense;
+use App\Models\FiscalYear;
 use App\Models\IngredientBatch;
 use App\Models\InventoryMovement;
 use App\Models\Invoice;
@@ -13,12 +17,17 @@ use App\Models\OrderItem;
 use App\Models\Payment;
 use App\Models\PurchaseOrderItem;
 use App\Models\Refund;
+use App\Models\Setting;
 use App\Models\Shift;
 use App\Models\StockCountItem;
 use App\Models\SupplierInvoice;
 use App\Models\SupplierPayment;
+use App\Services\ExchangeRateService;
+use App\Support\MarketProfile;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class AccountingService
@@ -37,6 +46,7 @@ class AccountingService
     public const TIPS_PAYABLE = '2200';
     public const GOODS_RECEIVED_NOT_INVOICED = '2300';
     public const OPENING_BALANCE_EQUITY = '3010';
+    public const RETAINED_EARNINGS = '3020';
     public const SALES_REVENUE = '4000';
     public const SERVICE_REVENUE = '4010';
     public const DELIVERY_REVENUE = '4020';
@@ -54,6 +64,216 @@ class AccountingService
     public const CASH_SHORTAGE_EXPENSE = '5510';
 
     private ?Collection $accounts = null;
+    private ?Collection $accountMappings = null;
+
+    public static function postingRoleDefinitions(): array
+    {
+        return [
+            'cash_account' => [
+                'label' => 'الصندوق الافتراضي',
+                'description' => 'الصندوق المستخدم في فروقات الشفت والدفع النقدي عند عدم وجود ربط خاص لطريقة الدفع.',
+                'default' => self::CASH,
+                'types' => ['asset'],
+                'group' => 'الأصول والنقد',
+            ],
+            'bank_account' => [
+                'label' => 'البنك الافتراضي',
+                'description' => 'الحساب الافتراضي للبطاقات والتحويلات عند عدم وجود ربط خاص لطريقة الدفع.',
+                'default' => self::BANK,
+                'types' => ['asset'],
+                'group' => 'الأصول والنقد',
+            ],
+            'wallet_clearing' => [
+                'label' => 'محافظ وتطبيقات التحصيل',
+                'description' => 'حساب التحصيل عبر تطبيقات أو محافظ قديمة عند استخدامها.',
+                'default' => self::WALLET_CLEARING,
+                'types' => ['asset'],
+                'group' => 'الأصول والنقد',
+            ],
+            'customer_credit_clearing' => [
+                'label' => 'مقاصة البيع الآجل',
+                'description' => 'حساب تسوية طرق دفع آجلة قديمة عند استخدامها.',
+                'default' => self::CUSTOMER_CREDIT_CLEARING,
+                'types' => ['asset'],
+                'group' => 'الأصول والنقد',
+            ],
+            'accounts_receivable' => [
+                'label' => 'الذمم المدينة',
+                'description' => 'الطرف المدين عند إصدار الفواتير والطرف الدائن عند التحصيل أو الشطب.',
+                'default' => self::ACCOUNTS_RECEIVABLE,
+                'types' => ['asset'],
+                'group' => 'الذمم',
+            ],
+            'inventory_in_transit' => [
+                'label' => 'مخزون بالطريق',
+                'description' => 'مخزون التحويلات بين الفروع قبل إغلاق الاستلام.',
+                'default' => self::INVENTORY_IN_TRANSIT,
+                'types' => ['asset'],
+                'group' => 'المخزون',
+            ],
+            'inventory' => [
+                'label' => 'المخزون',
+                'description' => 'حساب المخزون الرئيسي لحركات الاستلام والصرف والجرد.',
+                'default' => self::INVENTORY,
+                'types' => ['asset'],
+                'group' => 'المخزون',
+            ],
+            'input_vat' => [
+                'label' => 'ضريبة مدخلات',
+                'description' => 'ضريبة مشتريات وفواتير موردين قابلة للاسترداد.',
+                'default' => self::INPUT_VAT,
+                'types' => ['asset'],
+                'group' => 'الضرائب',
+            ],
+            'accounts_payable' => [
+                'label' => 'الذمم الدائنة',
+                'description' => 'حساب الموردين عند إنشاء فاتورة مورد وسدادها.',
+                'default' => self::ACCOUNTS_PAYABLE,
+                'types' => ['liability'],
+                'group' => 'الذمم',
+            ],
+            'output_vat' => [
+                'label' => 'ضريبة مخرجات',
+                'description' => 'ضريبة المبيعات المستحقة على الفواتير.',
+                'default' => self::OUTPUT_VAT,
+                'types' => ['liability'],
+                'group' => 'الضرائب',
+            ],
+            'tips_payable' => [
+                'label' => 'إكراميات مستحقة',
+                'description' => 'الإكراميات المحصلة والمستحقة للموظفين.',
+                'default' => self::TIPS_PAYABLE,
+                'types' => ['liability'],
+                'group' => 'الالتزامات',
+            ],
+            'grni' => [
+                'label' => 'استلامات غير مفوترة',
+                'description' => 'استلام مخزون من أمر شراء قبل وصول فاتورة المورد.',
+                'default' => self::GOODS_RECEIVED_NOT_INVOICED,
+                'types' => ['liability'],
+                'group' => 'المخزون',
+            ],
+            'opening_balance_equity' => [
+                'label' => 'رأس مال/أرصدة افتتاحية',
+                'description' => 'الطرف المقابل لإدخال مخزون افتتاحي.',
+                'default' => self::OPENING_BALANCE_EQUITY,
+                'types' => ['equity'],
+                'group' => 'حقوق الملكية',
+            ],
+            'retained_earnings' => [
+                'label' => 'أرباح محتجزة',
+                'description' => 'الحساب الذي يستقبل صافي ربح أو خسارة الفترة عند الإقفال الرسمي.',
+                'default' => self::RETAINED_EARNINGS,
+                'types' => ['equity'],
+                'group' => 'حقوق الملكية',
+            ],
+            'sales_revenue' => [
+                'label' => 'إيراد المبيعات',
+                'description' => 'إيراد الأصناف قبل الخصومات.',
+                'default' => self::SALES_REVENUE,
+                'types' => ['revenue'],
+                'group' => 'الإيرادات',
+            ],
+            'service_revenue' => [
+                'label' => 'إيراد رسوم الخدمة',
+                'description' => 'رسوم الخدمة المحصلة على الفواتير.',
+                'default' => self::SERVICE_REVENUE,
+                'types' => ['revenue'],
+                'group' => 'الإيرادات',
+            ],
+            'delivery_revenue' => [
+                'label' => 'إيراد التوصيل',
+                'description' => 'رسوم التوصيل المحصلة من العملاء.',
+                'default' => self::DELIVERY_REVENUE,
+                'types' => ['revenue'],
+                'group' => 'الإيرادات',
+            ],
+            'sales_discounts' => [
+                'label' => 'خصومات المبيعات',
+                'description' => 'الخصومات والعروض ومسموحات المبيعات.',
+                'default' => self::SALES_DISCOUNTS,
+                'types' => ['contra_revenue'],
+                'group' => 'مقابلات الإيراد',
+            ],
+            'sales_returns' => [
+                'label' => 'مردودات المبيعات',
+                'description' => 'الاستردادات ومردودات المبيعات.',
+                'default' => self::SALES_RETURNS,
+                'types' => ['contra_revenue'],
+                'group' => 'مقابلات الإيراد',
+            ],
+            'inventory_adjustment_gain' => [
+                'label' => 'فروقات جرد دائنة',
+                'description' => 'الزيادات الجردية أو إدخال مخزون غير مفوتر.',
+                'default' => self::INVENTORY_ADJUSTMENT_GAIN,
+                'types' => ['revenue'],
+                'group' => 'المخزون',
+            ],
+            'cash_over_short_income' => [
+                'label' => 'فائض صندوق',
+                'description' => 'فروقات الصندوق الموجبة عند إغلاق الشفت.',
+                'default' => self::CASH_OVER_SHORT_INCOME,
+                'types' => ['revenue'],
+                'group' => 'الصندوق',
+            ],
+            'cost_of_goods_sold' => [
+                'label' => 'تكلفة البضاعة المباعة',
+                'description' => 'تكلفة المكونات المصروفة عند بيع الأصناف.',
+                'default' => self::COST_OF_GOODS_SOLD,
+                'types' => ['expense'],
+                'group' => 'التكاليف والمصاريف',
+            ],
+            'operating_expenses' => [
+                'label' => 'مصروفات تشغيلية افتراضية',
+                'description' => 'مصروف عام عند عدم وجود ربط لفئة المصروف أو بند المورد.',
+                'default' => self::OPERATING_EXPENSES,
+                'types' => ['expense'],
+                'group' => 'التكاليف والمصاريف',
+            ],
+            'bad_debt_expense' => [
+                'label' => 'ديون معدومة',
+                'description' => 'شطب ذمم مدينة غير محصلة.',
+                'default' => self::BAD_DEBT_EXPENSE,
+                'types' => ['expense'],
+                'group' => 'التكاليف والمصاريف',
+            ],
+            'bank_and_card_fees' => [
+                'label' => 'رسوم بنكية وبطاقات',
+                'description' => 'عمولات البنوك والبطاقات عند استخدامها في القيود.',
+                'default' => self::BANK_AND_CARD_FEES,
+                'types' => ['expense'],
+                'group' => 'التكاليف والمصاريف',
+            ],
+            'waste_expense' => [
+                'label' => 'هدر وتالف',
+                'description' => 'تكلفة المواد الهالكة أو الملغاة أثناء التحضير.',
+                'default' => self::WASTE_EXPENSE,
+                'types' => ['expense'],
+                'group' => 'المخزون',
+            ],
+            'inventory_shrinkage_expense' => [
+                'label' => 'عجز مخزون',
+                'description' => 'نقص أو صرف مخزون يدوي لا يرتبط ببيع.',
+                'default' => self::INVENTORY_SHRINKAGE_EXPENSE,
+                'types' => ['expense'],
+                'group' => 'المخزون',
+            ],
+            'purchase_price_variance' => [
+                'label' => 'فروقات أسعار الشراء',
+                'description' => 'فرق السعر بين الاستلام وفاتورة المورد.',
+                'default' => self::PURCHASE_PRICE_VARIANCE,
+                'types' => ['expense'],
+                'group' => 'المخزون',
+            ],
+            'cash_shortage_expense' => [
+                'label' => 'عجز صندوق',
+                'description' => 'فروقات الصندوق السالبة عند إغلاق الشفت.',
+                'default' => self::CASH_SHORTAGE_EXPENSE,
+                'types' => ['expense'],
+                'group' => 'الصندوق',
+            ],
+        ];
+    }
 
     public function recordInvoiceIssued(Invoice $invoice): ?JournalEntry
     {
@@ -77,13 +297,13 @@ class AccountingService
         $totalDiscount = (float) $invoice->discount_total + $promoSavings;
 
         $lines = [
-            $this->debit(self::ACCOUNTS_RECEIVABLE, (float) $invoice->total, 'إثبات إجمالي الفاتورة على الذمم المدينة'),
-            $this->debit(self::SALES_DISCOUNTS, $totalDiscount, 'خصومات ومسموحات مبيعات (يدوية + عروض الأصناف)'),
-            $this->credit(self::SALES_REVENUE, $grossSubtotal, 'إيراد المبيعات قبل الخصم (بالقيمة الاسمية)'),
-            $this->credit(self::OUTPUT_VAT, (float) $invoice->tax_total, 'ضريبة قيمة مضافة - مخرجات'),
-            $this->credit(self::SERVICE_REVENUE, (float) $invoice->service_total, 'إيرادات رسوم الخدمة'),
-            $this->credit(self::DELIVERY_REVENUE, (float) $invoice->delivery_fee, 'إيرادات التوصيل'),
-            $this->credit(self::TIPS_PAYABLE, (float) $invoice->tip, 'إكراميات مستحقة للموظفين'),
+            $this->debit($this->postingAccount('accounts_receivable'), (float) $invoice->total, 'إثبات إجمالي الفاتورة على الذمم المدينة'),
+            $this->debit($this->postingAccount('sales_discounts'), $totalDiscount, 'خصومات ومسموحات مبيعات (يدوية + عروض الأصناف)'),
+            $this->credit($this->postingAccount('sales_revenue'), $grossSubtotal, 'إيراد المبيعات قبل الخصم (بالقيمة الاسمية)'),
+            $this->credit($this->postingAccount('output_vat'), (float) $invoice->tax_total, 'ضريبة قيمة مضافة - مخرجات'),
+            $this->credit($this->postingAccount('service_revenue'), (float) $invoice->service_total, 'إيرادات رسوم الخدمة'),
+            $this->credit($this->postingAccount('delivery_revenue'), (float) $invoice->delivery_fee, 'إيرادات التوصيل'),
+            $this->credit($this->postingAccount('tips_payable'), (float) $invoice->tip, 'إكراميات مستحقة للموظفين'),
         ];
 
         return $this->post(
@@ -131,13 +351,13 @@ class AccountingService
         $totalDiscount = (float) $invoice->discount_total + $promoSavings;
 
         $lines = [
-            $this->debit(self::ACCOUNTS_RECEIVABLE, (float) $invoice->total, 'إثبات إجمالي الفاتورة بعد تحديث الخصم'),
-            $this->debit(self::SALES_DISCOUNTS, $totalDiscount, 'خصومات ومسموحات مبيعات (محدّثة)'),
-            $this->credit(self::SALES_REVENUE, $grossSubtotal, 'إيراد المبيعات (بالقيمة الاسمية)'),
-            $this->credit(self::OUTPUT_VAT, (float) $invoice->tax_total, 'ضريبة قيمة مضافة - مخرجات'),
-            $this->credit(self::SERVICE_REVENUE, (float) $invoice->service_total, 'إيرادات رسوم الخدمة'),
-            $this->credit(self::DELIVERY_REVENUE, (float) $invoice->delivery_fee, 'إيرادات التوصيل'),
-            $this->credit(self::TIPS_PAYABLE, (float) $invoice->tip, 'إكراميات مستحقة للموظفين'),
+            $this->debit($this->postingAccount('accounts_receivable'), (float) $invoice->total, 'إثبات إجمالي الفاتورة بعد تحديث الخصم'),
+            $this->debit($this->postingAccount('sales_discounts'), $totalDiscount, 'خصومات ومسموحات مبيعات (محدّثة)'),
+            $this->credit($this->postingAccount('sales_revenue'), $grossSubtotal, 'إيراد المبيعات (بالقيمة الاسمية)'),
+            $this->credit($this->postingAccount('output_vat'), (float) $invoice->tax_total, 'ضريبة قيمة مضافة - مخرجات'),
+            $this->credit($this->postingAccount('service_revenue'), (float) $invoice->service_total, 'إيرادات رسوم الخدمة'),
+            $this->credit($this->postingAccount('delivery_revenue'), (float) $invoice->delivery_fee, 'إيرادات التوصيل'),
+            $this->credit($this->postingAccount('tips_payable'), (float) $invoice->tip, 'إكراميات مستحقة للموظفين'),
         ];
 
         // Make the event_type unique by counting prior reposts on this
@@ -173,7 +393,7 @@ class AccountingService
             description: "تحصيل دفعة على فاتورة {$payment->invoice?->number}",
             lines: [
                 $this->debit($this->cashAccountForMethod($payment->method), (float) $payment->amount, 'تحصيل عبر '.$this->paymentMethodLabel($payment->method)),
-                $this->credit(self::ACCOUNTS_RECEIVABLE, (float) $payment->amount, 'تسوية ذمم مدينة للعملاء'),
+                $this->credit($this->postingAccount('accounts_receivable'), (float) $payment->amount, 'تسوية ذمم مدينة للعملاء'),
             ],
             createdBy: $payment->received_by_user_id,
         );
@@ -188,8 +408,8 @@ class AccountingService
             postedOn: now(),
             description: "شطب رصيد فاتورة {$invoice->number}",
             lines: [
-                $this->debit(self::BAD_DEBT_EXPENSE, $amount, 'مصروف ديون معدومة'),
-                $this->credit(self::ACCOUNTS_RECEIVABLE, $amount, 'شطب ذمم مدينة غير محصلة'),
+                $this->debit($this->postingAccount('bad_debt_expense'), $amount, 'مصروف ديون معدومة'),
+                $this->credit($this->postingAccount('accounts_receivable'), $amount, 'شطب ذمم مدينة غير محصلة'),
             ],
             metadata: ['reason' => $reason],
             createdBy: $userId,
@@ -207,7 +427,7 @@ class AccountingService
             postedOn: $refund->refunded_at ?: $refund->updated_at ?: now(),
             description: "استرداد {$refund->number} على فاتورة {$refund->invoice?->number}",
             lines: [
-                $this->debit(self::SALES_RETURNS, (float) $refund->amount, 'مردودات ومسموحات مبيعات'),
+                $this->debit($this->postingAccount('sales_returns'), (float) $refund->amount, 'مردودات ومسموحات مبيعات'),
                 $this->credit($this->cashAccountForMethod($refund->method), (float) $refund->amount, 'صرف استرداد عبر '.$this->paymentMethodLabel($refund->method)),
             ],
             createdBy: $refund->processed_by,
@@ -223,7 +443,7 @@ class AccountingService
             postedOn: $expense->expense_date ?: now(),
             description: "اعتماد مصروف {$expense->expense_number}",
             lines: [
-                $this->debit(self::OPERATING_EXPENSES, (float) $expense->amount, $expense->description),
+                $this->debit($this->expenseAccountFor($expense), (float) $expense->amount, $expense->description),
                 $this->credit($this->cashAccountForMethod($expense->payment_method), (float) $expense->amount, 'سداد عبر '.$this->paymentMethodLabel($expense->payment_method)),
             ],
             createdBy: $expense->approved_by_user_id,
@@ -248,14 +468,14 @@ class AccountingService
             : (float) $invoice->subtotal;
 
         $lines = [
-            $this->debit(self::GOODS_RECEIVED_NOT_INVOICED, $poReceivedSubtotal, 'تسوية استلامات مخزون غير مفوترة'),
+            $this->debit($this->postingAccount('grni'), $poReceivedSubtotal, 'تسوية استلامات مخزون غير مفوترة'),
             $priceVariance > 0
-                ? $this->debit(self::PURCHASE_PRICE_VARIANCE, abs($priceVariance), 'فروقات أسعار مشتريات مدينة')
-                : $this->credit(self::PURCHASE_PRICE_VARIANCE, abs($priceVariance), 'فروقات أسعار مشتريات دائنة'),
-            $this->debit(self::INVENTORY, $inventorySubtotal, 'إضافة مشتريات مخزنية من فاتورة مورد'),
-            $this->debit(self::OPERATING_EXPENSES, $expenseSubtotal, 'مصروفات غير مخزنية من فاتورة مورد'),
-            $this->debit(self::INPUT_VAT, (float) $invoice->tax_total, 'ضريبة قيمة مضافة - مدخلات'),
-            $this->credit(self::ACCOUNTS_PAYABLE, (float) $invoice->total, 'إثبات ذمم دائنة للمورد'),
+                ? $this->debit($this->postingAccount('purchase_price_variance'), abs($priceVariance), 'فروقات أسعار مشتريات مدينة')
+                : $this->credit($this->postingAccount('purchase_price_variance'), abs($priceVariance), 'فروقات أسعار مشتريات دائنة'),
+            $this->debit($this->postingAccount('inventory'), $inventorySubtotal, 'إضافة مشتريات مخزنية من فاتورة مورد'),
+            $this->debit($this->postingAccount('operating_expenses'), $expenseSubtotal, 'مصروفات غير مخزنية من فاتورة مورد'),
+            $this->debit($this->postingAccount('input_vat'), (float) $invoice->tax_total, 'ضريبة قيمة مضافة - مدخلات'),
+            $this->credit($this->postingAccount('accounts_payable'), (float) $invoice->total, 'إثبات ذمم دائنة للمورد'),
         ];
 
         return $this->post(
@@ -293,7 +513,7 @@ class AccountingService
             postedOn: $payment->paid_on ?: $payment->created_at ?: now(),
             description: "سداد فاتورة مورد {$payment->invoice?->number}",
             lines: [
-                $this->debit(self::ACCOUNTS_PAYABLE, (float) $payment->amount, 'تسوية ذمم دائنة للمورد'),
+                $this->debit($this->postingAccount('accounts_payable'), (float) $payment->amount, 'تسوية ذمم دائنة للمورد'),
                 $this->credit($this->cashAccountForMethod($payment->method), (float) $payment->amount, 'سداد عبر '.$this->paymentMethodLabel($payment->method)),
             ],
             createdBy: $payment->paid_by,
@@ -335,12 +555,12 @@ class AccountingService
         $amount = abs($variance);
         $lines = $variance > 0
             ? [
-                $this->debit(self::CASH, $amount, 'زيادة فعلية في صندوق الشفت'),
-                $this->credit(self::CASH_OVER_SHORT_INCOME, $amount, 'فائض صندوق عند إغلاق الشفت'),
+                $this->debit($this->postingAccount('cash_account'), $amount, 'زيادة فعلية في صندوق الشفت'),
+                $this->credit($this->postingAccount('cash_over_short_income'), $amount, 'فائض صندوق عند إغلاق الشفت'),
             ]
             : [
-                $this->debit(self::CASH_SHORTAGE_EXPENSE, $amount, 'عجز صندوق عند إغلاق الشفت'),
-                $this->credit(self::CASH, $amount, 'نقص فعلي في صندوق الشفت'),
+                $this->debit($this->postingAccount('cash_shortage_expense'), $amount, 'عجز صندوق عند إغلاق الشفت'),
+                $this->credit($this->postingAccount('cash_account'), $amount, 'نقص فعلي في صندوق الشفت'),
             ];
 
         return $this->post(
@@ -356,57 +576,126 @@ class AccountingService
 
     public function post(
         string $eventType,
-        Model $source,
+        ?Model $source,
         ?int $branchId,
         $postedOn,
         string $description,
         array $lines,
         array $metadata = [],
         ?int $createdBy = null,
+        ?string $currencyCode = null,
+        ?float $exchangeRate = null,
+        ?string $baseCurrencyCode = null,
     ): ?JournalEntry {
-        $lines = $this->normalizeLines($lines);
+        $postedDate = Carbon::parse($postedOn)->toDateString();
+        $baseCurrencyCode = $this->normalizeCurrencyCode($baseCurrencyCode ?: $this->baseCurrencyCode());
+        $currencyCode = $this->normalizeCurrencyCode($currencyCode ?: $this->entryCurrencyCode($lines, $baseCurrencyCode));
+        $exchangeRate = $exchangeRate ?: $this->entryExchangeRate($lines, $currencyCode, $baseCurrencyCode, $postedDate);
+        $lines = $this->normalizeLines($lines, $currencyCode, $exchangeRate, $baseCurrencyCode, $postedDate);
         if ($lines === []) {
             return null;
         }
 
-        return DB::transaction(function () use ($eventType, $source, $branchId, $postedOn, $description, $lines, $metadata, $createdBy) {
-            $existing = JournalEntry::where('source_type', $source::class)
-                ->where('source_id', $source->getKey())
-                ->where('event_type', $eventType)
-                ->first();
+        for ($attempt = 1; $attempt <= 3; $attempt++) {
+            try {
+                return DB::transaction(function () use ($eventType, $source, $branchId, $postedOn, $description, $lines, $metadata, $createdBy, $baseCurrencyCode, $currencyCode, $exchangeRate) {
+                    $this->assertPostingPeriodOpen($postedOn, $branchId);
 
-            if ($existing) {
-                return $existing;
+                    $existing = $source
+                        ? JournalEntry::where('source_type', $source::class)
+                            ->where('source_id', $source->getKey())
+                            ->where('event_type', $eventType)
+                            ->first()
+                        : null;
+
+                    if ($existing) {
+                        return $existing;
+                    }
+
+                    $this->assertBalanced($lines, $description);
+
+                    $entry = JournalEntry::create([
+                        'branch_id' => $branchId,
+                        'posted_on' => \Carbon\Carbon::parse($postedOn)->toDateString(),
+                        'description' => $description,
+                        'base_currency_code' => $baseCurrencyCode,
+                        'currency_code' => $currencyCode,
+                        'exchange_rate' => $exchangeRate,
+                        'source_type' => $source ? $source::class : null,
+                        'source_id' => $source?->getKey(),
+                        'event_type' => $eventType,
+                        'status' => 'posted',
+                        'metadata' => $metadata ?: null,
+                        'created_by' => $createdBy,
+                    ]);
+
+                    foreach ($lines as $index => $line) {
+                        $account = $this->account($line['account']);
+                        $entry->lines()->create([
+                            'account_id' => $account->id,
+                            'branch_id' => $branchId,
+                            'line_no' => $index + 1,
+                            'description' => $line['description'] ?? null,
+                            'debit' => $line['debit'],
+                            'credit' => $line['credit'],
+                            'currency_code' => $line['currency_code'],
+                            'exchange_rate' => $line['exchange_rate'],
+                            'foreign_debit' => $line['foreign_debit'],
+                            'foreign_credit' => $line['foreign_credit'],
+                        ]);
+                    }
+
+                    return $entry->fresh('lines.account');
+                });
+            } catch (QueryException $e) {
+                if (! $this->isEntryNumberCollision($e) || $attempt === 3) {
+                    throw $e;
+                }
+
+                usleep(10000);
             }
+        }
 
-            $this->assertBalanced($lines, $description);
+        return null;
+    }
 
-            $entry = JournalEntry::create([
-                'branch_id' => $branchId,
-                'posted_on' => \Carbon\Carbon::parse($postedOn)->toDateString(),
-                'description' => $description,
-                'source_type' => $source::class,
-                'source_id' => $source->getKey(),
-                'event_type' => $eventType,
-                'status' => 'posted',
-                'metadata' => $metadata ?: null,
-                'created_by' => $createdBy,
-            ]);
+    private function assertPostingPeriodOpen($postedOn, ?int $branchId): void
+    {
+        $date = Carbon::parse($postedOn)->toDateString();
 
-            foreach ($lines as $index => $line) {
-                $account = $this->account($line['account']);
-                $entry->lines()->create([
-                    'account_id' => $account->id,
-                    'branch_id' => $branchId,
-                    'line_no' => $index + 1,
-                    'description' => $line['description'] ?? null,
-                    'debit' => $line['debit'],
-                    'credit' => $line['credit'],
-                ]);
-            }
+        $closedPeriod = AccountingPeriod::query()
+            ->where('status', 'closed')
+            ->whereDate('starts_on', '<=', $date)
+            ->whereDate('ends_on', '>=', $date)
+            ->where(function ($query) use ($branchId) {
+                $query->whereNull('branch_id');
+                if ($branchId) {
+                    $query->orWhere('branch_id', $branchId);
+                }
+            })
+            ->orderByRaw('branch_id is null')
+            ->first();
 
-            return $entry->fresh('lines.account');
-        });
+        if ($closedPeriod) {
+            throw new \RuntimeException("الفترة المحاسبية {$closedPeriod->name} مقفلة. لا يمكن ترحيل قيود بتاريخ {$date}.");
+        }
+
+        $closedFiscalYear = FiscalYear::query()
+            ->where('status', 'closed')
+            ->whereDate('starts_on', '<=', $date)
+            ->whereDate('ends_on', '>=', $date)
+            ->where(function ($query) use ($branchId) {
+                $query->whereNull('branch_id');
+                if ($branchId) {
+                    $query->orWhere('branch_id', $branchId);
+                }
+            })
+            ->orderByRaw('branch_id is null')
+            ->first();
+
+        if ($closedFiscalYear) {
+            throw new \RuntimeException("السنة المالية {$closedFiscalYear->name} مقفلة. لا يمكن ترحيل قيود بتاريخ {$date}.");
+        }
     }
 
     public function reverse(
@@ -428,10 +717,32 @@ class AccountingService
             return null;
         }
 
+        return $this->reverseEntry($original, $eventType, $postedOn, $description, $metadata, $createdBy);
+    }
+
+    public function reverseEntry(
+        JournalEntry $original,
+        string $eventType,
+        $postedOn,
+        string $description,
+        array $metadata = [],
+        ?int $createdBy = null,
+    ): ?JournalEntry {
+        $original->loadMissing('lines.account');
+
+        $source = null;
+        if ($original->source_type && $original->source_id && is_subclass_of($original->source_type, Model::class)) {
+            $source = $original->source_type::find($original->source_id);
+        }
+
         $lines = $original->lines->map(fn ($line) => [
             'account' => $line->account->code,
             'debit' => (float) $line->credit,
             'credit' => (float) $line->debit,
+            'currency_code' => $line->currency_code ?: $original->base_currency_code,
+            'exchange_rate' => (float) ($line->exchange_rate ?: 1),
+            'foreign_debit' => (float) $line->foreign_credit ?: (float) $line->credit,
+            'foreign_credit' => (float) $line->foreign_debit ?: (float) $line->debit,
             'description' => 'عكس: '.($line->description ?: $original->description),
         ])->all();
 
@@ -447,6 +758,14 @@ class AccountingService
         );
     }
 
+    private function isEntryNumberCollision(QueryException $e): bool
+    {
+        $message = strtolower($e->getMessage());
+
+        return str_contains($message, 'entry_no')
+            && (str_contains($message, 'unique') || str_contains($message, 'duplicate'));
+    }
+
     private function postInventoryOut(InventoryMovement $movement, float $amount, string $description): ?JournalEntry
     {
         if ($movement->reference_type === BranchTransferItem::class) {
@@ -455,8 +774,8 @@ class AccountingService
                 $movement,
                 $description,
                 [
-                    $this->debit(self::INVENTORY_IN_TRANSIT, $amount, 'مخزون محول بين الفروع - قيد الطريق'),
-                    $this->credit(self::INVENTORY, $amount, 'خروج مخزون من فرع المصدر'),
+                    $this->debit($this->postingAccount('inventory_in_transit'), $amount, 'مخزون محول بين الفروع - قيد الطريق'),
+                    $this->credit($this->postingAccount('inventory'), $amount, 'خروج مخزون من فرع المصدر'),
                 ],
             );
         }
@@ -467,8 +786,8 @@ class AccountingService
                 $movement,
                 $description,
                 [
-                    $this->debit(self::COST_OF_GOODS_SOLD, $amount, 'إثبات تكلفة البضاعة المباعة'),
-                    $this->credit(self::INVENTORY, $amount, 'خروج مكونات مرتبطة ببيع'),
+                    $this->debit($this->postingAccount('cost_of_goods_sold'), $amount, 'إثبات تكلفة البضاعة المباعة'),
+                    $this->credit($this->postingAccount('inventory'), $amount, 'خروج مكونات مرتبطة ببيع'),
                 ],
             );
         }
@@ -478,8 +797,8 @@ class AccountingService
             $movement,
             $description,
             [
-                $this->debit(self::INVENTORY_SHRINKAGE_EXPENSE, $amount, 'صرف أو نقص مخزون يدوي'),
-                $this->credit(self::INVENTORY, $amount, 'خروج مخزون'),
+                $this->debit($this->postingAccount('inventory_shrinkage_expense'), $amount, 'صرف أو نقص مخزون يدوي'),
+                $this->credit($this->postingAccount('inventory'), $amount, 'خروج مخزون'),
             ],
         );
     }
@@ -492,8 +811,8 @@ class AccountingService
                 $movement,
                 $description,
                 [
-                    $this->debit(self::INVENTORY, $amount, 'إرجاع مخزون التحويل إلى فرع المصدر'),
-                    $this->credit(self::INVENTORY_IN_TRANSIT, $amount, 'إلغاء مخزون محول بين الفروع'),
+                    $this->debit($this->postingAccount('inventory'), $amount, 'إرجاع مخزون التحويل إلى فرع المصدر'),
+                    $this->credit($this->postingAccount('inventory_in_transit'), $amount, 'إلغاء مخزون محول بين الفروع'),
                 ],
             );
         }
@@ -504,8 +823,8 @@ class AccountingService
                 $movement,
                 $description,
                 [
-                    $this->debit(self::INVENTORY, $amount, 'إرجاع مكونات طلب ملغى إلى المخزون'),
-                    $this->credit(self::COST_OF_GOODS_SOLD, $amount, 'عكس تكلفة بضاعة مباعة'),
+                    $this->debit($this->postingAccount('inventory'), $amount, 'إرجاع مكونات طلب ملغى إلى المخزون'),
+                    $this->credit($this->postingAccount('cost_of_goods_sold'), $amount, 'عكس تكلفة بضاعة مباعة'),
                 ],
             );
         }
@@ -515,8 +834,8 @@ class AccountingService
             $movement,
             $description,
             [
-                $this->debit(self::INVENTORY, $amount, 'إرجاع مخزون'),
-                $this->credit(self::INVENTORY_ADJUSTMENT_GAIN, $amount, 'تسوية إرجاع مخزون'),
+                $this->debit($this->postingAccount('inventory'), $amount, 'إرجاع مخزون'),
+                $this->credit($this->postingAccount('inventory_adjustment_gain'), $amount, 'تسوية إرجاع مخزون'),
             ],
         );
     }
@@ -528,8 +847,8 @@ class AccountingService
             $movement,
             $description,
             [
-                $this->debit(self::WASTE_EXPENSE, $amount, 'هدر أو تالف مخزون'),
-                $this->credit(self::INVENTORY, $amount, 'تخفيض المخزون بسبب الهدر'),
+                $this->debit($this->postingAccount('waste_expense'), $amount, 'هدر أو تالف مخزون'),
+                $this->credit($this->postingAccount('inventory'), $amount, 'تخفيض المخزون بسبب الهدر'),
             ],
         );
     }
@@ -561,8 +880,8 @@ class AccountingService
             postedOn: $movement->occurred_at ?: now(),
             description: $description,
             lines: [
-                $this->debit(self::WASTE_EXPENSE, $amount, 'إعادة تصنيف تكلفة البيع كهدر'),
-                $this->credit(self::COST_OF_GOODS_SOLD, $amount, 'عكس تكلفة البضاعة المباعة'),
+                $this->debit($this->postingAccount('waste_expense'), $amount, 'إعادة تصنيف تكلفة البيع كهدر'),
+                $this->credit($this->postingAccount('cost_of_goods_sold'), $amount, 'عكس تكلفة البضاعة المباعة'),
             ],
             createdBy: $movement->user_id,
         );
@@ -574,12 +893,12 @@ class AccountingService
 
         $lines = $signedValue >= 0
             ? [
-                $this->debit(self::INVENTORY, $amount, 'زيادة جردية في المخزون'),
-                $this->credit(self::INVENTORY_ADJUSTMENT_GAIN, $amount, 'فروقات جرد دائنة'),
+                $this->debit($this->postingAccount('inventory'), $amount, 'زيادة جردية في المخزون'),
+                $this->credit($this->postingAccount('inventory_adjustment_gain'), $amount, 'فروقات جرد دائنة'),
             ]
             : [
-                $this->debit(self::INVENTORY_SHRINKAGE_EXPENSE, $amount, 'عجز أو نقص جردي في المخزون'),
-                $this->credit(self::INVENTORY, $amount, 'تخفيض المخزون بعجز جردي'),
+                $this->debit($this->postingAccount('inventory_shrinkage_expense'), $amount, 'عجز أو نقص جردي في المخزون'),
+                $this->credit($this->postingAccount('inventory'), $amount, 'تخفيض المخزون بعجز جردي'),
             ];
 
         return $this->postInventoryMovement('inventory_adjustment_posted', $movement, $description, $lines);
@@ -593,8 +912,8 @@ class AccountingService
                 $movement,
                 $description,
                 [
-                    $this->debit(self::INVENTORY, $amount, 'استلام مخزون من فرع آخر'),
-                    $this->credit(self::INVENTORY_IN_TRANSIT, $amount, 'إغلاق مخزون محول بين الفروع'),
+                    $this->debit($this->postingAccount('inventory'), $amount, 'استلام مخزون من فرع آخر'),
+                    $this->credit($this->postingAccount('inventory_in_transit'), $amount, 'إغلاق مخزون محول بين الفروع'),
                 ],
             );
         }
@@ -605,23 +924,24 @@ class AccountingService
                 $movement,
                 $description,
                 [
-                    $this->debit(self::INVENTORY, $amount, 'استلام مشتريات مخزنية'),
-                    $this->credit(self::GOODS_RECEIVED_NOT_INVOICED, $amount, 'استلامات مخزون غير مفوترة'),
+                    $this->debit($this->postingAccount('inventory'), $amount, 'استلام مشتريات مخزنية'),
+                    $this->credit($this->postingAccount('grni'), $amount, 'استلامات مخزون غير مفوترة'),
                 ],
             );
         }
 
+        $openingBalanceAccount = $this->postingAccount('opening_balance_equity');
         $creditAccount = str_contains((string) $movement->reason, 'افتتاح')
-            ? self::OPENING_BALANCE_EQUITY
-            : self::INVENTORY_ADJUSTMENT_GAIN;
+            ? $openingBalanceAccount
+            : $this->postingAccount('inventory_adjustment_gain');
 
         return $this->postInventoryMovement(
             $movement->reference_type === IngredientBatch::class ? 'inventory_manual_batch_added' : 'inventory_manual_in',
             $movement,
             $description,
             [
-                $this->debit(self::INVENTORY, $amount, 'إدخال مخزون'),
-                $this->credit($creditAccount, $amount, $creditAccount === self::OPENING_BALANCE_EQUITY ? 'رصيد افتتاحي للمخزون' : 'زيادة مخزون غير مفوترة'),
+                $this->debit($this->postingAccount('inventory'), $amount, 'إدخال مخزون'),
+                $this->credit($creditAccount, $amount, $creditAccount === $openingBalanceAccount ? 'رصيد افتتاحي للمخزون' : 'زيادة مخزون غير مفوترة'),
             ],
         );
     }
@@ -641,20 +961,70 @@ class AccountingService
 
     private function debit(string $account, float $amount, ?string $description = null): array
     {
-        return ['account' => $account, 'debit' => $this->round($amount), 'credit' => 0.0, 'description' => $description];
+        return $this->transactionLine($account, $amount, 'debit', $description);
     }
 
     private function credit(string $account, float $amount, ?string $description = null): array
     {
-        return ['account' => $account, 'debit' => 0.0, 'credit' => $this->round($amount), 'description' => $description];
+        return $this->transactionLine($account, $amount, 'credit', $description);
     }
 
-    private function normalizeLines(array $lines): array
+    private function transactionLine(string $account, float $amount, string $side, ?string $description = null): array
+    {
+        $currencyCode = $this->transactionCurrencyCode();
+        $foreignAmount = $this->round(abs($amount));
+
+        return [
+            'account' => $account,
+            'debit' => 0.0,
+            'credit' => 0.0,
+            'currency_code' => $currencyCode,
+            'foreign_debit' => $side === 'debit' ? $foreignAmount : 0.0,
+            'foreign_credit' => $side === 'credit' ? $foreignAmount : 0.0,
+            'description' => $description,
+        ];
+    }
+
+    private function normalizeLines(array $lines, string $entryCurrencyCode, float $entryExchangeRate, string $baseCurrencyCode, string $postedDate): array
     {
         return collect($lines)
-            ->map(function (array $line) {
-                $line['debit'] = $this->round((float) ($line['debit'] ?? 0));
-                $line['credit'] = $this->round((float) ($line['credit'] ?? 0));
+            ->map(function (array $line) use ($entryCurrencyCode, $entryExchangeRate, $baseCurrencyCode, $postedDate) {
+                $currencyCode = $this->normalizeCurrencyCode($line['currency_code'] ?? $line['currency'] ?? $entryCurrencyCode);
+                $exchangeRate = (float) ($line['exchange_rate'] ?? ($currencyCode === $entryCurrencyCode
+                    ? $entryExchangeRate
+                    : $this->exchangeRateForCurrency($currencyCode, $baseCurrencyCode, $postedDate)));
+                $hasForeignAmounts = array_key_exists('foreign_debit', $line) || array_key_exists('foreign_credit', $line);
+                $foreignDebit = $this->round((float) ($line['foreign_debit'] ?? 0));
+                $foreignCredit = $this->round((float) ($line['foreign_credit'] ?? 0));
+
+                if ($exchangeRate <= 0) {
+                    throw new \RuntimeException('Exchange rate must be greater than zero.');
+                }
+
+                if ($hasForeignAmounts) {
+                    $debit = $this->round($foreignDebit * $exchangeRate);
+                    $credit = $this->round($foreignCredit * $exchangeRate);
+                } else {
+                    $debit = $this->round((float) ($line['debit'] ?? 0));
+                    $credit = $this->round((float) ($line['credit'] ?? 0));
+                    $foreignDebit = $currencyCode === $baseCurrencyCode ? $debit : $this->round($debit / $exchangeRate);
+                    $foreignCredit = $currencyCode === $baseCurrencyCode ? $credit : $this->round($credit / $exchangeRate);
+                }
+
+                if ($debit < -0.0001 || $credit < -0.0001) {
+                    throw new \RuntimeException('لا يمكن أن تكون مبالغ سطر القيد سالبة.');
+                }
+
+                if ($foreignDebit < -0.0001 || $foreignCredit < -0.0001) {
+                    throw new \RuntimeException('Foreign-currency journal amounts cannot be negative.');
+                }
+
+                $line['debit'] = $debit;
+                $line['credit'] = $credit;
+                $line['currency_code'] = $currencyCode;
+                $line['exchange_rate'] = $exchangeRate;
+                $line['foreign_debit'] = $foreignDebit;
+                $line['foreign_credit'] = $foreignCredit;
 
                 return $line;
             })
@@ -698,6 +1068,32 @@ class AccountingService
         return $account;
     }
 
+    private function expenseAccountFor(Expense $expense): string
+    {
+        $expense->loadMissing('category');
+        $keys = array_values(array_filter([
+            AccountMapping::keyForLookup($expense->category),
+            $expense->category?->code ? 'code:'.$expense->category->code : null,
+            $expense->expense_category_id ? 'id:'.$expense->expense_category_id : null,
+            $expense->expense_category_id ? (string) $expense->expense_category_id : null,
+        ]));
+
+        foreach ($keys as $key) {
+            $mapped = $this->mappedAccountCode(
+                AccountMapping::CONTEXT_EXPENSE_CATEGORY,
+                $key,
+                '',
+                ['expense'],
+            );
+
+            if ($mapped !== '') {
+                return $mapped;
+            }
+        }
+
+        return $this->postingAccount('operating_expenses');
+    }
+
     private function cashAccountForMethod(?string $method): string
     {
         // No clearing accounts in this restaurant's flow — card/transfer
@@ -707,14 +1103,55 @@ class AccountingService
         // journal lines reconcile against their original codes; the
         // active UI never produces them anymore (see CashierController
         // validation: cash|card|transfer only).
-        return match ($method) {
-            'cash'                                 => self::CASH,
+        $fallback = match ($method) {
+            'cash'                                 => $this->postingAccount('cash_account'),
             'card', 'transfer', 'bank_transfer',
-            'cheque'                               => self::BANK,
-            'app'                                  => self::WALLET_CLEARING,           // legacy
-            'credit', 'credit_note'                => self::CUSTOMER_CREDIT_CLEARING,  // legacy
-            default                                => self::BANK,
+            'cheque'                               => $this->postingAccount('bank_account'),
+            'app'                                  => $this->postingAccount('wallet_clearing'),           // legacy
+            'credit', 'credit_note'                => $this->postingAccount('customer_credit_clearing'),  // legacy
+            default                                => $this->postingAccount('bank_account'),
         };
+
+        if (! $method) {
+            return $fallback;
+        }
+
+        return $this->mappedAccountCode(
+            AccountMapping::CONTEXT_PAYMENT_METHOD,
+            $method,
+            $fallback,
+            ['asset'],
+        );
+    }
+
+    private function postingAccount(string $role): string
+    {
+        $definition = self::postingRoleDefinitions()[$role] ?? null;
+        if (! $definition) {
+            throw new \RuntimeException("Unknown accounting posting role [{$role}].");
+        }
+
+        return $this->mappedAccountCode(
+            AccountMapping::CONTEXT_POSTING_ROLE,
+            $role,
+            $definition['default'],
+            $definition['types'],
+        );
+    }
+
+    private function mappedAccountCode(string $context, string $key, string $fallback, array $allowedTypes): string
+    {
+        $this->accountMappings ??= AccountMapping::with('account')->get()
+            ->keyBy(fn (AccountMapping $mapping) => $mapping->context.'|'.$mapping->key);
+
+        $mapping = $this->accountMappings->get($context.'|'.$key);
+        $account = $mapping?->account;
+
+        if (! $account || ! $account->is_active || ! in_array($account->type, $allowedTypes, true)) {
+            return $fallback;
+        }
+
+        return $account->code;
     }
 
     private function paymentMethodLabel(?string $method): string
@@ -732,6 +1169,69 @@ class AccountingService
             'credit_note' => 'إشعار دائن',         // legacy
             default => $method ?: 'غير محدد',
         };
+    }
+
+    private function baseCurrencyCode(): string
+    {
+        return $this->normalizeCurrencyCode(
+            Setting::get('accounting_base_currency', Currency::base()?->code ?? MarketProfile::currency())
+        );
+    }
+
+    private function transactionCurrencyCode(): string
+    {
+        return $this->normalizeCurrencyCode(
+            Setting::get('sales_currency', config('restaurant.currency', $this->baseCurrencyCode()))
+        );
+    }
+
+    private function exchangeRateForCurrency(string $currencyCode, ?string $baseCurrencyCode = null, mixed $postedOn = null): float
+    {
+        $currencyCode = $this->normalizeCurrencyCode($currencyCode);
+        $baseCurrencyCode = $this->normalizeCurrencyCode($baseCurrencyCode ?: $this->baseCurrencyCode());
+
+        if ($currencyCode === $baseCurrencyCode) {
+            return 1.0;
+        }
+
+        return app(ExchangeRateService::class)->rateFor($currencyCode, $baseCurrencyCode, $postedOn);
+    }
+
+    private function entryCurrencyCode(array $lines, string $baseCurrencyCode): string
+    {
+        foreach ($lines as $line) {
+            $currencyCode = $line['currency_code'] ?? $line['currency'] ?? null;
+            if ($currencyCode) {
+                return $this->normalizeCurrencyCode($currencyCode);
+            }
+        }
+
+        return $baseCurrencyCode;
+    }
+
+    private function entryExchangeRate(array $lines, string $currencyCode, string $baseCurrencyCode, mixed $postedOn): float
+    {
+        if ($currencyCode === $baseCurrencyCode) {
+            return 1.0;
+        }
+
+        foreach ($lines as $line) {
+            $lineCurrency = $this->normalizeCurrencyCode($line['currency_code'] ?? $line['currency'] ?? $currencyCode);
+            $lineRate = (float) ($line['exchange_rate'] ?? 0);
+
+            if ($lineCurrency === $currencyCode && $lineRate > 0) {
+                return $lineRate;
+            }
+        }
+
+        return $this->exchangeRateForCurrency($currencyCode, $baseCurrencyCode, $postedOn);
+    }
+
+    private function normalizeCurrencyCode(mixed $code): string
+    {
+        $code = strtoupper(trim((string) $code));
+
+        return $code !== '' ? $code : 'USD';
     }
 
     private function round(float $amount): float

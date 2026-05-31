@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+@php($market = \App\Support\MarketProfile::class)
+<html lang="{{ $market::lang() }}" dir="{{ $market::direction() }}" data-market="{{ $market::current() }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
@@ -14,7 +15,7 @@
          friendlier strokes than the admin shell's default. --}}
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+    <link href="{{ $market::fontUrl() }}" rel="stylesheet">
 
     {{-- We deliberately don't load relax-live-monitor.css here — the new
          design ships its full stylesheet inline so we can iterate on the
@@ -46,6 +47,7 @@
             --lm-danger:  #ef4444;
             --lm-info:    #3b82f6;
         }
+        @include('partials.market-vars')
 
         * { box-sizing: border-box; }
 
@@ -58,7 +60,7 @@
                 radial-gradient(ellipse 50% 60% at 10% 100%, rgba(15, 71, 49, .04) 0%, transparent 60%),
                 linear-gradient(180deg, #f7faf5 0%, #f0f5ee 100%);
             color: var(--lm-text);
-            font-family: 'Tajawal', system-ui, "Segoe UI", Tahoma, Arial, sans-serif;
+            font-family: var(--market-font-family);
             -webkit-font-smoothing: antialiased;
         }
 

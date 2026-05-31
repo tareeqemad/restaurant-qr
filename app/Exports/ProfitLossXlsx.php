@@ -2,9 +2,10 @@
 
 namespace App\Exports;
 
-use App\Helpers\Money;
 use App\Models\Branch;
-use App\Models\Setting;
+use App\Helpers\Money;
+use App\Support\MarketProfile;
+use App\Support\MarketSpreadsheetLocalizer;
 use Carbon\Carbon;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -32,7 +33,7 @@ class ProfitLossXlsx
 
     public function download(array $r)
     {
-        $this->currency = Setting::get('currency_symbol', config('restaurant.currency_symbol', '₪'));
+        $this->currency = Money::accountingSymbol();
 
         $book = new Spreadsheet();
         $book->getProperties()
@@ -47,6 +48,7 @@ class ProfitLossXlsx
         $this->buildTrendSheet($book->createSheet(), $r);
         $this->buildTopItemsSheet($book->createSheet(), $r);
 
+        MarketSpreadsheetLocalizer::apply($book);
         $book->setActiveSheetIndex(0);
 
         $stamp = now()->format('Y-m-d_H-i');
@@ -84,12 +86,13 @@ class ProfitLossXlsx
         $sheet->getRowDimension(1)->setRowHeight(38);
 
         $rows = [
-            ['الفترة', Carbon::parse($r['period']['from'])->locale('ar')->isoFormat('D MMMM YYYY')
-                . ' — ' . Carbon::parse($r['period']['to'])->locale('ar')->isoFormat('D MMMM YYYY')
+            ['الفترة', Carbon::parse($r['period']['from'])->locale(MarketProfile::lang())->isoFormat('D MMMM YYYY')
+                . ' — ' . Carbon::parse($r['period']['to'])->locale(MarketProfile::lang())->isoFormat('D MMMM YYYY')
                 . ' ('.$r['period']['days'].' يوم)'],
             ['الفرع', $branchName],
-            ['طريقة احتساب التكلفة', $r['period']['per_branch_cost'] ? 'بأسعار شراء الفرع' : 'بالتكلفة الموحَّدة'],
-            ['تاريخ التقرير', now()->locale('ar')->isoFormat('D MMMM YYYY · HH:mm')],
+            ['مصدر التقرير', ($r['period']['source'] ?? 'ledger') === 'ledger' ? 'دفتر القيود' : 'تشغيلي'],
+            ['طريقة احتساب التكلفة', ($r['period']['source'] ?? 'ledger') === 'ledger' ? 'من دفتر القيود' : ($r['period']['per_branch_cost'] ? 'بأسعار شراء الفرع' : 'بالتكلفة الموحَّدة')],
+            ['تاريخ التقرير', now()->locale(MarketProfile::lang())->isoFormat('D MMMM YYYY · HH:mm')],
         ];
         $row = 3;
         foreach ($rows as $pair) {

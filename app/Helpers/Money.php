@@ -2,6 +2,7 @@
 
 namespace App\Helpers;
 
+use App\Models\Currency;
 use App\Models\Setting;
 
 class Money
@@ -13,6 +14,20 @@ class Money
         }
         $symbol = $symbol ?? config('restaurant.currency_symbol', '₪');
         return number_format((float) $amount, 2, '.', ',').' '.$symbol;
+    }
+
+    public static function accountingSymbol(): string
+    {
+        $code = strtoupper((string) Setting::get('accounting_base_currency', config('restaurant.currency', 'USD')));
+        $currency = $code !== '' ? Currency::where('code', $code)->first() : null;
+
+        return (string) ($currency?->symbol
+            ?? Setting::get('accounting_currency_symbol', Setting::get('currency_symbol', config('restaurant.currency_symbol', '$'))));
+    }
+
+    public static function formatAccounting(float|int|string $amount): string
+    {
+        return self::format($amount, self::accountingSymbol());
     }
 
     public static function round(float $amount): float

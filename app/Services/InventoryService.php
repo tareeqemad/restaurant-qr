@@ -2,15 +2,19 @@
 
 namespace App\Services;
 
+use App\Enums\OrderItemStatus;
 use App\Helpers\UnitConverter;
-use App\Models\ActivityLog;
 use App\Models\Ingredient;
+use App\Models\IngredientBatch;
 use App\Models\IngredientStock;
 use App\Models\InventoryMovement;
 use App\Models\MenuItem;
 use App\Models\Modifier;
+use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\StorageLocation;
+use App\Services\Accounting\AccountingService;
+use App\Support\BranchContext;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -76,8 +80,8 @@ class InventoryService
      *   sugar  = 200 × 30/280 ≈ 21.43g
      *   water  = 100 × 30/280 ≈ 10.71ml
      *
-     * @param array<int,true> $seen  Ingredient IDs already expanded on this
-     *                               call-chain (cycle guard).
+     * @param  array<int,true>  $seen  Ingredient IDs already expanded on this
+     *                                 call-chain (cycle guard).
      * @return array<int,array{ingredient_id:int,ingredient:Ingredient,quantity_in_base:float,unit_cost:float,current_stock:float,will_be_negative:bool}>
      */
     protected function expandIngredient(Ingredient $ingredient, float $qtyBase, array $seen = []): array
@@ -88,7 +92,7 @@ class InventoryService
         // ticket is half-deducted.
         if (isset($seen[$ingredient->id])) {
             throw new \RuntimeException(
-                "وصفة مركّبة تحوي حلقة مرجعية على المكون «{$ingredient->name}»."
+                __('ui.inventory.composite_cycle', ['ingredient' => $ingredient->localizedName()])
             );
         }
 
@@ -96,11 +100,11 @@ class InventoryService
         // deduct directly.
         if (! $ingredient->is_composite || ! $ingredient->subRecipe()->exists()) {
             return [[
-                'ingredient_id'    => $ingredient->id,
-                'ingredient'       => $ingredient,
+                'ingredient_id' => $ingredient->id,
+                'ingredient' => $ingredient,
                 'quantity_in_base' => $qtyBase,
-                'unit_cost'        => (float) $ingredient->cost_per_unit,
-                'current_stock'    => (float) $ingredient->current_stock,
+                'unit_cost' => (float) $ingredient->cost_per_unit,
+                'current_stock' => (float) $ingredient->current_stock,
                 'will_be_negative' => $ingredient->track_stock
                                       && ((float) $ingredient->current_stock - $qtyBase) < 0,
             ]];
@@ -112,11 +116,11 @@ class InventoryService
             // Fall back to raw deduction so the system never silently
             // skips the line.
             return [[
-                'ingredient_id'    => $ingredient->id,
-                'ingredient'       => $ingredient,
+                'ingredient_id' => $ingredient->id,
+                'ingredient' => $ingredient,
                 'quantity_in_base' => $qtyBase,
-                'unit_cost'        => (float) $ingredient->cost_per_unit,
-                'current_stock'    => (float) $ingredient->current_stock,
+                'unit_cost' => (float) $ingredient->cost_per_unit,
+                'current_stock' => (float) $ingredient->current_stock,
                 'will_be_negative' => $ingredient->track_stock
                                       && ((float) $ingredient->current_stock - $qtyBase) < 0,
             ]];
@@ -156,9 +160,12 @@ class InventoryService
             ->where('type', 'out')
             ->exists();
 
-        if ($alreadyDeducted) return false;
+        if ($alreadyDeducted) {
+            return false;
+        }
 
         $this->deductForOrderItem($orderItem);
+
         return true;
     }
 
@@ -188,10 +195,10 @@ class InventoryService
         foreach ($lines as $line) {
             $this->deductWithBatchTrace(
                 ingredient: $line['ingredient'],
-                qtyBase:    $line['quantity_in_base'],
+                qtyBase: $line['quantity_in_base'],
                 fallbackUnitCost: $line['unit_cost'],
-                reference:  $orderItem,
-                reason:     'خصم طلب '.$orderItem->order->number,
+                reference: $orderItem,
+                reason: __('ui.inventory.deduct_order', ['number' => $orderItem->order->number]),
                 storageLocationId: $storageLocationId,
             );
         }
@@ -213,22 +220,24 @@ class InventoryService
         string $type = 'out',
         ?int $storageLocationId = null,
     ): array {
-        if ($qtyBase <= 0) return [];
+        if ($qtyBase <= 0) {
+            return [];
+        }
 
         // Probe whether batches exist for this ingredient. If not, single aggregate movement.
-        $hasBatches = \App\Models\IngredientBatch::where('ingredient_id', $ingredient->id)
+        $hasBatches = IngredientBatch::where('ingredient_id', $ingredient->id)
             ->when($storageLocationId, fn ($query) => $query->where('storage_location_id', $storageLocationId))
             ->where('remaining_qty', '>', 0)
             ->exists();
 
         if (! $hasBatches && $storageLocationId) {
-            $hasBatchesInOtherLocation = \App\Models\IngredientBatch::where('ingredient_id', $ingredient->id)
+            $hasBatchesInOtherLocation = IngredientBatch::where('ingredient_id', $ingredient->id)
                 ->where('remaining_qty', '>', 0)
                 ->exists();
 
             if ($hasBatchesInOtherLocation) {
                 throw ValidationException::withMessages([
-                    'stock' => "لا توجد دفعات متاحة للمكوّن {$ingredient->name} في موقع التخزين المختار.",
+                    'stock' => __('ui.inventory.no_batches_for_storage', ['ingredient' => $ingredient->localizedName()]),
                 ]);
             }
         }
@@ -237,14 +246,14 @@ class InventoryService
             return [
                 $this->recordMovement(
                     ingredient: $ingredient,
-                    type:       $type,
-                    qtyBase:    $qtyBase,
-                    unitCost:   $fallbackUnitCost,
-                    reference:  $reference,
-                    reason:     $reason,
-                    userId:     $userId,
+                    type: $type,
+                    qtyBase: $qtyBase,
+                    unitCost: $fallbackUnitCost,
+                    reference: $reference,
+                    reason: $reason,
+                    userId: $userId,
                     storageLocationId: $storageLocationId,
-                )
+                ),
             ];
         }
 
@@ -255,19 +264,19 @@ class InventoryService
 
         $movements = [];
         foreach ($taken as $row) {
-            /** @var \App\Models\IngredientBatch $batch */
+            /** @var IngredientBatch $batch */
             $batch = $row['batch'];
-            $qty   = (float) $row['qty'];
+            $qty = (float) $row['qty'];
 
             $movements[] = $this->recordMovement(
                 ingredient: $ingredient,
-                type:       $type,
-                qtyBase:    $qty,
-                unitCost:   (float) $batch->unit_cost,
-                reference:  $reference,
-                reason:     $reason,
-                userId:     $userId,
-                batchId:    $batch->id,
+                type: $type,
+                qtyBase: $qty,
+                unitCost: (float) $batch->unit_cost,
+                reference: $reference,
+                reason: $reason,
+                userId: $userId,
+                batchId: $batch->id,
                 storageLocationId: $storageLocationId,
             );
         }
@@ -312,24 +321,24 @@ class InventoryService
             // `out` already did the physical decrement; this row is
             // purely a re-classification for reporting.
             $wasteMv = InventoryMovement::create([
-                'branch_id'           => $mv->branch_id,
-                'ingredient_id'       => $mv->ingredient_id,
-                'batch_id'            => $mv->batch_id,
+                'branch_id' => $mv->branch_id,
+                'ingredient_id' => $mv->ingredient_id,
+                'batch_id' => $mv->batch_id,
                 'storage_location_id' => $mv->storage_location_id,
-                'type'                => 'waste',
-                'quantity'            => $mv->quantity,
-                'unit_id'             => $mv->unit_id,
-                'quantity_in_base'    => $mv->quantity_in_base,
-                'unit_cost'           => $mv->unit_cost,
-                'total_cost'          => $mv->total_cost,
-                'stock_before'        => (float) $mv->ingredient->current_stock,
-                'stock_after'         => (float) $mv->ingredient->current_stock, // no change — re-classification only
-                'reference_type'      => OrderItem::class,
-                'reference_id'        => $orderItem->id,
-                'reason'              => "إلغاء صنف ({$orderItem->name_snapshot}) — هدر",
-                'waste_reason'        => $reason,
-                'user_id'             => $userId ?? auth()->id(),
-                'occurred_at'         => now(),
+                'type' => 'waste',
+                'quantity' => $mv->quantity,
+                'unit_id' => $mv->unit_id,
+                'quantity_in_base' => $mv->quantity_in_base,
+                'unit_cost' => $mv->unit_cost,
+                'total_cost' => $mv->total_cost,
+                'stock_before' => (float) $mv->ingredient->current_stock,
+                'stock_after' => (float) $mv->ingredient->current_stock, // no change — re-classification only
+                'reference_type' => OrderItem::class,
+                'reference_id' => $orderItem->id,
+                'reason' => __('ui.inventory.cancel_item_waste', ['item' => $orderItem->name_snapshot]),
+                'waste_reason' => $reason,
+                'user_id' => $userId ?? auth()->id(),
+                'occurred_at' => now(),
             ]);
 
             // Reclassify the original sale-deduction's accounting from
@@ -341,17 +350,20 @@ class InventoryService
             // already decremented it; the convert-to-waste path is
             // purely a P&L category shift.
             try {
-                app(\App\Services\Accounting\AccountingService::class)
+                app(AccountingService::class)
                     ->recordWasteReclassification(
                         $wasteMv,
-                        "إعادة تصنيف تكلفة صنف {$orderItem->name_snapshot} كهدر — {$reason}",
+                        __('ui.inventory.waste_reclassification', [
+                            'item' => $orderItem->name_snapshot,
+                            'reason' => $reason,
+                        ]),
                     );
             } catch (\Throwable $e) {
                 // Accounting is best-effort here; the operational
                 // waste row is what the waste report reads.
                 \Log::warning('waste_reclassification.accounting_failed', [
                     'movement_id' => $wasteMv->id,
-                    'error'       => $e->getMessage(),
+                    'error' => $e->getMessage(),
                 ]);
             }
         }
@@ -379,7 +391,7 @@ class InventoryService
                 qtyBase: (float) $mv->quantity_in_base,
                 unitCost: (float) $mv->unit_cost,
                 reference: $orderItem,
-                reason: 'إرجاع - إلغاء صنف '.$orderItem->name_snapshot,
+                reason: __('ui.inventory.return_cancel_item', ['item' => $orderItem->name_snapshot]),
                 batchId: $mv->batch_id,
                 storageLocationId: $mv->storage_location_id,
             );
@@ -458,7 +470,7 @@ class InventoryService
             // (PO line carries it via purchaseOrder) → BranchContext.
             $branchId = null;
             if ($storageLocationId) {
-                $branchId = \App\Models\StorageLocation::whereKey($storageLocationId)->value('branch_id');
+                $branchId = StorageLocation::whereKey($storageLocationId)->value('branch_id');
             }
             if (! $branchId && $reference) {
                 if (isset($reference->branch_id) && $reference->branch_id) {
@@ -469,12 +481,12 @@ class InventoryService
                     $branchId = (int) $parent->branch_id;
                 }
             }
-            $branchId = $branchId ?: \App\Support\BranchContext::current();
+            $branchId = $branchId ?: BranchContext::current();
 
             $mv = InventoryMovement::create([
-                'branch_id'     => $branchId,
+                'branch_id' => $branchId,
                 'ingredient_id' => $ingredient->id,
-                'batch_id'      => $batchId,
+                'batch_id' => $batchId,
                 'storage_location_id' => $storageLocationId,
                 'type' => $type,
                 'quantity' => $qtyBase,
@@ -493,17 +505,17 @@ class InventoryService
                 'occurred_at' => now(),
             ]);
 
-            app(\App\Services\Accounting\AccountingService::class)->recordInventoryMovement($mv);
+            app(AccountingService::class)->recordInventoryMovement($mv);
 
             // Edge-trigger: notify only when stock CROSSES the threshold,
             // never on every subsequent deduction that stays below. This
             // keeps the inbox clean — one alert per "you should reorder"
             // event, not one per ticket.
             $threshold = (float) $ingredient->reorder_threshold;
-            $crossed   = $ingredient->track_stock
+            $crossed = $ingredient->track_stock
                 && $threshold > 0
                 && $stockBefore > $threshold
-                && $stockAfter  <= $threshold;
+                && $stockAfter <= $threshold;
 
             return [$mv, $crossed, $ingredient->fresh()];
         });
@@ -537,19 +549,21 @@ class InventoryService
                 $branchId = (int) $parent->branch_id;
             }
         }
-        $branchId ??= \App\Support\BranchContext::current();
+        $branchId ??= BranchContext::current();
 
         if ($branchId) {
-            $locId = \App\Models\StorageLocation::where('branch_id', $branchId)
+            $locId = StorageLocation::where('branch_id', $branchId)
                 ->where('active', true)
                 ->orderByDesc('is_default')
                 ->orderBy('display_order')
                 ->value('id');
-            if ($locId) return (int) $locId;
+            if ($locId) {
+                return (int) $locId;
+            }
         }
 
         // No branch context — pick any active location, default first.
-        return \App\Models\StorageLocation::where('active', true)
+        return StorageLocation::where('active', true)
             ->orderByDesc('is_default')
             ->orderBy('display_order')
             ->value('id');
@@ -561,7 +575,9 @@ class InventoryService
         $aggregated = [];
         foreach ($cartItems as $ci) {
             $item = MenuItem::with('recipeItems.ingredient')->find($ci['menu_item_id']);
-            if (! $item) continue;
+            if (! $item) {
+                continue;
+            }
             $modifierIds = $ci['modifier_ids'] ?? [];
             $lines = $this->previewDeductionForItem($item, (float) $ci['quantity'], $modifierIds);
             foreach ($lines as $line) {
@@ -576,7 +592,7 @@ class InventoryService
         foreach ($aggregated as $a) {
             if ($a['ingredient']->track_stock && $a['qty'] > (float) $a['ingredient']->current_stock) {
                 $issues[] = [
-                    'ingredient' => $a['ingredient']->name,
+                    'ingredient' => $a['ingredient']->localizedName(),
                     'ingredient_id' => $a['ingredient']->id,
                     'required' => $a['qty'],
                     'available' => (float) $a['ingredient']->current_stock,
@@ -599,7 +615,7 @@ class InventoryService
      *
      * @return array{issues: array, short_item_ids: int[]}
      */
-    public function orderStockReport(\App\Models\Order $order): array
+    public function orderStockReport(Order $order): array
     {
         $issues = $this->validateStockForOrder($order);
         if (empty($issues)) {
@@ -609,7 +625,7 @@ class InventoryService
         $shortIngredientIds = collect($issues)->pluck('ingredient_id')->filter()->all();
 
         $items = $order->items()
-            ->where('status', \App\Enums\OrderItemStatus::Pending->value)
+            ->where('status', OrderItemStatus::Pending->value)
             ->with('menuItem.recipeItems', 'modifiers.modifier.recipeItems')
             ->get();
 
@@ -637,10 +653,10 @@ class InventoryService
      * Pass this to ::throwIfInsufficient() from OrderService.approve() to block
      * over-selling.
      */
-    public function validateStockForOrder(\App\Models\Order $order): array
+    public function validateStockForOrder(Order $order): array
     {
         $items = $order->items()
-            ->where('status', \App\Enums\OrderItemStatus::Pending->value)
+            ->where('status', OrderItemStatus::Pending->value)
             ->with('modifiers')
             ->get();
 
@@ -648,7 +664,7 @@ class InventoryService
         foreach ($items as $oi) {
             $cart[] = [
                 'menu_item_id' => $oi->menu_item_id,
-                'quantity'     => (float) $oi->quantity,
+                'quantity' => (float) $oi->quantity,
                 'modifier_ids' => $oi->modifiers()->whereNotNull('modifier_id')->pluck('modifier_id')->toArray(),
             ];
         }
@@ -662,16 +678,23 @@ class InventoryService
      */
     public function throwIfInsufficient(array $issues): void
     {
-        if (empty($issues)) return;
+        if (empty($issues)) {
+            return;
+        }
 
         $lines = array_map(function ($i) {
             $req = number_format($i['required'], 2);
             $avail = number_format($i['available'], 2);
-            return "  • {$i['ingredient']}: مطلوب {$req}، متاح {$avail}";
+
+            return __('ui.inventory.shortage_line', [
+                'ingredient' => $i['ingredient'],
+                'required' => $req,
+                'available' => $avail,
+            ]);
         }, $issues);
 
         throw new \RuntimeException(
-            "لا يمكن اعتماد الطلب — المخزون غير كافٍ:\n" . implode("\n", $lines)
+            __('ui.inventory.insufficient_order_stock', ['lines' => implode("\n", $lines)])
         );
     }
 }

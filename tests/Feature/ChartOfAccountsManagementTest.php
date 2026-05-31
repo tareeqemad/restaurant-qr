@@ -3,12 +3,14 @@
 namespace Tests\Feature;
 
 use App\Models\Account;
+use App\Models\AccountMapping;
 use App\Models\Branch;
 use App\Models\JournalEntry;
 use App\Models\JournalLine;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\Accounting\AccountService;
+use App\Services\Accounting\AccountingService;
 use App\Support\BranchContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
@@ -90,12 +92,28 @@ class ChartOfAccountsManagementTest extends TestCase
         app(AccountService::class)->update($sys, [
             'code' => '9200_LEGACY',
             'name' => 'New name allowed',
-            'type' => 'asset', 'normal_balance' => 'debit',
+            'type' => 'liability',
+            'normal_balance' => 'credit',
+            'is_active' => false,
         ]);
 
         $sys->refresh();
         $this->assertSame('9200', $sys->code, 'Code stays locked on system accounts.');
+        $this->assertSame('asset', $sys->type, 'Type stays locked on system accounts.');
+        $this->assertSame('debit', $sys->normal_balance, 'Normal balance stays locked on system accounts.');
+        $this->assertTrue($sys->is_active, 'System accounts cannot be disabled through update payloads.');
         $this->assertSame('New name allowed', $sys->name, 'Name IS editable even on system accounts.');
+    }
+
+    public function test_normal_balance_must_match_account_type(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessageMatches('/normal_balance|ط§ظ„ط·ط¨ظٹط¹ط©/u');
+
+        app(AccountService::class)->create([
+            'code' => '9210', 'name' => 'Broken asset',
+            'type' => 'asset', 'normal_balance' => 'credit',
+        ]);
     }
 
     public function test_cannot_deactivate_system_account(): void
@@ -108,6 +126,62 @@ class ChartOfAccountsManagementTest extends TestCase
         $this->expectException(ValidationException::class);
         $this->expectExceptionMessageMatches('/حساب نظامي/u');
         app(AccountService::class)->setActive($sys, false);
+    }
+
+    public function test_custom_account_core_fields_are_locked_after_journal_history(): void
+    {
+        $account = app(AccountService::class)->create([
+            'code' => '9220', 'name' => 'Posted custom expense',
+            'type' => 'expense', 'normal_balance' => 'debit',
+        ]);
+
+        $entry = JournalEntry::create([
+            'branch_id' => $this->branch->id, 'posted_on' => now()->toDateString(),
+            'description' => 'posted custom account history', 'status' => 'posted',
+        ]);
+        JournalLine::create([
+            'journal_entry_id' => $entry->id, 'account_id' => $account->id,
+            'branch_id' => $this->branch->id, 'line_no' => 1,
+            'debit' => 10, 'credit' => 0,
+        ]);
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessageMatches('/قيود محاسبية|journal lines|Cannot change/u');
+
+        app(AccountService::class)->update($account, [
+            'code' => '9220-NEW', 'name' => 'Changed',
+            'type' => 'asset', 'normal_balance' => 'debit',
+        ]);
+    }
+
+    public function test_custom_account_name_can_change_after_journal_history(): void
+    {
+        $account = app(AccountService::class)->create([
+            'code' => '9221', 'name' => 'Posted custom expense',
+            'type' => 'expense', 'normal_balance' => 'debit',
+        ]);
+
+        $entry = JournalEntry::create([
+            'branch_id' => $this->branch->id, 'posted_on' => now()->toDateString(),
+            'description' => 'posted custom account history', 'status' => 'posted',
+        ]);
+        JournalLine::create([
+            'journal_entry_id' => $entry->id, 'account_id' => $account->id,
+            'branch_id' => $this->branch->id, 'line_no' => 1,
+            'debit' => 10, 'credit' => 0,
+        ]);
+
+        $updated = app(AccountService::class)->update($account, [
+            'code' => '9221', 'name' => 'Renamed after posting',
+            'type' => 'expense', 'normal_balance' => 'debit',
+            'is_active' => false,
+        ]);
+
+        $this->assertSame('9221', $updated->code);
+        $this->assertSame('expense', $updated->type);
+        $this->assertSame('debit', $updated->normal_balance);
+        $this->assertSame('Renamed after posting', $updated->name);
+        $this->assertFalse($updated->is_active);
     }
 
     public function test_can_deactivate_user_created_account(): void
@@ -159,6 +233,27 @@ class ChartOfAccountsManagementTest extends TestCase
             'code' => '9601', 'name' => 'A',
             'type' => 'expense', 'normal_balance' => 'debit',
             'parent_account_id' => $b->id,
+        ]);
+    }
+
+    public function test_parent_account_type_cannot_change_if_children_would_mismatch(): void
+    {
+        $parent = app(AccountService::class)->create([
+            'code' => '9650', 'name' => 'Parent',
+            'type' => 'expense', 'normal_balance' => 'debit',
+        ]);
+        app(AccountService::class)->create([
+            'code' => '9651', 'name' => 'Child',
+            'type' => 'expense', 'normal_balance' => 'debit',
+            'parent_account_id' => $parent->id,
+        ]);
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessageMatches('/حسابات فرعية|child accounts|type/u');
+
+        app(AccountService::class)->update($parent, [
+            'code' => '9650', 'name' => 'Parent',
+            'type' => 'asset', 'normal_balance' => 'debit',
         ]);
     }
 
@@ -241,6 +336,66 @@ class ChartOfAccountsManagementTest extends TestCase
             ->assertOk();
     }
 
+    public function test_admin_can_save_posting_role_mapping_from_account_mappings_screen(): void
+    {
+        $customRevenue = app(AccountService::class)->create([
+            'code' => '9945',
+            'name' => 'Custom Sales Revenue',
+            'type' => 'revenue',
+            'normal_balance' => 'credit',
+        ]);
+
+        $this->actingAs($this->admin)
+            ->from(route('admin.accounting.mappings'))
+            ->post(route('admin.accounting.mappings.store'), [
+                'posting_role_accounts' => [
+                    'sales_revenue' => $customRevenue->id,
+                ],
+            ])
+            ->assertRedirect(route('admin.accounting.mappings'));
+
+        $this->assertDatabaseHas('account_mappings', [
+            'context' => AccountMapping::CONTEXT_POSTING_ROLE,
+            'key' => 'sales_revenue',
+            'account_id' => $customRevenue->id,
+        ]);
+    }
+
+    public function test_account_mappings_screen_renders_stable_posting_role_keys(): void
+    {
+        $this->actingAs($this->admin)
+            ->get(route('admin.accounting.mappings'))
+            ->assertOk()
+            ->assertSee('posting_role_accounts[sales_revenue]', false)
+            ->assertSee('posting_role_accounts[cost_of_goods_sold]', false);
+    }
+
+    public function test_posting_role_mapping_rejects_accounts_with_wrong_type(): void
+    {
+        $wrongType = app(AccountService::class)->create([
+            'code' => '9946',
+            'name' => 'Wrong Type For Revenue',
+            'type' => 'asset',
+            'normal_balance' => 'debit',
+        ]);
+
+        $this->actingAs($this->admin)
+            ->from(route('admin.accounting.mappings'))
+            ->post(route('admin.accounting.mappings.store'), [
+                'posting_role_accounts' => [
+                    'sales_revenue' => $wrongType->id,
+                ],
+            ])
+            ->assertRedirect(route('admin.accounting.mappings'))
+            ->assertSessionHas('error');
+
+        $this->assertDatabaseMissing('account_mappings', [
+            'context' => AccountMapping::CONTEXT_POSTING_ROLE,
+            'key' => 'sales_revenue',
+            'account_id' => $wrongType->id,
+        ]);
+    }
+
     // ───────────────────────────────────────────────────────────────
     // Manual journal entry — bridges custom accounts to actual usage
     // ───────────────────────────────────────────────────────────────
@@ -278,6 +433,104 @@ class ChartOfAccountsManagementTest extends TestCase
         $this->assertSame('9910', $debit->account->code, 'Debit lands on the user-created account.');
         $this->assertSame('1000', $credit->account->code, 'Credit lands on cash.');
         $this->assertEqualsWithDelta(200.0, (float) $debit->debit, 0.01);
+    }
+
+    public function test_admin_can_post_multiple_manual_journals(): void
+    {
+        $cash = \App\Models\Account::where('code', '1000')->first();
+        $bank = \App\Models\Account::where('code', '1010')->first();
+
+        foreach ([25, 40] as $amount) {
+            $this->actingAs($this->admin)
+                ->post(route('admin.accounting.manual-entry.store'), [
+                    'posted_on' => now()->toDateString(),
+                    'description' => "Manual transfer {$amount}",
+                    'lines' => [
+                        ['account_id' => $bank->id, 'debit' => $amount, 'credit' => 0],
+                        ['account_id' => $cash->id, 'debit' => 0, 'credit' => $amount],
+                    ],
+                ])
+                ->assertRedirect(route('admin.accounting.journal'));
+        }
+
+        $this->assertSame(2, \App\Models\JournalEntry::where('event_type', 'manual_journal')->count(),
+            'Manual journals are not idempotent by user; each approved posting is a separate journal entry.');
+    }
+
+    public function test_admin_can_reverse_and_correct_a_journal_entry_from_adjustment_screen(): void
+    {
+        $marketing = app(AccountService::class)->create([
+            'code' => '9930',
+            'name' => 'مصاريف تسويق مصححة',
+            'type' => 'expense',
+            'normal_balance' => 'debit',
+        ]);
+        $cash = Account::where('code', '1000')->firstOrFail();
+        $bank = Account::where('code', '1010')->firstOrFail();
+
+        $entry = app(AccountingService::class)->post(
+            eventType: 'manual_journal',
+            source: null,
+            branchId: $this->branch->id,
+            postedOn: now()->toDateString(),
+            description: 'قيد خاطئ للتحويل',
+            lines: [
+                ['account' => $bank->code, 'debit' => 75, 'credit' => 0],
+                ['account' => $cash->code, 'debit' => 0, 'credit' => 75],
+            ],
+            createdBy: $this->admin->id,
+        );
+
+        $this->actingAs($this->admin)
+            ->post(route('admin.accounting.journal.adjust.store', $entry), [
+                'mode' => 'correct',
+                'posted_on' => now()->toDateString(),
+                'reason' => 'اختيار الحساب كان خاطئا',
+                'correction_description' => 'القيد المصحح',
+                'lines' => [
+                    ['account_id' => $marketing->id, 'debit' => 75, 'credit' => 0, 'description' => 'مصروف تسويق'],
+                    ['account_id' => $cash->id, 'debit' => 0, 'credit' => 75, 'description' => 'سداد نقدي'],
+                ],
+            ])
+            ->assertRedirect(route('admin.accounting.journal'));
+
+        $reversal = JournalEntry::where('event_type', 'manual_entry_reversal_'.$entry->id)
+            ->with('lines.account')
+            ->firstOrFail();
+        $correction = JournalEntry::where('event_type', 'manual_journal_correction')
+            ->with('lines.account')
+            ->firstOrFail();
+
+        $this->assertSame($entry->id, (int) $reversal->metadata['reverses_entry_id']);
+        $this->assertSame($entry->id, (int) $correction->metadata['corrects_entry_id']);
+        $this->assertEqualsWithDelta(75.0, (float) $reversal->lines
+            ->first(fn ($line) => $line->account?->code === $bank->code)?->credit, 0.01);
+        $this->assertEqualsWithDelta(75.0, (float) $correction->lines
+            ->first(fn ($line) => $line->account?->code === $marketing->code)?->debit, 0.01);
+    }
+
+    public function test_manual_journal_rejects_inactive_accounts(): void
+    {
+        $inactive = app(AccountService::class)->create([
+            'code' => '9920', 'name' => 'Inactive expense',
+            'type' => 'expense', 'normal_balance' => 'debit',
+        ]);
+        app(AccountService::class)->setActive($inactive, false);
+
+        $cash = \App\Models\Account::where('code', '1000')->first();
+
+        $this->actingAs($this->admin)
+            ->post(route('admin.accounting.manual-entry.store'), [
+                'posted_on' => now()->toDateString(),
+                'description' => 'Should not post to inactive account',
+                'lines' => [
+                    ['account_id' => $inactive->id, 'debit' => 50, 'credit' => 0],
+                    ['account_id' => $cash->id, 'debit' => 0, 'credit' => 50],
+                ],
+            ])
+            ->assertSessionHas('error');
+
+        $this->assertSame(0, \App\Models\JournalEntry::where('event_type', 'manual_journal')->count());
     }
 
     public function test_unbalanced_manual_entry_is_rejected(): void

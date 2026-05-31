@@ -1,9 +1,26 @@
 <?php
 
+$marketProfile = env('MARKET_PROFILE', 'palestine');
+$isUsMarket = $marketProfile === 'us';
+$envOrMarket = static function (string $key, mixed $default, mixed $legacyDefault = null) use ($isUsMarket): mixed {
+    $value = env($key);
+
+    if ($value === null || $value === '') {
+        return $default;
+    }
+
+    if ($isUsMarket && $legacyDefault !== null && (string) $value === (string) $legacyDefault) {
+        return $default;
+    }
+
+    return $value;
+};
+
 return [
-    'name' => env('RESTAURANT_NAME', 'مطعم QR'),
-    'currency' => env('RESTAURANT_CURRENCY', 'ILS'),
-    'currency_symbol' => env('RESTAURANT_CURRENCY_SYMBOL', '₪'),
+    'market' => $marketProfile,
+    'name' => $envOrMarket('RESTAURANT_NAME', $isUsMarket ? 'Restaurant QR' : 'مطعم QR', 'مطعم QR'),
+    'currency' => $envOrMarket('RESTAURANT_CURRENCY', $isUsMarket ? 'USD' : 'ILS', 'ILS'),
+    'currency_symbol' => $envOrMarket('RESTAURANT_CURRENCY_SYMBOL', $isUsMarket ? '$' : '₪', '₪'),
 
     // Base URL the customer QR codes resolve to. On a local/on-prem server
     // set MENU_BASE_URL to the LAN address the restaurant WiFi can reach
@@ -21,15 +38,20 @@ return [
     ],
 
     'tax' => [
+        'label' => $envOrMarket('RESTAURANT_TAX_LABEL', $isUsMarket ? 'Sales tax' : 'الضريبة', 'الضريبة'),
+        'number_label' => $envOrMarket('RESTAURANT_TAX_NUMBER_LABEL', $isUsMarket ? 'Sales tax ID' : 'الرقم الضريبي', 'الرقم الضريبي'),
         'enabled' => env('RESTAURANT_TAX_ENABLED', true),
-        'rate' => (float) env('RESTAURANT_TAX_RATE', 16),
+        'rate' => (float) $envOrMarket('RESTAURANT_TAX_RATE', $isUsMarket ? 0 : 16, 16),
         'inclusive' => env('RESTAURANT_TAX_INCLUSIVE', false),
     ],
 
     'service_charge' => [
+        'label' => $envOrMarket('RESTAURANT_SERVICE_LABEL', $isUsMarket ? 'Gratuity' : 'الخدمة', 'الخدمة'),
         'enabled' => env('RESTAURANT_SERVICE_ENABLED', false),
-        'rate' => (float) env('RESTAURANT_SERVICE_RATE', 10),
+        'rate' => (float) $envOrMarket('RESTAURANT_SERVICE_RATE', $isUsMarket ? 0 : 10, 10),
     ],
+
+    'phone_country' => $envOrMarket('RESTAURANT_PHONE_COUNTRY', $isUsMarket ? 'US' : 'PS', 'PS'),
 
     'theme' => [
         'primary' => '#164c37',

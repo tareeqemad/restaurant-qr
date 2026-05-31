@@ -2,6 +2,8 @@
 
 namespace App\Enums;
 
+use App\Models\Setting;
+
 enum OrderStatus: string
 {
     case Pending = 'pending';
@@ -20,10 +22,11 @@ enum OrderStatus: string
      */
     public function label(): string
     {
-        $override = trim((string) \App\Models\Setting::get('order_status_'.$this->value.'_label'));
+        $override = trim((string) Setting::get('order_status_'.$this->value.'_label'));
         if ($override !== '') {
             return $override;
         }
+
         return $this->defaultLabel();
     }
 
@@ -33,10 +36,11 @@ enum OrderStatus: string
      */
     public function color(): string
     {
-        $override = trim((string) \App\Models\Setting::get('order_status_'.$this->value.'_color'));
+        $override = trim((string) Setting::get('order_status_'.$this->value.'_color'));
         if (in_array($override, self::ALLOWED_COLORS, true)) {
             return $override;
         }
+
         return $this->defaultColor();
     }
 
@@ -48,13 +52,13 @@ enum OrderStatus: string
     public function defaultLabel(): string
     {
         return match ($this) {
-            self::Pending => 'بانتظار الموافقة',
-            self::Approved => 'تمت الموافقة',
-            self::Preparing => 'قيد التحضير',
-            self::Ready => 'جاهز',
-            self::Delivered => 'تم التسليم',
-            self::Completed => 'مكتمل',
-            self::Cancelled => 'ملغى',
+            self::Pending => __('ui.customer_order.status_pending_approval'),
+            self::Approved => __('ui.customer_order.status_approved_full'),
+            self::Preparing => __('ui.customer_order.status_preparing_full'),
+            self::Ready => __('ui.customer_order.status_ready'),
+            self::Delivered => __('ui.customer_order.status_delivered'),
+            self::Completed => __('ui.customer_order.status_completed'),
+            self::Cancelled => __('ui.customer_order.status_cancelled'),
         };
     }
 

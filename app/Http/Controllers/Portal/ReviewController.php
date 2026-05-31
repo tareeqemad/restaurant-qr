@@ -6,6 +6,7 @@ use App\Enums\ReservationStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Reservation;
 use App\Models\Review;
+use App\Services\NotifyService;
 use App\Support\BranchContext;
 use Illuminate\Http\Request;
 
@@ -62,28 +63,27 @@ class ReviewController extends Controller
 
         $data = $request->validate([
             'rating' => ['required', 'integer', 'between:1,5'],
-            'title'  => ['nullable', 'string', 'max:120'],
-            'body'   => ['nullable', 'string', 'max:2000'],
+            'title' => ['nullable', 'string', 'max:120'],
+            'body' => ['nullable', 'string', 'max:2000'],
         ]);
 
-        $review = BranchContext::forBranch($reservation->branch_id, fn () =>
-            Review::create([
-                'branch_id'      => $reservation->branch_id,
-                'customer_id'    => $customer->id,
-                'reservation_id' => $reservation->id,
-                'rating'         => $data['rating'],
-                'title'          => $data['title'] ?? null,
-                'body'           => $data['body'] ?? null,
-                'status'         => 'published',
-            ])
+        $review = BranchContext::forBranch($reservation->branch_id, fn () => Review::create([
+            'branch_id' => $reservation->branch_id,
+            'customer_id' => $customer->id,
+            'reservation_id' => $reservation->id,
+            'rating' => $data['rating'],
+            'title' => $data['title'] ?? null,
+            'body' => $data['body'] ?? null,
+            'status' => 'published',
+        ])
         );
 
         // Notify branch admins/managers — low ratings (≤2) auto-escalate to
         // warning severity inside the notification class.
-        app(\App\Services\NotifyService::class)->newReview($review->load('customer'));
+        app(NotifyService::class)->newReview($review->load('customer'));
 
         return redirect()->route('portal.reviews.index')
-            ->with('success', 'شكراً لك على تقييمك!');
+            ->with('success', __('portal.reviews.thanks'));
     }
 
     public function destroy(Request $request, Review $review)
@@ -97,7 +97,7 @@ class ReviewController extends Controller
         BranchContext::forBranch($review->branch_id, fn () => $review->delete());
 
         return redirect()->route('portal.reviews.index')
-            ->with('success', 'تم حذف تقييمك.');
+            ->with('success', __('portal.reviews.deleted'));
     }
 
     /**
@@ -108,14 +108,13 @@ class ReviewController extends Controller
     protected function ensureEligible(int $customerId, Reservation $reservation): void
     {
         abort_unless($reservation->customer_id === $customerId, 403,
-            'هذا الحجز ليس حجزك.');
+            __('portal.reviews.not_yours'));
 
         abort_unless($reservation->status === ReservationStatus::Completed, 403,
-            'يمكن التقييم فقط بعد اكتمال الزيارة.');
+            __('portal.reviews.complete_first'));
 
-        $exists = BranchContext::unscoped(fn () =>
-            Review::where('reservation_id', $reservation->id)->exists()
+        $exists = BranchContext::unscoped(fn () => Review::where('reservation_id', $reservation->id)->exists()
         );
-        abort_if($exists, 403, 'سبق وقمت بتقييم هذه الزيارة.');
+        abort_if($exists, 403, __('portal.reviews.already_reviewed'));
     }
 }

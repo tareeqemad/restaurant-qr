@@ -58,6 +58,8 @@ use App\Policies\SupplierInvoicePolicy;
 use App\Policies\SupplierPolicy;
 use App\Policies\TablePolicy;
 use App\Policies\UserPolicy;
+use App\Support\MarketProfile;
+use App\Support\RuntimeConfig;
 use App\Sync\SyncUuid;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Middleware\TrustProxies;
@@ -78,6 +80,11 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        RuntimeConfig::apply();
+
+        app()->setLocale(MarketProfile::lang());
+        date_default_timezone_set(MarketProfile::timezone());
+
         Schema::defaultStringLength(191);
         Paginator::useBootstrapFive();
 

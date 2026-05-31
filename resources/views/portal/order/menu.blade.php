@@ -1,5 +1,5 @@
 @extends('portal.layout')
-@section('title', 'القائمة - '.$branch->name)
+@section('title', __('portal.order.menu_title', ['branch' => $branch->localizedName()]))
 
 @php
     $currency = config('restaurant.currency_symbol', '₪');
@@ -20,20 +20,20 @@
     {{-- Hero strip ──────────────────────────────────────── --}}
     <div class="pm-hero">
         <div class="pm-hero__top">
-            <a href="{{ route('portal.order.branches') }}" class="pm-hero__back" title="تغيير الفرع">
+            <a href="{{ route('portal.order.branches') }}" class="pm-hero__back" title="{{ __('portal.order.change_branch') }}">
                 <i class="bi bi-arrow-right"></i>
             </a>
             <div class="pm-hero__brand">
                 <i class="bi bi-shop"></i>
-                <span class="pm-hero__eyebrow">قائمة فرع</span>
-                <h1 class="pm-hero__title">{{ $branch->name }}</h1>
+                <span class="pm-hero__eyebrow">{{ __('portal.order.branch_menu') }}</span>
+                <h1 class="pm-hero__title">{{ $branch->localizedName() }}</h1>
             </div>
         </div>
         <div class="pm-hero__meta">
             @if($categories->count() > 0)
-                <span><i class="bi bi-grid"></i> {{ $categories->count() }} قسم</span>
+                <span><i class="bi bi-grid"></i> {{ trans_choice('portal.order.sections_count', $categories->count(), ['count' => $categories->count()]) }}</span>
                 <span class="pm-dot"></span>
-                <span><i class="bi bi-egg-fried"></i> {{ $categories->sum(fn($c) => $c->menuItems->count()) }} صنف</span>
+                <span><i class="bi bi-egg-fried"></i> {{ trans_choice('portal.order.menu_items_count', $categories->sum(fn($c) => $c->menuItems->count()), ['count' => $categories->sum(fn($c) => $c->menuItems->count())]) }}</span>
             @endif
             @if($branch->phone)
                 <span class="pm-dot"></span>
@@ -44,11 +44,11 @@
 
     {{-- Category quick-jump nav ─────────────────────────── --}}
     @if($categories->count() > 1)
-        <nav class="pm-jump" aria-label="انتقال للأقسام">
+        <nav class="pm-jump" aria-label="{{ __('portal.order.category_jump') }}">
             @foreach($categories as $cat)
                 <a href="#cat-{{ $cat->id }}" class="pm-jump__link" @click.prevent="jumpTo({{ $cat->id }})">
                     @if($cat->icon)<i class="bi {{ $cat->icon }}"></i>@endif
-                    {{ $cat->name }}
+                    {{ $cat->localizedName() }}
                     <small>{{ $cat->menuItems->count() }}</small>
                 </a>
             @endforeach
@@ -59,10 +59,10 @@
     @if($categories->isEmpty())
         <div class="pm-empty">
             <div class="pm-empty__shape"><i class="bi bi-emoji-frown"></i></div>
-            <h2>القائمة فارغة حالياً</h2>
-            <p>لم يضف الفرع أي أصناف بعد. عاود لاحقاً أو اختر فرعاً آخر.</p>
+            <h2>{{ __('portal.order.empty_menu_title') }}</h2>
+            <p>{{ __('portal.order.empty_menu_body') }}</p>
             <a href="{{ route('portal.order.branches') }}" class="pm-cta">
-                <i class="bi bi-arrow-right"></i> اختر فرعاً آخر
+                <i class="bi bi-arrow-right"></i> {{ __('portal.order.choose_another_branch') }}
             </a>
         </div>
     @else
@@ -72,12 +72,12 @@
                 <header class="pm-cat__head" @click="toggleCat({{ $cat->id }})">
                     <h2>
                         @if($cat->icon)<i class="bi {{ $cat->icon }}"></i>@endif
-                        {{ $cat->name }}
+                        {{ $cat->localizedName() }}
                     </h2>
                     <div class="pm-cat__head-right">
-                        <span class="pm-cat__count">{{ $cat->menuItems->count() }} صنف</span>
+                        <span class="pm-cat__count">{{ trans_choice('portal.order.item_count', $cat->menuItems->count(), ['count' => $cat->menuItems->count()]) }}</span>
                         <button type="button" class="pm-cat__toggle" :aria-expanded="isOpen({{ $cat->id }})"
-                                :title="isOpen({{ $cat->id }}) ? 'إخفاء الأصناف' : 'إظهار الأصناف'"
+                                :title="isOpen({{ $cat->id }}) ? @js(__('portal.order.hide_items')) : @js(__('portal.order.show_items'))"
                                 @click.stop="toggleCat({{ $cat->id }})">
                             <i class="bi" :class="isOpen({{ $cat->id }}) ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
                         </button>
@@ -89,7 +89,7 @@
                         <article class="pm-item" :class="{ 'is-busy': busyItem === {{ $item->id }} }">
                             <div class="pm-item__media">
                                 @if($item->image)
-                                    <img src="{{ $item->imageUrl() }}" alt="{{ $item->name }}" loading="lazy">
+                                    <img src="{{ $item->imageUrl() }}" alt="{{ $item->localizedName() }}" loading="lazy">
                                 @else
                                     <div class="pm-item__media--ph">
                                         <i class="bi bi-cup-straw"></i>
@@ -97,31 +97,31 @@
                                 @endif
                                 @if($item->is_featured)
                                     <span class="pm-badge pm-badge--featured">
-                                        <i class="bi bi-star-fill"></i> مميز
+                                        <i class="bi bi-star-fill"></i> {{ __('portal.order.featured') }}
                                     </span>
                                 @endif
                                 @if($item->prep_time_minutes)
                                     <span class="pm-badge pm-badge--time">
-                                        <i class="bi bi-clock"></i> {{ $item->prep_time_minutes }} د
+                                        <i class="bi bi-clock"></i> {{ __('portal.order.minutes_short', ['count' => $item->prep_time_minutes]) }}
                                     </span>
                                 @endif
                             </div>
                             <div class="pm-item__body">
-                                <h3 class="pm-item__name">{{ $item->name }}</h3>
-                                @if($item->description)
-                                    <p class="pm-item__desc">{{ $item->description }}</p>
+                                <h3 class="pm-item__name">{{ $item->localizedName() }}</h3>
+                                @if($item->localizedDescription())
+                                    <p class="pm-item__desc">{{ $item->localizedDescription() }}</p>
                                 @endif
 
                                 @if($item->allergens && $item->allergens->isNotEmpty())
-                                    <div class="pm-allergens" role="group" aria-label="مسببات حساسية">
+                                    <div class="pm-allergens" role="group" aria-label="{{ __('portal.order.allergens_aria') }}">
                                         <span class="pm-allergens__label">
                                             <i class="bi bi-exclamation-triangle-fill"></i>
-                                            مسببات حساسية:
+                                            {{ __('portal.order.allergens_label') }}
                                         </span>
                                         @foreach($item->allergens->take(4) as $a)
-                                            <span class="pm-allergen" title="{{ $a->name }}">
+                                            <span class="pm-allergen" title="{{ $a->localizedName() }}">
                                                 <span class="pm-allergen__icon">{{ $a->icon }}</span>
-                                                <span class="pm-allergen__name">{{ $a->name }}</span>
+                                                <span class="pm-allergen__name">{{ $a->localizedName() }}</span>
                                             </span>
                                         @endforeach
                                     </div>
@@ -135,7 +135,7 @@
                                     <button type="button" class="pm-add"
                                             @click="addItem({{ $item->id }})"
                                             :disabled="busyItem === {{ $item->id }}"
-                                            title="أضف للسلة">
+                                            title="{{ __('portal.order.add_to_cart') }}">
                                         <i class="bi" :class="busyItem === {{ $item->id }} ? 'bi-check-lg' : 'bi-plus-lg'"></i>
                                     </button>
                                 </div>
@@ -157,9 +157,9 @@
                         <span class="pm-cart-icon__count" x-text="cart.count"></span>
                     </span>
                     <div>
-                        <div class="pm-cart-summary__title">سلة الطلب</div>
+                        <div class="pm-cart-summary__title">{{ __('portal.order.cart_title') }}</div>
                         <div class="pm-cart-summary__sub">
-                            <span x-text="cart.count"></span> صنف ·
+                            <span x-text="cart.count"></span> {{ __('portal.order.items_label') }} ·
                             <strong><span x-text="formatPrice(cart.total)"></span> {{ $currency }}</strong>
                         </div>
                     </div>
@@ -177,7 +177,7 @@
                             </template>
                         </div>
                         <span class="pm-cart-sub" x-text="formatPrice(row.subtotal)"></span>
-                        <button type="button" class="pm-cart-del" @click="removeItem(row.id)" title="حذف">
+                        <button type="button" class="pm-cart-del" @click="removeItem(row.id)" title="{{ __('portal.order.delete') }}">
                             <i class="bi bi-x-lg"></i>
                         </button>
                     </div>
@@ -187,7 +187,7 @@
         <a :href="checkoutUrl" class="pm-checkout">
             <span class="pm-checkout__main">
                 <i class="bi bi-arrow-left"></i>
-                المتابعة للدفع
+                {{ __('portal.order.continue_to_checkout') }}
             </span>
             <span class="pm-checkout__price">
                 <span x-text="formatPrice(cart.total)"></span> {{ $currency }}
@@ -700,11 +700,11 @@ window.menuPage = function (config) {
                     headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
                 });
                 const data = await r.json();
-                if (! r.ok) throw new Error(data.message || 'تعذّر الإضافة');
+                if (! r.ok) throw new Error(data.message || @js(__('portal.order.add_failed')));
                 this.cart = data.cart;
-                if (window.showToast) window.showToast(data.message || 'أُضيف للسلة', 'success', 1500);
+                if (window.showToast) window.showToast(data.message || @js(__('portal.order.added_to_cart')), 'success', 1500);
             } catch (e) {
-                if (window.showToast) window.showToast(e.message || 'حدث خطأ', 'error');
+                if (window.showToast) window.showToast(e.message || @js(__('portal.order.generic_error')), 'error');
             } finally {
                 // Brief check-mark feedback then reset.
                 setTimeout(() => { this.busyItem = 0; }, 700);
@@ -725,7 +725,7 @@ window.menuPage = function (config) {
                 const data = await r.json();
                 this.cart = data.cart;
             } catch (e) {
-                if (window.showToast) window.showToast('تعذّر الحذف', 'error');
+                if (window.showToast) window.showToast(@js(__('portal.order.delete_failed')), 'error');
             }
         },
 

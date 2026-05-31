@@ -1,5 +1,5 @@
 @extends('customer.layout')
-@section('title','القائمة')
+@section('title', __('ui.customer_menu.title'))
 @section('content')
 
 @php
@@ -46,18 +46,18 @@
     <section class="menu-hero">
         <div class="menu-hero-copy">
             <div class="menu-eyebrow">
-                <span><i class="bi bi-qr-code-scan"></i> طلب من الطاولة</span>
+                <span><i class="bi bi-qr-code-scan"></i> {{ __('ui.customer_menu.order_from_table') }}</span>
                 @if($branchName)
                     <span><i class="bi bi-shop"></i> {{ $branchName }}</span>
                 @endif
             </div>
-            <h1>{{ $dinerName ? 'أهلاً '.$dinerName : 'شو حاب تطلب؟' }}</h1>
+            <h1>{{ $dinerName ? __('ui.customer_menu.hello_name', ['name' => $dinerName]) : __('ui.customer_menu.what_to_order') }}</h1>
 
             <div class="menu-hero-actions">
                 <button type="button" class="hero-cart-btn" @click="openCart()" :disabled="cartCount === 0">
                     <i class="bi bi-basket2-fill"></i>
-                    <span x-show="cartCount === 0">السلة فارغة</span>
-                    <span x-show="cartCount > 0"><span x-text="cartCount"></span> صنف في السلة</span>
+                    <span x-show="cartCount === 0">{{ __('ui.customer_menu.cart_empty') }}</span>
+                    <span x-show="cartCount > 0" x-text="t('cart_items', { count: cartCount })"></span>
                 </button>
                 @if($linkedCustomer)
                     <span class="client-pill is-linked">
@@ -67,7 +67,7 @@
                 @else
                     <span class="client-pill">
                         <i class="bi bi-person"></i>
-                        طلب كضيف
+                        {{ __('ui.customer_menu.guest_order') }}
                     </span>
                 @endif
             </div>
@@ -80,9 +80,9 @@
                         <i class="bi bi-grid-1x2-fill"></i>
                     </span>
                     <div class="hero-stat-body">
-                        <span class="hero-stat-label">الأقسام</span>
+                        <span class="hero-stat-label">{{ __('ui.customer_menu.sections') }}</span>
                         <strong class="hero-stat-value">{{ $sectionsCount }}</strong>
-                        <span class="hero-stat-meta">قسم متاح اليوم</span>
+                        <span class="hero-stat-meta">{{ __('ui.customer_menu.sections_available') }}</span>
                     </div>
                 </div>
                 <div class="hero-stat">
@@ -90,9 +90,9 @@
                         <i class="bi bi-egg-fried"></i>
                     </span>
                     <div class="hero-stat-body">
-                        <span class="hero-stat-label">الأصناف</span>
+                        <span class="hero-stat-label">{{ __('ui.customer_menu.items') }}</span>
                         <strong class="hero-stat-value">{{ $itemsCount }}</strong>
-                        <span class="hero-stat-meta">طبق على المنيو</span>
+                        <span class="hero-stat-meta">{{ __('ui.customer_menu.items_on_menu') }}</span>
                     </div>
                 </div>
             </div>
@@ -127,7 +127,7 @@
                     @else
                         <a href="{{ $portalRegisterUrl }}" class="menu-guest-promo-cta">
                             <i class="bi bi-person-plus-fill"></i>
-                            افتح حسابك الآن
+                            {{ __('ui.customer_menu.open_account_now') }}
                         </a>
                     @endif
                 </div>
@@ -135,44 +135,44 @@
             <form method="POST" action="{{ route('customer.menu.dismissGuestPromo', ['id' => $guestPromo->id]) }}"
                   @submit="dismissing = true">
                 @csrf
-                <button type="submit" class="menu-guest-promo-close" title="إخفاء" aria-label="إخفاء الإعلان">
+                <button type="submit" class="menu-guest-promo-close" title="{{ __('ui.customer_menu.hide') }}" aria-label="{{ __('ui.customer_menu.hide') }}">
                     <i class="bi bi-x-lg"></i>
                 </button>
             </form>
         </section>
     @endif
 
-    <section class="menu-command-bar" aria-label="أدوات القائمة">
+    <section class="menu-command-bar" aria-label="{{ __('ui.customer_menu.menu_tools') }}">
         <label class="menu-search">
             <i class="bi bi-search"></i>
-            <input type="search" x-model.debounce.180ms="search" placeholder="ابحث في المنيو..." autocomplete="off">
-            <button type="button" x-show="search" x-cloak @click="search = ''" aria-label="مسح البحث">
+            <input type="search" x-model.debounce.180ms="search" placeholder="{{ __('ui.customer_menu.search_placeholder') }}" autocomplete="off">
+            <button type="button" x-show="search" x-cloak @click="search = ''" aria-label="{{ __('ui.customer_menu.clear_search') }}">
                 <i class="bi bi-x-lg"></i>
             </button>
         </label>
 
-        <div class="cat-tabs" aria-label="أقسام القائمة"
+        <div class="cat-tabs" aria-label="{{ __('ui.customer_menu.menu_sections') }}"
              x-data="tabsSlider()" x-init="$nextTick(() => init())">
             <button type="button" class="slider-arrow slider-arrow-prev tabs-arrow"
-                    x-show="canPrev" x-cloak @click="slide(-1)" aria-label="السابق">‹</button>
+                    x-show="canPrev" x-cloak @click="slide(-1)" aria-label="{{ __('ui.customer_menu.previous') }}">‹</button>
             <div class="cat-tabs-scroll" id="catScroll" x-ref="scroll" @scroll.passive="update()">
                 @if($featured->count())
                     <a href="#cat-featured" class="cat-tab" :class="activeCat === 'featured' ? 'active' : ''"
                        @click.prevent="scrollTo('featured')">
                         <i class="bi bi-star-fill"></i>
-                        مميزة اليوم
+                        {{ __('ui.customer_menu.featured_today') }}
                     </a>
                 @endif
                 @foreach($categories as $cat)
                     <a href="#cat-{{ $cat->id }}" class="cat-tab" :class="activeCat === '{{ $cat->id }}' ? 'active' : ''"
                        @click.prevent="scrollTo('{{ $cat->id }}')">
                         <i class="bi {{ $cat->icon ?: 'bi-tag' }}"></i>
-                        {{ $cat->name }}
+                        {{ $cat->localizedName() }}
                     </a>
                 @endforeach
             </div>
             <button type="button" class="slider-arrow slider-arrow-next tabs-arrow"
-                    x-show="canNext" x-cloak @click="slide(1)" aria-label="التالي">›</button>
+                    x-show="canNext" x-cloak @click="slide(1)" aria-label="{{ __('ui.customer_menu.next') }}">›</button>
         </div>
     </section>
 
@@ -180,7 +180,7 @@
         <aside class="menu-aside">
             <div class="side-tabs">
                 <div class="side-tabs-title">
-                    <span>الأقسام</span>
+                    <span>{{ __('ui.customer_menu.sections') }}</span>
                     <span class="title-sub">{{ $sectionsCount }}</span>
                 </div>
                 <div class="side-tabs-divider"></div>
@@ -189,7 +189,7 @@
                     <a href="#cat-featured" class="side-tab-v" :class="activeCat === 'featured' ? 'active' : ''"
                        @click.prevent="scrollTo('featured')">
                         <span class="tab-icon"><i class="bi bi-star-fill"></i></span>
-                        <span class="tab-name">مميزة اليوم</span>
+                        <span class="tab-name">{{ __('ui.customer_menu.featured_today') }}</span>
                         <span class="count-bubble">{{ $featured->count() }}</span>
                     </a>
                 @endif
@@ -197,7 +197,7 @@
                     <a href="#cat-{{ $cat->id }}" class="side-tab-v" :class="activeCat === '{{ $cat->id }}' ? 'active' : ''"
                        @click.prevent="scrollTo('{{ $cat->id }}')">
                         <span class="tab-icon"><i class="bi {{ $cat->icon ?: 'bi-tag' }}"></i></span>
-                        <span class="tab-name">{{ $cat->name }}</span>
+                        <span class="tab-name">{{ $cat->localizedName() }}</span>
                         <span class="count-bubble">{{ $cat->menuItems->count() }}</span>
                     </a>
                 @endforeach
@@ -207,13 +207,13 @@
                         <span class="menu-client-avatar">{{ $portalCustomer->initial }}</span>
                         <div>
                             <strong>{{ $portalCustomer->name }}</strong>
-                            <small>طلبك سيرتبط بحسابك وتاريخ طلباتك.</small>
+                            <small>{{ __('ui.customer_menu.linked_order_note') }}</small>
                         </div>
                     @else
                         <span class="menu-client-avatar"><i class="bi bi-qr-code-scan"></i></span>
                         <div>
-                            <strong>طلب كضيف</strong>
-                            <small>اطلب من غير تسجيل — أو افتح حساب لتحصل على عروض وخصومات في زياراتك الجاية.</small>
+                            <strong>{{ __('ui.customer_menu.guest_order') }}</strong>
+                            <small>{{ __('ui.customer_menu.guest_order_note') }}</small>
                         </div>
                     @endif
                 </div>
@@ -228,25 +228,25 @@
                             <span class="bar"></span>
                             <span class="cat-title-text">
                                 <i class="bi bi-star-fill"></i>
-                                مميزة اليوم
+                                {{ __('ui.customer_menu.featured_today') }}
                             </span>
                             <span class="count">{{ $featured->count() }}</span>
                             @if($featured->count() > 3)
                                 <button type="button" class="view-toggle" @click="toggleMode()">
                                     <i class="bi" :class="mode === 'slider' ? 'bi-grid-3x3-gap' : 'bi-arrow-left-right'"></i>
-                                    <span x-text="mode === 'slider' ? 'عرض الكل' : 'شريط'"></span>
+                                    <span x-text="mode === 'slider' ? @js(__('ui.customer_menu.show_all')) : @js(__('ui.customer_menu.slider'))"></span>
                                 </button>
                             @endif
                         </div>
                     </div>
                     <div class="menu-slider">
-                        <button type="button" class="slider-arrow slider-arrow-prev" @click="slide(-1)" aria-label="السابق">‹</button>
+                        <button type="button" class="slider-arrow slider-arrow-prev" @click="slide(-1)" aria-label="{{ __('ui.customer_menu.previous') }}">‹</button>
                         <div class="slider-track">
                             @foreach($featured as $item)
                                 @include('customer.partials.dish', ['item' => $item])
                             @endforeach
                         </div>
-                        <button type="button" class="slider-arrow slider-arrow-next" @click="slide(1)" aria-label="التالي">›</button>
+                        <button type="button" class="slider-arrow slider-arrow-next" @click="slide(1)" aria-label="{{ __('ui.customer_menu.next') }}">›</button>
                     </div>
                 </div>
             @endif
@@ -258,25 +258,25 @@
                             <span class="bar" @if($cat->color) style="background:{{ $cat->color }};" @endif></span>
                             <span class="cat-title-text">
                                 <i class="bi {{ $cat->icon ?: 'bi-tag' }}"></i>
-                                {{ $cat->name }}
+                                {{ $cat->localizedName() }}
                             </span>
                             <span class="count">{{ $cat->menuItems->count() }}</span>
                             @if($cat->menuItems->count() > 3)
                                 <button type="button" class="view-toggle" @click="toggleMode()">
                                     <i class="bi" :class="mode === 'slider' ? 'bi-grid-3x3-gap' : 'bi-arrow-left-right'"></i>
-                                    <span x-text="mode === 'slider' ? 'عرض الكل' : 'شريط'"></span>
+                                    <span x-text="mode === 'slider' ? @js(__('ui.customer_menu.show_all')) : @js(__('ui.customer_menu.slider'))"></span>
                                 </button>
                             @endif
                         </div>
                     </div>
                     <div class="menu-slider">
-                        <button type="button" class="slider-arrow slider-arrow-prev" @click="slide(-1)" aria-label="السابق">‹</button>
+                        <button type="button" class="slider-arrow slider-arrow-prev" @click="slide(-1)" aria-label="{{ __('ui.customer_menu.previous') }}">‹</button>
                         <div class="slider-track">
                             @foreach($cat->menuItems as $item)
                                 @include('customer.partials.dish', ['item' => $item])
                             @endforeach
                         </div>
-                        <button type="button" class="slider-arrow slider-arrow-next" @click="slide(1)" aria-label="التالي">›</button>
+                        <button type="button" class="slider-arrow slider-arrow-next" @click="slide(1)" aria-label="{{ __('ui.customer_menu.next') }}">›</button>
                     </div>
                 </div>
             @endforeach
@@ -284,7 +284,7 @@
             @if($categories->isEmpty())
                 <div class="empty-state">
                     <i class="bi bi-journal-x"></i>
-                    <p class="mt-3">لا توجد أصناف متاحة حالياً</p>
+                    <p class="mt-3">{{ __('ui.customer_menu.no_items_available') }}</p>
                 </div>
             @endif
 
@@ -296,7 +296,7 @@
     <button class="cart-fab" @click="openCart()" x-show="cartCount > 0" x-cloak id="cartFab">
         <span class="cart-fab-left">
             <span class="count" x-text="cartCount"></span>
-            <span>راجع السلة</span>
+            <span>{{ __('ui.customer_menu.review_cart') }}</span>
         </span>
         <span class="cart-fab-right">
             <strong x-text="cartDisplayTotalFormatted"></strong>
@@ -314,9 +314,9 @@
                 <div class="sheet-header item-sheet-header">
                     <h5>
                         <span x-text="selectedItem.name"></span>
-                        <small>اختيارات الطبق والكمية</small>
+                        <small>{{ __('ui.customer_menu.item_choices') }}</small>
                     </h5>
-                    <button class="btn-close" @click="closeAll()" aria-label="إغلاق"></button>
+                    <button class="btn-close" @click="closeAll()" aria-label="{{ __('ui.customer_menu.close') }}"></button>
                 </div>
                 <div class="sheet-body">
                     {{-- Image with price & featured tag --}}
@@ -332,8 +332,8 @@
                     <div class="item-sheet-ingredients mb-3"
                          x-show="selectedItem.ingredients && selectedItem.ingredients.length">
                         <div class="section-label">
-                            <span><i class="bi bi-basket2-fill"></i> مكوّنات الطبق</span>
-                            <span class="hint" x-text="(selectedItem.ingredients || []).length + ' عناصر'"></span>
+                            <span><i class="bi bi-basket2-fill"></i> {{ __('ui.customer_menu.dish_ingredients') }}</span>
+                            <span class="hint" x-text="t('elements_count', { count: (selectedItem.ingredients || []).length })"></span>
                         </div>
                         <div class="ingredient-chips">
                             <template x-for="ing in (selectedItem.ingredients || [])" :key="ing">
@@ -348,10 +348,10 @@
                                 <span>
                                     <i class="bi bi-sliders2"></i>
                                     <span x-text="group.name"></span>
-                                    <span class="badge bg-danger-subtle text-danger" x-show="group.required" style="font-size: .65rem;">مطلوب</span>
+                                    <span class="badge bg-danger-subtle text-danger" x-show="group.required" style="font-size: .65rem;">{{ __('ui.customer_menu.required') }}</span>
                                 </span>
                                 <span class="hint">
-                                    اختر <span x-text="group.min_select === group.max_select ? group.min_select : group.min_select + '-' + group.max_select"></span>
+                                    {{ __('ui.customer_menu.choose') }} <span x-text="group.min_select === group.max_select ? group.min_select : group.min_select + '-' + group.max_select"></span>
                                 </span>
                             </div>
                             <template x-for="mod in group.modifiers" :key="mod.id">
@@ -372,15 +372,15 @@
 
                     <div class="mb-3">
                         <div class="section-label">
-                            <span><i class="bi bi-chat-text-fill"></i> ملاحظات خاصة</span>
-                            <span class="hint">اختياري</span>
+                            <span><i class="bi bi-chat-text-fill"></i> {{ __('ui.customer_menu.special_notes') }}</span>
+                            <span class="hint">{{ __('ui.customer_menu.optional') }}</span>
                         </div>
                         <textarea x-model="itemNotes" class="form-control" rows="2"
-                            placeholder="مثلاً: قلّل الجبنة، كتّر البطاطا، بدون بصل..."></textarea>
+                            placeholder="{{ __('ui.customer_menu.item_notes_placeholder') }}"></textarea>
                     </div>
 
                     <div class="qty-panel">
-                        <span class="fw-bold" style="color: var(--brand-dark);">الكمية</span>
+                        <span class="fw-bold" style="color: var(--brand-dark);">{{ __('ui.customer_menu.quantity') }}</span>
                         <div class="stepper">
                             <button type="button" @click="itemQty = Math.max(1, itemQty - 1)" :disabled="itemQty <= 1">−</button>
                             <input type="number" x-model.number="itemQty" min="1" max="20">
@@ -390,7 +390,7 @@
                 </div>
                 <div class="sheet-footer item-sheet-footer">
                     <button class="btn-send d-flex justify-content-between align-items-center" @click="addToCart()">
-                        <span><i class="bi bi-plus-circle-fill"></i> أضف للسلة</span>
+                        <span><i class="bi bi-plus-circle-fill"></i> {{ __('ui.customer_menu.add_to_cart') }}</span>
                         <span x-text="formatMoney(computePrice())"></span>
                     </button>
                 </div>
@@ -404,59 +404,59 @@
         <div class="d-flex flex-column h-100" style="min-height: 0;">
             <div class="sheet-header cart-sheet-header">
                 <h5>
-                    <span><i class="bi bi-basket-fill" style="color: var(--brand);"></i> سلّتك (<span x-text="cartCount"></span>)</span>
-                    <small>راجع الطلب قبل إرساله للجرسون</small>
+                    <span><i class="bi bi-basket-fill" style="color: var(--brand);"></i> {{ __('ui.customer_menu.your_cart') }} (<span x-text="cartCount"></span>)</span>
+                    <small>{{ __('ui.customer_menu.review_before_send') }}</small>
                 </h5>
                 <button class="btn-close" @click="closeAll()"></button>
             </div>
             <div class="sheet-body">
                 <div x-show="cart.length === 0" class="empty-state">
                     <i class="bi bi-cart-x"></i>
-                    <p class="mt-2">السلة فارغة</p>
+                    <p class="mt-2">{{ __('ui.customer_menu.cart_empty') }}</p>
                     <button class="btn-brand mt-2" @click="closeAll()" style="width: auto; padding: 10px 20px;">
-                        <i class="bi bi-list"></i> تصفّح القائمة
+                        <i class="bi bi-list"></i> {{ __('ui.customer_menu.browse_menu') }}
                     </button>
                 </div>
 
                 {{-- Add more button at top --}}
                 <button class="sheet-addmore" @click="closeAll()" x-show="cart.length > 0">
-                    <i class="bi bi-plus-circle"></i> أضف المزيد من القائمة
+                    <i class="bi bi-plus-circle"></i> {{ __('ui.customer_menu.add_more') }}
                 </button>
 
                 <div class="cart-session-card" x-show="cart.length > 0">
                     <div>
-                        <span>الطاولة</span>
+                        <span>{{ __('ui.customer_menu.table') }}</span>
                         <strong>{{ $tableNumber }}</strong>
                     </div>
                     @if($branchName)
                         <div>
-                            <span>الفرع</span>
+                            <span>{{ __('ui.customer_menu.branch') }}</span>
                             <strong>{{ $branchName }}</strong>
                         </div>
                     @endif
                     <div>
-                        <span>الحالة</span>
-                        <strong>بانتظار الإرسال</strong>
+                        <span>{{ __('ui.customer_menu.status') }}</span>
+                        <strong>{{ __('ui.customer_menu.waiting_to_send') }}</strong>
                     </div>
                 </div>
 
-                <div class="cart-flow-steps" x-show="cart.length > 0" aria-label="مسار الطلب">
+                <div class="cart-flow-steps" x-show="cart.length > 0" aria-label="{{ __('ui.customer_menu.order_flow') }}">
                     <div class="cart-flow-step is-current">
                         <span><i class="bi bi-basket2-fill"></i></span>
-                        <strong>السلة</strong>
-                        <small>راجع الأصناف</small>
+                        <strong>{{ __('ui.customer_menu.cart') }}</strong>
+                        <small>{{ __('ui.customer_menu.review_items') }}</small>
                     </div>
                     <div class="cart-flow-line"></div>
                     <div class="cart-flow-step">
                         <span><i class="bi bi-person-check-fill"></i></span>
-                        <strong>الجرسون</strong>
-                        <small>اعتماد سريع</small>
+                        <strong>{{ __('ui.customer_menu.server') }}</strong>
+                        <small>{{ __('ui.customer_menu.quick_approval') }}</small>
                     </div>
                     <div class="cart-flow-line"></div>
                     <div class="cart-flow-step">
                         <span><i class="bi bi-fire"></i></span>
-                        <strong>المطبخ/البار</strong>
-                        <small>حسب المحطة</small>
+                        <strong>{{ __('ui.customer_menu.kitchen_bar') }}</strong>
+                        <small>{{ __('ui.customer_menu.by_station') }}</small>
                     </div>
                 </div>
 
@@ -468,7 +468,7 @@
                                 <strong class="d-block" x-text="row.name" style="color: var(--brand-dark);"></strong>
                                 <strong style="color: var(--brand);" x-text="formatMoney(row.subtotal)"></strong>
                             </div>
-                            <div class="mods" x-show="row.modifiers && row.modifiers.length" x-text="(row.modifiers || []).map(m => m.name).join('، ')"></div>
+                                            <div class="mods" x-show="row.modifiers && row.modifiers.length" x-text="(row.modifiers || []).map(m => m.name).join(', ')"></div>
 
                             {{-- Editable per-item note --}}
                             <input type="text"
@@ -476,7 +476,7 @@
                                 :class="(row.notes || '').length > 0 ? 'has-value' : ''"
                                 :value="row.notes || ''"
                                 @change="updateNotes(row.id, $event.target.value)"
-                                placeholder="ملاحظات هذا الصنف: قلل جبنة، بدون بصل..."
+                                placeholder="{{ __('ui.customer_menu.item_notes_placeholder') }}"
                                 maxlength="200">
 
                             <div class="d-flex justify-content-between align-items-center mt-2">
@@ -486,7 +486,7 @@
                                     <button type="button" @click="updateQty(row.id, Number(row.quantity) + 1)">+</button>
                                 </div>
                                 <button type="button" class="btn btn-sm btn-link text-danger p-1" @click="removeRow(row.id)"
-                                        title="إزالة الصنف" aria-label="إزالة">
+                                        title="{{ __('ui.customer_menu.remove_item') }}" aria-label="{{ __('ui.customer_menu.remove') }}">
                                     <i class="bi bi-trash3 fs-5"></i>
                                 </button>
                             </div>
@@ -511,12 +511,12 @@
                             <div class="cart-customer-card is-linked">
                                 <span class="cart-customer-avatar">{{ mb_substr($linkedCustomer->name, 0, 1, 'UTF-8') }}</span>
                                 <div>
-                                    <strong>أهلاً يا {{ $linkedCustomer->name }} 👋</strong>
+                                    <strong>{{ __('ui.customer_menu.hello_customer', ['name' => $linkedCustomer->name]) }}</strong>
                                     <small>
                                         @if($portalCustomer)
-                                            بحسابك المسجّل{{ $portalCustomer->phone ? ' · '.$portalCustomer->phone : '' }} · الطلب رح ينحفظ في سجلك.
+                                            {{ __('ui.customer_menu.registered_account_order_saved', ['phone' => $portalCustomer->phone ? ' · '.$portalCustomer->phone : '']) }}
                                         @else
-                                            تعرّفنا عليك من زيارتك السابقة · الطلب رح ينحفظ في سجلك.
+                                            {{ __('ui.customer_menu.remembered_customer_order_saved') }}
                                         @endif
                                     </small>
                                 </div>
@@ -534,51 +534,51 @@
                                    • Two pill buttons stay small. --}}
                             <div class="cart-customer-card cart-customer-card--guest">
                                 <div class="cart-guest-head">
-                                    <strong>تطلب كضيف</strong>
-                                    <span class="cart-guest-ok">✓ بدون تسجيل</span>
+                                    <strong>{{ __('ui.customer_menu.ordering_as_guest') }}</strong>
+                                    <span class="cart-guest-ok">{{ __('ui.customer_menu.no_signup') }}</span>
                                 </div>
                                 <p class="cart-guest-hint">
                                     <i class="bi bi-gift-fill"></i>
-                                    لو بدك تطلب <strong>كزبون دائم</strong> وتحصل على عروض وخصومات، اضغط <strong>«إنشاء حساب»</strong> وكمّل طلبك من هناك.
+                                    {!! __('ui.customer_menu.guest_benefit_html') !!}
                                 </p>
                                 <div class="cart-account-actions">
                                     <a href="{{ $portalRegisterUrl }}" class="is-primary">
-                                        <i class="bi bi-person-plus-fill"></i> إنشاء حساب
+                                        <i class="bi bi-person-plus-fill"></i> {{ __('ui.customer_menu.create_account') }}
                                     </a>
-                                    <a href="{{ $portalLoginUrl }}">عندي حساب</a>
+                                    <a href="{{ $portalLoginUrl }}">{{ __('ui.customer_menu.have_account') }}</a>
                                 </div>
                             </div>
 
                             <div class="mb-2">
-                                <label class="form-label fw-bold"><i class="bi bi-person-fill"></i> اسم على الطاولة (اختياري)</label>
-                                <input name="customer_name" value="{{ $defaultCustomerName }}" class="form-control form-control-lg" placeholder="مثلاً: أحمد">
+                                <label class="form-label fw-bold"><i class="bi bi-person-fill"></i> {{ __('ui.customer_menu.table_name_optional') }}</label>
+                                <input name="customer_name" value="{{ $defaultCustomerName }}" class="form-control form-control-lg" placeholder="{{ __('ui.customer_menu.table_name_placeholder') }}">
                             </div>
 
                             <div class="mb-2">
                                 <label class="form-label fw-bold">
-                                    <i class="bi bi-telephone-fill"></i> رقم الجوال (اختياري)
+                                    <i class="bi bi-telephone-fill"></i> {{ __('ui.customer_menu.phone_optional') }}
                                 </label>
                                 <input name="customer_phone" type="tel" inputmode="tel"
                                        value="{{ $session->customer_phone ?? '' }}"
                                        class="form-control form-control-lg"
-                                       placeholder="مثلاً: 0599123456"
+                                       placeholder="{{ __('ui.customer_menu.phone_placeholder') }}"
                                        autocomplete="tel">
                                 <small class="text-muted d-block mt-1">
                                     <i class="bi bi-stars text-warning"></i>
-                                    لو عندك حساب عنا، رح نتعرّف عليك تلقائياً ونحفظ الزيارة في سجلك.
+                                    {{ __('ui.customer_menu.auto_recognize_account') }}
                                 </small>
                             </div>
                         @endif
 
                         <div class="row g-2">
                             <div class="col-6">
-                                <label class="form-label fw-bold"><i class="bi bi-people-fill"></i> عدد الأشخاص</label>
+                                <label class="form-label fw-bold"><i class="bi bi-people-fill"></i> {{ __('ui.customer_menu.cover_count') }}</label>
                                 <input type="number" name="cover_count" min="1" max="20" value="{{ $session->cover_count ?? 1 }}" class="form-control form-control-lg">
                             </div>
                         </div>
                         <div class="mt-2">
-                            <label class="form-label fw-bold"><i class="bi bi-chat-dots-fill"></i> ملاحظات عامة للجرسون</label>
-                            <textarea name="notes" rows="2" class="form-control" placeholder="أي ملاحظة عامة للطاقم (اختياري)"></textarea>
+                            <label class="form-label fw-bold"><i class="bi bi-chat-dots-fill"></i> {{ __('ui.customer_menu.general_notes_to_server') }}</label>
+                            <textarea name="notes" rows="2" class="form-control" placeholder="{{ __('ui.customer_menu.general_notes_placeholder') }}"></textarea>
                         </div>
                     </form>
                 </div>
@@ -591,25 +591,25 @@
                         <div class="cart-tax-note" x-text="cartTaxNote"></div>
                     </div>
                     <div class="text-end small text-muted">
-                        <div>الأصناف: <strong x-text="cartCount"></strong></div>
+                        <div>{{ __('ui.customer_menu.items') }}: <strong x-text="cartCount"></strong></div>
                     </div>
                 </div>
                 <div class="cart-total-breakdown" x-show="cart.length > 0">
                     <div>
-                        <span>المجموع</span>
+                        <span>{{ __('ui.customer_menu.subtotal') }}</span>
                         <strong x-text="cartTotalFormatted"></strong>
                     </div>
                     <div x-show="taxDisplayMode === 'inclusive' && cartTax > 0">
-                        <span>الضريبة (<span x-text="taxRate"></span>%)</span>
+                        <span>{{ __('ui.customer_menu.tax') }} (<span x-text="taxRate"></span>%)</span>
                         <strong x-text="cartTaxFormatted"></strong>
                     </div>
                     <div x-show="taxDisplayMode === 'inclusive' && cartService > 0">
-                        <span>الخدمة (<span x-text="serviceRate"></span>%)</span>
+                        <span>{{ __('ui.customer_menu.service') }} (<span x-text="serviceRate"></span>%)</span>
                         <strong x-text="cartServiceFormatted"></strong>
                     </div>
                 </div>
                 <button type="button" class="btn-send cart-submit-btn d-flex align-items-center justify-content-center gap-2" @click="askConfirm()">
-                    <i class="bi bi-send-fill"></i> إرسال للجرسون
+                    <i class="bi bi-send-fill"></i> {{ __('ui.customer_menu.send_to_server') }}
                 </button>
             </div>
         </div>
@@ -619,32 +619,32 @@
     <div class="confirm-overlay" :class="confirmOpen ? 'open' : ''" x-cloak @click.self="confirmOpen = false">
         <div class="confirm-box">
             <div class="emoji">🍽️</div>
-            <h4>تأكيد إرسال الطلب؟</h4>
+            <h4>{{ __('ui.customer_menu.confirm_send_title') }}</h4>
             <p class="text-muted mb-3">
-                سيصل طلبك إلى الجرسون للمراجعة والاعتماد، وبعدها يتم توجيه الأصناف للمطبخ أو البار حسب المحطة.
+                {{ __('ui.customer_menu.confirm_send_body') }}
             </p>
             <div class="p-3 mb-3 rounded" style="background: var(--brand-soft);">
                 <div class="d-flex justify-content-between mb-1">
-                    <span>عدد الأصناف:</span><strong x-text="cartCount"></strong>
+                    <span>{{ __('ui.customer_menu.items_count_label') }}</span><strong x-text="cartCount"></strong>
                 </div>
                 <div class="d-flex justify-content-between mb-1">
                     <span x-text="cartTotalLabel"></span><strong style="color: var(--brand-dark);" x-text="cartDisplayTotalFormatted"></strong>
                 </div>
                 <div class="small text-muted" x-text="cartTaxNote"></div>
                 <div class="small text-muted" x-show="taxDisplayMode === 'inclusive' && cartTax > 0">
-                    الضريبة: <span x-text="cartTaxFormatted"></span>
+                    {{ __('ui.customer_menu.tax') }}: <span x-text="cartTaxFormatted"></span>
                 </div>
             </div>
             <div class="d-flex gap-2">
-                <button class="btn btn-light flex-grow-1" @click="confirmOpen = false" :disabled="submitting" style="font-weight: 700;">تراجع</button>
+                <button class="btn btn-light flex-grow-1" @click="confirmOpen = false" :disabled="submitting" style="font-weight: 700;">{{ __('ui.customer_menu.back') }}</button>
                 <button class="btn-send" style="flex: 2;" @click="confirmSubmit()" :disabled="submitting">
                     <template x-if="!submitting">
-                        <span><i class="bi bi-check2-circle"></i> تأكيد الإرسال للجرسون</span>
+                        <span><i class="bi bi-check2-circle"></i> {{ __('ui.customer_menu.confirm_send_to_server') }}</span>
                     </template>
                     <template x-if="submitting">
                         <span class="d-inline-flex align-items-center gap-2">
                             <span class="spinner-border spinner-border-sm" style="width:18px; height:18px;"></span>
-                            جارٍ الإرسال...
+                            {{ __('ui.customer_menu.sending') }}
                         </span>
                     </template>
                 </button>
@@ -1592,7 +1592,7 @@ body > main {
    The parent .cart-customer-card has a `strong { display: block }`
    rule from the linked-customer variant (where strong is the diner's
    name and SHOULD be on its own line). Inside this hint, the strongs
-   are mid-sentence emphasis ("كزبون دائم", "«إنشاء حساب»") — they
+   are mid-sentence emphasis inside localized guest benefit copy — they
    MUST stay inline, otherwise each one drops to a new line and the
    text fractures into single-word columns.
    Using a <p> + inline strong overrides + word-break:normal forces
@@ -2048,6 +2048,15 @@ function menuApp() {
         taxRate: @json($taxRate),
         serviceEnabled: @json($serviceEnabled),
         serviceRate: @json($serviceRate),
+        i18n: @json(__('ui.customer_menu')),
+
+        t(key, replacements = {}) {
+            let text = this.i18n[key] || key;
+            Object.entries(replacements).forEach(([name, value]) => {
+                text = text.replaceAll(':' + name, value);
+            });
+            return text;
+        },
 
         get cartCount() { return this.cart.reduce((s, r) => s + Number(r.quantity), 0); },
         get cartTotal() { return this.cart.reduce((s, r) => s + Number(r.subtotal), 0); },
@@ -2062,19 +2071,19 @@ function menuApp() {
         get cartTaxFormatted() { return this.formatMoney(this.cartTax); },
         get cartServiceFormatted() { return this.formatMoney(this.cartService); },
         get cartTotalLabel() {
-            return this.taxDisplayMode === 'inclusive' ? 'الإجمالي شامل الضريبة' : 'الإجمالي قبل الضريبة';
+            return this.taxDisplayMode === 'inclusive' ? this.t('tax_inclusive_total') : this.t('tax_exclusive_total');
         },
         get cartTaxNote() {
             const hasService = this.serviceEnabled && Number(this.serviceRate) > 0;
             if (! this.taxEnabled || Number(this.taxRate) <= 0) {
-                if (! hasService) return 'لا توجد ضريبة مفعلة على السلة.';
+                if (! hasService) return this.t('no_tax_enabled');
                 return this.taxDisplayMode === 'inclusive'
-                    ? `يشمل خدمة ${this.serviceRate}% حسب إعدادات الفرع.`
-                    : `الخدمة ${this.serviceRate}% تظهر في الفاتورة بعد اعتماد الطلب.`;
+                    ? this.t('service_included', { rate: this.serviceRate })
+                    : this.t('service_later', { rate: this.serviceRate });
             }
-            const servicePart = this.serviceEnabled && Number(this.serviceRate) > 0 ? ` والخدمة ${this.serviceRate}%` : '';
-            if (this.taxDisplayMode === 'inclusive') return `يشمل ضريبة ${this.taxRate}%${servicePart} حسب إعدادات الفرع.`;
-            return `الضريبة ${this.taxRate}%${servicePart} تظهر في الفاتورة بعد اعتماد الطلب.`;
+            const servicePart = this.serviceEnabled && Number(this.serviceRate) > 0 ? this.t('and_service', { rate: this.serviceRate }) : '';
+            if (this.taxDisplayMode === 'inclusive') return this.t('tax_included', { tax: this.taxRate, service: servicePart });
+            return this.t('tax_later', { tax: this.taxRate, service: servicePart });
         },
 
         roundMoney(n) { return Math.round((Number(n) || 0) * 100) / 100; },
@@ -2097,7 +2106,7 @@ function menuApp() {
             try {
                 if (! itemData || ! itemData.id) {
                     console.error('[Menu] onPlus called with invalid itemData:', itemData);
-                    showToast('خطأ في بيانات الصنف — حدّث الصفحة', 'danger');
+                    showToast(this.t('invalid_item_data'), 'danger');
                     return;
                 }
                 if (itemData.has_modifiers) {
@@ -2107,7 +2116,7 @@ function menuApp() {
                 this.quickAdd(itemData);
             } catch (e) {
                 console.error('[Menu] onPlus threw:', e, 'item:', itemData);
-                showToast('حدث خطأ — راجع console للتفاصيل', 'danger');
+                showToast(this.t('console_error'), 'danger');
             }
         },
 
@@ -2138,11 +2147,11 @@ function menuApp() {
                     });
                     if (! res.ok && ! res.redirected) {
                         this.cart.push(removedRow);  // rollback
-                        showToast('تعذّر إزالة الصنف', 'danger');
+                        showToast(this.t('remove_failed'), 'danger');
                     }
                 } catch (e) {
                     this.cart.push(removedRow);  // rollback
-                    showToast('خطأ اتصال', 'danger');
+                    showToast(this.t('connection_error'), 'danger');
                 }
                 return;
             }
@@ -2164,12 +2173,12 @@ function menuApp() {
                 if (! res.ok && ! res.redirected) {
                     last.quantity = oldQty;  // rollback
                     last.subtotal = (Number(last.unit_price) + Number(last.modifiers_total)) * oldQty;
-                    showToast('تعذّر تحديث الكمية', 'danger');
+                    showToast(this.t('qty_update_failed'), 'danger');
                 }
             } catch (e) {
                 last.quantity = oldQty;  // rollback
                 last.subtotal = (Number(last.unit_price) + Number(last.modifiers_total)) * oldQty;
-                showToast('خطأ اتصال', 'danger');
+                showToast(this.t('connection_error'), 'danger');
             }
         },
 
@@ -2215,12 +2224,12 @@ function menuApp() {
                         // Rollback
                         existing.quantity = oldQty;
                         existing.subtotal = (Number(existing.unit_price) + Number(existing.modifiers_total)) * oldQty;
-                        showToast('تعذّر تحديث الكمية', 'danger');
+                        showToast(this.t('qty_update_failed'), 'danger');
                     }
                 } catch (e) {
                     existing.quantity = oldQty;
                     existing.subtotal = (Number(existing.unit_price) + Number(existing.modifiers_total)) * oldQty;
-                    showToast('خطأ اتصال — حاول مجدداً', 'danger');
+                    showToast(this.t('connection_retry'), 'danger');
                 }
                 return;
             }
@@ -2279,21 +2288,21 @@ function menuApp() {
                 } else {
                     // Rollback on failure
                     this.cart = this.cart.filter(r => r.id !== tmpId);
-                    let msg = 'تعذّر إضافة الصنف';
-                    if (res.status === 422) msg = 'الصنف غير متوفر';
-                    else if (res.status === 403) msg = 'لا يُسمح بهذا الصنف الآن';
+                    let msg = this.t('add_failed');
+                    if (res.status === 422) msg = this.t('item_unavailable');
+                    else if (res.status === 403) msg = this.t('item_not_allowed');
                     console.warn('[Cart] add failed', res.status, itemData.name);
                     showToast(msg, 'danger');
                 }
             } catch (e) {
                 this.cart = this.cart.filter(r => r.id !== tmpId);
                 console.error('[Cart] fetch error:', e);
-                showToast('خطأ اتصال — حاول مجدداً', 'danger');
+                showToast(this.t('connection_retry'), 'danger');
             }
         },
 
         handleSessionExpired() {
-            showToast('انتهت الجلسة — يرجى مسح QR الطاولة من جديد', 'warning');
+            showToast(this.t('session_expired_scan_again'), 'warning');
             setTimeout(() => { window.location.href = '/'; }, 2500);
         },
 
@@ -2370,11 +2379,11 @@ function menuApp() {
             for (const g of (this.selectedItem.modifier_groups || [])) {
                 const picked = this.selectedMods.filter(x => x.group_id === g.id).length;
                 if (g.required && picked < g.min_select) {
-                    alert(`يجب اختيار ${g.min_select} على الأقل من ${g.name}`);
+                    alert(this.t('must_choose_min', { min: g.min_select, name: g.name }));
                     return;
                 }
                 if (picked > g.max_select) {
-                    alert(`الحد الأقصى ${g.max_select} من ${g.name}`);
+                    alert(this.t('max_choose', { max: g.max_select, name: g.name }));
                     return;
                 }
             }
@@ -2438,18 +2447,18 @@ function menuApp() {
                 } else {
                     // Rollback
                     this.cart = this.cart.filter(r => r.id !== tmpId);
-                    showToast('تعذّر إضافة الصنف — حاول مجدداً', 'danger');
+                    showToast(this.t('add_failed_retry'), 'danger');
                 }
             } catch (e) {
                 this.cart = this.cart.filter(r => r.id !== tmpId);
                 console.error('[Cart] modifier add failed:', e);
-                showToast('خطأ اتصال', 'danger');
+                showToast(this.t('connection_error'), 'danger');
             }
         },
 
         flyToCart(sourceEl, imageUrl, name) {
             const target = document.getElementById('cartFab');
-            if (! target) { showToast(name + ' أُضيف للسلة ✓', 'success'); return; }
+            if (! target) { showToast(this.t('added_to_cart', { name }), 'success'); return; }
             const targetRect = target.getBoundingClientRect();
 
             const startRect = sourceEl ? sourceEl.getBoundingClientRect() : { top: window.innerHeight / 2, left: window.innerWidth / 2, width: 60, height: 60 };
@@ -2475,7 +2484,7 @@ function menuApp() {
                 void target.offsetWidth;  // force reflow so animation retriggers
                 target.classList.add('bump');
                 setTimeout(() => target.classList.remove('bump'), 600);
-                showToast(name + ' أُضيف للسلة ✓', 'success');
+                showToast(this.t('added_to_cart', { name }), 'success');
             }, 720);
         },
 
@@ -2507,7 +2516,7 @@ function menuApp() {
                 await fetch(@json(route('customer.cart.update')), { method: 'POST', body: fd, credentials: 'same-origin' });
                 const row = this.cart.find(r => r.id === rowId);
                 if (row) row.notes = trimmed;
-                showToast('تم حفظ الملاحظة ✓', 'success');
+                showToast(this.t('note_saved'), 'success');
             } catch (e) {}
         },
 

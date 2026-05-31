@@ -1,20 +1,21 @@
 @php
     $theme = \App\Support\ThemePalette::current();
     $siteName = \App\Helpers\Brand::name();
+    $market = \App\Support\MarketProfile::class;
 @endphp
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="{{ $market::lang() }}" dir="{{ $market::direction() }}" data-market="{{ $market::current() }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <meta name="theme-color" content="{{ $theme['primary'] }}">
-    <title>استعادة كلمة المرور · {{ $siteName }}</title>
+    <title>{{ __('ui.auth.forgot_title') }} · {{ $siteName }}</title>
     <link rel="icon" href="{{ \App\Helpers\Brand::faviconUrl() }}">
     <link href="{{ asset('assets/dashtic/icon-fonts/bootstrap-icons/icons/font/bootstrap-icons.css') }}" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+    <link href="{{ $market::fontUrl() }}" rel="stylesheet">
     <style>
         :root {
             --primary:    {{ $theme['primary'] }};
@@ -26,10 +27,11 @@
             --ink:        #1f2937;
             --muted:      #6b7280;
         }
+        @include('partials.market-vars')
         *,*::before,*::after { box-sizing: border-box; }
         html, body { margin: 0; padding: 0; height: 100%; }
         body {
-            font-family: 'Tajawal', system-ui, -apple-system, sans-serif;
+            font-family: var(--market-font-family);
             background: linear-gradient(135deg, var(--bg) 0%, #ffffff 100%);
             color: var(--ink);
             display: flex; align-items: center; justify-content: center;
@@ -82,9 +84,9 @@
             <img src="{{ \App\Helpers\Brand::logoUrl() }}" alt="{{ $siteName }}">
         </div>
 
-        <h1>استعادة كلمة المرور</h1>
+        <h1>{{ __('ui.auth.forgot_title') }}</h1>
         <p class="lead">
-            أدخل رقم جوالك أو اسم المستخدم، ورح نبعتلك كلمة مرور جديدة برسالة نصية.
+            {{ __('ui.auth.forgot_staff_lead') }}
         </p>
 
         @if(session('success'))
@@ -104,22 +106,22 @@
         <form action="{{ route('password.email') }}" method="POST" autocomplete="off">
             @csrf
             <div class="field">
-                <label for="identifier">رقم الجوال أو اسم المستخدم</label>
+                <label for="identifier">{{ __('ui.auth.username_or_phone') }}</label>
                 <input type="text" id="identifier" name="identifier" class="input" dir="ltr"
-                       placeholder="0599xxxxxxx أو username"
+                       placeholder="{{ __('ui.auth.identifier_placeholder') }}"
                        value="{{ old('identifier') }}" required autofocus>
                 <div class="help">
-                    رقم الجوال لازم يكون نفس اللي مسجّل بحسابك. لو نسيته، تواصل مع مدير النظام.
+                    {{ __('ui.auth.forgot_identifier_help') }}
                 </div>
             </div>
 
             <button type="submit" class="btn">
-                <i class="bi bi-send"></i> أرسل كلمة المرور الجديدة
+                <i class="bi bi-send"></i> {{ __('ui.auth.send_new_password') }}
             </button>
         </form>
 
         <a href="{{ route('login') }}" class="back">
-            <i class="bi bi-arrow-right"></i> العودة لتسجيل الدخول
+            <i class="bi bi-arrow-right"></i> {{ __('ui.common.back_to_login') }}
         </a>
     </main>
 </body>

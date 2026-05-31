@@ -46,16 +46,16 @@
 
 <div class="header-element bsx">
     @if($isSingle)
-        <span class="bsx-trigger is-static" title="فرعك الحالي">
+        <span class="bsx-trigger is-static" title="{{ __('admin.common.branch_current') }}">
             <span class="bsx-avatar" style="--hue: {{ $hue($activeBranch) }};">
                 {{ $initial($activeBranch) }}
             </span>
-            <span class="bsx-trigger__name">{{ $activeBranch->name }}</span>
+            <span class="bsx-trigger__name">{{ $activeBranch->localizedName() }}</span>
         </span>
     @else
         <a href="#" class="bsx-trigger {{ $isAllMode ? 'bsx-trigger--all' : '' }}" role="button"
            data-bs-toggle="dropdown" data-bs-auto-close="outside"
-           aria-expanded="false" aria-label="تبديل الفرع">
+           aria-expanded="false" aria-label="{{ __('admin.common.switch_branch') }}">
             @if($isAllMode)
                 <span class="bsx-avatar bsx-avatar--all">
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -64,12 +64,12 @@
                               stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
                     </svg>
                 </span>
-                <span class="bsx-trigger__name">كل الفروع</span>
+                <span class="bsx-trigger__name">{{ __('admin.common.all_branches') }}</span>
             @else
                 <span class="bsx-avatar" style="--hue: {{ $hue($activeBranch) }};">
                     {{ $initial($activeBranch) }}
                 </span>
-                <span class="bsx-trigger__name">{{ $activeBranch->name }}</span>
+                <span class="bsx-trigger__name">{{ $activeBranch->localizedName() }}</span>
             @endif
             <svg class="bsx-trigger__chev" width="11" height="11" viewBox="0 0 12 12" fill="none">
                 <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor"
@@ -78,7 +78,7 @@
         </a>
 
         <div class="dropdown-menu dropdown-menu-end bsx-menu">
-            <div class="bsx-menu__head">اختيار الفرع</div>
+            <div class="bsx-menu__head">{{ __('admin.common.choose_branch') }}</div>
 
             <div class="bsx-menu__list">
                 @if($u->isOwnerLevel())
@@ -96,8 +96,8 @@
                                 </svg>
                             </span>
                             <span class="bsx-row__body">
-                                <span class="bsx-row__name">كل الفروع</span>
-                                <span class="bsx-row__meta">عرض موحّد لكل البيانات</span>
+                                <span class="bsx-row__name">{{ __('admin.common.all_branches') }}</span>
+                                <span class="bsx-row__meta">{{ __('admin.common.all_data_view') }}</span>
                             </span>
                             @if($isAllMode)
                                 <svg class="bsx-row__check" width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -113,7 +113,7 @@
                     @php
                         $isActive = ! $isAllMode && $activeBranch && $branch->id === $activeBranch->id;
                         // Suppress city if it's already mentioned in the branch name
-                        // (e.g. "الفرع الرئيسي - خانيونس" + city "خانيونس" → don't repeat).
+                        // Suppress city if it is already included in the branch name.
                         $showCity = $branch->city && mb_stripos($branch->name, $branch->city) === false;
                     @endphp
                     <form action="{{ route('admin.branches.switch', $branch) }}"
@@ -125,7 +125,7 @@
                                 style="--hue: {{ $hue($branch) }};">
                             <span class="bsx-avatar">{{ $initial($branch) }}</span>
                             <span class="bsx-row__body">
-                                <span class="bsx-row__name">{{ $branch->name }}</span>
+                                <span class="bsx-row__name">{{ $branch->localizedName() }}</span>
                                 @if($showCity)
                                     <span class="bsx-row__meta">{{ $branch->city }}</span>
                                 @endif
@@ -144,7 +144,7 @@
             @can('viewAny', \App\Models\Branch::class)
                 <a href="{{ route('admin.branches.index') }}" class="bsx-menu__manage">
                     <i class="bi bi-gear-fill"></i>
-                    <span>إدارة الفروع</span>
+                    <span>{{ __('admin.common.manage_branches') }}</span>
                 </a>
             @endcan
         </div>

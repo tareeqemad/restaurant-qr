@@ -3,18 +3,23 @@
 namespace App\Sync;
 
 use App\Models\Account;
+use App\Models\AccountMapping;
+use App\Models\AccountingPeriod;
 use App\Models\Allergen;
 use App\Models\Attendance;
 use App\Models\Branch;
 use App\Models\BranchTransfer;
 use App\Models\BranchTransferItem;
 use App\Models\CashMovement;
+use App\Models\CashReconciliation;
 use App\Models\Category;
 use App\Models\Currency;
+use App\Models\CurrencyExchangeRate;
 use App\Models\Customer;
 use App\Models\CustomerAddress;
 use App\Models\Discount;
 use App\Models\Expense;
+use App\Models\FiscalYear;
 use App\Models\Ingredient;
 use App\Models\IngredientBatch;
 use App\Models\IngredientStock;
@@ -63,6 +68,7 @@ use App\Models\SupplierInvoiceItem;
 use App\Models\SupplierPayment;
 use App\Models\Table;
 use App\Models\TableSession;
+use App\Models\TaxJurisdiction;
 use App\Models\Unit;
 use App\Models\User;
 
@@ -86,6 +92,9 @@ class SyncRegistry
             ],
             'currencies' => [
                 'natural' => ['code'],
+            ],
+            'currency_exchange_rates' => [
+                'natural' => ['currency_code', 'base_currency_code', 'valid_from', 'valid_to', 'source'],
             ],
             'lookups' => [
                 'foreigns' => ['branch_id' => 'branches'],
@@ -191,6 +200,10 @@ class SyncRegistry
             'accounts' => [
                 'foreigns' => ['parent_account_id' => 'accounts'],
                 'natural' => ['code'],
+            ],
+            'account_mappings' => [
+                'foreigns' => ['account_id' => 'accounts'],
+                'natural' => ['context', 'key'],
             ],
             'tables' => [
                 'foreigns' => ['branch_id' => 'branches', 'zone_lookup_id' => 'lookups'],
@@ -404,6 +417,26 @@ class SyncRegistry
             'journal_lines' => [
                 'foreigns' => ['journal_entry_id' => 'journal_entries', 'account_id' => 'accounts', 'branch_id' => 'branches'],
             ],
+            'accounting_periods' => [
+                'foreigns' => ['branch_id' => 'branches', 'closed_by' => 'users', 'closing_journal_entry_id' => 'journal_entries'],
+                'natural' => ['branch_id', 'starts_on', 'ends_on'],
+            ],
+            'fiscal_years' => [
+                'foreigns' => ['branch_id' => 'branches', 'closed_by' => 'users', 'closing_journal_entry_id' => 'journal_entries'],
+                'natural' => ['branch_id', 'starts_on', 'ends_on'],
+            ],
+            'cash_reconciliations' => [
+                'foreigns' => [
+                    'branch_id' => 'branches',
+                    'accounting_period_id' => 'accounting_periods',
+                    'account_id' => 'accounts',
+                    'reconciled_by' => 'users',
+                ],
+            ],
+            'tax_jurisdictions' => [
+                'foreigns' => ['branch_id' => 'branches'],
+                'natural' => ['branch_id', 'country', 'state', 'city', 'postal_code', 'name'],
+            ],
             'inventory_snapshots' => [
                 'foreigns' => ['branch_id' => 'branches', 'ingredient_id' => 'ingredients'],
                 'natural' => ['branch_id', 'ingredient_id', 'snapshot_date'],
@@ -434,18 +467,23 @@ class SyncRegistry
     {
         return [
             Account::class => 'accounts',
+            AccountMapping::class => 'account_mappings',
+            AccountingPeriod::class => 'accounting_periods',
             Allergen::class => 'allergens',
             Attendance::class => 'attendances',
             Branch::class => 'branches',
             BranchTransfer::class => 'branch_transfers',
             BranchTransferItem::class => 'branch_transfer_items',
             CashMovement::class => 'cash_movements',
+            CashReconciliation::class => 'cash_reconciliations',
             Category::class => 'categories',
             Currency::class => 'currencies',
+            CurrencyExchangeRate::class => 'currency_exchange_rates',
             Customer::class => 'customers',
             CustomerAddress::class => 'customer_addresses',
             Discount::class => 'discounts',
             Expense::class => 'expenses',
+            FiscalYear::class => 'fiscal_years',
             Ingredient::class => 'ingredients',
             IngredientBatch::class => 'ingredient_batches',
             IngredientStock::class => 'ingredient_stock',
@@ -494,6 +532,7 @@ class SyncRegistry
             SupplierPayment::class => 'supplier_payments',
             Table::class => 'tables',
             TableSession::class => 'table_sessions',
+            TaxJurisdiction::class => 'tax_jurisdictions',
             Unit::class => 'units',
             User::class => 'users',
         ];

@@ -1,16 +1,20 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+@php
+    $market = \App\Support\MarketProfile::class;
+    $receiptFont = $market::isUs() ? 'Arial, sans-serif' : 'DejaVu Sans, sans-serif';
+@endphp
+<html lang="{{ $market::lang() }}" dir="{{ $market::direction() }}" data-market="{{ $market::current() }}">
 <head>
 <meta charset="UTF-8"><title>{{ $invoice->number }}</title>
 <style>
-body { font-family: DejaVu Sans, sans-serif; font-size: 12px; }
+body { font-family: {!! $receiptFont !!}; font-size: 12px; }
 .center { text-align: center; }
 h1 { margin: 0.5rem 0; font-size: 18px; }
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: 4px 6px; border-bottom: 1px solid #ddd; }
 th { background: #f5f5f5; }
 .totals td { border: 0; padding: 3px; }
-.lbl { text-align: right; } .val { text-align: left; font-weight: bold; }
+.lbl { text-align: start; } .val { text-align: end; font-weight: bold; }
 .grand { border-top: 2px solid #000; border-bottom: 2px solid #000; font-size: 14px; }
 hr { border: 0; border-top: 1px dashed #333; }
 </style>

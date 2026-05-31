@@ -2,6 +2,7 @@
 
 namespace App\Exports;
 
+use App\Helpers\Money;
 use App\Models\Branch;
 use App\Models\Setting;
 
@@ -26,7 +27,7 @@ class ProfitLossPdf
 
         $brand = [
             'name'     => \App\Helpers\Brand::name(),
-            'currency' => Setting::get('currency_symbol', config('restaurant.currency_symbol', '₪')),
+            'currency' => Money::accountingSymbol(),
             'logo'     => Setting::get('brand_logo'),
             'tax'      => Setting::get('tax_number'),
             'legal'    => Setting::get('legal_name'),

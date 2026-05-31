@@ -1,38 +1,38 @@
 @extends('portal.layout')
-@section('title', 'تم الطلب '.$order->number)
+@section('title', __('portal.order.placed_title', ['number' => $order->number]))
 
 @section('content')
 <div class="pf-section pf-section--centered pop-success">
     <div class="pop-icon">
         <i class="bi bi-check-circle-fill"></i>
     </div>
-    <h1 class="pf-h1">تم استلام طلبك!</h1>
-    <p class="pf-sub">رقم الطلب: <strong>{{ $order->number }}</strong></p>
+    <h1 class="pf-h1">{{ __('portal.order.placed_heading') }}</h1>
+    <p class="pf-sub">{{ __('portal.order.order_number') }} <strong>{{ $order->number }}</strong></p>
 
     <div class="pop-card">
         <div class="pop-row">
-            <span>الفرع</span>
-            <strong>{{ $order->branch->name }}</strong>
+            <span>{{ __('portal.order.branch') }}</span>
+            <strong>{{ $order->branch->localizedName() }}</strong>
         </div>
         <div class="pop-row">
-            <span>نوع الطلب</span>
+            <span>{{ __('portal.order.order_type') }}</span>
             <strong>
                 @if($order->order_type === 'takeaway')
-                    <i class="bi bi-bag-fill"></i> استلام من الفرع
+                    <i class="bi bi-bag-fill"></i> {{ __('portal.order.pickup_from_branch') }}
                 @else
-                    <i class="bi bi-truck"></i> توصيل
+                    <i class="bi bi-truck"></i> {{ __('portal.order.delivery') }}
                 @endif
             </strong>
         </div>
         @if($order->delivery_address)
             <div class="pop-row pop-row--col">
-                <span>عنوان التوصيل</span>
+                <span>{{ __('portal.order.delivery_address') }}</span>
                 <strong>{{ $order->delivery_address }}</strong>
             </div>
         @endif
         @if($order->scheduled_for)
             <div class="pop-row">
-                <span>الوقت المحدد</span>
+                <span>{{ __('portal.order.scheduled_time') }}</span>
                 <strong>{{ $order->scheduled_for->translatedFormat('d M H:i') }}</strong>
             </div>
         @endif
@@ -41,24 +41,24 @@
              arrival time; for takeaway, the ready-for-pickup time. --}}
         @if($order->order_type === 'delivery' && $order->estimated_delivered_at)
             <div class="pop-row pop-eta">
-                <span><i class="bi bi-truck"></i> وقت الوصول المتوقع</span>
+                <span><i class="bi bi-truck"></i> {{ __('portal.order.estimated_arrival') }}</span>
                 <strong>
                     {{ $order->estimated_delivered_at->translatedFormat('H:i') }}
-                    <small class="text-muted">({{ ceil($order->estimated_delivered_at->diffInMinutes(now(), absolute: true)) }} دقيقة)</small>
+                    <small class="text-muted">({{ __('portal.order.minutes', ['count' => ceil($order->estimated_delivered_at->diffInMinutes(now(), absolute: true))]) }})</small>
                 </strong>
             </div>
         @elseif($order->estimated_ready_at)
             <div class="pop-row pop-eta">
-                <span><i class="bi bi-clock-fill"></i> جاهز للاستلام</span>
+                <span><i class="bi bi-clock-fill"></i> {{ __('portal.order.ready_for_pickup') }}</span>
                 <strong>
                     {{ $order->estimated_ready_at->translatedFormat('H:i') }}
-                    <small class="text-muted">({{ ceil($order->estimated_ready_at->diffInMinutes(now(), absolute: true)) }} دقيقة)</small>
+                    <small class="text-muted">({{ __('portal.order.minutes', ['count' => ceil($order->estimated_ready_at->diffInMinutes(now(), absolute: true))]) }})</small>
                 </strong>
             </div>
         @endif
 
         <div class="pop-row">
-            <span>الحالة</span>
+            <span>{{ __('portal.order.status') }}</span>
             <strong class="pop-status pop-status--{{ $order->status }}">
                 {{ $order->statusLabel() }}
             </strong>
@@ -77,54 +77,54 @@
         <hr>
         @if((float) $order->delivery_fee > 0)
             <div class="pop-row pop-row--mini">
-                <span>الفرعي + الضريبة</span>
+                <span>{{ __('portal.order.subtotal_tax') }}</span>
                 <span>{{ number_format((float) $order->total - (float) $order->delivery_fee, 2) }}</span>
             </div>
             <div class="pop-row pop-row--mini">
-                <span><i class="bi bi-truck"></i> رسوم التوصيل</span>
+                <span><i class="bi bi-truck"></i> {{ __('portal.order.delivery_fee') }}</span>
                 <span>{{ number_format($order->delivery_fee, 2) }}</span>
             </div>
         @endif
         <div class="pop-total">
-            <span>الإجمالي</span>
+            <span>{{ __('portal.order.total') }}</span>
             <strong>{{ number_format($order->total, 2) }} {{ config('restaurant.currency_symbol', '₪') }}</strong>
         </div>
         <div class="pop-paynote">
             <i class="bi bi-cash-coin"></i>
-            الدفع نقداً عند الاستلام / التوصيل
+            {{ __('portal.order.cash_on_delivery') }}
         </div>
     </div>
 
     @if($order->status === \App\Enums\OrderStatus::Pending->value)
         <div class="d-flex gap-2 mt-4 flex-wrap justify-content-center">
             <a href="{{ route('portal.order.edit', $order) }}" class="pf-btn pf-btn--light">
-                <i class="bi bi-pencil-square"></i> تعديل الطلب
+                <i class="bi bi-pencil-square"></i> {{ __('portal.order.edit_order') }}
             </a>
             <form action="{{ route('portal.order.cancel', $order) }}" method="POST"
-                  onsubmit="return confirm('إلغاء هذا الطلب؟');" class="d-inline">
+                  onsubmit="return confirm(@js(__('portal.order.cancel_confirm')));" class="d-inline">
                 @csrf
                 <button type="submit" class="pf-btn pf-btn--danger">
-                    <i class="bi bi-x-octagon"></i> إلغاء الطلب
+                    <i class="bi bi-x-octagon"></i> {{ __('portal.order.cancel_order') }}
                 </button>
             </form>
         </div>
         <p class="text-muted text-center mt-2 small">
             <i class="bi bi-info-circle"></i>
-            يمكنك التعديل أو الإلغاء قبل اعتماد الفرع للطلب.
+            {{ __('portal.order.edit_until_approved') }}
         </p>
     @else
         <p class="text-muted text-center mt-3 small">
             <i class="bi bi-lock-fill"></i>
-            تم اعتماد الطلب — لا يمكن التعديل من هنا. للتغييرات تواصل مع الفرع مباشرة.
+            {{ __('portal.order.locked_after_approved') }}
         </p>
     @endif
 
     <div class="d-flex gap-2 mt-3 justify-content-center flex-wrap">
         <a href="{{ route('portal.order.history') }}" class="pf-btn pf-btn--light">
-            <i class="bi bi-clock-history"></i> طلباتي السابقة
+            <i class="bi bi-clock-history"></i> {{ __('portal.order.order_history') }}
         </a>
         <a href="{{ route('portal.order.branches') }}" class="pf-btn pf-btn--primary">
-            <i class="bi bi-bag-plus"></i> طلب جديد
+            <i class="bi bi-bag-plus"></i> {{ __('portal.order.new_order') }}
         </a>
     </div>
 </div>

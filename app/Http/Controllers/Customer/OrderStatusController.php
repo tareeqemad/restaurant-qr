@@ -48,21 +48,21 @@ class OrderStatusController extends Controller
         $session = $request->attributes->get('table_session');
 
         if ($session->customer_id) {
-            return back()->with('error', 'حسابك مرتبط أصلاً.');
+            return back()->with('error', __('ui.customer_order.account_already_linked'));
         }
         if (empty($session->customer_phone)) {
-            return back()->with('error', 'ما في رقم محفوظ لتسجيل حساب.');
+            return back()->with('error', __('ui.customer_order.no_phone_for_signup'));
         }
 
         $existing = Customer::findForLogin($session->customer_phone);
         if ($existing) {
             $session->update(['customer_id' => $existing->id]);
             $response = redirect()->route('customer.track')
-                ->with('success', "أهلاً بعودتك {$existing->name}! ربطنا الطلب بحسابك.");
+                ->with('success', __('ui.customer_order.welcome_back_linked', ['name' => $existing->name]));
             $customer = $existing;
         } else {
             [$customer, $pin] = Customer::createFromCashier(
-                name: $session->customer_name ?: 'زبون',
+                name: $session->customer_name ?: __('ui.customer_order.guest_name_default'),
                 phone: $session->customer_phone,
                 defaultBranchId: $session->table?->branch_id,
             );
@@ -95,6 +95,7 @@ class OrderStatusController extends Controller
     {
         $session = $request->attributes->get('table_session');
         session()->put('signup_dismissed_session_'.$session->id, true);
+
         return back();
     }
 
@@ -105,7 +106,8 @@ class OrderStatusController extends Controller
             'customer_name' => ['nullable', 'string', 'max:100'],
             'cover_count' => ['nullable', 'integer', 'min:1', 'max:50'],
         ]);
-        $session->update(array_filter($data, fn($v) => $v !== null));
+        $session->update(array_filter($data, fn ($v) => $v !== null));
+
         return back();
     }
 
@@ -119,15 +121,16 @@ class OrderStatusController extends Controller
         $windowExpired = $cancelWindow <= 0 || ($submittedAt && $submittedAt->lt(now()->subSeconds($cancelWindow)));
 
         if (! $order->canCancelEntireOrder() || $windowExpired) {
-            return back()->with('error', 'لا يمكن إلغاء هذا الطلب');
+            return back()->with('error', __('ui.customer_order.cannot_cancel_order'));
         }
 
-        $reason = $request->input('reason') ?: 'إلغاء من الزبون';
+        $reason = $request->input('reason') ?: __('ui.customer_order.customer_cancel_reason');
         if ($order->status !== OrderStatus::Pending->value) {
-            $reason = "إلغاء من الزبون قبل بدء التحضير: {$reason}";
+            $reason = __('ui.customer_order.customer_cancel_before_prep', ['reason' => $reason]);
         }
 
         $this->orders->cancel($order, null, $reason);
-        return back()->with('success', 'تم إلغاء الطلب. المطبخ والبار تم إعلامهم');
+
+        return back()->with('success', __('ui.customer_order.order_cancelled_notified'));
     }
 }

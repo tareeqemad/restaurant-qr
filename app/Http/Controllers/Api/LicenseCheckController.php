@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\License;
 use App\Services\Licensing\LicenseSigner;
+use DomainException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -16,7 +17,9 @@ class LicenseCheckController extends Controller
 
         $data = $request->validate([
             'license_key' => ['required', 'string', 'max:120'],
-            'branch_uuid' => ['nullable', 'string', 'max:80'],
+            'branch_uuid' => ['required', 'string', 'max:80'],
+            'branch_id' => ['nullable', 'string', 'max:80'],
+            'app_url' => ['nullable', 'string', 'max:191'],
         ]);
 
         $license = License::where('license_key', $data['license_key'])->first();
@@ -25,7 +28,22 @@ class LicenseCheckController extends Controller
             return response()->json(['message' => 'License key not found.'], 404);
         }
 
-        $payload = $license->signedPayload($data['branch_uuid'] ?? null);
+        try {
+            $activation = $license->recordActivation(
+                branchUuid: $data['branch_uuid'],
+                branchId: $data['branch_id'] ?? null,
+                appUrl: $data['app_url'] ?? null,
+                ip: $request->ip(),
+                userAgent: $request->userAgent(),
+            );
+        } catch (DomainException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'status' => str_contains($e->getMessage(), 'limit') ? 'activation_limit' : 'activation_invalid',
+            ], 423);
+        }
+
+        $payload = $license->signedPayload($data['branch_uuid'], $activation);
 
         return response()->json([
             'payload' => $payload,

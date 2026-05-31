@@ -1,16 +1,15 @@
 @extends('portal.layout')
-@section('title', 'تعديل طلب '.$order->number)
+@section('title', __('portal.order.edit_title', ['number' => $order->number]))
 
 @section('content')
 <div class="pf-section">
     <a href="{{ route('portal.order.placed', $order) }}" class="poc-back">
-        <i class="bi bi-arrow-right"></i> عودة لتفاصيل الطلب
+        <i class="bi bi-arrow-right"></i> {{ __('portal.order.back_to_details') }}
     </a>
-    <h1 class="pf-h1">تعديل الطلب {{ $order->number }}</h1>
+    <h1 class="pf-h1">{{ __('portal.order.edit_heading', ['number' => $order->number]) }}</h1>
     <p class="pf-sub">
         <i class="bi bi-info-circle"></i>
-        يمكنك تغيير الكمية أو حذف صنف.
-        لإضافة أصناف جديدة، أنشئ طلباً جديداً من نفس الفرع.
+        {{ __('portal.order.edit_help') }}
     </p>
 
     <form action="{{ route('portal.order.update', $order) }}" method="POST" class="poe-form">
@@ -23,21 +22,21 @@
                         <strong>{{ $item->name_snapshot }}</strong>
                         @if($item->modifiers->isNotEmpty())
                             <small class="text-muted d-block">
-                                {{ $item->modifiers->pluck('name_snapshot')->join('، ') }}
+                                {{ $item->modifiers->pluck('name_snapshot')->join(', ') }}
                             </small>
                         @endif
                         <span class="poe-item__price">
-                            {{ number_format((float) $item->unit_price + (float) $item->modifiers_total, 2) }} {{ config('restaurant.currency_symbol', '₪') }} / للقطعة
+                            {{ number_format((float) $item->unit_price + (float) $item->modifiers_total, 2) }} {{ config('restaurant.currency_symbol', '₪') }} / {{ __('portal.order.unit_price_suffix') }}
                         </span>
                     </div>
                     <div class="poe-item__qty">
-                        <label class="visually-hidden" for="qty-{{ $item->id }}">الكمية</label>
+                        <label class="visually-hidden" for="qty-{{ $item->id }}">{{ __('portal.order.quantity') }}</label>
                         <input type="number" id="qty-{{ $item->id }}"
                                name="items[{{ $item->id }}][qty]"
                                class="form-control"
                                value="{{ (int) $item->quantity }}"
                                min="0" max="50">
-                        <small class="poe-item__hint">0 = حذف</small>
+                        <small class="poe-item__hint">{{ __('portal.order.zero_deletes') }}</small>
                     </div>
                 </div>
             @endforeach
@@ -45,11 +44,11 @@
 
         <div class="poe-actions">
             <button type="submit" class="poc-submit">
-                <i class="bi bi-check-circle-fill"></i> حفظ التعديلات
+                <i class="bi bi-check-circle-fill"></i> {{ __('portal.order.save_changes') }}
             </button>
             <button type="button" class="pf-btn pf-btn--light"
-                    onclick="if(confirm('إلغاء الطلب بالكامل؟')) document.getElementById('cancel-form').submit();">
-                <i class="bi bi-x-octagon"></i> إلغاء الطلب بالكامل
+                    onclick="if(confirm(@js(__('portal.order.cancel_entire_confirm')))) document.getElementById('cancel-form').submit();">
+                <i class="bi bi-x-octagon"></i> {{ __('portal.order.cancel_entire_order') }}
             </button>
         </div>
     </form>

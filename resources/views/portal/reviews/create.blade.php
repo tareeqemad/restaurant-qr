@@ -1,9 +1,9 @@
 @extends('portal.layout')
-@section('title', 'اكتب تقييماً')
+@section('title', __('portal.reviews.write_title'))
 
 @section('content')
 <div class="pf-card" style="max-width: 560px; margin: 0 auto;">
-    <h1 class="pf-title">كيف كانت زيارتك؟</h1>
+    <h1 class="pf-title">{{ __('portal.reviews.visit_question') }}</h1>
     <p class="pf-subtitle">
         {{ $reservation->branch->name }} · {{ $reservation->reserved_for->translatedFormat('d M Y') }}
     </p>
@@ -12,12 +12,12 @@
         @csrf
 
         {{-- ─── Star rating ─────────────────────────────────────── --}}
-        <div class="pf-rate" role="radiogroup" aria-label="تقييم الزيارة">
+        <div class="pf-rate" role="radiogroup" aria-label="{{ __('portal.reviews.rating_aria') }}">
             @for($i = 5; $i >= 1; $i--)
                 <input type="radio" id="r{{ $i }}" name="rating" value="{{ $i }}"
                        @checked(old('rating') == $i)
                        required>
-                <label for="r{{ $i }}" title="{{ $i }} من 5">
+                <label for="r{{ $i }}" title="{{ __('portal.reviews.star_title', ['count' => $i]) }}">
                     <i class="bi bi-star-fill"></i>
                 </label>
             @endfor
@@ -25,26 +25,26 @@
         @error('rating')<div class="pf-error" style="text-align:center;">{{ $message }}</div>@enderror
 
         <div class="pf-input-group mt-4">
-            <label class="pf-label" for="title">عنوان مختصر (اختياري)</label>
+            <label class="pf-label" for="title">{{ __('portal.reviews.short_title') }}</label>
             <input type="text" id="title" name="title" value="{{ old('title') }}"
                    class="pf-input @error('title') has-error @enderror"
-                   placeholder="مثلاً: خدمة ممتازة وأكل لذيذ">
+                   placeholder="{{ __('portal.reviews.short_title_placeholder') }}">
             @error('title')<div class="pf-error">{{ $message }}</div>@enderror
         </div>
 
         <div class="pf-input-group">
-            <label class="pf-label" for="body">شاركنا تفاصيل تجربتك (اختياري)</label>
+            <label class="pf-label" for="body">{{ __('portal.reviews.details_label') }}</label>
             <textarea id="body" name="body" rows="5"
                       class="pf-input @error('body') has-error @enderror"
-                      placeholder="ما الذي أعجبك؟ ما الذي يمكن تحسينه؟">{{ old('body') }}</textarea>
+                      placeholder="{{ __('portal.reviews.details_placeholder') }}">{{ old('body') }}</textarea>
             @error('body')<div class="pf-error">{{ $message }}</div>@enderror
         </div>
 
         <div class="d-flex gap-2 mt-3">
             <button class="pf-btn">
-                <i class="bi bi-send"></i> إرسال التقييم
+                <i class="bi bi-send"></i> {{ __('portal.reviews.submit') }}
             </button>
-            <a href="{{ route('portal.reviews.index') }}" class="pf-btn pf-btn--ghost">إلغاء</a>
+            <a href="{{ route('portal.reviews.index') }}" class="pf-btn pf-btn--ghost">{{ __('portal.reviews.cancel') }}</a>
         </div>
     </form>
 </div>

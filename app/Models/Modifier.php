@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasLocalizedFields;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Modifier extends Model
 {
-    use HasFactory;
+    use HasFactory, HasLocalizedFields;
 
     protected $fillable = ['modifier_group_id', 'name', 'name_en', 'price_delta', 'active', 'display_order'];
 

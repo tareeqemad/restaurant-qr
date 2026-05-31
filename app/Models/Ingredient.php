@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasLocalizedFields;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,7 +11,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Ingredient extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, HasLocalizedFields, SoftDeletes;
 
     protected $fillable = [
         'sku', 'name', 'name_en', 'base_unit_id', 'supplier_id',
@@ -53,7 +54,8 @@ class Ingredient extends Model
             ->selectRaw('MAX(CAST(SUBSTRING(sku, '.(strlen($prefix) + 1).') AS UNSIGNED)) AS n')
             ->value('n');
         $next = ((int) $max) + 1;
-        return $prefix . str_pad((string) $next, 5, '0', STR_PAD_LEFT);
+
+        return $prefix.str_pad((string) $next, 5, '0', STR_PAD_LEFT);
     }
 
     protected $casts = [
@@ -187,7 +189,7 @@ class Ingredient extends Model
      */
     public function trackedValue(): float
     {
-        $branchIds = \App\Models\StorageLocation::where('active', true)
+        $branchIds = StorageLocation::where('active', true)
             ->distinct()
             ->pluck('branch_id');
 
@@ -195,6 +197,7 @@ class Ingredient extends Model
         foreach ($branchIds as $bid) {
             $total += $this->valueAtBranch((int) $bid);
         }
+
         return $total;
     }
 
@@ -267,9 +270,14 @@ class Ingredient extends Model
      */
     public function isLowStockAtBranch(int $branchId): bool
     {
-        if (! $this->track_stock) return false;
+        if (! $this->track_stock) {
+            return false;
+        }
         $threshold = $this->reorderThresholdAtBranch($branchId);
-        if ($threshold <= 0) return false;
+        if ($threshold <= 0) {
+            return false;
+        }
+
         return $this->stockAtBranch($branchId) <= $threshold;
     }
 }

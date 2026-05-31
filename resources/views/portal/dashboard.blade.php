@@ -1,5 +1,5 @@
 @extends('portal.layout')
-@section('title', 'الرئيسية')
+@section('title', __('portal.dashboard.title'))
 
 @section('content')
 
@@ -87,34 +87,34 @@
 @endif
 
 <div class="pf-card">
-    <h1 class="pf-title">أهلاً، {{ $customer->name }} 👋</h1>
-    <p class="pf-subtitle">جاهز لحجز طاولتك القادمة؟</p>
+    <h1 class="pf-title">{{ __('portal.dashboard.welcome', ['name' => $customer->name]) }}</h1>
+    <p class="pf-subtitle">{{ __('portal.dashboard.ready_for_next_reservation') }}</p>
 
     <div class="pf-stat-grid">
         <div class="pf-stat">
             <div class="pf-stat__value">{{ $stats['upcoming'] }}</div>
-            <div class="pf-stat__label">حجوزات قادمة</div>
+            <div class="pf-stat__label">{{ __('portal.dashboard.upcoming_reservations') }}</div>
         </div>
         <div class="pf-stat">
             <div class="pf-stat__value">{{ $stats['completed'] }}</div>
-            <div class="pf-stat__label">زيارات مكتملة</div>
+            <div class="pf-stat__label">{{ __('portal.dashboard.completed_visits') }}</div>
         </div>
         <div class="pf-stat">
             <div class="pf-stat__value">{{ $stats['cancelled'] }}</div>
-            <div class="pf-stat__label">حجوزات ملغاة</div>
+            <div class="pf-stat__label">{{ __('portal.dashboard.cancelled_reservations') }}</div>
         </div>
     </div>
 
     <a href="{{ route('portal.reservations.create') }}" class="pf-btn pf-btn--block">
-        <i class="bi bi-calendar-plus"></i> احجز طاولة
+        <i class="bi bi-calendar-plus"></i> {{ __('portal.dashboard.book_table') }}
     </a>
 </div>
 
 @if($nextRes)
     <div class="pf-section-head">
-        <h2>حجزك القادم</h2>
+        <h2>{{ __('portal.dashboard.next_reservation') }}</h2>
         <a href="{{ route('portal.reservations.index') }}" class="pf-link-bare" style="font-size:.85rem;">
-            كل الحجوزات →
+            {{ __('portal.dashboard.all_reservations') }} →
         </a>
     </div>
 
@@ -125,24 +125,24 @@
         </div>
         <div class="pf-res__body">
             <div class="pf-res__head">
-                <span class="pf-res__branch">{{ $nextRes->branch->name }}</span>
+                <span class="pf-res__branch">{{ $nextRes->branch->localizedName() }}</span>
                 <span class="pf-pill pf-pill--{{ $nextRes->status->color() }}">{{ $nextRes->status->label() }}</span>
             </div>
             <div class="pf-res__meta">
                 <span><i class="bi bi-clock"></i> {{ $nextRes->reserved_for->format('H:i') }}</span>
-                <span><i class="bi bi-people"></i> {{ $nextRes->party_size }} ضيوف</span>
+                <span><i class="bi bi-people"></i> {{ trans_choice('portal.dashboard.guest_count', $nextRes->party_size, ['count' => $nextRes->party_size]) }}</span>
                 <span class="pf-res__ref">{{ $nextRes->reference }}</span>
             </div>
         </div>
     </div>
 @else
     <div class="pf-section-head">
-        <h2>حجزك القادم</h2>
+        <h2>{{ __('portal.dashboard.next_reservation') }}</h2>
     </div>
     <div class="pf-card">
         <div class="pf-empty">
             <i class="bi bi-calendar2-event"></i>
-            <div>لا توجد حجوزات قادمة. ابدأ بحجز طاولتك الآن.</div>
+            <div>{{ __('portal.dashboard.no_upcoming_reservations') }}</div>
         </div>
     </div>
 @endif
@@ -150,9 +150,9 @@
 {{-- Active orders — still in flight ─────────────────────────────── --}}
 @if($activeOrders->isNotEmpty())
     <div class="pf-section-head">
-        <h2>طلبات نشطة <span class="pf-badge-num">{{ $orderStats['active'] }}</span></h2>
+        <h2>{{ __('portal.dashboard.active_orders') }} <span class="pf-badge-num">{{ $orderStats['active'] }}</span></h2>
         <a href="{{ route('portal.order.history') }}" class="pf-link-bare" style="font-size:.85rem;">
-            كل الطلبات →
+            {{ __('portal.dashboard.all_orders') }} →
         </a>
     </div>
 
@@ -163,10 +163,10 @@
                     : ($order->order_type === 'delivery' ? 'delivery'
                     : ($order->order_type === 'takeaway' ? 'takeaway' : 'other'));
                 $srcMeta = [
-                    'dine_in'  => ['icon' => 'bi-grid-3x3-gap-fill', 'label' => 'في المطعم'],
-                    'takeaway' => ['icon' => 'bi-bag-fill',          'label' => 'استلام · من التطبيق'],
-                    'delivery' => ['icon' => 'bi-truck',             'label' => 'توصيل · من التطبيق'],
-                    'other'    => ['icon' => 'bi-bag-check-fill',    'label' => 'طلب'],
+                    'dine_in'  => ['icon' => 'bi-grid-3x3-gap-fill', 'label' => __('portal.order.source_dine_in')],
+                    'takeaway' => ['icon' => 'bi-bag-fill',          'label' => __('portal.order.source_takeaway').' · '.__('portal.order.source_from_app')],
+                    'delivery' => ['icon' => 'bi-truck',             'label' => __('portal.order.source_delivery').' · '.__('portal.order.source_from_app')],
+                    'other'    => ['icon' => 'bi-bag-check-fill',    'label' => __('portal.order.source_other')],
                 ][$src];
             @endphp
             <a href="{{ route('portal.order.placed', $order) }}" class="pf-order pf-order--active">
@@ -182,7 +182,7 @@
                     </div>
                     <div class="pf-order__meta">
                         <span><i class="bi {{ $srcMeta['icon'] }}"></i> {{ $srcMeta['label'] }}</span>
-                        <span><i class="bi bi-shop"></i> {{ $order->branch?->name ?? '—' }}</span>
+                        <span><i class="bi bi-shop"></i> {{ $order->branch?->localizedName() ?? '—' }}</span>
                         <span><i class="bi bi-clock"></i> {{ $order->created_at->diffForHumans() }}</span>
                         <span><i class="bi bi-currency-exchange"></i>
                             {{ number_format((float) $order->total, 2) }} {{ config('restaurant.currency_symbol', '₪') }}
@@ -197,10 +197,10 @@
 
 {{-- Recent orders ──────────────────────────────────────────────── --}}
 <div class="pf-section-head">
-    <h2>طلباتك السابقة</h2>
+    <h2>{{ __('portal.dashboard.recent_orders') }}</h2>
     @if($recentOrders->isNotEmpty())
         <a href="{{ route('portal.order.history') }}" class="pf-link-bare" style="font-size:.85rem;">
-            عرض الكل ({{ $orderStats['total'] }}) →
+            {{ __('portal.dashboard.view_all', ['count' => $orderStats['total']]) }} →
         </a>
     @endif
 </div>
@@ -213,10 +213,10 @@
                     : ($order->order_type === 'delivery' ? 'delivery'
                     : ($order->order_type === 'takeaway' ? 'takeaway' : 'other'));
                 $srcMeta = [
-                    'dine_in'  => ['icon' => 'bi-grid-3x3-gap-fill', 'label' => 'في المطعم'],
-                    'takeaway' => ['icon' => 'bi-bag-fill',          'label' => 'استلام · من التطبيق'],
-                    'delivery' => ['icon' => 'bi-truck',             'label' => 'توصيل · من التطبيق'],
-                    'other'    => ['icon' => 'bi-receipt',           'label' => 'طلب'],
+                    'dine_in'  => ['icon' => 'bi-grid-3x3-gap-fill', 'label' => __('portal.order.source_dine_in')],
+                    'takeaway' => ['icon' => 'bi-bag-fill',          'label' => __('portal.order.source_takeaway').' · '.__('portal.order.source_from_app')],
+                    'delivery' => ['icon' => 'bi-truck',             'label' => __('portal.order.source_delivery').' · '.__('portal.order.source_from_app')],
+                    'other'    => ['icon' => 'bi-receipt',           'label' => __('portal.order.source_other')],
                 ][$src];
             @endphp
             <a href="{{ route('portal.order.placed', $order) }}" class="pf-order">
@@ -232,7 +232,7 @@
                     </div>
                     <div class="pf-order__meta">
                         <span><i class="bi {{ $srcMeta['icon'] }}"></i> {{ $srcMeta['label'] }}</span>
-                        <span><i class="bi bi-shop"></i> {{ $order->branch?->name ?? '—' }}</span>
+                        <span><i class="bi bi-shop"></i> {{ $order->branch?->localizedName() ?? '—' }}</span>
                         <span><i class="bi bi-calendar"></i> {{ $order->created_at->translatedFormat('j M, H:i') }}</span>
                         <span><i class="bi bi-currency-exchange"></i>
                             {{ number_format((float) $order->total, 2) }} {{ config('restaurant.currency_symbol', '₪') }}
@@ -247,9 +247,9 @@
     <div class="pf-card">
         <div class="pf-empty">
             <i class="bi bi-bag"></i>
-            <div>لم تطلب أي شيء بعد. تصفّح القائمة وابدأ طلبك الأول.</div>
+            <div>{{ __('portal.dashboard.no_orders_yet') }}</div>
             <a href="{{ route('portal.order.branches') }}" class="pf-btn pf-btn--sm mt-3">
-                <i class="bi bi-shop"></i> اطلب الآن
+                <i class="bi bi-shop"></i> {{ __('portal.dashboard.order_now') }}
             </a>
         </div>
     </div>

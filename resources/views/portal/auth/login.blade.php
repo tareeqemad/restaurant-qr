@@ -1,6 +1,7 @@
 @php
     $theme = \App\Support\ThemePalette::current();
     $siteName = \App\Helpers\Brand::name();
+    $market = \App\Support\MarketProfile::class;
 @endphp
 <!DOCTYPE html>
 {{--
@@ -13,18 +14,18 @@
     Keep the two pages visually in sync; if the staff login gets a polish,
     bring it across here too.
 --}}
-<html lang="ar" dir="rtl">
+<html lang="{{ $market::lang() }}" dir="{{ $market::direction() }}" data-market="{{ $market::current() }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <meta name="theme-color" content="{{ $theme['primary'] }}">
-    <title>تسجيل الدخول · {{ $siteName }}</title>
+    <title>{{ __('ui.auth.login_button') }} · {{ $siteName }}</title>
     <link rel="icon" href="{{ \App\Helpers\Brand::faviconUrl() }}">
     <link href="{{ asset('assets/dashtic/icon-fonts/bootstrap-icons/icons/font/bootstrap-icons.css') }}" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+    <link href="{{ $market::fontUrl() }}" rel="stylesheet">
     <style>
         :root {
             --green-primary: {{ $theme['primary'] }};
@@ -44,11 +45,12 @@
             --danger-fg:     #991B1B;
         }
         @include('partials.theme-vars', ['theme' => $theme])
+        @include('partials.market-vars')
 
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         html, body { margin: 0; padding: 0; height: 100%; }
         body {
-            font-family: 'Tajawal', system-ui, sans-serif;
+            font-family: var(--market-font-family);
             color: var(--ink);
             line-height: 1.5;
             -webkit-font-smoothing: antialiased;
@@ -522,37 +524,36 @@
         {{-- Hero (right in RTL) --}}
         <section class="hero">
             <span class="hero-badge">
-                <i class="bi bi-stars"></i> قائمة طازجة كل يوم
+                <i class="bi bi-stars"></i> {{ __('ui.auth.hero_badge') }}
             </span>
 
             <h1 class="hero-title">
-                وجبتك المفضّلة،<br>
-                بنكهة <span class="green">طازجة</span> و<span class="gold">أصالة</span>
+                {{ __('ui.auth.hero_title_line_1') }}<br>
+                {{ __('ui.auth.hero_title_line_2_prefix') }} <span class="green">{{ __('ui.auth.hero_title_fresh') }}</span> {{ __('ui.auth.hero_title_and') }} <span class="gold">{{ __('ui.auth.hero_title_authentic') }}</span>
             </h1>
 
             <p class="hero-desc">
-                اطلب من أكثر من 200 طبق محضّر بأيدي طهاتنا — تتبّع طلبك من المطبخ حتى طاولتك،
-                وادفع بسهولة بطريقتك المفضّلة. تجربة مطعم متكاملة، بضغطة واحدة.
+                {{ __('ui.auth.hero_description') }}
             </p>
 
             <div class="features">
                 <div class="feature">
                     <div class="feature-icon"><i class="bi bi-calendar-check"></i></div>
-                    <div class="feature-title">حجز فوري</div>
+                    <div class="feature-title">{{ __('ui.auth.feature_reservation') }}</div>
                 </div>
                 <div class="feature">
                     <div class="feature-icon"><i class="bi bi-star-fill"></i></div>
-                    <div class="feature-title">تقييم ممتاز</div>
+                    <div class="feature-title">{{ __('ui.auth.feature_rating') }}</div>
                 </div>
                 <div class="feature">
                     <div class="feature-icon"><i class="bi bi-clock-fill"></i></div>
-                    <div class="feature-title">طلب 24/7</div>
+                    <div class="feature-title">{{ __('ui.auth.feature_anytime_ordering') }}</div>
                 </div>
             </div>
 
             <div class="hero-foot">
-                <span><i class="bi bi-shield-check"></i> دفع آمن وموثوق</span>
-                <span>© {{ date('Y') }} {{ $siteName }} · جميع الحقوق محفوظة</span>
+                <span><i class="bi bi-shield-check"></i> {{ __('ui.common.secure_payment') }}</span>
+                <span>© {{ date('Y') }} {{ $siteName }} · {{ __('ui.common.all_rights_reserved') }}</span>
             </div>
         </section>
 
@@ -564,8 +565,8 @@
                 <div class="auth-card">
                     {{-- Login panel --}}
                     <div class="login-panel" id="loginPanel">
-                        <h2 class="auth-title">أهلاً بعودتك 👋</h2>
-                        <p class="auth-subtitle">سجّل دخولك للطلب وتتبّع وجبتك</p>
+                        <h2 class="auth-title">{{ __('ui.auth.welcome_back') }}</h2>
+                        <p class="auth-subtitle">{{ __('ui.auth.customer_subtitle') }}</p>
 
                         {{-- Brand::logoUrl() already returns the dynamic monogram fallback when no
                              custom logo is uploaded — no need for an explicit hasCustomLogo branch. --}}
@@ -591,19 +592,19 @@
                             @csrf
 
                             <div class="field">
-                                <label class="field-label" for="identifierField">رقم الهاتف أو البريد الإلكتروني</label>
+                                <label class="field-label" for="identifierField">{{ __('ui.auth.phone_or_email') }}</label>
                                 <div class="input-wrap">
                                     <i class="bi bi-person-fill icon-leading"></i>
                                     <input type="text" name="identifier" id="identifierField"
                                            class="input-control" dir="ltr"
-                                           placeholder="مثال: 07xxxxxxxx"
+                                           placeholder="{{ __('ui.auth.phone_example') }}"
                                            value="{{ old('identifier') }}"
                                            required autofocus autocomplete="username">
                                 </div>
                             </div>
 
                             <div class="field">
-                                <label class="field-label" for="passwordField">كلمة المرور</label>
+                                <label class="field-label" for="passwordField">{{ __('ui.auth.password') }}</label>
                                 <div class="input-wrap">
                                     <i class="bi bi-lock icon-leading"></i>
                                     <input :type="showPassword ? 'text' : 'password'" name="password" id="passwordField"
@@ -616,40 +617,40 @@
                                     <button type="button"
                                             class="icon-trailing"
                                             @click="showPassword = !showPassword"
-                                            :aria-label="showPassword ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'">
+                                            :aria-label="showPassword ? @js(__('ui.auth.hide_password')) : @js(__('ui.auth.show_password'))">
                                         <i class="bi" :class="showPassword ? 'bi-eye-slash' : 'bi-eye'"></i>
                                     </button>
                                 </div>
                                 <div class="caps-warn" id="capsWarn" :class="{ 'is-on': capsLock }" x-show="capsLock" x-cloak>
                                     <i class="bi bi-capslock-fill"></i>
-                                    <span>Caps Lock مفعّل</span>
+                                    <span>{{ __('ui.auth.caps_lock_on') }}</span>
                                 </div>
                             </div>
 
                             <input type="hidden" name="remember" value="1">
 
                             <button type="submit" class="btn-submit" id="submitBtn" :class="{ 'is-loading': submitting }" :disabled="submitting">
-                                <span class="label">تسجيل الدخول</span>
+                                <span class="label">{{ __('ui.auth.login_button') }}</span>
                                 <i class="bi bi-chevron-left icon-fwd"></i>
                                 <span class="spinner"><i class="bi bi-arrow-repeat"></i></span>
                             </button>
                         </form>
 
                         <div class="signup-row">
-                            <span>ليس لديك حساب؟</span>
-                            <a href="{{ route('portal.register') }}">أنشئ حسابك الآن</a>
+                            <span>{{ __('ui.auth.no_account') }}</span>
+                            <a href="{{ route('portal.register') }}">{{ __('ui.auth.create_account') }}</a>
                         </div>
 
                         <div class="text-center" style="margin-top: .75rem;">
                             <a href="{{ route('portal.password.request') }}"
                                style="color: var(--muted-2); text-decoration: none; font-size: .9rem; font-weight: 700;">
                                 <i class="bi bi-question-circle"></i>
-                                نسيت كلمة المرور؟
+                                {{ __('ui.auth.forgot_password') }}
                             </a>
                         </div>
                     </div>
 
-                    <p class="form-foot">بتسجيلك أنت توافق على الاستخدام الآمن للنظام</p>
+                    <p class="form-foot">{{ __('ui.common.safe_use_agreement') }}</p>
                 </div>
             </div>
         </section>

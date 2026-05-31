@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Customer-side inbox for marketing announcements + future system pings.
@@ -40,14 +39,16 @@ class NotificationController extends Controller
         if ($url) {
             return redirect()->to($url);
         }
-        return back()->with('success', 'تم وضع علامة مقروء.');
+
+        return back()->with('success', __('portal.notifications.marked_read'));
     }
 
     public function markAllRead(Request $request)
     {
         $customer = auth('customer')->user();
         $customer->unreadNotifications()->update(['read_at' => now()]);
-        return back()->with('success', 'تم وضع علامة مقروء على الكل.');
+
+        return back()->with('success', __('portal.notifications.marked_all_read'));
     }
 
     /**
@@ -57,6 +58,7 @@ class NotificationController extends Controller
     public function unreadCount()
     {
         $customer = auth('customer')->user();
+
         return response()->json([
             'count' => $customer ? $customer->unreadNotifications()->count() : 0,
         ]);

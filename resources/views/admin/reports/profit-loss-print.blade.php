@@ -1,12 +1,13 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+@php($market = \App\Support\MarketProfile::class)
+<html lang="{{ $market::lang() }}" dir="{{ $market::direction() }}" data-market="{{ $market::current() }}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>تفاصيل الصندوق — {{ $brand['name'] }}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Amiri:wght@400;700&display=swap" rel="stylesheet">
+<link href="{{ $market::fontUrl() }}" rel="stylesheet">
 
 @php
     use App\Helpers\Money;
@@ -16,6 +17,8 @@
     $costs  = $r['costs'];
     $profit = $r['profit'];
     $cur = $brand['currency'];
+    $source = $period['source'] ?? 'ledger';
+    $sourceLabel = $source === 'ledger' ? 'دفتر القيود' : 'تشغيلي';
     $totalCosts = $costs['cogs'] + $costs['waste'] + $costs['expenses'] + $costs['platform_commission'] + $costs['refunds'];
     $fmt = fn ($v) => number_format((float) $v, 2, '.', ',') . ' ' . $cur;
     $pct = fn ($v) => number_format((float) $v, 2) . '%';
@@ -37,9 +40,10 @@
         --line: #e2e8f0;
         --bg: #f8fafc;
     }
+    @include('partials.market-vars')
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
-        font-family: 'Cairo', 'Segoe UI', Tahoma, sans-serif;
+        font-family: var(--market-font-family);
         background: var(--bg);
         color: #1f2937;
         line-height: 1.7;
@@ -334,7 +338,7 @@
     }
     .glossary code {
         background: #f1f5f9; padding: 2px 8px; border-radius: 4px;
-        font-family: 'Cairo', monospace; color: var(--green-deep); font-size: 12px;
+        font-family: var(--market-font-family); color: var(--green-deep); font-size: 12px;
     }
 
     /* ─── FOOTER (signature line) ──────────────────────────────── */
@@ -436,10 +440,10 @@
         </div>
         <div class="brand__meta">
             <strong>{{ $branchName }}</strong><br>
-            {{ \Carbon\Carbon::parse($period['from'])->locale('ar')->isoFormat('D MMMM YYYY') }}
+            {{ \Carbon\Carbon::parse($period['from'])->locale(\App\Support\MarketProfile::lang())->isoFormat('D MMMM YYYY') }}
             —
-            {{ \Carbon\Carbon::parse($period['to'])->locale('ar')->isoFormat('D MMMM YYYY') }}<br>
-            <span style="font-size:11.5px; opacity:.8;">صدر {{ $generatedAt->locale('ar')->isoFormat('D MMMM YYYY · HH:mm') }}</span>
+            {{ \Carbon\Carbon::parse($period['to'])->locale(\App\Support\MarketProfile::lang())->isoFormat('D MMMM YYYY') }}<br>
+            <span style="font-size:11.5px; opacity:.8;">صدر {{ $generatedAt->locale(\App\Support\MarketProfile::lang())->isoFormat('D MMMM YYYY · HH:mm') }}</span>
         </div>
     </div>
 
@@ -454,7 +458,9 @@
         <span class="pm-dot"></span>
         <div><span class="lbl">معدل اليوم:</span><span class="val">{{ $fmt($sales['daily_average']) }}</span></div>
         <span class="pm-dot"></span>
-        <div><span class="lbl">احتساب التكلفة:</span><span class="val">{{ $period['per_branch_cost'] ? 'بأسعار شراء الفرع' : 'موحَّدة' }}</span></div>
+        <div><span class="lbl">مصدر التقرير:</span><span class="val">{{ $sourceLabel }}</span></div>
+        <span class="pm-dot"></span>
+        <div><span class="lbl">احتساب التكلفة:</span><span class="val">{{ $source === 'ledger' ? 'من دفتر القيود' : ($period['per_branch_cost'] ? 'بأسعار شراء الفرع' : 'موحَّدة') }}</span></div>
     </div>
 </div>
 

@@ -1,5 +1,5 @@
 @extends('portal.layout')
-@section('title', 'إتمام الطلب')
+@section('title', __('portal.order.checkout_title'))
 
 @php
     $currency = config('restaurant.currency_symbol', '₪');
@@ -15,22 +15,22 @@
     {{-- Top: back link + breadcrumb steps ──────────────────── --}}
     <div class="co-top">
         <a href="{{ route('portal.order.menu', $branch) }}" class="co-back">
-            <i class="bi bi-arrow-right"></i> عودة للقائمة
+            <i class="bi bi-arrow-right"></i> {{ __('portal.order.back_to_menu') }}
         </a>
-        <div class="co-steps" aria-label="مراحل الطلب">
+        <div class="co-steps" aria-label="{{ __('portal.order.steps_aria') }}">
             <div class="co-step is-done">
                 <span class="co-step-num"><i class="bi bi-check-lg"></i></span>
-                <span class="co-step-label">السلة</span>
+                <span class="co-step-label">{{ __('portal.order.step_cart') }}</span>
             </div>
             <div class="co-step-line is-done"></div>
             <div class="co-step is-active">
                 <span class="co-step-num">2</span>
-                <span class="co-step-label">إتمام الطلب</span>
+                <span class="co-step-label">{{ __('portal.order.step_checkout') }}</span>
             </div>
             <div class="co-step-line"></div>
             <div class="co-step">
                 <span class="co-step-num">3</span>
-                <span class="co-step-label">التأكيد</span>
+                <span class="co-step-label">{{ __('portal.order.step_confirmation') }}</span>
             </div>
         </div>
     </div>
@@ -38,10 +38,10 @@
     {{-- Hero ─────────────────────────────────────────────── --}}
     <div class="co-hero">
         <div class="co-hero__left">
-            <span class="co-hero__eyebrow">إتمام الطلب من</span>
-            <h1 class="co-hero__title">{{ $branch->name }}</h1>
+            <span class="co-hero__eyebrow">{{ __('portal.order.checkout_from') }}</span>
+            <h1 class="co-hero__title">{{ $branch->localizedName() }}</h1>
             <div class="co-hero__meta">
-                <span><i class="bi bi-bag-check-fill"></i> {{ $itemCount }} صنف</span>
+                <span><i class="bi bi-bag-check-fill"></i> {{ trans_choice('portal.order.item_count', $itemCount, ['count' => $itemCount]) }}</span>
                 <span class="co-dot"></span>
                 <span><i class="bi bi-currency-exchange"></i> {{ number_format($cartTotal, 2) }} {{ $currency }}</span>
             </div>
@@ -60,7 +60,7 @@
             <section class="co-card">
                 <div class="co-card__head">
                     <i class="bi bi-truck"></i>
-                    <h2>كيف تريد استلام الطلب؟</h2>
+                    <h2>{{ __('portal.order.receive_question') }}</h2>
                 </div>
                 <div class="co-types" id="poc-types">
                     <label class="co-type {{ old('order_type', 'takeaway') === 'takeaway' ? 'is-active' : '' }}">
@@ -70,8 +70,8 @@
                             <i class="bi bi-bag-fill"></i>
                         </div>
                         <div class="co-type__body">
-                            <strong>أستلم بنفسي</strong>
-                            <span>تأتي للفرع والطلب جاهز بالداخل</span>
+                            <strong>{{ __('portal.order.pickup_title') }}</strong>
+                            <span>{{ __('portal.order.pickup_body') }}</span>
                         </div>
                         <i class="bi bi-check-circle-fill co-type__check"></i>
                     </label>
@@ -82,8 +82,8 @@
                             <i class="bi bi-truck"></i>
                         </div>
                         <div class="co-type__body">
-                            <strong>توصيل لعنواني</strong>
-                            <span>المطعم يوصّل + رسوم {{ number_format($deliveryFee, 2) }} {{ $currency }}</span>
+                            <strong>{{ __('portal.order.delivery_title') }}</strong>
+                            <span>{{ __('portal.order.delivery_body', ['fee' => number_format($deliveryFee, 2), 'currency' => $currency]) }}</span>
                         </div>
                         <i class="bi bi-check-circle-fill co-type__check"></i>
                     </label>
@@ -95,12 +95,12 @@
             <section class="co-card" id="poc-address" style="{{ $isDelivery ? '' : 'display:none;' }}">
                 <div class="co-card__head">
                     <i class="bi bi-geo-alt-fill"></i>
-                    <h2>عنوان التوصيل</h2>
+                    <h2>{{ __('portal.order.delivery_address') }}</h2>
                 </div>
                 <div class="co-field">
                     <textarea name="delivery_address" rows="3" class="co-input"
-                              placeholder="الحي، الشارع، رقم البناية، أي علامة مميزة...">{{ old('delivery_address') }}</textarea>
-                    <small class="co-hint"><i class="bi bi-info-circle"></i> كلما كان العنوان أوضح، كان التوصيل أسرع.</small>
+                              placeholder="{{ __('portal.order.delivery_placeholder') }}">{{ old('delivery_address') }}</textarea>
+                    <small class="co-hint"><i class="bi bi-info-circle"></i> {{ __('portal.order.delivery_hint') }}</small>
                 </div>
                 @error('delivery_address')<div class="co-error"><i class="bi bi-exclamation-circle"></i> {{ $message }}</div>@enderror
             </section>
@@ -109,14 +109,14 @@
             <section class="co-card">
                 <div class="co-card__head">
                     <i class="bi bi-clock-fill"></i>
-                    <h2>وقت التحضير</h2>
-                    <span class="co-card__hint">اختياري</span>
+                    <h2>{{ __('portal.order.prep_time') }}</h2>
+                    <span class="co-card__hint">{{ __('portal.order.optional') }}</span>
                 </div>
                 <div class="co-field">
                     <input type="datetime-local" name="scheduled_for" class="co-input"
                            value="{{ old('scheduled_for') }}"
                            min="{{ now()->addMinutes(15)->format('Y-m-d\TH:i') }}">
-                    <small class="co-hint"><i class="bi bi-info-circle"></i> اتركه فارغاً ليبدأ التحضير فوراً.</small>
+                    <small class="co-hint"><i class="bi bi-info-circle"></i> {{ __('portal.order.prep_time_hint') }}</small>
                 </div>
                 @error('scheduled_for')<div class="co-error"><i class="bi bi-exclamation-circle"></i> {{ $message }}</div>@enderror
             </section>
@@ -125,12 +125,12 @@
             <section class="co-card">
                 <div class="co-card__head">
                     <i class="bi bi-chat-square-text-fill"></i>
-                    <h2>ملاحظات للمطعم</h2>
-                    <span class="co-card__hint">اختياري</span>
+                    <h2>{{ __('portal.order.restaurant_notes') }}</h2>
+                    <span class="co-card__hint">{{ __('portal.order.optional') }}</span>
                 </div>
                 <div class="co-field">
                     <textarea name="customer_notes" rows="2" class="co-input"
-                              placeholder="بدون بصل، حار قليل، تحضير سريع، ...">{{ old('customer_notes') }}</textarea>
+                              placeholder="{{ __('portal.order.notes_placeholder') }}">{{ old('customer_notes') }}</textarea>
                 </div>
                 @error('customer_notes')<div class="co-error"><i class="bi bi-exclamation-circle"></i> {{ $message }}</div>@enderror
             </section>
@@ -141,7 +141,7 @@
                     {{ mb_substr($customer->name, 0, 1) }}
                 </div>
                 <div class="co-customer__info">
-                    <span class="co-customer__label"><i class="bi bi-person-check-fill"></i> الطلب باسم</span>
+                    <span class="co-customer__label"><i class="bi bi-person-check-fill"></i> {{ __('portal.order.order_for') }}</span>
                     <strong>{{ $customer->name }}</strong>
                     <span class="co-customer__phone" dir="ltr">{{ $customer->phone }}</span>
                 </div>
@@ -152,8 +152,8 @@
         {{-- Sticky summary ─────────────────────────────── --}}
         <aside class="co-summary">
             <div class="co-summary__head">
-                <h3><i class="bi bi-receipt"></i> ملخص الطلب</h3>
-                <span class="co-summary__count">{{ $itemCount }} صنف</span>
+                <h3><i class="bi bi-receipt"></i> {{ __('portal.order.order_summary') }}</h3>
+                <span class="co-summary__count">{{ trans_choice('portal.order.item_count', $itemCount, ['count' => $itemCount]) }}</span>
             </div>
 
             <div class="co-summary__items">
@@ -192,15 +192,15 @@
 
             <div class="co-summary__totals">
                 <div class="co-line">
-                    <span>الفرعي</span>
+                    <span>{{ __('portal.order.subtotal') }}</span>
                     <span>{{ number_format($cartTotal, 2) }} {{ $currency }}</span>
                 </div>
                 <div class="co-line" id="poc-fee-row" style="{{ $isDelivery ? '' : 'display:none;' }}">
-                    <span><i class="bi bi-truck"></i> رسوم التوصيل</span>
+                    <span><i class="bi bi-truck"></i> {{ __('portal.order.delivery_fee') }}</span>
                     <span>{{ number_format($deliveryFee, 2) }} {{ $currency }}</span>
                 </div>
                 <div class="co-line co-line--grand">
-                    <span>الإجمالي</span>
+                    <span>{{ __('portal.order.total') }}</span>
                     <strong>
                         <span id="poc-total-display">{{ number_format($totalShown, 2) }}</span>
                         {{ $currency }}
@@ -211,7 +211,7 @@
             <button type="submit" class="co-submit">
                 <span class="co-submit__main">
                     <i class="bi bi-check-circle-fill"></i>
-                    تأكيد الطلب
+                    {{ __('portal.order.confirm_order') }}
                 </span>
                 <span class="co-submit__price">
                     <span id="poc-submit-price">{{ number_format($totalShown, 2) }}</span> {{ $currency }}
@@ -219,8 +219,8 @@
             </button>
 
             <div class="co-trust">
-                <span><i class="bi bi-cash-coin"></i> الدفع نقداً عند الاستلام</span>
-                <span><i class="bi bi-shield-check"></i> طلبك محفوظ ومتتبَّع</span>
+                <span><i class="bi bi-cash-coin"></i> {{ __('portal.order.cash_at_pickup') }}</span>
+                <span><i class="bi bi-shield-check"></i> {{ __('portal.order.tracked_order') }}</span>
             </div>
 
             <span id="poc-subtotal" data-value="{{ $cartTotal }}" hidden></span>

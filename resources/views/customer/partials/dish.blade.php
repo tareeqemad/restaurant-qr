@@ -5,36 +5,35 @@
     // dish "may contain", which matches how the kitchen prep card reads.
     $ingredients = $item->relationLoaded('recipeItems')
         ? $item->recipeItems
-            ->map(fn ($r) => $r->ingredient?->name)
+            ->map(fn ($r) => $r->ingredient?->localizedName())
             ->filter()
             ->values()
         : collect();
 
     // Live availability: BOTH the manual `is_available` flag AND a real-time
-    // stock check (recursively expanding composite ingredients). We carve
-    // the two reasons apart so the card can say "غير متوفر" vs "نفد المخزون"
-    // — different messages for different operator intent.
+    // stock check (recursively expanding composite ingredients). Different
+    // messages tell the diner whether this is an operator toggle or stock.
     $manuallyAvailable = (bool) $item->is_available;
     $shortages         = $manuallyAvailable ? $item->stockShortages(1.0) : [];
     $inStock           = empty($shortages);
     $canOrder          = $manuallyAvailable && $inStock;
     $unavailReason     = ! $manuallyAvailable
-        ? 'غير متوفر'
-        : (! $inStock ? 'نفد المخزون' : null);
+        ? __('ui.dish.not_available')
+        : (! $inStock ? __('ui.dish.out_of_stock') : null);
 
     // Promotion lookup. If the item has a live promo, we render a
-    // strikethrough on the menu price + a "خصم X%" badge. The cart
+    // strikethrough on the menu price + a discount badge. The cart
     // still uses effectivePrice() — never the raw price — so the
     // amount the diner pays matches what the badge promised.
     $promo          = $item->activePromotion();
     $effectivePrice = $promo ? $promo->applyTo((float) $item->price) : (float) $item->price;
     $discountPct    = $promo ? $item->discountPct() : null;
-@endphp
-
+    $itemName = $item->localizedName();
+    $itemDescription = $item->localizedDescription();
     $payload = [
         'id' => $item->id,
-        'name' => $item->name,
-        'description' => $item->description,
+        'name' => $itemName,
+        'description' => $itemDescription,
         'price' => $effectivePrice,
         'original_price' => $promo ? (float) $item->price : null,
         'image' => $item->imageUrl(),
@@ -42,22 +41,22 @@
         'has_modifiers' => $item->modifierGroups->count() > 0,
         'modifier_groups' => $item->modifierGroups->map(fn($g) => [
             'id' => $g->id,
-            'name' => $g->name,
+            'name' => $g->localizedName(),
             'min_select' => $g->min_select,
             'max_select' => $g->max_select,
             'required' => (bool) $g->required,
             'modifiers' => $g->modifiers->map(fn($m) => [
                 'id' => $m->id,
-                'name' => $m->name,
+                'name' => $m->localizedName(),
                 'price_delta' => (float) $m->price_delta,
             ])->values()->toArray(),
         ])->values()->toArray(),
     ];
     $hasModifiers = $item->modifierGroups->count() > 0;
     $searchText = trim(collect([
-        $item->name,
-        $item->description,
-        $item->allergens->pluck('name')->join(' '),
+        $itemName,
+        $itemDescription,
+        $item->allergens->map(fn ($allergen) => $allergen->localizedName())->join(' '),
         $ingredients->join(' '),
     ])->filter()->join(' '));
 @endphp
@@ -69,22 +68,26 @@
      @click="onCardClick({{ \Illuminate\Support\Js::from($payload) }}, $event)"
      @endif>
     <div class="dish-img">
-        <img src="{{ $item->imageUrl() }}" alt="{{ $item->name }}" loading="lazy" data-dish-img="{{ $item->id }}">
+        <img src="{{ $item->imageUrl() }}" alt="{{ $itemName }}" loading="lazy" data-dish-img="{{ $item->id }}">
         @if($item->is_featured && $canOrder)
-            <span class="badge-today">متاح اليوم</span>
+            <span class="badge-today">{{ __('ui.dish.available_today') }}</span>
         @endif
         @if($item->prep_time_minutes && $canOrder)
-            <span class="badge-prep"><i class="bi bi-clock"></i> {{ $item->prep_time_minutes }} د</span>
+            <span class="badge-prep"><i class="bi bi-clock"></i> {{ __('ui.dish.minutes_short', ['count' => $item->prep_time_minutes]) }}</span>
         @endif
         @if($promo && $canOrder)
             <span class="badge-promo" title="{{ $promo->name }}">
                 <i class="bi bi-tag-fill"></i>
-                @if($discountPct) خصم {{ rtrim(rtrim((string) $discountPct, '0'), '.') }}% @else عرض @endif
+                @if($discountPct)
+                    {{ __('ui.dish.discount_percent', ['percent' => rtrim(rtrim((string) $discountPct, '0'), '.')]) }}
+                @else
+                    {{ __('ui.dish.offer') }}
+                @endif
             </span>
         @endif
         @if($hasModifiers && $canOrder)
-            <span class="badge-options" title="هذا الصنف فيه خيارات (حجم/إضافات)">
-                <i class="bi bi-sliders2"></i> خيارات
+            <span class="badge-options" title="{{ __('ui.dish.has_options_title') }}">
+                <i class="bi bi-sliders2"></i> {{ __('ui.dish.options') }}
             </span>
         @endif
         @if(! $canOrder)
@@ -95,27 +98,27 @@
         @endif
     </div>
     <div class="dish-body">
-        <h6 class="dish-name">{{ $item->name }}</h6>
-        @if($item->description)
-            <p class="dish-desc">{{ $item->description }}</p>
+        <h6 class="dish-name">{{ $itemName }}</h6>
+        @if($itemDescription)
+            <p class="dish-desc">{{ $itemDescription }}</p>
         @endif
         @if($ingredients->isNotEmpty())
             {{-- One-line ingredient list. Clamped to two lines via CSS so a
                  long recipe never blows the card height; the full list lives
                  in the item sheet that opens on tap. --}}
-            <p class="dish-ingredients" title="مكوّنات الطبق">
+            <p class="dish-ingredients" title="{{ __('ui.dish.ingredients_title') }}">
                 <i class="bi bi-basket2-fill" aria-hidden="true"></i>
-                <span>{{ $ingredients->join('، ') }}</span>
+            <span>{{ $ingredients->join(', ') }}</span>
             </p>
         @endif
         @if($item->allergens->count())
-            <div class="allergens" role="group" aria-label="مسببات حساسية">
+            <div class="allergens" role="group" aria-label="{{ __('ui.dish.allergens_label') }}">
                 <span class="allergens-label">
                     <i class="bi bi-exclamation-triangle-fill"></i>
-                    يحتوي على مسببات حساسية:
+                    {{ __('ui.dish.allergens_label') }}
                 </span>
                 @foreach($item->allergens as $a)
-                    <span class="allergen-chip">{{ $a->icon }} {{ $a->name }}</span>
+                    <span class="allergen-chip">{{ $a->icon }} {{ $a->localizedName() }}</span>
                 @endforeach
             </div>
         @endif
@@ -139,7 +142,7 @@
                      indicator. Title surfaces the reason (manual toggle
                      vs. out of stock) so the customer + tester know why. --}}
                 <span class="dish-unavail-btn"
-                      title="{{ $inStock ? 'هذا الصنف غير متوفر حالياً' : 'نفد المخزون من أحد المكونات' }}">
+                      title="{{ $inStock ? __('ui.dish.manual_unavailable_title') : __('ui.dish.stock_unavailable_title') }}">
                     <i class="bi {{ $inStock ? 'bi-slash-circle' : 'bi-box-seam' }}"></i>
                 </span>
             @else
@@ -147,22 +150,22 @@
                 <template x-if="qtyOf({{ $item->id }}) === 0">
                     <button type="button" class="dish-add-fab {{ $hasModifiers ? 'has-mods' : '' }}"
                             @click.stop="onPlus({{ \Illuminate\Support\Js::from($payload) }})"
-                            aria-label="{{ $hasModifiers ? 'اختر الخيارات وأضف' : 'أضف للسلة' }}"
-                            title="{{ $hasModifiers ? 'اختر الخيارات' : 'أضف للسلة' }}">
+                            aria-label="{{ $hasModifiers ? __('ui.dish.choose_options_add') : __('ui.dish.add_to_cart') }}"
+                            title="{{ $hasModifiers ? __('ui.dish.choose_options') : __('ui.dish.add_to_cart') }}">
                         @if($hasModifiers)
                             <i class="bi bi-sliders2"></i>
-                            <span>اختيار</span>
+                            <span>{{ __('ui.dish.choose') }}</span>
                         @else
                             <i class="bi bi-plus-lg"></i>
-                            <span>أضف</span>
+                            <span>{{ __('ui.dish.add') }}</span>
                         @endif
                     </button>
                 </template>
                 <template x-if="qtyOf({{ $item->id }}) > 0">
                     <div class="dish-stepper" @click.stop>
-                        <button type="button" @click="onMinus({{ \Illuminate\Support\Js::from($payload) }})" aria-label="ناقص">−</button>
+                        <button type="button" @click="onMinus({{ \Illuminate\Support\Js::from($payload) }})" aria-label="{{ __('ui.dish.minus') }}">−</button>
                         <span class="qty" x-text="qtyOf({{ $item->id }})"></span>
-                        <button type="button" @click="onPlus({{ \Illuminate\Support\Js::from($payload) }})" aria-label="زيد">+</button>
+                        <button type="button" @click="onPlus({{ \Illuminate\Support\Js::from($payload) }})" aria-label="{{ __('ui.dish.plus') }}">+</button>
                     </div>
                 </template>
             @endif

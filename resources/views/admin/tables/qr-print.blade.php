@@ -3,9 +3,10 @@
     $logo = asset('default_logo.png');
     $branchName = $table->branch?->name ?: 'الفرع الرئيسي';
     $zoneLabel = $table->zone?->label;
+    $market = \App\Support\MarketProfile::class;
 @endphp
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="{{ $market::lang() }}" dir="{{ $market::direction() }}" data-market="{{ $market::current() }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -15,7 +16,7 @@
          poster reads as part of the same brand system, not a one-off. --}}
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+    <link href="{{ $market::fontUrl() }}" rel="stylesheet">
 
     <style>
         :root {
@@ -31,6 +32,7 @@
             --bd-strong:     rgba(15, 71, 49, .15);
             --paper:         #f7faf5;
         }
+        @include('partials.market-vars')
 
         * { box-sizing: border-box; }
 
@@ -41,7 +43,7 @@
             place-items: center;
             padding: clamp(1rem, 3vw, 2rem);
             color: var(--ink);
-            font-family: 'Tajawal', system-ui, "Segoe UI", Tahoma, Arial, sans-serif;
+            font-family: var(--market-font-family);
             -webkit-font-smoothing: antialiased;
             background:
                 radial-gradient(ellipse 60% 80% at 90% 0%, rgba(184, 135, 42, .08) 0%, transparent 60%),

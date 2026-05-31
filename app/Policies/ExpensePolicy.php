@@ -69,9 +69,9 @@ class ExpensePolicy extends BasePolicy
 
     public function delete(User $user, Expense $expense): bool
     {
-        // Approved expenses are immutable history — only an admin can purge,
-        // and only if it hasn't been linked into the till yet.
-        if ($expense->isApproved() && $expense->cash_movement_id) {
+        // Approved expenses are immutable accounting history. Corrections
+        // must go through an explicit reversal/adjustment flow, not deletion.
+        if ($expense->isApproved()) {
             return false;
         }
 

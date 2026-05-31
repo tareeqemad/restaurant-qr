@@ -1,18 +1,22 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+@php
+    $market = \App\Support\MarketProfile::class;
+    $receiptFont = $market::isUs() ? 'Arial, sans-serif' : 'Tajawal, Arial, sans-serif';
+@endphp
+<html lang="{{ $market::lang() }}" dir="{{ $market::direction() }}" data-market="{{ $market::current() }}">
 <head>
 <meta charset="UTF-8"><title>{{ $invoice->number }}</title>
 <style>
-body { font-family: 'Tajawal', Arial, sans-serif; max-width: 380px; margin: 0 auto; padding: 1rem; font-size: 13px; }
+body { font-family: {!! $receiptFont !!}; max-width: 380px; margin: 0 auto; padding: 1rem; font-size: 13px; }
 .center { text-align: center; }
 h1 { margin: .5rem 0; font-size: 1.2rem; }
 table { width: 100%; border-collapse: collapse; margin: .5rem 0; }
 th, td { padding: 4px 6px; }
-.tbl-items th { border-bottom: 1px dashed #333; text-align: right; }
+.tbl-items th { border-bottom: 1px dashed #333; text-align: start; }
 .tbl-items td { border-bottom: 1px dotted #ccc; }
 .totals td { padding: 3px 0; }
-.totals .lbl { text-align: right; }
-.totals .val { text-align: left; font-weight: bold; }
+.totals .lbl { text-align: start; }
+.totals .val { text-align: end; font-weight: bold; }
 .grand { border-top: 2px solid #000; border-bottom: 2px solid #000; padding: .5rem 0 !important; font-size: 1.1rem; }
 hr { border: 0; border-top: 1px dashed #333; margin: .5rem 0; }
 .footer { text-align: center; margin-top: 1rem; color: #666; font-size: 11px; }

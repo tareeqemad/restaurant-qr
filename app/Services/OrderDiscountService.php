@@ -6,6 +6,7 @@ use App\Enums\OrderStatus;
 use App\Helpers\Money;
 use App\Models\ActivityLog;
 use App\Models\Invoice;
+use App\Models\JournalEntry;
 use App\Models\Lookup;
 use App\Models\Order;
 use App\Models\OrderDiscount;
@@ -456,9 +457,7 @@ class OrderDiscountService
         // the invoice was never issued — applying a discount during
         // cart-building is normal and the first `recordInvoiceIssued`
         // call will pick up the right amounts naturally.
-        $wasIssued = $invoice->journalEntries()
-            ->whereIn('event_type', ['invoice_issued', 'invoice_reissued_1', 'invoice_reissued_2', 'invoice_reissued_3'])
-            ->exists();
+        $activePosting = $this->latestUnreversedInvoicePosting($invoice);
 
         $invoice->update([
             'subtotal'       => Money::round($totals['subtotal']),
@@ -479,12 +478,13 @@ class OrderDiscountService
         // AccountingService::post doesn't no-op us. The reverse leaves
         // an audit trail in `journal_entries` and the new entry shows
         // the corrected figures.
-        if ($wasIssued) {
+        if ($activePosting) {
             $accounting = app(\App\Services\Accounting\AccountingService::class);
-            $accounting->reverse(
-                eventType: 'invoice_discount_repost_reversal',
-                source: $invoice,
-                originalEventType: 'invoice_issued',
+            $accounting->reverseEntry(
+                original: $activePosting,
+                eventType: $activePosting->event_type === 'invoice_issued'
+                    ? 'invoice_discount_repost_reversal'
+                    : 'invoice_discount_repost_reversal_'.$activePosting->id,
                 postedOn: now(),
                 description: "عكس قيد فاتورة {$invoice->number} بسبب تحديث الخصم",
             );
@@ -492,5 +492,24 @@ class OrderDiscountService
             // with the original (now-reversed) entry's uniqueness key.
             $accounting->repostInvoiceWithDiscount($invoice);
         }
+    }
+
+    protected function latestUnreversedInvoicePosting(Invoice $invoice): ?JournalEntry
+    {
+        $entries = $invoice->journalEntries()
+            ->orderBy('id')
+            ->get();
+
+        $reversedIds = $entries
+            ->map(fn (JournalEntry $entry) => (int) ($entry->metadata['reverses_entry_id'] ?? 0))
+            ->filter()
+            ->all();
+
+        return $entries
+            ->filter(fn (JournalEntry $entry) => $entry->event_type === 'invoice_issued'
+                || preg_match('/^invoice_reissued_\d+$/', (string) $entry->event_type))
+            ->reject(fn (JournalEntry $entry) => in_array((int) $entry->id, $reversedIds, true))
+            ->sortByDesc('id')
+            ->first();
     }
 }

@@ -107,7 +107,23 @@ class ShiftController extends Controller
                     ->where('method', 'cash')
                     ->sum('amount');
 
-                $expected  = (float) $shift->cash_opening + $cashSales - $cashRefunds;
+                $cashPayIns = (float) $shift->cashMovements()
+                    ->where('type', 'pay_in')
+                    ->sum('amount');
+                $cashPayOuts = (float) $shift->cashMovements()
+                    ->where('type', 'pay_out')
+                    ->sum('amount');
+
+                $supplierCashPayments = (float) \App\Models\SupplierPayment::where('shift_id', $shift->id)
+                    ->where('method', 'cash')
+                    ->sum('amount');
+
+                $expected = (float) $shift->cash_opening
+                    + $cashSales
+                    + $cashPayIns
+                    - $cashPayOuts
+                    - $cashRefunds
+                    - $supplierCashPayments;
                 $variance  = (float) $data['cash_closing'] - $expected;
 
                 $shift->update([
@@ -134,6 +150,9 @@ class ShiftController extends Controller
                         'card_sales'    => $cardSales,
                         'other_sales'   => $other,
                         'cash_refunds'  => $cashRefunds,
+                        'cash_pay_ins'  => $cashPayIns,
+                        'cash_pay_outs' => $cashPayOuts,
+                        'supplier_cash_payments' => $supplierCashPayments,
                         'expected_cash' => $expected,
                         'cash_variance' => $variance,
                     ]

@@ -3,9 +3,11 @@
 namespace App\Models;
 
 use Carbon\CarbonInterface;
+use DomainException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class License extends Model
@@ -69,6 +71,11 @@ class License extends Model
         return $this->hasMany(LicensePayment::class)->latest('paid_at');
     }
 
+    public function activations(): HasMany
+    {
+        return $this->hasMany(LicenseActivation::class)->latest('last_seen_at');
+    }
+
     public function graceEndsAt()
     {
         return $this->expires_at?->copy()->addDays($this->grace_days ?? config('license.grace_days', 14));
@@ -95,7 +102,7 @@ class License extends Model
         return self::STATUS_ACTIVE;
     }
 
-    public function signedPayload(?string $branchUuid = null): array
+    public function signedPayload(?string $branchUuid = null, ?LicenseActivation $activation = null): array
     {
         return [
             'license_key' => $this->license_key,
@@ -108,8 +115,61 @@ class License extends Model
             'grace_ends_at' => $this->graceEndsAt()?->toDateString(),
             'max_branches' => $this->max_branches,
             'branch_uuid' => $branchUuid,
+            'activation_uuid' => $activation?->uuid,
             'server_time' => now()->toIso8601String(),
         ];
+    }
+
+    public function recordActivation(
+        string $branchUuid,
+        ?string $branchId = null,
+        ?string $appUrl = null,
+        ?string $ip = null,
+        ?string $userAgent = null
+    ): LicenseActivation {
+        $branchUuid = trim($branchUuid);
+        if ($branchUuid === '') {
+            throw new DomainException('Branch UUID is required for license activation.');
+        }
+
+        return DB::transaction(function () use ($branchUuid, $branchId, $appUrl, $ip, $userAgent) {
+            $license = static::query()->whereKey($this->getKey())->lockForUpdate()->firstOrFail();
+
+            $activation = $license->activations()
+                ->where('branch_uuid', $branchUuid)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $activation) {
+                $activeCount = $license->activations()
+                    ->where('status', LicenseActivation::STATUS_ACTIVE)
+                    ->count();
+
+                if ($activeCount >= max(1, (int) $license->max_branches)) {
+                    throw new DomainException('This license has reached its branch activation limit.');
+                }
+
+                $activation = $license->activations()->create([
+                    'branch_uuid' => $branchUuid,
+                    'status' => LicenseActivation::STATUS_ACTIVE,
+                    'activated_at' => now(),
+                ]);
+            }
+
+            if ($activation->status !== LicenseActivation::STATUS_ACTIVE) {
+                throw new DomainException('This branch activation is not active.');
+            }
+
+            $activation->forceFill([
+                'branch_id' => $branchId ?: $activation->branch_id,
+                'app_url' => $appUrl ?: $activation->app_url,
+                'last_seen_at' => now(),
+                'last_ip' => $ip ? mb_substr($ip, 0, 45) : $activation->last_ip,
+                'user_agent' => $userAgent ? mb_substr($userAgent, 0, 2000) : $activation->user_agent,
+            ])->save();
+
+            return $activation->fresh();
+        });
     }
 
     public function renew(

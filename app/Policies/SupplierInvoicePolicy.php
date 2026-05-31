@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Models\JournalEntry;
 use App\Models\SupplierInvoice;
 use App\Models\User;
 
@@ -43,6 +44,12 @@ class SupplierInvoicePolicy extends BasePolicy
 
     public function delete(User $user, SupplierInvoice $invoice): bool
     {
+        if (JournalEntry::where('source_type', $invoice::class)
+            ->where('source_id', $invoice->getKey())
+            ->exists()) {
+            return false;
+        }
+
         return $invoice->status === 'unpaid'
             && ! $invoice->payments()->exists()
             && ($user->isAdmin() || $user->hasPermission('supplier_invoices.delete'))

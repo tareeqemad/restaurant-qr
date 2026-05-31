@@ -1,5 +1,12 @@
 @extends('layouts.admin')@section('title','كاشير - طاولة '.$session->table?->number)
 @section('content')
+@php
+    $enabledPaymentMethods = collect(\App\Support\PaymentMethods::catalog())
+        ->filter(fn (array $meta) => (bool) $meta['enabled']);
+    $splitPaymentMethods = $enabledPaymentMethods
+        ->map(fn (array $meta, string $code) => ['code' => $code, 'label' => $meta['label']])
+        ->values();
+@endphp
 <x-admin.breadcrumb
     title="طاولة {{ $session->table?->number }}"
     icon="bi-cash-stack"
@@ -109,10 +116,8 @@
                         <div class="mb-2"><label class="form-label">المبلغ</label><input type="number" step="0.01" name="amount" value="{{ $inv->balance }}" class="form-control" required></div>
                         <div class="mb-2"><label class="form-label">طريقة الدفع</label>
                             <select name="method" class="form-select" required>
-                                @foreach(\App\Support\PaymentMethods::catalog() as $code => $meta)
-                                    @if($meta['enabled'])
-                                        <option value="{{ $code }}">{{ $meta['label'] }}</option>
-                                    @endif
+                                @foreach($enabledPaymentMethods as $code => $meta)
+                                    <option value="{{ $code }}">{{ $meta['label'] }}</option>
                                 @endforeach
                             </select>
                         </div>
@@ -246,10 +251,9 @@
                                             <div class="mb-2">
                                                 <label class="form-label">طريقة الاسترداد <span class="text-danger">*</span></label>
                                                 <select name="method" class="form-select" required>
-                                                    <option value="cash">نقدا</option>
-                                                    <option value="card">فيزا (إعادة للمستخدم)</option>
-                                                    <option value="transfer">تحويل بنكي</option>
-                                                    <option value="other">أخرى</option>
+                                                    @foreach(\App\Models\Refund::ACTIVE_METHODS as $method)
+                                                        <option value="{{ $method }}">{{ \App\Models\Refund::METHODS[$method] ?? $method }}</option>
+                                                    @endforeach
                                                 </select>
                                             </div>
                                             <div class="mb-2">
@@ -349,14 +353,27 @@
                         @push('scripts')
                         <script>
                         let splitIdx = 0;
+                        const splitPaymentMethods = @json($splitPaymentMethods);
+                        function escapeHtml(value) {
+                            return String(value).replace(/[&<>"']/g, char => ({
+                                '&': '&amp;',
+                                '<': '&lt;',
+                                '>': '&gt;',
+                                '"': '&quot;',
+                                "'": '&#039;',
+                            }[char]));
+                        }
+                        function splitMethodOptions() {
+                            return splitPaymentMethods
+                                .map(method => `<option value="${escapeHtml(method.code)}">${escapeHtml(method.label)}</option>`)
+                                .join('');
+                        }
                         function addSplitRow(label = null, amount = '') {
                             const i = splitIdx++;
                             const row = `<tr>
                                 <td><input name="splits[${i}][label]" class="form-control" value="${label ?? ('الشخص '+(i+1))}"></td>
                                 <td><input type="number" step="0.01" min="0" name="splits[${i}][amount]" class="form-control split-amt" value="${amount}" onchange="updateSplitSum()"></td>
-                                <td><select name="splits[${i}][method]" class="form-select">
-                                    <option value="cash">نقدا</option><option value="card">فيزا</option><option value="transfer">تحويل بنكي</option>
-                                </select></td>
+                                <td><select name="splits[${i}][method]" class="form-select">${splitMethodOptions()}</select></td>
                                 <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove(); updateSplitSum();"><i class="bi bi-x"></i></button></td>
                             </tr>`;
                             document.getElementById('splitRows').insertAdjacentHTML('beforeend', row);
@@ -388,7 +405,7 @@
                         <ul class="list-group list-group-flush mb-2">
                             @foreach($inv->splits as $sp)
                                 <li class="list-group-item d-flex justify-content-between align-items-center">
-                                    <div><strong>{{ $sp->label }}</strong> <span class="badge bg-light text-dark">{{ $sp->method }}</span></div>
+                                    <div><strong>{{ $sp->label }}</strong> <span class="badge bg-light text-dark">{{ \App\Support\PaymentMethods::label($sp->method) }}</span></div>
                                     <div>
                                         <strong>{{ \App\Helpers\Money::format($sp->amount) }}</strong>
                                         @if($sp->paid)

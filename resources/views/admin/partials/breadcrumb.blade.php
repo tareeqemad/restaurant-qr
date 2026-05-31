@@ -7,7 +7,7 @@
             <li class="breadcrumb-item">
                 <a href="{{ route('admin.dashboard') }}" class="breadcrumb-link">
                     <i class="bi bi-house-door"></i>
-                    <span>لوحة التحكم</span>
+                    <span>{{ __('admin.nav.dashboard') }}</span>
                 </a>
             </li>
 

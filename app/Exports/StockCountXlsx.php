@@ -3,6 +3,8 @@
 namespace App\Exports;
 
 use App\Models\StockCount;
+use App\Support\MarketProfile;
+use App\Support\MarketSpreadsheetLocalizer;
 use Carbon\Carbon;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
@@ -47,6 +49,7 @@ class StockCountXlsx
         $this->buildAllItemsSheet($book->createSheet(), $count);
         $this->buildVariancesSheet($book->createSheet(), $count);
 
+        MarketSpreadsheetLocalizer::apply($book);
         $book->setActiveSheetIndex(0);
 
         $stamp    = now()->format('Y-m-d_H-i');
@@ -93,7 +96,7 @@ class StockCountXlsx
             ['اعتمده',          $count->finalizer?->name ?? '—'],
             ['تاريخ الاعتماد',  $count->finalized_at?->format('Y-m-d H:i') ?? '—'],
             ['ملاحظات',         (string) ($count->notes ?: '—')],
-            ['تاريخ التقرير',   now()->locale('ar')->isoFormat('D MMMM YYYY · HH:mm')],
+            ['تاريخ التقرير',   now()->locale(MarketProfile::lang())->isoFormat('D MMMM YYYY · HH:mm')],
         ];
 
         $row = 3;

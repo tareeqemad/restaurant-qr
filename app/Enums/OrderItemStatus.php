@@ -14,12 +14,12 @@ enum OrderItemStatus: string
     public function label(): string
     {
         return match ($this) {
-            self::Pending => 'بانتظار',
-            self::Approved => 'معتمد',
-            self::Preparing => 'قيد التحضير',
-            self::Ready => 'جاهز',
-            self::Served => 'تم التقديم',
-            self::Cancelled => 'ملغى',
+            self::Pending => __('ui.customer_order.status_pending'),
+            self::Approved => __('ui.customer_order.status_approved'),
+            self::Preparing => __('ui.customer_order.status_preparing_full'),
+            self::Ready => __('ui.customer_order.status_ready'),
+            self::Served => __('ui.customer_order.status_served'),
+            self::Cancelled => __('ui.customer_order.status_cancelled'),
         };
     }
 

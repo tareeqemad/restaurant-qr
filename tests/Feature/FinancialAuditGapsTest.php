@@ -3,9 +3,12 @@
 namespace Tests\Feature;
 
 use App\Models\Branch;
+use App\Models\CashMovement;
 use App\Models\Category;
+use App\Models\Expense;
 use App\Models\Invoice;
 use App\Models\JournalEntry;
+use App\Models\Lookup;
 use App\Models\MenuItem;
 use App\Models\MenuPromotion;
 use App\Models\Order;
@@ -15,12 +18,16 @@ use App\Models\Setting;
 use App\Models\Shift;
 use App\Models\Station;
 use App\Models\StorageLocation;
+use App\Models\Supplier;
+use App\Models\SupplierInvoice;
+use App\Models\SupplierPayment;
 use App\Models\Table;
 use App\Models\TableSession;
 use App\Models\Unit;
 use App\Models\User;
 use App\Services\Accounting\AccountingService;
 use App\Services\OrderService;
+use App\Services\SupplierInvoiceService;
 use App\Support\BranchContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -36,6 +43,14 @@ use Tests\TestCase;
  *        journal entry, so A/R stayed inflated by the discount amount.
  *   G3 — Cash refunds during a shift weren't subtracted from
  *        expected_cash, surfacing as phantom shortages at close.
+ *   G4 — Approved non-cash expenses were deletable even after posting
+ *        their accounting entry.
+ *   G5 — Posted supplier invoices were deletable instead of being
+ *        cancelled through the reversing-entry flow.
+ *   G6 — Shift close ignored cash drawer pay-ins/pay-outs, so petty cash
+ *        expenses appeared as phantom shortages.
+ *   G7 — Supplier cash payments linked to a shift also leave the drawer
+ *        and must reduce expected cash at close.
  */
 class FinancialAuditGapsTest extends TestCase
 {
@@ -219,6 +234,82 @@ class FinancialAuditGapsTest extends TestCase
             'Repost receivable matches the new total (post-discount).');
     }
 
+    public function test_g2_multiple_post_issuance_discounts_reverse_the_latest_repost_only(): void
+    {
+        $session = TableSession::create([
+            'branch_id' => $this->branch->id, 'table_id' => $this->table->id,
+            'token' => 'g2b-'.uniqid(), 'status' => 'active',
+            'opened_at' => now(), 'cover_count' => 1,
+        ]);
+        $order = app(OrderService::class)->createFromCart($session, [[
+            'menu_item_id' => $this->burger->id, 'quantity' => 1, 'modifier_ids' => [],
+        ]], createdByUserId: $this->cashier->id);
+
+        $invoice = Invoice::create([
+            'branch_id' => $this->branch->id,
+            'order_id' => $order->id,
+            'issued_by_user_id' => $this->cashier->id,
+            'subtotal' => 100,
+            'discount_total' => 0,
+            'tax_total' => 0,
+            'service_total' => 0,
+            'delivery_fee' => 0,
+            'tip' => 0,
+            'total' => 100,
+            'balance' => 100,
+            'status' => 'issued',
+            'issued_at' => now(),
+        ]);
+        app(AccountingService::class)->recordInvoiceIssued($invoice);
+
+        $service = app(\App\Services\OrderDiscountService::class);
+        $reflection = new \ReflectionClass($service);
+        $writer = $reflection->getMethod('writeInvoiceTotals');
+        $writer->setAccessible(true);
+
+        $writer->invoke($service, $invoice, [
+            'subtotal' => 100, 'discount_total' => 10, 'tax_total' => 0,
+            'service_total' => 0, 'delivery_fee' => 0, 'tip' => 0, 'total' => 90,
+        ]);
+        $writer->invoke($service, $invoice->fresh(), [
+            'subtotal' => 100, 'discount_total' => 20, 'tax_total' => 0,
+            'service_total' => 0, 'delivery_fee' => 0, 'tip' => 0, 'total' => 80,
+        ]);
+
+        $entries = JournalEntry::where('source_id', $invoice->id)
+            ->where('source_type', Invoice::class)
+            ->orderBy('id')
+            ->with('lines.account')
+            ->get();
+
+        $reversedIds = $entries
+            ->map(fn (JournalEntry $entry) => (int) ($entry->metadata['reverses_entry_id'] ?? 0))
+            ->filter()
+            ->all();
+        $activePostings = $entries
+            ->filter(fn (JournalEntry $entry) => $entry->event_type === 'invoice_issued'
+                || preg_match('/^invoice_reissued_\d+$/', (string) $entry->event_type))
+            ->reject(fn (JournalEntry $entry) => in_array((int) $entry->id, $reversedIds, true))
+            ->values();
+
+        $this->assertCount(1, $activePostings, 'Only the latest corrected invoice posting should remain unreversed.');
+        $this->assertSame('invoice_reissued_2', $activePostings->first()->event_type);
+
+        $netByCode = [];
+        foreach ($entries as $entry) {
+            foreach ($entry->lines as $line) {
+                $code = $line->account->code;
+                $netByCode[$code] = ($netByCode[$code] ?? 0)
+                    + (float) $line->debit
+                    - (float) $line->credit;
+            }
+        }
+
+        $this->assertEqualsWithDelta(80.0, $netByCode['1100'] ?? 0, 0.01, 'Net A/R must match the latest invoice total.');
+        $this->assertEqualsWithDelta(20.0, $netByCode['4090'] ?? 0, 0.01, 'Net discounts must match the latest discount.');
+        $this->assertEqualsWithDelta(-100.0, $netByCode['4000'] ?? 0, 0.01, 'Net sales revenue should stay at gross sales.');
+    }
+
     // ───────────────────────────────────────────────────────────────
     // G3 — Cash refunds reduce expected_cash at shift close
     // ───────────────────────────────────────────────────────────────
@@ -276,5 +367,163 @@ class FinancialAuditGapsTest extends TestCase
             'Expected cash MUST subtract the 30 in cash refunds.');
         $this->assertEqualsWithDelta(0.0, (float) $shift->cash_variance, 0.01,
             'When closing cash matches expected, variance is zero — no phantom shortage.');
+    }
+
+    public function test_g6_cash_movements_are_included_in_shift_expected_cash(): void
+    {
+        $shift = Shift::create([
+            'branch_id' => $this->branch->id,
+            'user_id' => $this->cashier->id,
+            'status' => 'open',
+            'opened_at' => now()->subHours(2),
+            'cash_opening' => 200,
+        ]);
+
+        CashMovement::create([
+            'branch_id' => $this->branch->id,
+            'shift_id' => $shift->id,
+            'type' => 'pay_out',
+            'amount' => 40,
+            'reason' => 'Petty cash expense',
+            'user_id' => $this->cashier->id,
+        ]);
+
+        $this->actingAs($this->cashier)
+            ->post(route('admin.shifts.close', $shift), [
+                'cash_closing' => 160,
+            ])
+            ->assertRedirect();
+
+        $shift->refresh();
+        $this->assertEqualsWithDelta(160.0, (float) $shift->expected_cash, 0.01);
+        $this->assertEqualsWithDelta(0.0, (float) $shift->cash_variance, 0.01);
+    }
+
+    public function test_g7_supplier_cash_payments_reduce_shift_expected_cash(): void
+    {
+        $shift = Shift::create([
+            'branch_id' => $this->branch->id,
+            'user_id' => $this->cashier->id,
+            'status' => 'open',
+            'opened_at' => now()->subHours(2),
+            'cash_opening' => 200,
+        ]);
+
+        $supplier = Supplier::create(['name' => 'Cash Supplier', 'active' => true]);
+        $supplier->branches()->attach($this->branch->id);
+        $invoice = SupplierInvoice::create([
+            'number' => 'SUP-CASH-'.uniqid(),
+            'supplier_id' => $supplier->id,
+            'subtotal' => 50,
+            'tax_total' => 0,
+            'total' => 50,
+            'paid_total' => 0,
+            'balance' => 50,
+            'status' => 'unpaid',
+            'invoice_date' => now()->toDateString(),
+            'created_by' => $this->cashier->id,
+        ]);
+        SupplierPayment::create([
+            'supplier_invoice_id' => $invoice->id,
+            'amount' => 50,
+            'method' => 'cash',
+            'paid_on' => now()->toDateString(),
+            'paid_by' => $this->cashier->id,
+            'shift_id' => $shift->id,
+        ]);
+
+        $this->actingAs($this->cashier)
+            ->post(route('admin.shifts.close', $shift), [
+                'cash_closing' => 150,
+            ])
+            ->assertRedirect();
+
+        $shift->refresh();
+        $this->assertEqualsWithDelta(150.0, (float) $shift->expected_cash, 0.01);
+        $this->assertEqualsWithDelta(0.0, (float) $shift->cash_variance, 0.01);
+    }
+
+    public function test_g4_approved_non_cash_expense_cannot_be_deleted_after_accounting_post(): void
+    {
+        Role::firstOrCreate(['name' => 'admin'], ['label' => 'Admin', 'is_system' => true]);
+        $admin = User::create([
+            'name' => 'Admin', 'username' => 'admin-expense-audit', 'password' => bcrypt('x'),
+            'role' => 'admin', 'status' => 'active',
+            'primary_branch_id' => $this->branch->id,
+        ]);
+        $admin->branches()->attach($this->branch->id, ['is_primary' => true]);
+
+        $category = Lookup::create([
+            'group' => 'expense_categories',
+            'code' => 'audit',
+            'label' => 'Audit',
+            'is_active' => true,
+            'is_system' => true,
+        ]);
+
+        $expense = Expense::create([
+            'branch_id' => $this->branch->id,
+            'expense_category_id' => $category->id,
+            'description' => 'Bank fee',
+            'amount' => 25,
+            'payment_method' => 'bank_transfer',
+            'expense_date' => now()->toDateString(),
+            'status' => 'approved',
+            'created_by_user_id' => $admin->id,
+            'approved_by_user_id' => $admin->id,
+            'approved_at' => now(),
+        ]);
+        app(AccountingService::class)->recordExpenseApproved($expense);
+
+        $this->actingAs($admin)
+            ->delete(route('admin.expenses.destroy', $expense))
+            ->assertForbidden();
+
+        $this->assertFalse($expense->fresh()->trashed(), 'Posted approved expenses must remain visible for audit.');
+        $this->assertDatabaseHas('journal_entries', [
+            'source_type' => Expense::class,
+            'source_id' => $expense->id,
+            'event_type' => 'expense_approved',
+        ]);
+    }
+
+    public function test_g5_posted_supplier_invoice_must_be_cancelled_not_deleted(): void
+    {
+        Role::firstOrCreate(['name' => 'admin'], ['label' => 'Admin', 'is_system' => true]);
+        $admin = User::create([
+            'name' => 'Admin', 'username' => 'admin-supplier-audit', 'password' => bcrypt('x'),
+            'role' => 'admin', 'status' => 'active',
+            'primary_branch_id' => $this->branch->id,
+        ]);
+        $admin->branches()->attach($this->branch->id, ['is_primary' => true]);
+
+        $supplier = Supplier::create(['name' => 'Audit Supplier', 'active' => true]);
+        $supplier->branches()->attach($this->branch->id);
+
+        $invoice = app(SupplierInvoiceService::class)->create([
+            'number' => 'AUD-SUP-'.uniqid(),
+            'supplier_id' => $supplier->id,
+            'subtotal' => 100,
+            'tax_total' => 0,
+            'total' => 100,
+            'invoice_date' => now()->toDateString(),
+            'lines' => [[
+                'description' => 'Cleaning service',
+                'quantity' => 1,
+                'unit_price' => 100,
+                'tax_total' => 0,
+            ]],
+        ], $admin->id);
+
+        $this->actingAs($admin)
+            ->delete(route('admin.supplier-invoices.destroy', $invoice))
+            ->assertForbidden();
+
+        $this->assertFalse($invoice->fresh()->trashed(), 'Posted supplier invoices must remain available for cancellation/reversal.');
+        $this->assertDatabaseHas('journal_entries', [
+            'source_type' => $invoice::class,
+            'source_id' => $invoice->id,
+            'event_type' => 'supplier_invoice_created',
+        ]);
     }
 }

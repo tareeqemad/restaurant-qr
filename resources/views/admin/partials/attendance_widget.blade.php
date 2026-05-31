@@ -3,8 +3,8 @@
      * Attendance pill — visually paired with the branch switcher next
      * to it. Same 42px height, same rounded-pill shape, same hover lift.
      *
-     *   • OUT → indigo gradient "سجّل الحضور" with door-in icon.
-     *   • IN  → emerald pulse + 2-line stack: "حاضر الآن" / live ticker.
+     *   - OUT: indigo gradient clock-in state with door-in icon.
+     *   - IN: emerald pulse + two-line live ticker.
      *
      * Click while IN → confirm modal (sweetalert2 if available, else
      * native confirm) → POST clock-out.
@@ -17,16 +17,16 @@
 <div class="header-element atx">
     @if($open)
         <form action="{{ route('admin.attendance.clock-out') }}" method="POST" class="atx-form"
-              onsubmit="return confirm('تسجيل الانصراف الآن؟');">
+              onsubmit="return confirm(@js(__('admin.common.clock_out_confirm')));">
             @csrf
             <button type="submit"
                     class="atx-btn atx-btn--in"
-                    title="اضغط للانصراف · {{ $open->branch->name }} · بدأ {{ $open->clock_in_at->format('H:i') }}">
+                    title="{{ __('admin.common.clock_out_title', ['branch' => $open->branch->localizedName(), 'time' => $open->clock_in_at->format('H:i')]) }}">
                 <span class="atx-btn__pulse" aria-hidden="true">
                     <span class="atx-btn__dot"></span>
                 </span>
                 <span class="atx-btn__body">
-                    <span class="atx-btn__top">حاضر الآن · انقر للانصراف</span>
+                    <span class="atx-btn__top">{{ __('admin.common.present_now') }}</span>
                     <span class="atx-btn__time"
                           data-atx-ticker
                           data-atx-start="{{ $open->clock_in_at->toIso8601String() }}"
@@ -39,7 +39,7 @@
     @else
         <form action="{{ route('admin.attendance.clock-in') }}" method="POST" class="atx-form">
             @csrf
-            <button type="submit" class="atx-btn atx-btn--out" title="تسجيل الحضور الآن">
+            <button type="submit" class="atx-btn atx-btn--out" title="{{ __('admin.common.clock_in_title') }}">
                 <span class="atx-btn__icon" aria-hidden="true">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
                          stroke="currentColor" stroke-width="2.4"
@@ -50,8 +50,8 @@
                     </svg>
                 </span>
                 <span class="atx-btn__body">
-                    <span class="atx-btn__top">تسجيل</span>
-                    <span class="atx-btn__label">سجّل الحضور</span>
+                    <span class="atx-btn__top">{{ __('admin.common.clock_in_short') }}</span>
+                    <span class="atx-btn__label">{{ __('admin.common.clock_in') }}</span>
                 </span>
             </button>
         </form>
@@ -233,9 +233,9 @@
         const m = Math.max(0, Math.floor(seconds / 60));
         const h = Math.floor(m / 60);
         const r = m % 60;
-        if (h === 0) return `${r} د`;
-        if (r === 0) return `${h} س`;
-        return `${h} س ${r} د`;
+        if (h === 0) return @json(__('admin.common.minutes_short')).replace(':count', r);
+        if (r === 0) return @json(__('admin.common.hours_short')).replace(':count', h);
+        return @json(__('admin.common.hours_minutes_short')).replace(':hours', h).replace(':minutes', r);
     };
     const tick = () => {
         const now = Date.now();

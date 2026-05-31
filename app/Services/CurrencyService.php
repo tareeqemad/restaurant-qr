@@ -8,8 +8,8 @@ use Illuminate\Support\Collection;
 /**
  * Currency conversion & display.
  *
- * Architecture: all storage stays in base currency (ILS). This service only
- * affects what's DISPLAYED to the customer. The customer's preference is
+ * Architecture: all storage stays in the configured base currency. This
+ * service only affects what's DISPLAYED to the customer. The preference is
  * saved in the session (cookie) and read back on every page.
  *
  * Rates are editable by the admin (no external API calls).
@@ -48,10 +48,11 @@ class CurrencyService
     public function current(): Currency
     {
         $code = session(self::SESSION_KEY);
-        if (!$code && request()->has('currency')) {
+        if (! $code && request()->has('currency')) {
             $code = strtoupper(request()->get('currency'));
         }
         $currency = $code ? $this->byCode($code) : null;
+
         return ($currency && $currency->is_active) ? $currency : ($this->base() ?? $this->active()->first());
     }
 
@@ -74,22 +75,28 @@ class CurrencyService
     {
         $base = $this->base();
         $current = $this->current();
-        if (!$base || !$current) return number_format($baseAmount, 2);
+        if (! $base || ! $current) {
+            return number_format($baseAmount, 2);
+        }
 
         if ($current->is_base) {
             return $current->format($baseAmount);
         }
 
         $foreign = $current->convertFromBase($baseAmount);
-        return $base->format($baseAmount) . ' ≈ ' . $current->format($foreign);
+
+        return $base->format($baseAmount).' ≈ '.$current->format($foreign);
     }
 
     /** Just the converted amount, no base prefix. */
     public function displayForeignOnly(float $baseAmount): string
     {
         $current = $this->current();
-        if (!$current) return number_format($baseAmount, 2);
+        if (! $current) {
+            return number_format($baseAmount, 2);
+        }
         $amount = $current->is_base ? $baseAmount : $current->convertFromBase($baseAmount);
+
         return $current->format($amount);
     }
 }

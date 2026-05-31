@@ -27,6 +27,7 @@ use App\Models\SupplierInvoiceItem;
 use App\Models\Table;
 use App\Services\AlertsService;
 use App\Support\BranchContext;
+use App\Support\MarketProfile;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -363,7 +364,7 @@ class DashboardController extends Controller
             $d = now()->subDays($i)->toDateString();
             $trend->push([
                 'date'  => $d,
-                'label' => now()->subDays($i)->locale('ar')->isoFormat('ddd'),
+                'label' => now()->subDays($i)->locale(MarketProfile::lang())->isoFormat('ddd'),
                 'value' => (float) ($salesByDay[$d] ?? 0),
             ]);
         }

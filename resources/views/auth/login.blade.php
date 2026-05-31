@@ -1,20 +1,21 @@
 @php
     $theme = \App\Support\ThemePalette::current();
     $siteName = \App\Helpers\Brand::name();
+    $market = \App\Support\MarketProfile::class;
 @endphp
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="{{ $market::lang() }}" dir="{{ $market::direction() }}" data-market="{{ $market::current() }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <meta name="theme-color" content="{{ $theme['primary'] }}">
-    <title>تسجيل الدخول · {{ $siteName }}</title>
+    <title>{{ __('ui.auth.login_button') }} · {{ $siteName }}</title>
     <link rel="icon" href="{{ \App\Helpers\Brand::faviconUrl() }}">
     <link href="{{ asset('assets/dashtic/icon-fonts/bootstrap-icons/icons/font/bootstrap-icons.css') }}" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+    <link href="{{ $market::fontUrl() }}" rel="stylesheet">
     <style>
         :root {
             --green-primary: {{ $theme['primary'] }};
@@ -34,11 +35,12 @@
             --danger-fg:     #991B1B;
         }
         @include('partials.theme-vars', ['theme' => $theme])
+        @include('partials.market-vars')
 
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         html, body { margin: 0; padding: 0; height: 100%; }
         body {
-            font-family: 'Tajawal', system-ui, sans-serif;
+            font-family: var(--market-font-family);
             color: var(--ink);
             line-height: 1.5;
             -webkit-font-smoothing: antialiased;
@@ -517,37 +519,36 @@
         {{-- Hero (right in RTL) --}}
         <section class="hero">
             <span class="hero-badge">
-                <i class="bi bi-stars"></i> قائمة طازجة كل يوم
+                <i class="bi bi-stars"></i> {{ __('ui.auth.hero_badge') }}
             </span>
 
             <h1 class="hero-title">
-                وجبتك المفضّلة،<br>
-                بنكهة <span class="green">طازجة</span> و<span class="gold">أصالة</span>
+                {{ __('ui.auth.hero_title_line_1') }}<br>
+                {{ __('ui.auth.hero_title_line_2_prefix') }} <span class="green">{{ __('ui.auth.hero_title_fresh') }}</span> {{ __('ui.auth.hero_title_and') }} <span class="gold">{{ __('ui.auth.hero_title_authentic') }}</span>
             </h1>
 
             <p class="hero-desc">
-                اطلب من أكثر من 200 طبق محضّر بأيدي طهاتنا — تتبّع طلبك من المطبخ حتى طاولتك،
-                وادفع بسهولة بطريقتك المفضّلة. تجربة مطعم متكاملة، بضغطة واحدة.
+                {{ __('ui.auth.hero_description') }}
             </p>
 
             <div class="features">
                 <div class="feature">
                     <div class="feature-icon"><i class="bi bi-calendar-check"></i></div>
-                    <div class="feature-title">حجز فوري</div>
+                    <div class="feature-title">{{ __('ui.auth.feature_reservation') }}</div>
                 </div>
                 <div class="feature">
                     <div class="feature-icon"><i class="bi bi-star-fill"></i></div>
-                    <div class="feature-title">تقييم ممتاز</div>
+                    <div class="feature-title">{{ __('ui.auth.feature_rating') }}</div>
                 </div>
                 <div class="feature">
                     <div class="feature-icon"><i class="bi bi-clock-fill"></i></div>
-                    <div class="feature-title">طلب 24/7</div>
+                    <div class="feature-title">{{ __('ui.auth.feature_anytime_ordering') }}</div>
                 </div>
             </div>
 
             <div class="hero-foot">
-                <span>الإصدار 2026.1</span>
-                <span>© {{ date('Y') }} {{ $siteName }} · جميع الحقوق محفوظة</span>
+                <span>{{ __('ui.common.version', ['version' => '2026.1']) }}</span>
+                <span>© {{ date('Y') }} {{ $siteName }} · {{ __('ui.common.all_rights_reserved') }}</span>
             </div>
         </section>
 
@@ -559,8 +560,8 @@
                 <div class="auth-card">
                     {{-- Login panel --}}
                     <div class="login-panel" id="loginPanel" :class="{ 'is-hidden': forgotOpen }">
-                        <h2 class="auth-title">أهلاً بعودتك 👋</h2>
-                        <p class="auth-subtitle">سجّل دخولك للطلب وتتبّع وجبتك</p>
+                        <h2 class="auth-title">{{ __('ui.auth.welcome_back') }}</h2>
+                        <p class="auth-subtitle">{{ __('ui.auth.staff_subtitle') }}</p>
 
                         {{-- Brand::logoUrl() already returns the dynamic monogram fallback when no
                              custom logo is uploaded — no need for an explicit hasCustomLogo branch. --}}
@@ -579,19 +580,19 @@
                             @csrf
 
                             <div class="field">
-                                <label class="field-label" for="usernameField">البريد الإلكتروني</label>
+                                <label class="field-label" for="usernameField">{{ __('ui.auth.email') }}</label>
                                 <div class="input-wrap">
                                     <i class="bi bi-envelope icon-leading"></i>
                                     <input type="text" name="username" id="usernameField"
                                            class="input-control" dir="ltr"
-                                           placeholder="example@relax.com"
+                                           placeholder="{{ __('ui.auth.staff_email_placeholder') }}"
                                            value="{{ old('username') }}"
                                            required autofocus autocomplete="username">
                                 </div>
                             </div>
 
                             <div class="field">
-                                <label class="field-label" for="passwordField">كلمة المرور</label>
+                                <label class="field-label" for="passwordField">{{ __('ui.auth.password') }}</label>
                                 <div class="input-wrap">
                                     <i class="bi bi-lock icon-leading"></i>
                                     <input :type="showPassword ? 'text' : 'password'" name="password" id="passwordField"
@@ -604,29 +605,29 @@
                                     <button type="button"
                                             class="icon-trailing"
                                             @click="showPassword = !showPassword"
-                                            :aria-label="showPassword ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'">
+                                            :aria-label="showPassword ? @js(__('ui.auth.hide_password')) : @js(__('ui.auth.show_password'))">
                                         <i class="bi" :class="showPassword ? 'bi-eye-slash' : 'bi-eye'"></i>
                                     </button>
                                 </div>
                                 <div class="caps-warn" id="capsWarn" :class="{ 'is-on': capsLock }" x-show="capsLock" x-cloak>
                                     <i class="bi bi-capslock-fill"></i>
-                                    <span>Caps Lock مفعّل</span>
+                                    <span>{{ __('ui.auth.caps_lock_on') }}</span>
                                 </div>
                             </div>
 
                             <label class="remember-row" for="rememberMe">
                                 <input type="checkbox" name="remember" id="rememberMe" value="1" {{ old('remember') ? 'checked' : '' }}>
                                 <span class="remember-text">
-                                    <span class="remember-title">ابقني مسجلاً على هذا الجهاز</span>
+                                    <span class="remember-title">{{ __('ui.auth.remember_title') }}</span>
                                     <span class="remember-hint">
                                         <i class="bi bi-shield-exclamation"></i>
-                                        لا تختر هذا الخيار على جهاز مشترك أو عام
+                                        {{ __('ui.auth.remember_hint') }}
                                     </span>
                                 </span>
                             </label>
 
                             <button type="submit" class="btn-submit" id="submitBtn" :class="{ 'is-loading': submitting }" :disabled="submitting">
-                                <span class="label">دخول إلى النظام</span>
+                                <span class="label">{{ __('ui.auth.staff_login_button') }}</span>
                                 <i class="bi bi-chevron-left icon-fwd"></i>
                                 <span class="spinner"><i class="bi bi-arrow-repeat"></i></span>
                             </button>
@@ -636,42 +637,42 @@
                             <a href="{{ route('password.request') }}"
                                style="color: var(--muted); text-decoration: none; font-size: .9rem; font-weight: 700;">
                                 <i class="bi bi-question-circle"></i>
-                                نسيت كلمة المرور؟
+                                {{ __('ui.auth.forgot_password') }}
                             </a>
                         </div>
                     </div>
 
                     {{-- Forgot password panel --}}
                     <div class="forgot-panel" id="forgotPanel" :class="{ 'is-open': forgotOpen }" x-cloak>
-                        <h2 class="auth-title">استعادة الوصول</h2>
+                        <h2 class="auth-title">{{ __('ui.auth.forgot_access_title') }}</h2>
                         <p class="forgot-help">
-                            أدخل رقم هاتفك المسجّل لدينا، وسنرسل لك كلمة مرور مؤقتة عبر رسالة نصية.
+                            {{ __('ui.auth.forgot_panel_help') }}
                         </p>
 
                         <div class="field">
-                            <label class="field-label" for="phoneField">رقم الهاتف</label>
+                            <label class="field-label" for="phoneField">{{ __('ui.auth.phone') }}</label>
                             <div class="input-wrap">
                                 <i class="bi bi-telephone icon-leading"></i>
                                 <input type="tel" id="phoneField"
                                        class="input-control" dir="ltr"
-                                       placeholder="+966 5X XXX XXXX"
+                                       placeholder="{{ __('ui.auth.intl_phone_placeholder') }}"
                                        autocomplete="tel"
                                        x-ref="phoneField">
                             </div>
                         </div>
 
-                        <button type="button" class="btn-submit" @click="alert('سيتم إرسال رمز إلى هاتفك المسجّل.')">
-                            <span class="label">إرسال رمز التحقق</span>
+                        <button type="button" class="btn-submit" @click="alert(@js(__('ui.auth.verification_alert')))">
+                            <span class="label">{{ __('ui.auth.send_verification_code') }}</span>
                             <i class="bi bi-chevron-left icon-fwd"></i>
                         </button>
 
                         <button type="button" class="back-link" @click="forgotOpen = false">
                             <i class="bi bi-arrow-right"></i>
-                            العودة لتسجيل الدخول
+                            {{ __('ui.common.back_to_login') }}
                         </button>
                     </div>
 
-                    <p class="form-foot">بتسجيلك أنت توافق على الاستخدام الآمن للنظام</p>
+                    <p class="form-foot">{{ __('ui.common.safe_use_agreement') }}</p>
                 </div>
             </div>
         </section>

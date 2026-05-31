@@ -23,8 +23,16 @@ return [
     'cloud_url' => env('LICENSE_CLOUD_URL', env('SYNC_CLOUD_URL')),
     'key' => env('LICENSE_KEY'),
 
-    // Must be identical on cloud and branch nodes. APP_KEY is a convenient
-    // dev fallback; production installs should set LICENSE_SIGNING_SECRET.
+    // Production signing should be asymmetric: only the cloud node gets the
+    // private key, while branch/customer nodes get the public key only.
+    // Values may be literal PEM strings, "\n"-escaped PEM strings, or paths.
+    'private_key' => env('LICENSE_PRIVATE_KEY'),
+    'private_key_path' => env('LICENSE_PRIVATE_KEY_PATH'),
+    'public_key' => env('LICENSE_PUBLIC_KEY'),
+    'public_key_path' => env('LICENSE_PUBLIC_KEY_PATH'),
+
+    // Legacy/dev fallback. Do not put this on customer nodes when using
+    // LICENSE_PUBLIC_KEY / LICENSE_PUBLIC_KEY_PATH.
     'signing_secret' => env('LICENSE_SIGNING_SECRET', env('APP_KEY')),
 
     'timeout' => (int) env('LICENSE_TIMEOUT', 8),

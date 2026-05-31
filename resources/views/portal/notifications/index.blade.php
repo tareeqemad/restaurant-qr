@@ -1,5 +1,5 @@
 @extends('portal.layout')
-@section('title', 'الإشعارات والعروض')
+@section('title', __('portal.notifications.title'))
 
 @section('content')
 @php
@@ -11,13 +11,13 @@
     <div class="pf-hero__lead">
         <h1 class="pf-hero__title">
             <i class="bi bi-bell-fill" style="color: #F9A825;"></i>
-            الإشعارات والعروض
+            {{ __('portal.notifications.title') }}
         </h1>
         <p class="pf-hero__subtitle">
-            كل الإعلانات والعروض الموجَّهة لك.
+            {{ __('portal.notifications.subtitle') }}
             @if($notifications->total() > 0)
-                <strong>{{ number_format($notifications->total()) }}</strong> رسالة
-                · غير مقروء: <strong>{{ number_format($notifications->where('read_at', null)->count()) }}</strong>
+                <strong>{{ trans_choice('portal.notifications.message_count', $notifications->total(), ['count' => number_format($notifications->total())]) }}</strong>
+                · {{ __('portal.notifications.unread_count', ['count' => number_format($notifications->where('read_at', null)->count())]) }}
             @endif
         </p>
     </div>
@@ -26,7 +26,7 @@
             <form method="POST" action="{{ route('portal.notifications.read-all') }}" style="margin:0;">
                 @csrf
                 <button class="pf-btn pf-btn--ghost">
-                    <i class="bi bi-check2-all"></i> اعتبارها كلها مقروءة
+                    <i class="bi bi-check2-all"></i> {{ __('portal.notifications.mark_all_read') }}
                 </button>
             </form>
         </div>
@@ -38,9 +38,9 @@
         <div style="font-size: 3rem; opacity: .25; margin-bottom: 12px;">
             <i class="bi bi-bell-slash"></i>
         </div>
-        <h2 style="font-size: 1.1rem; margin: 0 0 8px;">لا توجد إشعارات بعد</h2>
+        <h2 style="font-size: 1.1rem; margin: 0 0 8px;">{{ __('portal.notifications.empty_title') }}</h2>
         <p class="text-muted" style="margin: 0; font-size: .9rem;">
-            عند نشر عروض وحملات تسويقية، ستصلك هنا.
+            {{ __('portal.notifications.empty_body') }}
         </p>
     </div>
 @else
@@ -53,13 +53,13 @@
                 $img   = $data['extra']['image_path'] ?? null;
                 $isUnread = $n->read_at === null;
                 $cta = $data['action_url'] ?? null;
-                $ctaLabel = $data['action_label'] ?? 'عرض التفاصيل';
+                $ctaLabel = $data['action_label'] ?? __('portal.notifications.details');
             @endphp
 
             <article class="pf-notif {{ $isUnread ? 'is-unread' : '' }}"
                      style="--ann-color: {{ $color }};">
                 @if($isUnread)
-                    <span class="pf-notif__dot" title="غير مقروء"></span>
+                    <span class="pf-notif__dot" title="{{ __('portal.notifications.unread') }}"></span>
                 @endif
 
                 <div class="pf-notif__icon" style="background: {{ $color }}15; color: {{ $color }};">
@@ -69,7 +69,7 @@
                 <div class="pf-notif__body">
                     <div class="pf-notif__head">
                         <strong>{{ $data['title'] ?? '—' }}</strong>
-                        <small>{{ $n->created_at->locale('ar')->diffForHumans() }}</small>
+                        <small>{{ $n->created_at->locale(app()->getLocale())->diffForHumans() }}</small>
                     </div>
                     <p>{{ $data['body'] ?? '' }}</p>
 
@@ -91,7 +91,7 @@
                             <form method="POST" action="{{ route('portal.notifications.read', $n->id) }}" style="margin:0;">
                                 @csrf
                                 <button class="pf-notif__mark">
-                                    <i class="bi bi-check2"></i> مقروء
+                                    <i class="bi bi-check2"></i> {{ __('portal.notifications.read') }}
                                 </button>
                             </form>
                         @endif

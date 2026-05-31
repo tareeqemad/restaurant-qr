@@ -1,5 +1,5 @@
 @extends('customer.layout')
-@section('title','تتبع الطلب')
+@section('title', __('ui.customer_order.track_title'))
 
 @push('styles')
 <style>
@@ -487,10 +487,10 @@
         <div class="track-signup track-signup--success">
             <div class="track-signup-icon"><i class="bi bi-check-circle-fill"></i></div>
             <div class="track-signup-body">
-                <strong>تمام يا {{ $signupPin['name'] }}! حسابك جاهز 🎉</strong>
-                <p>رمز الدخول للزيارات القادمة:</p>
+                <strong>{{ __('ui.customer_order.signup_success_title', ['name' => $signupPin['name']]) }}</strong>
+                <p>{{ __('ui.customer_order.signup_pin_label') }}</p>
                 <code class="track-signup-pin">{{ $signupPin['pin'] }}</code>
-                <small>اكتب الرمز عندك. تقدر تدخل بوابة العملاء برقم جوالك ({{ $signupPin['phone'] }}) + هذا الرمز.</small>
+                <small>{{ __('ui.customer_order.signup_pin_help', ['phone' => $signupPin['phone']]) }}</small>
             </div>
         </div>
     @elseif($eligibleForSignup)
@@ -503,23 +503,23 @@
         <div class="track-signup">
             <div class="track-signup-icon"><i class="bi bi-gift-fill"></i></div>
             <div class="track-signup-body">
-                <strong>افتح حسابك بضغطة — وفّر بزياراتك الجاية 🎁</strong>
-                <p>عندنا رقمك ({{ $session->customer_phone }}) — ضغطة وحدة وحسابك جاهز، بدون ما نطلب منك ولا معلومة زيادة.</p>
+                <strong>{{ __('ui.customer_order.signup_offer_title') }}</strong>
+                <p>{{ __('ui.customer_order.signup_offer_body', ['phone' => $session->customer_phone]) }}</p>
                 <ul class="track-signup-perks">
-                    <li><i class="bi bi-percent"></i> <span>عروض وخصومات حصرية للزبائن المسجَّلين</span></li>
-                    <li><i class="bi bi-clock-history"></i> <span>سجل طلباتك جاهز للإعادة بنقرة</span></li>
-                    <li><i class="bi bi-stars"></i> <span>نقاط ولاء تتحوّل لخصومات</span></li>
+                    <li><i class="bi bi-percent"></i> <span>{{ __('ui.customer_order.signup_perk_offers') }}</span></li>
+                    <li><i class="bi bi-clock-history"></i> <span>{{ __('ui.customer_order.signup_perk_history') }}</span></li>
+                    <li><i class="bi bi-stars"></i> <span>{{ __('ui.customer_order.signup_perk_points') }}</span></li>
                 </ul>
                 <div class="track-signup-actions">
                     <form method="POST" action="{{ route('customer.track.signup') }}" class="d-inline">
                         @csrf
                         <button type="submit" class="track-signup-btn">
-                            <i class="bi bi-person-plus-fill"></i> أنشئ لي حساب
+                            <i class="bi bi-person-plus-fill"></i> {{ __('ui.customer_order.create_account_for_me') }}
                         </button>
                     </form>
                     <form method="POST" action="{{ route('customer.track.signup.dismiss') }}" class="d-inline">
                         @csrf
-                        <button type="submit" class="track-signup-skip">شكراً، مش الآن</button>
+                        <button type="submit" class="track-signup-skip">{{ __('ui.customer_order.not_now') }}</button>
                     </form>
                 </div>
             </div>

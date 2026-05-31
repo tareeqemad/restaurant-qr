@@ -1,14 +1,14 @@
 @extends('customer.layout')
-@section('title','السلة')
+@section('title', __('ui.customer_order.cart_title'))
 @section('content')
 <div class="p-3">
-    <h5 class="fw-bold mb-3"><i class="bi bi-cart3"></i> السلة</h5>
+    <h5 class="fw-bold mb-3"><i class="bi bi-cart3"></i> {{ __('ui.customer_order.cart_title') }}</h5>
 
     @if(empty($cart))
         <div class="text-center py-5 text-muted">
             <i class="bi bi-cart-x" style="font-size: 4rem;"></i>
-            <p class="mt-3">السلة فارغة</p>
-            <a href="{{ route('customer.menu') }}" class="btn btn-danger">تصفح القائمة</a>
+            <p class="mt-3">{{ __('ui.customer_menu.cart_empty') }}</p>
+            <a href="{{ route('customer.menu') }}" class="btn btn-danger">{{ __('ui.customer_order.browse_menu') }}</a>
         </div>
     @else
         @php
@@ -23,7 +23,7 @@
             $taxTotal = $taxEnabled ? round($total * ($taxRate / 100), 2) : 0.0;
             $serviceTotal = $serviceEnabled ? round($total * ($serviceRate / 100), 2) : 0.0;
             $displayTotal = $taxDisplayMode === 'inclusive' ? $total + $taxTotal + $serviceTotal : $total;
-            $displayLabel = $taxDisplayMode === 'inclusive' ? 'الإجمالي شامل الضريبة' : 'الإجمالي قبل الضريبة';
+            $displayLabel = $taxDisplayMode === 'inclusive' ? __('ui.customer_menu.tax_inclusive_total') : __('ui.customer_menu.tax_exclusive_total');
         @endphp
         @foreach($cart as $row)
             <div class="menu-card p-3 mb-2">
@@ -35,7 +35,7 @@
                             <span class="fw-bold text-danger">{{ \App\Helpers\Money::format($row['subtotal']) }}</span>
                         </div>
                         @if(! empty($row['modifiers']))
-                            <small class="text-muted">{{ collect($row['modifiers'])->pluck('name')->join('، ') }}</small>
+                            <small class="text-muted">{{ collect($row['modifiers'])->pluck('name')->join(', ') }}</small>
                         @endif
                         @if(! empty($row['notes']))<small class="d-block text-warning"><i class="bi bi-chat"></i> {{ $row['notes'] }}</small>@endif
 
@@ -64,21 +64,21 @@
                 <span class="text-danger">{{ \App\Helpers\Money::format($displayTotal) }}</span>
             </div>
             <div class="small text-muted">
-                <div>المجموع: {{ \App\Helpers\Money::format($total) }}</div>
+                <div>{{ __('ui.customer_menu.subtotal') }}: {{ \App\Helpers\Money::format($total) }}</div>
                 @if($taxDisplayMode === 'inclusive' && $taxTotal > 0)
-                    <div>الضريبة ({{ $taxRate }}%): {{ \App\Helpers\Money::format($taxTotal) }}</div>
+                    <div>{{ __('ui.customer_menu.tax') }} ({{ $taxRate }}%): {{ \App\Helpers\Money::format($taxTotal) }}</div>
                 @endif
                 @if($taxDisplayMode === 'inclusive' && $serviceTotal > 0)
-                    <div>الخدمة ({{ $serviceRate }}%): {{ \App\Helpers\Money::format($serviceTotal) }}</div>
+                    <div>{{ __('ui.customer_menu.service') }} ({{ $serviceRate }}%): {{ \App\Helpers\Money::format($serviceTotal) }}</div>
                 @endif
                 @if($taxDisplayMode === 'exclusive' && ($taxTotal > 0 || $serviceTotal > 0))
-                    <div>الضريبة والخدمة تظهر في الفاتورة بعد اعتماد الطلب.</div>
+                    <div>{{ __('ui.customer_order.tax_service_after_approval') }}</div>
                 @endif
             </div>
 
             <form action="{{ route('customer.cart.submit') }}" method="POST" class="mt-3">@csrf
-                <textarea name="notes" class="form-control mb-2" rows="2" placeholder="ملاحظات عامة للجرسون"></textarea>
-                <button class="btn btn-danger btn-lg w-100"><i class="bi bi-send"></i> إرسال الطلب</button>
+                <textarea name="notes" class="form-control mb-2" rows="2" placeholder="{{ __('ui.customer_order.general_notes_to_server') }}"></textarea>
+                <button class="btn btn-danger btn-lg w-100"><i class="bi bi-send"></i> {{ __('ui.customer_order.send_order') }}</button>
             </form>
         </div></div>
     @endif
