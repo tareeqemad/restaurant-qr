@@ -329,6 +329,7 @@
                             <li class="slide"><a href="{{ route('admin.accounting.trial-balance') }}" class="side-menu__item {{ $isActive('admin.accounting.trial-balance') }}"><i class="bi bi-columns-gap submenu-icon"></i>{{ __('admin.nav.trial_balance') }}</a></li>
                             <li class="slide"><a href="{{ route('admin.accounting.journal') }}" class="side-menu__item {{ $isActive('admin.accounting.journal') }}"><i class="bi bi-journal-text submenu-icon"></i>{{ __('admin.nav.journal') }}</a></li>
                             <li class="slide"><a href="{{ route('admin.accounting.balance-sheet') }}" class="side-menu__item {{ $isActive('admin.accounting.balance-sheet') }}"><i class="bi bi-bank submenu-icon"></i>الميزانية العمومية</a></li>
+                            <li class="slide"><a href="{{ route('admin.accounting.fixed-assets.index') }}" class="side-menu__item {{ $isActive('admin.accounting.fixed-assets.*') }}"><i class="bi bi-building-gear submenu-icon"></i>الأصول الثابتة</a></li>
                             <li class="slide"><a href="{{ route('admin.accounting.aging') }}" class="side-menu__item {{ $isActive('admin.accounting.aging') }}"><i class="bi bi-hourglass-split submenu-icon"></i>أعمار الذمم</a></li>
                             <li class="slide"><a href="{{ route('admin.accounting.tax-report') }}" class="side-menu__item {{ $isActive('admin.accounting.tax-report') }}"><i class="bi bi-percent submenu-icon"></i>تقرير الضريبة</a></li>
                             @if(auth()->user()?->hasPermission('chart_of_accounts.update'))

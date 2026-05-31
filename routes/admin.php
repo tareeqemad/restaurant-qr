@@ -371,6 +371,13 @@ Route::middleware(['auth', 'setup.complete', 'admin', 'branch', 'license'])->gro
         Route::get('balance-sheet', [Admin\AccountingController::class, 'balanceSheet'])->name('balance-sheet');
         Route::get('tax-report', [Admin\AccountingController::class, 'taxReport'])->name('tax-report');
         Route::get('aging', [Admin\AccountingController::class, 'aging'])->name('aging');
+        Route::get('fixed-assets', [Admin\FixedAssetController::class, 'index'])->name('fixed-assets.index');
+        Route::get('fixed-assets/create', [Admin\FixedAssetController::class, 'create'])->name('fixed-assets.create');
+        Route::post('fixed-assets', [Admin\FixedAssetController::class, 'store'])->name('fixed-assets.store');
+        Route::post('fixed-assets/depreciation/run', [Admin\FixedAssetController::class, 'runDepreciation'])->name('fixed-assets.depreciation-run');
+        Route::get('fixed-assets/{fixedAsset}', [Admin\FixedAssetController::class, 'show'])->name('fixed-assets.show');
+        Route::post('fixed-assets/{fixedAsset}/depreciation', [Admin\FixedAssetController::class, 'storeDepreciation'])->name('fixed-assets.depreciation');
+        Route::post('fixed-assets/{fixedAsset}/dispose', [Admin\FixedAssetController::class, 'dispose'])->name('fixed-assets.dispose');
         Route::get('opening-balances', [Admin\AccountingController::class, 'openingBalances'])->name('opening-balances');
         Route::post('opening-balances', [Admin\AccountingController::class, 'storeOpeningBalances'])->name('opening-balances.store');
         Route::get('periods', [Admin\AccountingController::class, 'periods'])->name('periods');

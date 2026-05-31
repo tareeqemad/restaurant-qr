@@ -8,6 +8,8 @@ use App\Models\AccountingPeriod;
 use App\Models\BranchTransferItem;
 use App\Models\Currency;
 use App\Models\Expense;
+use App\Models\FixedAsset;
+use App\Models\FixedAssetDepreciation;
 use App\Models\FiscalYear;
 use App\Models\IngredientBatch;
 use App\Models\InventoryMovement;
@@ -41,6 +43,8 @@ class AccountingService
     public const INVENTORY_IN_TRANSIT = '1150';
     public const INVENTORY = '1200';
     public const INPUT_VAT = '1300';
+    public const FIXED_ASSETS = '1500';
+    public const ACCUMULATED_DEPRECIATION = '1590';
     public const ACCOUNTS_PAYABLE = '2000';
     public const OUTPUT_VAT = '2100';
     public const TIPS_PAYABLE = '2200';
@@ -55,6 +59,7 @@ class AccountingService
     public const INVENTORY_ADJUSTMENT_GAIN = '4200';
     public const CASH_OVER_SHORT_INCOME = '4210';
     public const FOREIGN_EXCHANGE_GAIN = '4220';
+    public const FIXED_ASSET_DISPOSAL_GAIN = '4230';
     public const COST_OF_GOODS_SOLD = '5000';
     public const OPERATING_EXPENSES = '5100';
     public const BAD_DEBT_EXPENSE = '5200';
@@ -62,8 +67,10 @@ class AccountingService
     public const WASTE_EXPENSE = '5400';
     public const INVENTORY_SHRINKAGE_EXPENSE = '5410';
     public const PURCHASE_PRICE_VARIANCE = '5420';
+    public const DEPRECIATION_EXPENSE = '5500';
     public const CASH_SHORTAGE_EXPENSE = '5510';
     public const FOREIGN_EXCHANGE_LOSS = '5520';
+    public const FIXED_ASSET_DISPOSAL_LOSS = '5530';
 
     private ?Collection $accounts = null;
     private ?Collection $accountMappings = null;
@@ -126,6 +133,20 @@ class AccountingService
                 'default' => self::INPUT_VAT,
                 'types' => ['asset'],
                 'group' => 'الضرائب',
+            ],
+            'fixed_assets' => [
+                'label' => 'Fixed assets',
+                'description' => 'Capitalized restaurant assets such as equipment, furniture, and fixtures.',
+                'default' => self::FIXED_ASSETS,
+                'types' => ['asset'],
+                'group' => 'Fixed assets',
+            ],
+            'accumulated_depreciation' => [
+                'label' => 'Accumulated depreciation',
+                'description' => 'Contra-asset account used to accumulate posted fixed-asset depreciation.',
+                'default' => self::ACCUMULATED_DEPRECIATION,
+                'types' => ['asset'],
+                'group' => 'Fixed assets',
             ],
             'accounts_payable' => [
                 'label' => 'الذمم الدائنة',
@@ -225,6 +246,13 @@ class AccountingService
                 'types' => ['revenue'],
                 'group' => 'Currencies',
             ],
+            'fixed_asset_disposal_gain' => [
+                'label' => 'Gain on fixed asset disposal',
+                'description' => 'Gain recognized when proceeds exceed the book value of a disposed fixed asset.',
+                'default' => self::FIXED_ASSET_DISPOSAL_GAIN,
+                'types' => ['revenue'],
+                'group' => 'Fixed assets',
+            ],
             'cost_of_goods_sold' => [
                 'label' => 'تكلفة البضاعة المباعة',
                 'description' => 'تكلفة المكونات المصروفة عند بيع الأصناف.',
@@ -274,6 +302,13 @@ class AccountingService
                 'types' => ['expense'],
                 'group' => 'المخزون',
             ],
+            'depreciation_expense' => [
+                'label' => 'Depreciation expense',
+                'description' => 'Periodic depreciation expense posted for fixed assets.',
+                'default' => self::DEPRECIATION_EXPENSE,
+                'types' => ['expense'],
+                'group' => 'Fixed assets',
+            ],
             'cash_shortage_expense' => [
                 'label' => 'عجز صندوق',
                 'description' => 'فروقات الصندوق السالبة عند إغلاق الشفت.',
@@ -287,6 +322,13 @@ class AccountingService
                 'default' => self::FOREIGN_EXCHANGE_LOSS,
                 'types' => ['expense'],
                 'group' => 'Currencies',
+            ],
+            'fixed_asset_disposal_loss' => [
+                'label' => 'Loss on fixed asset disposal',
+                'description' => 'Loss recognized when proceeds are below the book value of a disposed fixed asset.',
+                'default' => self::FIXED_ASSET_DISPOSAL_LOSS,
+                'types' => ['expense'],
+                'group' => 'Fixed assets',
             ],
         ];
     }
@@ -679,6 +721,124 @@ class AccountingService
                 'deposit_account_id' => $depositAccount->id,
                 'gross_amount' => $grossAmount,
                 'fee_amount' => $feeAmount,
+                'notes' => $notes,
+            ],
+            createdBy: $createdBy,
+        );
+    }
+
+    public function recordFixedAssetAcquisition(FixedAsset $asset): ?JournalEntry
+    {
+        $asset->refresh();
+        $foreignCost = $this->round((float) ($asset->foreign_cost ?: $asset->cost));
+        if ($foreignCost <= 0 || (float) $asset->cost <= 0) {
+            throw new \RuntimeException('Fixed asset acquisition requires a positive cost.');
+        }
+
+        $currencyCode = $this->normalizeCurrencyCode($asset->currency_code ?: $this->baseCurrencyCode());
+        $exchangeRate = (float) ($asset->exchange_rate ?: 1);
+
+        return $this->post(
+            eventType: 'fixed_asset_acquired',
+            source: $asset,
+            branchId: $asset->branch_id,
+            postedOn: $asset->acquisition_date ?: now(),
+            description: "Fixed asset acquisition {$asset->asset_number} - {$asset->name}",
+            lines: [
+                $this->currencyDebit($this->postingAccount('fixed_assets'), $foreignCost, $currencyCode, $exchangeRate, 'Capitalize fixed asset cost'),
+                $this->currencyCredit($this->fixedAssetFundingAccount($asset->payment_method), $foreignCost, $currencyCode, $exchangeRate, 'Fund fixed asset purchase'),
+            ],
+            metadata: [
+                'asset_number' => $asset->asset_number,
+                'currency_code' => $currencyCode,
+                'exchange_rate' => $exchangeRate,
+                'foreign_cost' => $foreignCost,
+                'base_cost' => (float) $asset->cost,
+            ],
+            createdBy: $asset->created_by,
+            currencyCode: $currencyCode,
+            exchangeRate: $exchangeRate,
+        );
+    }
+
+    public function recordFixedAssetDepreciation(FixedAssetDepreciation $depreciation): ?JournalEntry
+    {
+        $depreciation->loadMissing('fixedAsset');
+        $asset = $depreciation->fixedAsset;
+        $amount = $this->round((float) $depreciation->amount);
+
+        if (! $asset || $amount <= 0) {
+            throw new \RuntimeException('Fixed asset depreciation requires an asset and a positive amount.');
+        }
+
+        return $this->post(
+            eventType: 'fixed_asset_depreciation',
+            source: $depreciation,
+            branchId: $depreciation->branch_id ?: $asset->branch_id,
+            postedOn: $depreciation->posted_on ?: $depreciation->period_end ?: now(),
+            description: "Depreciation {$asset->asset_number} - {$asset->name}",
+            lines: [
+                $this->baseDebit($this->postingAccount('depreciation_expense'), $amount, 'Fixed asset depreciation expense'),
+                $this->baseCredit($this->postingAccount('accumulated_depreciation'), $amount, 'Accumulated depreciation'),
+            ],
+            metadata: [
+                'fixed_asset_id' => $asset->id,
+                'asset_number' => $asset->asset_number,
+                'period_start' => $depreciation->period_start?->toDateString(),
+                'period_end' => $depreciation->period_end?->toDateString(),
+                'accumulated_after' => (float) $depreciation->accumulated_after,
+            ],
+            createdBy: $depreciation->created_by,
+        );
+    }
+
+    public function recordFixedAssetDisposal(FixedAsset $asset, float $proceeds, ?string $paymentMethod, mixed $postedOn, ?int $createdBy = null, ?string $notes = null): ?JournalEntry
+    {
+        $asset->refresh();
+
+        $cost = $this->round((float) $asset->cost);
+        $accumulated = $this->round(min($cost, max(0, (float) $asset->accumulated_depreciation)));
+        $proceeds = $this->round(max(0, $proceeds));
+        $bookValue = $this->round(max(0, $cost - $accumulated));
+        $gain = $this->round(max(0, $proceeds - $bookValue));
+        $loss = $this->round(max(0, $bookValue - $proceeds));
+
+        if ($cost <= 0) {
+            throw new \RuntimeException('Fixed asset disposal requires a capitalized cost.');
+        }
+
+        $lines = [];
+        if ($accumulated > 0) {
+            $lines[] = $this->baseDebit($this->postingAccount('accumulated_depreciation'), $accumulated, 'Remove accumulated depreciation');
+        }
+        if ($proceeds > 0) {
+            $lines[] = $this->baseDebit($this->fixedAssetFundingAccount($paymentMethod), $proceeds, 'Disposal proceeds received');
+        }
+        if ($loss > 0) {
+            $lines[] = $this->baseDebit($this->postingAccount('fixed_asset_disposal_loss'), $loss, 'Loss on fixed asset disposal');
+        }
+
+        $lines[] = $this->baseCredit($this->postingAccount('fixed_assets'), $cost, 'Remove fixed asset cost');
+
+        if ($gain > 0) {
+            $lines[] = $this->baseCredit($this->postingAccount('fixed_asset_disposal_gain'), $gain, 'Gain on fixed asset disposal');
+        }
+
+        return $this->post(
+            eventType: 'fixed_asset_disposal',
+            source: $asset,
+            branchId: $asset->branch_id,
+            postedOn: $postedOn,
+            description: "Fixed asset disposal {$asset->asset_number} - {$asset->name}",
+            lines: $lines,
+            metadata: [
+                'asset_number' => $asset->asset_number,
+                'cost' => $cost,
+                'accumulated_depreciation' => $accumulated,
+                'book_value' => $bookValue,
+                'proceeds' => $proceeds,
+                'gain' => $gain,
+                'loss' => $loss,
                 'notes' => $notes,
             ],
             createdBy: $createdBy,
@@ -1090,6 +1250,16 @@ class AccountingService
         return $this->baseLine($account, $amount, 'credit', $description);
     }
 
+    private function currencyDebit(string $account, float $amount, string $currencyCode, float $exchangeRate, ?string $description = null): array
+    {
+        return $this->currencyLine($account, $amount, 'debit', $currencyCode, $exchangeRate, $description);
+    }
+
+    private function currencyCredit(string $account, float $amount, string $currencyCode, float $exchangeRate, ?string $description = null): array
+    {
+        return $this->currencyLine($account, $amount, 'credit', $currencyCode, $exchangeRate, $description);
+    }
+
     private function baseLine(string $account, float $amount, string $side, ?string $description = null): array
     {
         $amount = $this->round(abs($amount));
@@ -1101,6 +1271,22 @@ class AccountingService
             'credit' => 0.0,
             'currency_code' => $baseCurrencyCode,
             'exchange_rate' => 1.0,
+            'foreign_debit' => $side === 'debit' ? $amount : 0.0,
+            'foreign_credit' => $side === 'credit' ? $amount : 0.0,
+            'description' => $description,
+        ];
+    }
+
+    private function currencyLine(string $account, float $amount, string $side, string $currencyCode, float $exchangeRate, ?string $description = null): array
+    {
+        $amount = $this->round(abs($amount));
+
+        return [
+            'account' => $account,
+            'debit' => 0.0,
+            'credit' => 0.0,
+            'currency_code' => $this->normalizeCurrencyCode($currencyCode),
+            'exchange_rate' => $exchangeRate,
             'foreign_debit' => $side === 'debit' ? $amount : 0.0,
             'foreign_credit' => $side === 'credit' ? $amount : 0.0,
             'description' => $description,
@@ -1470,6 +1656,17 @@ class AccountingService
             $fallback,
             ['asset'],
         );
+    }
+
+    private function fixedAssetFundingAccount(?string $method): string
+    {
+        return match ($method) {
+            'cash' => $this->postingAccount('cash_account'),
+            'accounts_payable' => $this->postingAccount('accounts_payable'),
+            'owner_capital' => $this->postingAccount('opening_balance_equity'),
+            'card', 'transfer', 'bank_transfer', 'cheque', 'other' => $this->postingAccount('bank_account'),
+            default => $this->postingAccount('bank_account'),
+        };
     }
 
     private function postingAccount(string $role): string

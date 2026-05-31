@@ -176,7 +176,10 @@ class AccountService
         }
 
         $expectedNormalBalance = $this->expectedNormalBalanceForType($clean['type']);
-        if ($clean['normal_balance'] !== $expectedNormalBalance) {
+        $isProtectedContraAsset = $existing?->isProtected()
+            && $clean['type'] === 'asset'
+            && $clean['normal_balance'] === 'credit';
+        if ($clean['normal_balance'] !== $expectedNormalBalance && ! $isProtectedContraAsset) {
             throw ValidationException::withMessages([
                 'normal_balance' => "ط§ظ„ط·ط¨ظٹط¹ط© ط§ظ„ظ…ط­ط§ط³ط¨ظٹط© ظ„ظ†ظˆط¹ {$clean['type']} ظٹط¬ط¨ ط£ظ† طھظƒظˆظ† {$expectedNormalBalance}.",
             ]);
