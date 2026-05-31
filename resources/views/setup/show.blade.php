@@ -408,6 +408,20 @@
             color: #92400e;
             border: 1px solid rgba(146,64,14,.22);
         }
+        .alert-action {
+            margin-top: 10px;
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            min-height: 36px;
+            padding: 0 12px;
+            border-radius: 9px;
+            background: #fff;
+            color: #92400e;
+            border: 1px solid rgba(146,64,14,.28);
+            text-decoration: none;
+            font-weight: 900;
+        }
         .alert ul { margin: 0; padding-inline-start: 18px; }
         .actions {
             display: flex;
@@ -515,6 +529,12 @@
                         <div>
                             <strong>{{ __('setup.demo_reset.title') }}</strong>
                             <div>{{ __('setup.demo_reset.body') }}</div>
+                            @if($isDemoTrial && auth()->check())
+                                <a class="alert-action" href="{{ route('admin.dashboard') }}">
+                                    <i class="bi bi-box-arrow-in-left"></i>
+                                    {{ __('setup.actions.continue_demo') }}
+                                </a>
+                            @endif
                         </div>
                     </div>
                 @endif
@@ -929,7 +949,11 @@
                     </section>
 
                     <div class="actions">
-                        <a href="{{ route('login') }}" class="btn-secondary">{{ __('setup.actions.go_login') }}</a>
+                        @if($isDemoTrial && auth()->check())
+                            <a href="{{ route('admin.dashboard') }}" class="btn-secondary">{{ __('setup.actions.continue_demo') }}</a>
+                        @else
+                            <a href="{{ route('login') }}" class="btn-secondary">{{ __('setup.actions.go_login') }}</a>
+                        @endif
                         <button class="btn-primary" type="submit" id="finishButton">
                             <i class="bi bi-check2-circle"></i>
                             <span data-label>{{ __('setup.actions.finish') }}</span>

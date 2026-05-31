@@ -38,6 +38,40 @@ class FirstRunSetupTest extends TestCase
         $this->get('/setup')->assertRedirect(route('login'));
     }
 
+    public function test_demo_install_can_be_used_before_optional_setup(): void
+    {
+        Setting::query()->where('key', 'setup_completed')->delete();
+        Cache::forget('setting.setup_completed');
+
+        $branch = Branch::create(['code' => 'demo', 'name' => 'Demo Branch', 'is_active' => true]);
+        $owner = User::create([
+            'name' => 'Demo Owner',
+            'username' => 'admin',
+            'role' => 'super_admin',
+            'status' => 'active',
+            'password' => bcrypt('password'),
+        ]);
+        $owner->branches()->attach($branch->id, ['is_primary' => true, 'joined_at' => now()]);
+
+        $this->get('/')->assertRedirect(route('login'));
+        $this->get('/login')->assertOk();
+
+        $this->post('/login', [
+            'username' => 'admin',
+            'password' => 'password',
+        ])->assertRedirect(route('admin.dashboard'));
+
+        $this->actingAs($owner)
+            ->get(route('admin.profile.show'))
+            ->assertOk();
+
+        $this->actingAs($owner)
+            ->get('/setup')
+            ->assertOk()
+            ->assertSeeText(__('setup.demo_reset.title'))
+            ->assertSeeText(__('setup.actions.continue_demo'));
+    }
+
     public function test_authenticated_admin_setup_wipes_demo_data_and_creates_real_owner(): void
     {
         Setting::query()->where('key', 'setup_completed')->delete();

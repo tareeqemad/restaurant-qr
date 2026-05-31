@@ -29,7 +29,7 @@ class SetupController extends Controller
 {
     public function show(Request $request)
     {
-        if (! FirstRunSetup::shouldRunWizard()) {
+        if (! FirstRunSetup::wizardAvailable()) {
             return $this->completedRedirect();
         }
 
@@ -43,6 +43,7 @@ class SetupController extends Controller
             'hasUsers' => FirstRunSetup::hasUsers(),
             'hasBranches' => FirstRunSetup::hasBranches(),
             'willResetDemoData' => $willResetDemoData,
+            'isDemoTrial' => FirstRunSetup::isDemoTrial(),
             'profile' => config('market.profiles.'.config('market.profile'), []),
             'currentProfile' => config('market.profile', 'palestine'),
             'defaults' => $this->defaults($willResetDemoData),
@@ -51,7 +52,7 @@ class SetupController extends Controller
 
     public function store(Request $request, DemoResetService $reset)
     {
-        if (! FirstRunSetup::shouldRunWizard()) {
+        if (! FirstRunSetup::wizardAvailable()) {
             return $this->completedRedirect();
         }
 

@@ -284,7 +284,8 @@ php artisan storage:link
 php artisan optimize
 ```
 
-5. Open `/setup` and let the customer convert the demo copy into their real restaurant setup.
+5. Open `/login` and let the customer try the demo data first.
+6. When the customer decides to go live, open `/setup` to wipe demo data and create the real restaurant setup.
 
 ## License Rules
 

@@ -185,6 +185,7 @@ return [
         'finish' => 'Finish setup',
         'saving' => 'Saving...',
         'go_login' => 'Back to sign in',
+        'continue_demo' => 'Continue demo trial',
     ],
 
     'theme_presets' => [

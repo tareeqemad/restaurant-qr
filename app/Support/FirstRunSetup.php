@@ -24,7 +24,20 @@ class FirstRunSetup
 
     public static function shouldRunWizard(): bool
     {
+        return static::tablesReady() && static::needsSetup();
+    }
+
+    public static function wizardAvailable(): bool
+    {
         return static::tablesReady() && (! static::completed() || static::needsSetup());
+    }
+
+    public static function isDemoTrial(): bool
+    {
+        return static::tablesReady()
+            && ! static::completed()
+            && static::hasUsers()
+            && static::hasBranches();
     }
 
     public static function completed(): bool
