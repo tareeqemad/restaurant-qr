@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Backfill the `ton` weight unit on existing installs. Wholesale
@@ -12,26 +13,44 @@ use Illuminate\Support\Facades\DB;
  *
  * Safe to re-run: updateOrCreate by `code`.
  */
-return new class extends Migration {
+return new class extends Migration
+{
     public function up(): void
     {
         DB::table('units')->updateOrInsert(
             ['code' => 'ton'],
             [
-                'code'           => 'ton',
-                'name'           => 'طن',
-                'name_en'        => 'tonne',
-                'unit_type'      => 'weight',
+                'code' => 'ton',
+                'name' => 'طن',
+                'name_en' => 'tonne',
+                'unit_type' => 'weight',
                 'factor_to_base' => 1000000,
-                'is_base'        => false,
-                'created_at'     => now(),
-                'updated_at'     => now(),
+                'is_base' => false,
+                'created_at' => now(),
+                'updated_at' => now(),
             ],
         );
     }
 
     public function down(): void
     {
-        DB::table('units')->where('code', 'ton')->delete();
+        // Only remove the row when nothing references it. The `ton` unit can be
+        // adopted by recipe / purchase lines the moment it exists, and those
+        // carry a FK to units.id — an unconditional delete then aborts the whole
+        // rollback with a 1451 constraint error, leaving the migration batch
+        // half-applied. Skip the delete when the unit is still in use.
+        $unit = DB::table('units')->where('code', 'ton')->first();
+
+        if (! $unit) {
+            return;
+        }
+
+        $inUse = collect(['recipe_items', 'modifier_recipe_items', 'purchase_order_items', 'purchase_receipt_items'])
+            ->filter(fn ($table) => Schema::hasTable($table) && Schema::hasColumn($table, 'unit_id'))
+            ->contains(fn ($table) => DB::table($table)->where('unit_id', $unit->id)->exists());
+
+        if (! $inUse) {
+            DB::table('units')->where('id', $unit->id)->delete();
+        }
     }
 };
