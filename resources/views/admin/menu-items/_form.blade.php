@@ -237,6 +237,28 @@
         align-items: center;
         gap: .3rem;
     }
+    /* The ingredient picker is a searchable Choices.js dropdown. Its panel is
+       absolutely positioned, so the section's `overflow:hidden` (rounded card)
+       was clipping it — the list looked cut off. Let the recipe row/section
+       overflow visibly and float the panel above with a tall, scrollable list. */
+    .mi-section--recipe,
+    .mi-section--recipe .mi-section-body,
+    #recipe-wrap,
+    .mi-recipe-row { overflow: visible; }
+    .mi-recipe-row .choices { margin-bottom: 0; }
+    .mi-recipe-row .choices__list--dropdown,
+    .mi-recipe-row .choices__list[aria-expanded] {
+        z-index: 50;
+    }
+    .mi-recipe-row .choices__list--dropdown .choices__list {
+        max-height: 260px;     /* show several options instead of a clipped sliver */
+        overflow-y: auto;
+    }
+    .mi-recipe-row .choices__item {
+        font-size: 13.5px;
+        padding: .5rem .75rem;  /* readable, comfortably tappable rows */
+        white-space: normal;
+    }
     .mi-add-recipe {
         display: inline-flex; align-items: center; gap: .35rem;
         background: rgba(15, 71, 49, .04);
@@ -472,7 +494,7 @@
 </div>
 
 {{-- 6. Recipe ───────────────────────────────────────── --}}
-<div class="mi-section">
+<div class="mi-section mi-section--recipe">
     <div class="mi-section-head">
         <i class="bi bi-basket2-fill"></i>
         <span class="title">مكونات الوصفة</span>
