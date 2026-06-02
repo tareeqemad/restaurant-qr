@@ -11,6 +11,7 @@ use App\Models\ModifierGroup;
 use App\Models\RecipeItem;
 use App\Models\Station;
 use App\Models\Unit;
+use App\Services\RecipeCostService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -28,27 +29,32 @@ class MenuItemController extends Controller
                 $qq->where('name', 'like', "%$s%")->orWhere('name_en', 'like', "%$s%")->orWhere('sku', 'like', "%$s%");
             });
         }
-        if ($c = $request->get('category_id')) $q->where('category_id', $c);
-        if ($request->filled('only_unavailable')) $q->where('is_available', false);
+        if ($c = $request->get('category_id')) {
+            $q->where('category_id', $c);
+        }
+        if ($request->filled('only_unavailable')) {
+            $q->where('is_available', false);
+        }
         $items = $q->orderBy('display_order')->paginate(20)->withQueryString();
 
         $stats = [
-            'total'       => MenuItem::count(),
-            'available'   => MenuItem::where('is_available', true)->count(),
-            'featured'    => MenuItem::where('is_featured', true)->count(),
+            'total' => MenuItem::count(),
+            'available' => MenuItem::where('is_available', true)->count(),
+            'featured' => MenuItem::where('is_featured', true)->count(),
             'unavailable' => MenuItem::where('is_available', false)->count(),
         ];
 
         return view('admin.menu-items.index', [
-            'items'      => $items,
+            'items' => $items,
             'categories' => Category::where('active', true)->get(),
-            'stats'      => $stats,
+            'stats' => $stats,
         ]);
     }
 
     public function create()
     {
         $this->authorize('create', MenuItem::class);
+
         return view('admin.menu-items.create', $this->formData());
     }
 
@@ -71,6 +77,7 @@ class MenuItemController extends Controller
             $item->allergens()->sync($allergenIds);
             $item->modifierGroups()->sync($modifierGroupIds);
         });
+
         return redirect()->route('admin.menu-items.index')->with('success', 'تم إنشاء الصنف');
     }
 
@@ -78,6 +85,7 @@ class MenuItemController extends Controller
     {
         $this->authorize('update', MenuItem::class);
         $menuItem->load('recipeItems.ingredient', 'allergens', 'modifierGroups');
+
         return view('admin.menu-items.edit', array_merge($this->formData(), ['item' => $menuItem]));
     }
 
@@ -91,7 +99,9 @@ class MenuItemController extends Controller
         unset($data['recipe'], $data['allergens'], $data['modifier_groups']);
 
         if ($request->hasFile('image')) {
-            if ($menuItem->image) Storage::disk('public')->delete($menuItem->image);
+            if ($menuItem->image) {
+                Storage::disk('public')->delete($menuItem->image);
+            }
             $data['image'] = $request->file('image')->store('menu', 'public');
         }
 
@@ -101,6 +111,7 @@ class MenuItemController extends Controller
             $menuItem->allergens()->sync($allergenIds);
             $menuItem->modifierGroups()->sync($modifierGroupIds);
         });
+
         return redirect()->route('admin.menu-items.index')->with('success', 'تم التحديث');
     }
 
@@ -108,6 +119,7 @@ class MenuItemController extends Controller
     {
         $this->authorize('delete', MenuItem::class);
         $menuItem->delete();
+
         return back()->with('success', 'تم الحذف');
     }
 
@@ -118,6 +130,7 @@ class MenuItemController extends Controller
             'is_available' => ! $menuItem->is_available,
             'unavailable_reason' => $menuItem->is_available ? $request->input('reason') : null,
         ]);
+
         return back()->with('success', 'تم تغيير توفر الصنف');
     }
 
@@ -125,10 +138,11 @@ class MenuItemController extends Controller
      * Recompute the stored cost of every menu item from its recipe.
      * Useful after bulk ingredient price changes.
      */
-    public function recomputeCosts(\App\Services\RecipeCostService $service)
+    public function recomputeCosts(RecipeCostService $service)
     {
         $this->authorize('create', MenuItem::class);
         $changed = $service->recomputeAll();
+
         return back()->with('success', "تم تحديث تكلفة {$changed} صنف من الوصفات.");
     }
 
@@ -151,34 +165,36 @@ class MenuItemController extends Controller
     {
         $item->recipeItems()->delete();
         foreach ($recipe as $r) {
-            if (empty($r['ingredient_id']) || empty($r['quantity'])) continue;
+            if (empty($r['ingredient_id']) || empty($r['quantity'])) {
+                continue;
+            }
 
             // The form sends ONE select for "unit" with a value prefix:
             //   "u:5"  → global Unit id 5
             //   "iu:9" → IngredientUnit id 9 (tbsp/scoop for this ingredient)
             // Split it back into the two FK columns the schema expects.
-            $unitId           = null;
+            $unitId = null;
             $ingredientUnitId = null;
-            $raw              = (string) ($r['unit_id'] ?? '');
+            $raw = (string) ($r['unit_id'] ?? '');
             if (str_starts_with($raw, 'iu:')) {
                 $ingredientUnitId = (int) substr($raw, 3);
                 // Default unit_id to the ingredient's base unit so the
                 // NOT NULL constraint stays happy and a stale lookup
                 // through `unit` still resolves to something sensible.
                 $ingredientUnitId = $ingredientUnitId ?: null;
-                $ingredient = \App\Models\Ingredient::find($r['ingredient_id']);
-                $unitId     = $ingredient?->base_unit_id;
+                $ingredient = Ingredient::find($r['ingredient_id']);
+                $unitId = $ingredient?->base_unit_id;
             } else {
                 $unitId = (int) (str_starts_with($raw, 'u:') ? substr($raw, 2) : $raw);
             }
 
             RecipeItem::create([
-                'menu_item_id'       => $item->id,
-                'ingredient_id'      => $r['ingredient_id'],
-                'quantity'           => $r['quantity'],
-                'unit_id'            => $unitId,
+                'menu_item_id' => $item->id,
+                'ingredient_id' => $r['ingredient_id'],
+                'quantity' => $r['quantity'],
+                'unit_id' => $unitId,
                 'ingredient_unit_id' => $ingredientUnitId,
-                'is_optional'        => ! empty($r['is_optional']),
+                'is_optional' => ! empty($r['is_optional']),
             ]);
         }
     }
@@ -208,7 +224,11 @@ class MenuItemController extends Controller
             'recipe' => ['array'],
             'recipe.*.ingredient_id' => ['nullable', 'exists:ingredients,id'],
             'recipe.*.quantity' => ['nullable', 'numeric', 'min:0'],
-            'recipe.*.unit_id' => ['nullable', 'exists:units,id'],
+            // The unit select sends a prefixed value — "u:5" (global Unit) or
+            // "iu:9" (per-ingredient unit), a bare id for legacy rows. syncRecipe()
+            // resolves it into the real unit_id / ingredient_unit_id FKs, so here
+            // we only validate the shape, not exists:units,id (which "u:5" fails).
+            'recipe.*.unit_id' => ['nullable', 'string', 'regex:/^(u:|iu:)?\d+$/'],
             'recipe.*.is_optional' => ['sometimes', 'boolean'],
         ]);
     }
