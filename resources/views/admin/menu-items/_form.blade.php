@@ -453,9 +453,13 @@
             // Load each ingredient's own units (tbsp/scoop/etc.) so the
             // recipe row can offer chef-friendly measurements instead of
             // forcing everything into the global g/ml grid.
-            $ingredientsWithUnits = $ingredients->loadMissing('units')->map(fn ($i) => [
+            $ingredientsWithUnits = $ingredients->loadMissing('units', 'baseUnit')->map(fn ($i) => [
                 'id'    => $i->id,
                 'name'  => $i->name . ' (' . ($i->baseUnit->code ?? '') . ')',
+                // The ingredient's measurement family (weight/volume/count) —
+                // the unit dropdown only offers global units of the same type
+                // so a count item can't be paired with a weight unit.
+                'unit_type' => $i->baseUnit->unit_type ?? null,
                 'units' => $i->units->where('active', true)->map(fn ($u) => [
                     'id'     => $u->id,
                     'name'   => $u->name,
@@ -528,7 +532,7 @@ let recipeIdx = {{ $existingRecipe->count() ?? 0 }};
 // per-row unit dropdown can switch between chef-friendly measurements
 // and the global g/ml/pcs grid the moment the chef picks an ingredient.
 const ingredients = @json($ingredientsWithUnits);
-const units = @json($units->map(fn($u) => ['id'=>$u->id,'label'=>$u->name]));
+const units = @json($units->map(fn($u) => ['id'=>$u->id,'label'=>$u->name,'type'=>$u->unit_type]));
 
 function unitOptionsFor(ingredientId) {
     const ing = ingredients.find(i => Number(i.id) === Number(ingredientId));
@@ -540,8 +544,13 @@ function unitOptionsFor(ingredientId) {
         }
         html += '</optgroup>';
     }
+    // Only offer global units of the SAME measurement family as the
+    // ingredient (weight↔weight, volume↔volume, count↔count). Before an
+    // ingredient is picked, show them all.
+    const wantType = ing ? ing.unit_type : null;
+    const globals = wantType ? units.filter(u => u.type === wantType) : units;
     html += '<optgroup label="وحدات عامة">';
-    for (const u of units) {
+    for (const u of globals) {
         html += `<option value="u:${u.id}">${u.label}</option>`;
     }
     html += '</optgroup>';

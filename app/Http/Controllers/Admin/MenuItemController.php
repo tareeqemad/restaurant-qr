@@ -16,6 +16,7 @@ use App\Services\RecipeCostService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 
 class MenuItemController extends Controller
 {
@@ -246,7 +247,7 @@ class MenuItemController extends Controller
 
     protected function valid(Request $request): array
     {
-        return $request->validate([
+        $validator = Validator::make($request->all(), [
             'category_id' => ['required', 'exists:categories,id'],
             'station_id' => ['nullable', 'exists:stations,id'],
             'sku' => ['nullable', 'string', 'max:64'],
@@ -276,5 +277,44 @@ class MenuItemController extends Controller
             'recipe.*.unit_id' => ['nullable', 'string', 'regex:/^(u:|iu:)?\d+$/'],
             'recipe.*.is_optional' => ['sometimes', 'boolean'],
         ]);
+
+        // Catch incompatible unit pairings up front with a clear message that
+        // names the ingredient and both units — instead of silently storing a
+        // line that later breaks cost/stock math. Only the "u:" (global unit)
+        // path can mismatch; per-ingredient units ("iu:") are by definition
+        // expressed in the ingredient's own base unit.
+        $validator->after(function ($validator) use ($request) {
+            foreach ((array) $request->input('recipe', []) as $i => $row) {
+                $ingredientId = $row['ingredient_id'] ?? null;
+                $raw = trim((string) ($row['unit_id'] ?? ''));
+
+                if (! $ingredientId || ! str_starts_with($raw, 'u:')) {
+                    continue;
+                }
+
+                $unitId = (int) substr($raw, 2);
+                if ($unitId <= 0) {
+                    continue;
+                }
+
+                $ingredient = Ingredient::with('baseUnit')->find($ingredientId);
+                $unit = Unit::find($unitId);
+                $baseUnit = $ingredient?->baseUnit;
+
+                if (! $ingredient || ! $unit || ! $baseUnit) {
+                    continue;
+                }
+
+                if ($unit->unit_type !== $baseUnit->unit_type) {
+                    $validator->errors()->add(
+                        "recipe.{$i}.unit_id",
+                        "وحدة «{$unit->name}» لا تتوافق مع المكوّن «{$ingredient->name}» ".
+                        "الذي يُقاس بـ«{$baseUnit->name}». اختر وحدة من نفس النوع."
+                    );
+                }
+            }
+        });
+
+        return $validator->validate();
     }
 }

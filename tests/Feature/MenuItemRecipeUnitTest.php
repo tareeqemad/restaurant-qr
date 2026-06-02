@@ -146,6 +146,58 @@ class MenuItemRecipeUnitTest extends TestCase
         $response->assertSessionHasErrors('recipe.0.unit_id');
     }
 
+    public function test_incompatible_unit_type_is_rejected_with_a_clear_message(): void
+    {
+        // A count-based ingredient measured in قطعة; the user picks a weight
+        // unit (غرام). This must be rejected up front — not stored to break
+        // cost/stock later — with a message naming the ingredient and units.
+        $countUnit = Unit::create([
+            'code' => 'pcs', 'name' => 'قطعة', 'unit_type' => 'count',
+            'factor_to_base' => 1, 'is_base' => true,
+        ]);
+        $cola = Ingredient::create([
+            'name' => 'كولا', 'base_unit_id' => $countUnit->id, 'active' => true,
+        ]);
+
+        $response = $this->actingAs($this->manager)->post(route('admin.menu-items.store'), [
+            'category_id' => $this->category->id,
+            'name' => 'مشروب',
+            'price' => 5.00,
+            'recipe' => [
+                // غرام (weight) on a count-based ingredient → incompatible.
+                ['ingredient_id' => $cola->id, 'quantity' => 100, 'unit_id' => 'u:'.$this->unit->id],
+            ],
+        ]);
+
+        $response->assertSessionHasErrors('recipe.0.unit_id');
+        $this->assertStringContainsString(
+            'لا تتوافق',
+            session('errors')->first('recipe.0.unit_id')
+        );
+        $this->assertDatabaseMissing('menu_items', ['name' => 'مشروب']);
+    }
+
+    public function test_compatible_unit_type_passes(): void
+    {
+        // غرام and a كيلوغرام are both weight → allowed.
+        $kg = Unit::create([
+            'code' => 'kg', 'name' => 'كيلوغرام', 'unit_type' => 'weight',
+            'factor_to_base' => 1000, 'is_base' => false,
+        ]);
+
+        $response = $this->actingAs($this->manager)->post(route('admin.menu-items.store'), [
+            'category_id' => $this->category->id,
+            'name' => 'لحم بالكيلو',
+            'price' => 30.00,
+            'recipe' => [
+                ['ingredient_id' => $this->ingredient->id, 'quantity' => 1, 'unit_id' => 'u:'.$kg->id],
+            ],
+        ]);
+
+        $response->assertSessionHasNoErrors();
+        $response->assertRedirect(route('admin.menu-items.index'));
+    }
+
     public function test_added_ingredient_with_empty_unit_falls_back_to_base_unit_not_500(): void
     {
         // Adding a new ingredient row before picking its unit sends an empty
