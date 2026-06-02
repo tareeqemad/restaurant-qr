@@ -564,7 +564,7 @@
                         @foreach($ingredients as $ing)<option value="{{ $ing->id }}" @selected($row['ingredient_id']==$ing->id)>{{ $ing->name }} ({{ $ing->baseUnit->code ?? '' }})</option>@endforeach
                     </select>
                     <input type="number" step="0.0001" name="recipe[{{ $idx }}][quantity]" value="{{ $row['quantity'] }}" class="form-control form-control-sm" placeholder="الكمية">
-                    <select name="recipe[{{ $idx }}][unit_id]" class="form-select form-select-sm @if($rowError) is-invalid @endif" @disabled(! $rowIngredient)>
+                    <select name="recipe[{{ $idx }}][unit_id]" class="form-select form-select-sm mi-unit-select @if($rowError) is-invalid @endif" data-relax-choice data-choice-search="false" @disabled(! $rowIngredient)>
                         @if(! $rowIngredient)
                             <option value="">— اختر المكوّن أولاً —</option>
                         @else
@@ -653,23 +653,32 @@ function unitOptionsFor(ingredientId) {
 
 // Called when ingredient changes on a row — rebuild the unit dropdown
 // so the chef sees the right tbsp/scoop options for THIS ingredient.
+// The unit select is a Choices.js instance (data-relax-choice), so we tear it
+// down, rewrite the native <option>s, then re-init — editing innerHTML on a
+// live Choices instance corrupts it (the dropdown stays open / won't commit).
 function rebuildUnitOptions(ingredientSelect) {
     const row = ingredientSelect.closest('.mi-recipe-row');
     const unitSelect = row?.querySelector('select[name$="[unit_id]"]');
     if (! unitSelect) return;
-    const hasIngredient = !! ingredients.find(i => Number(i.id) === Number(ingredientSelect.value));
+
+    const ing = ingredients.find(i => Number(i.id) === Number(ingredientSelect.value));
+    const hasIngredient = !! ing;
+
+    window.relaxChoices?.destroy(unitSelect);
     unitSelect.innerHTML = unitOptionsFor(ingredientSelect.value);
-    // Lock the unit picker until a real ingredient is chosen.
     unitSelect.disabled = ! hasIngredient;
 
     // Default to the ingredient's OWN base unit (e.g. خيار → غرام), not
     // whichever weight unit happens to sort first (which could be طن).
-    const ing = ingredients.find(i => Number(i.id) === Number(ingredientSelect.value));
     const want = ing && ing.base_unit_id ? 'u:' + ing.base_unit_id : null;
     if (want && [...unitSelect.options].some(o => o.value === want)) {
         unitSelect.value = want;
     } else if (unitSelect.options.length > 0) {
         unitSelect.selectedIndex = 0;
+    }
+
+    if (hasIngredient) {
+        window.relaxChoices?.refresh(unitSelect);
     }
 }
 
@@ -680,7 +689,7 @@ function addRecipeRow() {
       <div class="mi-recipe-row">
         <select name="recipe[${idx}][ingredient_id]" class="form-select form-select-sm" onchange="rebuildUnitOptions(this)"><option value="">— اختر مكون —</option>${ingOpts}</select>
         <input type="number" step="0.0001" name="recipe[${idx}][quantity]" class="form-control form-control-sm" placeholder="الكمية">
-        <select name="recipe[${idx}][unit_id]" class="form-select form-select-sm" disabled>${unitOptionsFor(null)}</select>
+        <select name="recipe[${idx}][unit_id]" class="form-select form-select-sm mi-unit-select" disabled>${unitOptionsFor(null)}</select>
         <button type="button" class="btn btn-outline-danger btn-sm" title="حذف" onclick="this.closest('.mi-recipe-row').remove()"><i class="bi bi-x-lg"></i></button>
       </div>`;
     const wrap = document.getElementById('recipe-wrap');
@@ -691,6 +700,8 @@ function addRecipeRow() {
         ingredientSelect.setAttribute('data-choice-search-placeholder', 'ابحث عن مكوّن...');
         window.relaxChoices?.refresh(ingredientSelect);
     }
+    // The unit select stays a plain disabled dropdown until an ingredient is
+    // picked; rebuildUnitOptions() then fills + Choices-enables it.
 }
 </script>
 @endpush
