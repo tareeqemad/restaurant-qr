@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Helpers\UnitConverter;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -39,7 +40,11 @@ class RecipeItem extends Model
 
     public function ingredient(): BelongsTo
     {
-        return $this->belongsTo(Ingredient::class);
+        // withTrashed: a soft-deleted ingredient still referenced by a recipe
+        // row must resolve, otherwise cost/stock-preview code that type-hints
+        // Ingredient receives null and 500s. The menu UI can then surface the
+        // stale line instead of crashing the whole page.
+        return $this->belongsTo(Ingredient::class)->withTrashed();
     }
 
     public function unit(): BelongsTo
@@ -75,9 +80,11 @@ class RecipeItem extends Model
 
         // Path 2: global unit conversion (legacy + free-form ingredients).
         $ingredient = $this->ingredient;
-        if (! $ingredient) return $qty;
+        if (! $ingredient) {
+            return $qty;
+        }
 
-        return \App\Helpers\UnitConverter::convert(
+        return UnitConverter::convert(
             $qty,
             $this->unit_id,
             $ingredient->base_unit_id,

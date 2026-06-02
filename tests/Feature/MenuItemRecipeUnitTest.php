@@ -145,4 +145,29 @@ class MenuItemRecipeUnitTest extends TestCase
 
         $response->assertSessionHasErrors('recipe.0.unit_id');
     }
+
+    public function test_menu_index_does_not_500_when_a_recipe_ingredient_is_soft_deleted(): void
+    {
+        // A tracked ingredient used by a recipe, then soft-deleted, left the
+        // index page's stock-shortage preview handing null to code that
+        // type-hints Ingredient → 500 on opening the menu list. The
+        // recipe→ingredient relation now resolves withTrashed.
+        $this->ingredient->forceFill(['track_stock' => true, 'current_stock' => 0])->save();
+
+        $item = MenuItem::create([
+            'category_id' => $this->category->id, 'name' => 'صنف بمكون محذوف', 'price' => 12,
+        ]);
+        $item->recipeItems()->create([
+            'ingredient_id' => $this->ingredient->id,
+            'quantity' => 100,
+            'unit_id' => $this->unit->id,
+        ]);
+
+        $this->ingredient->delete(); // soft delete while the recipe row stays
+
+        $this->actingAs($this->manager)
+            ->get(route('admin.menu-items.index'))
+            ->assertOk()
+            ->assertSee('صنف بمكون محذوف');
+    }
 }

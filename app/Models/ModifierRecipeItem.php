@@ -23,7 +23,9 @@ class ModifierRecipeItem extends Model
 
     public function ingredient(): BelongsTo
     {
-        return $this->belongsTo(Ingredient::class);
+        // withTrashed so a soft-deleted ingredient still referenced by a
+        // modifier recipe resolves instead of handing null to stock/cost code.
+        return $this->belongsTo(Ingredient::class)->withTrashed();
     }
 
     public function unit(): BelongsTo

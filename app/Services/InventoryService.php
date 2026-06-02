@@ -46,6 +46,11 @@ class InventoryService
         // variance report — and can't drift between callers.
         foreach ($item->recipeItems as $recipe) {
             $ingredient = $recipe->ingredient;
+            // Ingredient hard-deleted out from under the recipe row → skip it
+            // rather than 500. (Soft-deleted ones still resolve via withTrashed.)
+            if (! $ingredient) {
+                continue;
+            }
             $qtyBase = $recipe->quantityInBase() * $quantity;
             $lines = array_merge($lines, $this->expandIngredient($ingredient, $qtyBase));
         }
@@ -53,6 +58,9 @@ class InventoryService
         foreach (Modifier::with('recipeItems.ingredient', 'recipeItems.ingredientUnit')->findMany($modifierIds) as $modifier) {
             foreach ($modifier->recipeItems as $recipe) {
                 $ingredient = $recipe->ingredient;
+                if (! $ingredient) {
+                    continue;
+                }
                 // Modifier recipe lines aren't RecipeItem instances —
                 // they're ModifierRecipeItem — but they carry the same
                 // shape (ingredient_unit_id + unit_id + quantity). Use
