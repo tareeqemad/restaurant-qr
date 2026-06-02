@@ -491,6 +491,10 @@
                 // the unit dropdown only offers global units of the same type
                 // so a count item can't be paired with a weight unit.
                 'unit_type' => $i->baseUnit->unit_type ?? null,
+                // The ingredient's base unit id — used as the default unit pick
+                // when a row is added, so "خيار" defaults to غرام (its base),
+                // not whichever weight unit happens to sort first.
+                'base_unit_id' => $i->base_unit_id,
                 'units' => $i->units->where('active', true)->map(fn ($u) => [
                     'id'     => $u->id,
                     'name'   => $u->name,
@@ -621,9 +625,14 @@ function rebuildUnitOptions(ingredientSelect) {
     const unitSelect = row?.querySelector('select[name$="[unit_id]"]');
     if (! unitSelect) return;
     unitSelect.innerHTML = unitOptionsFor(ingredientSelect.value);
-    // Auto-pick the first option (typically the chef-specific unit
-    // when one exists — the optgroup is rendered first).
-    if (unitSelect.options.length > 0) {
+
+    // Default to the ingredient's OWN base unit (e.g. خيار → غرام), not
+    // whichever weight unit happens to sort first (which could be طن).
+    const ing = ingredients.find(i => Number(i.id) === Number(ingredientSelect.value));
+    const want = ing && ing.base_unit_id ? 'u:' + ing.base_unit_id : null;
+    if (want && [...unitSelect.options].some(o => o.value === want)) {
+        unitSelect.value = want;
+    } else if (unitSelect.options.length > 0) {
         unitSelect.selectedIndex = 0;
     }
 }
