@@ -51,7 +51,15 @@ class InventoryService
             if (! $ingredient) {
                 continue;
             }
-            $qtyBase = $recipe->quantityInBase() * $quantity;
+            try {
+                // A misconfigured line (e.g. a weight unit on a count-based
+                // ingredient) makes UnitConverter throw. Skip that line rather
+                // than crash every page that previews stock — same tolerance as
+                // RecipeCostService::lineCost.
+                $qtyBase = $recipe->quantityInBase() * $quantity;
+            } catch (\Throwable) {
+                continue;
+            }
             $lines = array_merge($lines, $this->expandIngredient($ingredient, $qtyBase));
         }
 
@@ -66,10 +74,15 @@ class InventoryService
                 // shape (ingredient_unit_id + unit_id + quantity). Use
                 // the matching ingredient-unit factor if set, else fall
                 // back to the global UnitConverter.
-                if ($recipe->ingredient_unit_id && $recipe->ingredientUnit) {
-                    $qtyBase = (float) $recipe->quantity * (float) $recipe->ingredientUnit->factor_to_base * $quantity;
-                } else {
-                    $qtyBase = UnitConverter::convert((float) $recipe->quantity, $recipe->unit_id, $ingredient->base_unit_id) * $quantity;
+                try {
+                    if ($recipe->ingredient_unit_id && $recipe->ingredientUnit) {
+                        $qtyBase = (float) $recipe->quantity * (float) $recipe->ingredientUnit->factor_to_base * $quantity;
+                    } else {
+                        $qtyBase = UnitConverter::convert((float) $recipe->quantity, $recipe->unit_id, $ingredient->base_unit_id) * $quantity;
+                    }
+                } catch (\Throwable) {
+                    // Misconfigured unit pairing — skip rather than 500 the page.
+                    continue;
                 }
                 $lines = array_merge($lines, $this->expandIngredient($ingredient, $qtyBase));
             }

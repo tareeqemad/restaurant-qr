@@ -199,6 +199,39 @@ class MenuItemRecipeUnitTest extends TestCase
         ]);
     }
 
+    public function test_menu_index_does_not_500_on_mismatched_recipe_unit_types(): void
+    {
+        // A recipe line whose unit type doesn't match the ingredient's base
+        // unit (e.g. a weight unit on a count-based ingredient) made
+        // UnitConverter throw inside the index's stock-preview, 500ing the
+        // whole menu list. The preview now tolerates the bad line.
+        $weight = $this->unit; // غرام (weight) from setUp
+
+        $countUnit = Unit::create([
+            'code' => 'pcs', 'name' => 'قطعة', 'unit_type' => 'count',
+            'factor_to_base' => 1, 'is_base' => true,
+        ]);
+        $countIngredient = Ingredient::create([
+            'name' => 'كولا', 'base_unit_id' => $countUnit->id,
+            'active' => true, 'track_stock' => true, 'current_stock' => 0,
+        ]);
+
+        $item = MenuItem::create([
+            'category_id' => $this->category->id, 'name' => 'صنف وحدة غلط', 'price' => 10,
+        ]);
+        // Weight unit on a count-based ingredient → conversion is impossible.
+        $item->recipeItems()->create([
+            'ingredient_id' => $countIngredient->id,
+            'quantity' => 1,
+            'unit_id' => $weight->id,
+        ]);
+
+        $this->actingAs($this->manager)
+            ->get(route('admin.menu-items.index'))
+            ->assertOk()
+            ->assertSee('صنف وحدة غلط');
+    }
+
     public function test_menu_index_does_not_500_when_a_recipe_ingredient_is_soft_deleted(): void
     {
         // A tracked ingredient used by a recipe, then soft-deleted, left the
