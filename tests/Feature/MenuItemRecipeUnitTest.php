@@ -177,6 +177,37 @@ class MenuItemRecipeUnitTest extends TestCase
         $this->assertDatabaseMissing('menu_items', ['name' => 'مشروب']);
     }
 
+    public function test_rejected_save_re_renders_the_form_with_the_inline_error_and_old_input(): void
+    {
+        // The user submits an incompatible unit from the create form. They must
+        // land back on the form, see the clear error, and keep what they typed.
+        $countUnit = Unit::create([
+            'code' => 'pcs', 'name' => 'قطعة', 'unit_type' => 'count',
+            'factor_to_base' => 1, 'is_base' => true,
+        ]);
+        $cola = Ingredient::create([
+            'name' => 'كولا', 'base_unit_id' => $countUnit->id, 'active' => true,
+        ]);
+
+        $this->actingAs($this->manager)
+            ->from(route('admin.menu-items.create'))
+            ->post(route('admin.menu-items.store'), [
+                'category_id' => $this->category->id,
+                'name' => 'مشروب',
+                'price' => 5.00,
+                'recipe' => [
+                    ['ingredient_id' => $cola->id, 'quantity' => 100, 'unit_id' => 'u:'.$this->unit->id],
+                ],
+            ])
+            ->assertRedirect(route('admin.menu-items.create'));
+
+        // Follow the redirect back to the form and confirm the error renders.
+        $page = $this->actingAs($this->manager)->get(route('admin.menu-items.create'));
+        $page->assertOk();
+        $page->assertSee('لا تتوافق', false);            // inline + summary message
+        $page->assertSee('تعذّر حفظ الصنف', false);       // error summary header
+    }
+
     public function test_compatible_unit_type_passes(): void
     {
         // غرام and a كيلوغرام are both weight → allowed.

@@ -1,6 +1,23 @@
 @csrf
 @php $item = $item ?? null; @endphp
 
+{{-- Validation summary — surfaces every error (including per-recipe-row unit
+     problems) at the top so a rejected save never looks like it "did nothing".
+     Each recipe error also renders inline next to its row below. --}}
+@if ($errors->any())
+    <div class="alert alert-danger" role="alert" style="border-radius:10px;">
+        <div class="fw-bold mb-2">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            تعذّر حفظ الصنف — صحّح الأخطاء التالية:
+        </div>
+        <ul class="mb-0 ps-3">
+            @foreach ($errors->all() as $error)
+                <li>{{ $error }}</li>
+            @endforeach
+        </ul>
+    </div>
+@endif
+
 <style>
     /* ── Section card ─────────────────────────────────── */
     .mi-section {
@@ -205,6 +222,20 @@
         .mi-recipe-row {
             grid-template-columns: 1fr 1fr;
         }
+    }
+    /* A recipe row rejected by validation (e.g. incompatible unit) */
+    .mi-recipe-row.has-error {
+        border-color: #dc3545;
+        background: #fdf3f4;
+    }
+    .mi-recipe-row-error {
+        color: #b02a37;
+        font-size: 12.5px;
+        font-weight: 600;
+        margin: -.25rem .15rem .15rem;
+        display: flex;
+        align-items: center;
+        gap: .3rem;
     }
     .mi-add-recipe {
         display: inline-flex; align-items: center; gap: .35rem;
@@ -467,22 +498,43 @@
                 ])->values()->all(),
             ]);
         @endphp
+        @php
+            // After a rejected save, re-render the rows the user actually
+            // SUBMITTED (old input) so each inline error lands on the right row
+            // and nothing they typed is lost. On a fresh load, render the saved
+            // recipe. Normalise both to a single {ingredient_id, quantity, unit}
+            // shape where `unit` is the prefixed select value ("u:5" / "iu:9").
+            if (old('recipe') !== null) {
+                $recipeRows = collect(old('recipe'))->map(fn ($r) => [
+                    'ingredient_id' => $r['ingredient_id'] ?? null,
+                    'quantity'      => $r['quantity'] ?? null,
+                    'unit'          => $r['unit_id'] ?? '',
+                ])->values();
+            } else {
+                $recipeRows = $existingRecipe->map(fn ($r) => [
+                    'ingredient_id' => $r->ingredient_id,
+                    'quantity'      => $r->quantity,
+                    'unit'          => $r->ingredient_unit_id ? 'iu:'.$r->ingredient_unit_id : 'u:'.$r->unit_id,
+                ])->values();
+            }
+        @endphp
         <div id="recipe-wrap" class="mi-recipe-list">
-            @foreach($existingRecipe as $idx => $r)
+            @foreach($recipeRows as $idx => $row)
                 @php
-                    $selectedValue = $r->ingredient_unit_id
-                        ? 'iu:' . $r->ingredient_unit_id
-                        : 'u:' . $r->unit_id;
-                    $rowIngredient = $ingredients->firstWhere('id', $r->ingredient_id);
+                    $selectedValue = $row['unit'];
+                    $rowIngredient = $ingredients->firstWhere('id', $row['ingredient_id']);
                     $rowAltUnits   = $rowIngredient?->units?->where('active', true) ?? collect();
+                    $rowError      = $errors->first("recipe.{$idx}.unit_id")
+                                     ?: $errors->first("recipe.{$idx}.ingredient_id")
+                                     ?: $errors->first("recipe.{$idx}.quantity");
                 @endphp
-                <div class="mi-recipe-row">
-                    <select name="recipe[{{ $idx }}][ingredient_id]" class="form-select form-select-sm" data-relax-choice data-choice-search-placeholder="ابحث عن مكوّن..." onchange="rebuildUnitOptions(this)">
+                <div class="mi-recipe-row @if($rowError) has-error @endif">
+                    <select name="recipe[{{ $idx }}][ingredient_id]" class="form-select form-select-sm @if($rowError) is-invalid @endif" data-relax-choice data-choice-search-placeholder="ابحث عن مكوّن..." onchange="rebuildUnitOptions(this)">
                         <option value="">— اختر مكون —</option>
-                        @foreach($ingredients as $ing)<option value="{{ $ing->id }}" @selected($r->ingredient_id==$ing->id)>{{ $ing->name }} ({{ $ing->baseUnit->code ?? '' }})</option>@endforeach
+                        @foreach($ingredients as $ing)<option value="{{ $ing->id }}" @selected($row['ingredient_id']==$ing->id)>{{ $ing->name }} ({{ $ing->baseUnit->code ?? '' }})</option>@endforeach
                     </select>
-                    <input type="number" step="0.0001" name="recipe[{{ $idx }}][quantity]" value="{{ $r->quantity }}" class="form-control form-control-sm" placeholder="الكمية">
-                    <select name="recipe[{{ $idx }}][unit_id]" class="form-select form-select-sm">
+                    <input type="number" step="0.0001" name="recipe[{{ $idx }}][quantity]" value="{{ $row['quantity'] }}" class="form-control form-control-sm" placeholder="الكمية">
+                    <select name="recipe[{{ $idx }}][unit_id]" class="form-select form-select-sm @if($rowError) is-invalid @endif">
                         @if($rowAltUnits->isNotEmpty())
                             <optgroup label="وحدات هذا المكوّن">
                                 @foreach($rowAltUnits as $u)
@@ -503,6 +555,11 @@
                         <i class="bi bi-x-lg"></i>
                     </button>
                 </div>
+                @if($rowError)
+                    <div class="mi-recipe-row-error">
+                        <i class="bi bi-exclamation-circle-fill"></i> {{ $rowError }}
+                    </div>
+                @endif
             @endforeach
         </div>
         <button type="button" class="mi-add-recipe" onclick="addRecipeRow()">
@@ -527,7 +584,7 @@
 
 @push('scripts')
 <script>
-let recipeIdx = {{ $existingRecipe->count() ?? 0 }};
+let recipeIdx = {{ $recipeRows->count() }};
 // Ingredients now carry their own units (tbsp/scoop/pack) so the
 // per-row unit dropdown can switch between chef-friendly measurements
 // and the global g/ml/pcs grid the moment the chef picks an ingredient.
