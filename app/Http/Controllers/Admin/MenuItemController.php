@@ -164,6 +164,13 @@ class MenuItemController extends Controller
     protected function syncRecipe(MenuItem $item, array $recipe): void
     {
         $item->recipeItems()->delete();
+
+        // recipe_items carries a UNIQUE(menu_item_id, ingredient_id), so the
+        // same ingredient must appear at most once. If the form sends it twice
+        // (a duplicate dropdown pick, or a leftover blank row) a naive insert
+        // loop hits a 1062 duplicate-key error → 500. Collapse duplicates by
+        // ingredient first: last row wins for the unit, quantities sum.
+        $rows = [];
         foreach ($recipe as $r) {
             if (empty($r['ingredient_id']) || empty($r['quantity'])) {
                 continue;
@@ -188,14 +195,30 @@ class MenuItemController extends Controller
                 $unitId = (int) (str_starts_with($raw, 'u:') ? substr($raw, 2) : $raw);
             }
 
-            RecipeItem::create([
+            $ingredientId = (int) $r['ingredient_id'];
+            if (isset($rows[$ingredientId])) {
+                // Same ingredient again → fold the quantity in, keep this row's
+                // unit/optional as the latest intent.
+                $rows[$ingredientId]['quantity'] += (float) $r['quantity'];
+                $rows[$ingredientId]['unit_id'] = $unitId;
+                $rows[$ingredientId]['ingredient_unit_id'] = $ingredientUnitId;
+                $rows[$ingredientId]['is_optional'] = ! empty($r['is_optional']);
+
+                continue;
+            }
+
+            $rows[$ingredientId] = [
                 'menu_item_id' => $item->id,
-                'ingredient_id' => $r['ingredient_id'],
-                'quantity' => $r['quantity'],
+                'ingredient_id' => $ingredientId,
+                'quantity' => (float) $r['quantity'],
                 'unit_id' => $unitId,
                 'ingredient_unit_id' => $ingredientUnitId,
                 'is_optional' => ! empty($r['is_optional']),
-            ]);
+            ];
+        }
+
+        foreach ($rows as $row) {
+            RecipeItem::create($row);
         }
     }
 

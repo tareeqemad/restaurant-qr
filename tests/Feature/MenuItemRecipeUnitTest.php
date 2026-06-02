@@ -106,6 +106,32 @@ class MenuItemRecipeUnitTest extends TestCase
         ]);
     }
 
+    public function test_same_ingredient_twice_is_folded_not_500(): void
+    {
+        // recipe_items has UNIQUE(menu_item_id, ingredient_id). A duplicate
+        // ingredient pick must NOT raise a 1062 duplicate-key error (was a 500).
+        $item = MenuItem::create([
+            'category_id' => $this->category->id, 'name' => 'مزدوج', 'price' => 5,
+        ]);
+
+        $response = $this->actingAs($this->manager)->put(route('admin.menu-items.update', $item), [
+            'category_id' => $this->category->id,
+            'name' => 'مزدوج',
+            'price' => 6.00,
+            'recipe' => [
+                ['ingredient_id' => $this->ingredient->id, 'quantity' => 100, 'unit_id' => 'u:'.$this->unit->id],
+                ['ingredient_id' => $this->ingredient->id, 'quantity' => 50, 'unit_id' => 'u:'.$this->unit->id],
+            ],
+        ]);
+
+        $response->assertSessionHasNoErrors();
+        $response->assertRedirect(route('admin.menu-items.index'));
+
+        // Folded into a single row with the summed quantity.
+        $this->assertSame(1, $item->recipeItems()->count());
+        $this->assertEquals(150, (float) $item->recipeItems()->first()->quantity);
+    }
+
     public function test_a_genuinely_malformed_unit_value_is_still_rejected(): void
     {
         $response = $this->actingAs($this->manager)->post(route('admin.menu-items.store'), [
