@@ -146,6 +146,59 @@ class MenuItemRecipeUnitTest extends TestCase
         $response->assertSessionHasErrors('recipe.0.unit_id');
     }
 
+    public function test_added_ingredient_with_empty_unit_falls_back_to_base_unit_not_500(): void
+    {
+        // Adding a new ingredient row before picking its unit sends an empty
+        // unit_id. That used to resolve to unit_id=0 → recipe_items.unit_id
+        // foreign-key violation → 500. It now falls back to the ingredient's
+        // base unit.
+        $item = MenuItem::create([
+            'category_id' => $this->category->id, 'name' => 'كباب', 'price' => 9,
+        ]);
+
+        $response = $this->actingAs($this->manager)->put(route('admin.menu-items.update', $item), [
+            'category_id' => $this->category->id,
+            'name' => 'كباب',
+            'price' => 9.00,
+            'recipe' => [
+                ['ingredient_id' => $this->ingredient->id, 'quantity' => 250, 'unit_id' => ''],
+            ],
+        ]);
+
+        $response->assertSessionHasNoErrors();
+        $response->assertRedirect(route('admin.menu-items.index'));
+        $this->assertDatabaseHas('recipe_items', [
+            'menu_item_id' => $item->id,
+            'ingredient_id' => $this->ingredient->id,
+            'unit_id' => $this->unit->id, // the ingredient's base unit
+        ]);
+    }
+
+    public function test_iu_referencing_a_missing_ingredient_unit_falls_back_not_500(): void
+    {
+        $item = MenuItem::create([
+            'category_id' => $this->category->id, 'name' => 'iu-bad', 'price' => 9,
+        ]);
+
+        $response = $this->actingAs($this->manager)->put(route('admin.menu-items.update', $item), [
+            'category_id' => $this->category->id,
+            'name' => 'iu-bad',
+            'price' => 9.00,
+            'recipe' => [
+                ['ingredient_id' => $this->ingredient->id, 'quantity' => 2, 'unit_id' => 'iu:999999'],
+            ],
+        ]);
+
+        $response->assertSessionHasNoErrors();
+        $response->assertRedirect(route('admin.menu-items.index'));
+        // Falls back: base unit set, no bogus ingredient_unit_id.
+        $this->assertDatabaseHas('recipe_items', [
+            'menu_item_id' => $item->id,
+            'unit_id' => $this->unit->id,
+            'ingredient_unit_id' => null,
+        ]);
+    }
+
     public function test_menu_index_does_not_500_when_a_recipe_ingredient_is_soft_deleted(): void
     {
         // A tracked ingredient used by a recipe, then soft-deleted, left the

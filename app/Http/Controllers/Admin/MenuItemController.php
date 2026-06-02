@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Allergen;
 use App\Models\Category;
 use App\Models\Ingredient;
+use App\Models\IngredientUnit;
 use App\Models\MenuItem;
 use App\Models\ModifierGroup;
 use App\Models\RecipeItem;
@@ -179,20 +180,41 @@ class MenuItemController extends Controller
             // The form sends ONE select for "unit" with a value prefix:
             //   "u:5"  → global Unit id 5
             //   "iu:9" → IngredientUnit id 9 (tbsp/scoop for this ingredient)
-            // Split it back into the two FK columns the schema expects.
-            $unitId = null;
+            // Split it back into the two FK columns the schema expects. A newly
+            // added row may arrive before the user picked a unit (empty / "u:"
+            // / "iu:" with no id), so every branch falls back to the
+            // ingredient's base unit — never 0/null, which would violate the
+            // recipe_items.unit_id foreign key and 500 the save.
+            $ingredient = Ingredient::find($r['ingredient_id']);
+            $baseUnitId = $ingredient?->base_unit_id;
+
+            $unitId = $baseUnitId;
             $ingredientUnitId = null;
-            $raw = (string) ($r['unit_id'] ?? '');
+            $raw = trim((string) ($r['unit_id'] ?? ''));
+
             if (str_starts_with($raw, 'iu:')) {
-                $ingredientUnitId = (int) substr($raw, 3);
-                // Default unit_id to the ingredient's base unit so the
-                // NOT NULL constraint stays happy and a stale lookup
-                // through `unit` still resolves to something sensible.
-                $ingredientUnitId = $ingredientUnitId ?: null;
-                $ingredient = Ingredient::find($r['ingredient_id']);
-                $unitId = $ingredient?->base_unit_id;
-            } else {
-                $unitId = (int) (str_starts_with($raw, 'u:') ? substr($raw, 2) : $raw);
+                $iuId = (int) substr($raw, 3);
+                // Only honour the per-ingredient unit if it really exists and
+                // belongs to this ingredient; otherwise fall back to base unit.
+                $iu = $iuId > 0
+                    ? IngredientUnit::where('id', $iuId)
+                        ->where('ingredient_id', $r['ingredient_id'])
+                        ->first()
+                    : null;
+                $ingredientUnitId = $iu?->id;
+                // unit_id stays the ingredient base unit (set above).
+            } elseif (str_starts_with($raw, 'u:')) {
+                $picked = (int) substr($raw, 2);
+                $unitId = $picked > 0 ? $picked : $baseUnitId;
+            } elseif ($raw !== '') {
+                $picked = (int) $raw;
+                $unitId = $picked > 0 ? $picked : $baseUnitId;
+            }
+
+            // Last line of defence: a free-form ingredient with no base unit and
+            // no valid pick can't be stored against the FK — skip rather than 500.
+            if (! $unitId) {
+                continue;
             }
 
             $ingredientId = (int) $r['ingredient_id'];
