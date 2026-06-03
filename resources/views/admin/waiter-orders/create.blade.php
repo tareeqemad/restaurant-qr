@@ -7,6 +7,35 @@
     icon="bi-clipboard-plus"
     :crumbs="[['label' => 'الطاولات', 'url' => route('admin.waiter-orders.index')]]" />
 
+{{-- ─── Carry-over guard ──────────────────────────────────────────────
+     A previous party may still owe on this open session. Warn before the
+     waiter stacks a new order on someone else's unpaid bill. --}}
+@if(($carryOver['has_prior'] ?? false))
+    <div class="alert {{ $carryOver['outstanding'] > 0 ? 'alert-danger' : 'alert-success' }} d-flex flex-wrap align-items-center gap-3 mb-3">
+        <i class="bi {{ $carryOver['outstanding'] > 0 ? 'bi-exclamation-octagon-fill' : 'bi-check-circle-fill' }} fs-4"></i>
+        <div class="flex-grow-1">
+            @if($carryOver['outstanding'] > 0)
+                <strong>تنبيه: هذه الطاولة عليها طلبات سابقة غير مدفوعة.</strong>
+                <div class="small mt-1">
+                    {{ $carryOver['orders_count'] }} طلب — المتبقّي
+                    <strong>{{ \App\Helpers\Money::format($carryOver['outstanding']) }}</strong>.
+                    تأكّد أنّ الزبون السابق دفع وحرّر الطاولة قبل إضافة طلب جديد، وإلا سيُضاف على نفس الحساب.
+                </div>
+            @else
+                <strong>الطلبات السابقة على هذه الطاولة مدفوعة بالكامل.</strong>
+                <div class="small mt-1">تقدر تكمّل بأمان أو تحرّر الطاولة لبدء جلسة جديدة.</div>
+            @endif
+        </div>
+        <div class="d-flex gap-2">
+            {{-- Settle / free the table from the cashier — that's where payment
+                 is collected and the session is closed so the table frees up. --}}
+            <a href="{{ route('admin.cashier.index') }}" class="btn btn-sm btn-outline-dark">
+                <i class="bi bi-receipt"></i> الذهاب للكاشير
+            </a>
+        </div>
+    </div>
+@endif
+
 <div class="row g-3">
     {{-- ─── LEFT: Menu (categories + items) ──────────────────────── --}}
     <div class="col-lg-8">

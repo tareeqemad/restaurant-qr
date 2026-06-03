@@ -126,9 +126,28 @@ class WaiterOrderController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'monthly_meal_allowance']);
 
+        // Carry-over guard: a previous party may still owe money on this
+        // session (orders placed but the bill isn't settled). Surface a clear
+        // warning so the waiter checks "did they pay? free the table?" BEFORE
+        // piling a new party's order onto someone else's unpaid tab.
+        $invoice = $session->invoice()->where('status', '!=', 'cancelled')->latest()->first();
+        $priorOrders = $session->orders()
+            ->whereNotIn('status', ['cancelled'])
+            ->get(['id', 'number', 'status', 'total']);
+        $carryOver = [
+            'has_prior' => $priorOrders->isNotEmpty(),
+            'orders_count' => $priorOrders->count(),
+            'orders_total' => (float) $priorOrders->sum('total'),
+            'invoice' => $invoice,                          // settled at the cashier when present
+            'outstanding' => $invoice
+                ? (float) $invoice->balance
+                : (float) $priorOrders->sum('total'),       // not yet invoiced → whole tab is open
+            'opened_at' => $session->opened_at,
+        ];
+
         return view('admin.waiter-orders.create', compact(
             'table', 'session', 'categories', 'cart',
-            'staffMode', 'staffMember', 'eligibleStaff',
+            'staffMode', 'staffMember', 'eligibleStaff', 'carryOver',
         ));
     }
 
