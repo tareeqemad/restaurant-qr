@@ -237,6 +237,22 @@
         align-items: center;
         gap: .3rem;
     }
+    /* Read-only unit — fixed by the chosen ingredient's base unit. Looks like a
+       field but isn't editable, so the user just reads it (e.g. غرام). */
+    .mi-unit-fixed {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: calc(1.5em + .5rem + 2px);
+        padding: .25rem .5rem;
+        background: #eef2f0;
+        border: 1px solid rgba(15, 71, 49, .12);
+        border-radius: 8px;
+        color: #2f4f3f;
+        font-weight: 600;
+        font-size: 13px;
+        white-space: nowrap;
+    }
     /* The ingredient picker is a searchable Choices.js dropdown. Its panel is
        absolutely positioned, so the section's `overflow:hidden` (rounded card)
        was clipping it — the list looked cut off. Let the recipe row/section
@@ -510,13 +526,14 @@
                 'id'    => $i->id,
                 'name'  => $i->name . ' (' . ($i->baseUnit->code ?? '') . ')',
                 // The ingredient's measurement family (weight/volume/count) —
-                // the unit dropdown only offers global units of the same type
-                // so a count item can't be paired with a weight unit.
+                // kept for validation parity, though the unit is now locked to
+                // the ingredient's own base unit (no manual override needed).
                 'unit_type' => $i->baseUnit->unit_type ?? null,
-                // The ingredient's base unit id — used as the default unit pick
-                // when a row is added, so "خيار" defaults to غرام (its base),
-                // not whichever weight unit happens to sort first.
-                'base_unit_id' => $i->base_unit_id,
+                // The ingredient's base unit — the recipe quantity is always
+                // entered in THIS unit, so we lock + display it instead of
+                // offering a dropdown the user shouldn't have to touch.
+                'base_unit_id'   => $i->base_unit_id,
+                'base_unit_name' => $i->baseUnit->name ?? '',
                 'units' => $i->units->where('active', true)->map(fn ($u) => [
                     'id'     => $u->id,
                     'name'   => $u->name,
@@ -547,13 +564,15 @@
         <div id="recipe-wrap" class="mi-recipe-list">
             @foreach($recipeRows as $idx => $row)
                 @php
-                    $selectedValue = $row['unit'];
                     $rowIngredient = $ingredients->firstWhere('id', $row['ingredient_id']);
-                    $rowAltUnits   = $rowIngredient?->units?->where('active', true) ?? collect();
-                    $rowType       = $rowIngredient?->baseUnit?->unit_type;
-                    // Mirror the JS: a unit only has meaning once a real
-                    // ingredient is chosen, and only same-type global units apply.
-                    $rowGlobals    = $rowType ? $units->where('unit_type', $rowType) : collect();
+                    // The recipe quantity is entered in the ingredient's base
+                    // unit — lock + display it, no dropdown to fiddle with.
+                    $rowUnitName   = $rowIngredient?->baseUnit?->name;
+                    $rowUnitValue  = $rowIngredient ? 'u:'.$rowIngredient->base_unit_id : '';
+                    // Trim trailing zeros so 50.0000 shows as 50, 1.5000 as 1.5.
+                    $rowQty        = $row['quantity'] !== null && $row['quantity'] !== ''
+                        ? rtrim(rtrim(number_format((float) $row['quantity'], 4, '.', ''), '0'), '.')
+                        : '';
                     $rowError      = $errors->first("recipe.{$idx}.unit_id")
                                      ?: $errors->first("recipe.{$idx}.ingredient_id")
                                      ?: $errors->first("recipe.{$idx}.quantity");
@@ -563,27 +582,11 @@
                         <option value="">— اختر مكون —</option>
                         @foreach($ingredients as $ing)<option value="{{ $ing->id }}" @selected($row['ingredient_id']==$ing->id)>{{ $ing->name }} ({{ $ing->baseUnit->code ?? '' }})</option>@endforeach
                     </select>
-                    <input type="number" step="0.0001" name="recipe[{{ $idx }}][quantity]" value="{{ $row['quantity'] }}" class="form-control form-control-sm" placeholder="الكمية">
-                    <select name="recipe[{{ $idx }}][unit_id]" class="form-select form-select-sm mi-unit-select @if($rowError) is-invalid @endif" data-relax-choice data-choice-search="false" @disabled(! $rowIngredient)>
-                        @if(! $rowIngredient)
-                            <option value="">— اختر المكوّن أولاً —</option>
-                        @else
-                            @if($rowAltUnits->isNotEmpty())
-                                <optgroup label="وحدات هذا المكوّن">
-                                    @foreach($rowAltUnits as $u)
-                                        <option value="iu:{{ $u->id }}" @selected($selectedValue === 'iu:'.$u->id)>
-                                            {{ $u->name }} (×{{ rtrim(rtrim((string) $u->factor_to_base, '0'), '.') }} {{ $rowIngredient->baseUnit?->code }})
-                                        </option>
-                                    @endforeach
-                                </optgroup>
-                            @endif
-                            <optgroup label="وحدات عامة">
-                                @foreach($rowGlobals as $u)
-                                    <option value="u:{{ $u->id }}" @selected($selectedValue === 'u:'.$u->id)>{{ $u->name }}</option>
-                                @endforeach
-                            </optgroup>
-                        @endif
-                    </select>
+                    <input type="number" step="any" min="0" name="recipe[{{ $idx }}][quantity]" value="{{ $rowQty }}" class="form-control form-control-sm" placeholder="الكمية">
+                    {{-- Unit is fixed by the ingredient (its base unit). Show it
+                         read-only and carry the value in a hidden field. --}}
+                    <input type="hidden" name="recipe[{{ $idx }}][unit_id]" value="{{ $rowUnitValue }}">
+                    <div class="mi-unit-fixed">{{ $rowUnitName ?: '—' }}</div>
                     <button type="button" class="btn btn-outline-danger btn-sm" title="حذف"
                             onclick="this.closest('.mi-recipe-row').remove()">
                         <i class="bi bi-x-lg"></i>
@@ -619,67 +622,21 @@
 @push('scripts')
 <script>
 let recipeIdx = {{ $recipeRows->count() }};
-// Ingredients now carry their own units (tbsp/scoop/pack) so the
-// per-row unit dropdown can switch between chef-friendly measurements
-// and the global g/ml/pcs grid the moment the chef picks an ingredient.
+// The recipe quantity is always entered in the ingredient's own base unit, so
+// the unit is fixed (read-only) by the ingredient — no dropdown to touch.
 const ingredients = @json($ingredientsWithUnits);
-const units = @json($units->map(fn($u) => ['id'=>$u->id,'label'=>$u->name,'type'=>$u->unit_type]));
 
-function unitOptionsFor(ingredientId) {
-    const ing = ingredients.find(i => Number(i.id) === Number(ingredientId));
-    // No ingredient yet → the unit has no meaning. Show a single placeholder
-    // and let the caller disable the select, so nobody saves a unit-only row.
-    if (! ing) {
-        return '<option value="">— اختر المكوّن أولاً —</option>';
-    }
-    let html = '';
-    if (ing.units && ing.units.length > 0) {
-        html += '<optgroup label="وحدات هذا المكوّن">';
-        for (const u of ing.units) {
-            html += `<option value="iu:${u.id}">${u.name} (×${u.factor})</option>`;
-        }
-        html += '</optgroup>';
-    }
-    // Only offer global units of the SAME measurement family as the ingredient
-    // (weight↔weight, volume↔volume, count↔count).
-    const globals = ing.unit_type ? units.filter(u => u.type === ing.unit_type) : units;
-    html += '<optgroup label="وحدات عامة">';
-    for (const u of globals) {
-        html += `<option value="u:${u.id}">${u.label}</option>`;
-    }
-    html += '</optgroup>';
-    return html;
-}
-
-// Called when ingredient changes on a row — rebuild the unit dropdown
-// so the chef sees the right tbsp/scoop options for THIS ingredient.
-// The unit select is a Choices.js instance (data-relax-choice), so we tear it
-// down, rewrite the native <option>s, then re-init — editing innerHTML on a
-// live Choices instance corrupts it (the dropdown stays open / won't commit).
+// Called when the ingredient changes on a row — lock the unit to that
+// ingredient's base unit (sets the hidden field + the read-only label).
 function rebuildUnitOptions(ingredientSelect) {
     const row = ingredientSelect.closest('.mi-recipe-row');
-    const unitSelect = row?.querySelector('select[name$="[unit_id]"]');
-    if (! unitSelect) return;
+    if (! row) return;
+    const hidden = row.querySelector('input[type="hidden"][name$="[unit_id]"]');
+    const label  = row.querySelector('.mi-unit-fixed');
 
     const ing = ingredients.find(i => Number(i.id) === Number(ingredientSelect.value));
-    const hasIngredient = !! ing;
-
-    window.relaxChoices?.destroy(unitSelect);
-    unitSelect.innerHTML = unitOptionsFor(ingredientSelect.value);
-    unitSelect.disabled = ! hasIngredient;
-
-    // Default to the ingredient's OWN base unit (e.g. خيار → غرام), not
-    // whichever weight unit happens to sort first (which could be طن).
-    const want = ing && ing.base_unit_id ? 'u:' + ing.base_unit_id : null;
-    if (want && [...unitSelect.options].some(o => o.value === want)) {
-        unitSelect.value = want;
-    } else if (unitSelect.options.length > 0) {
-        unitSelect.selectedIndex = 0;
-    }
-
-    if (hasIngredient) {
-        window.relaxChoices?.refresh(unitSelect);
-    }
+    if (hidden) hidden.value = ing && ing.base_unit_id ? 'u:' + ing.base_unit_id : '';
+    if (label)  label.textContent = ing ? (ing.base_unit_name || '—') : '—';
 }
 
 function addRecipeRow() {
@@ -688,8 +645,9 @@ function addRecipeRow() {
     const html = `
       <div class="mi-recipe-row">
         <select name="recipe[${idx}][ingredient_id]" class="form-select form-select-sm" onchange="rebuildUnitOptions(this)"><option value="">— اختر مكون —</option>${ingOpts}</select>
-        <input type="number" step="0.0001" name="recipe[${idx}][quantity]" class="form-control form-control-sm" placeholder="الكمية">
-        <select name="recipe[${idx}][unit_id]" class="form-select form-select-sm mi-unit-select" disabled>${unitOptionsFor(null)}</select>
+        <input type="number" step="any" min="0" name="recipe[${idx}][quantity]" class="form-control form-control-sm" placeholder="الكمية">
+        <input type="hidden" name="recipe[${idx}][unit_id]" value="">
+        <div class="mi-unit-fixed">—</div>
         <button type="button" class="btn btn-outline-danger btn-sm" title="حذف" onclick="this.closest('.mi-recipe-row').remove()"><i class="bi bi-x-lg"></i></button>
       </div>`;
     const wrap = document.getElementById('recipe-wrap');
