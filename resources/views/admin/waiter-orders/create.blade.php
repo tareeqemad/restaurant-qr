@@ -186,11 +186,55 @@
             </div>
         </div>
 
+        {{-- ─── Menu toolbar: live search + sticky category jump bar ─────
+             With a big menu the waiter needs to FIND a dish fast, not scroll.
+             Search filters items instantly; the chips jump to / filter a
+             category. All client-side — no reload. --}}
+        @if($categories->isNotEmpty())
+        <div class="wo-menu-toolbar">
+            <div class="wo-search">
+                <i class="bi bi-search"></i>
+                <input type="text" id="wo-menu-search" placeholder="ابحث عن صنف..." autocomplete="off" inputmode="search">
+            </div>
+            <div class="wo-cats" id="wo-cats">
+                <span class="wo-cat active" data-cat="all">الكل</span>
+                @foreach($categories as $cat)
+                    <span class="wo-cat" data-cat="cat-{{ $cat->id }}">{{ $cat->name }}</span>
+                @endforeach
+            </div>
+        </div>
+        <style>
+            .wo-menu-toolbar {
+                position: sticky; top: 0; z-index: 20; background: #fff;
+                padding: .5rem 0 .6rem; margin-bottom: .5rem;
+                border-bottom: 1px solid rgba(15,71,49,.08);
+            }
+            .wo-search { position: relative; margin-bottom: .5rem; }
+            .wo-search input {
+                width: 100%; padding: .6rem .9rem .6rem 2.3rem;
+                border: 1px solid rgba(15,71,49,.18); border-radius: 10px; font-size: 14px;
+            }
+            .wo-search i { position:absolute; inset-inline-start:.8rem; top:50%; transform:translateY(-50%); color:#9ca3af; }
+            .wo-cats { display:flex; gap:.4rem; overflow-x:auto; padding-bottom:.2rem; -webkit-overflow-scrolling:touch; }
+            .wo-cat {
+                white-space:nowrap; cursor:pointer; user-select:none;
+                border:1px solid rgba(15,71,49,.18); background:#fff; color:#2f4f3f;
+                border-radius:999px; padding:.35rem .85rem; font-size:13px; font-weight:600;
+                transition:all .12s ease;
+            }
+            .wo-cat:hover { border-color:rgba(15,71,49,.4); }
+            .wo-cat.active { background:#0f4731; color:#fff; border-color:#0f4731; }
+            .wo-menu-empty { display:none; text-align:center; padding:2.5rem 1rem; color:#9ca3af; }
+            /* tighter rows so more dishes fit on screen */
+            .wo-cat-card .wo-item { padding:.6rem .9rem !important; }
+        </style>
+        @endif
+
         {{-- Category accordion. Each item shows price + stock status +
              quick "إضافة" button. Items with modifiers open a modal so
              the waiter can pick size/addons before submitting. --}}
         @forelse($categories as $cat)
-            <div class="card mb-3">
+            <div class="card mb-3 wo-cat-card" data-cat="cat-{{ $cat->id }}">
                 <div class="card-header bg-light">
                     <strong>{{ $cat->name }}</strong>
                     <span class="badge bg-secondary ms-1">{{ $cat->menuItems->count() }}</span>
@@ -202,7 +246,8 @@
                             $inStock   = empty($shortages);
                             $hasMods   = $item->modifierGroups->count() > 0;
                         @endphp
-                        <div class="d-flex align-items-center justify-content-between p-3 border-bottom {{ $inStock ? '' : 'bg-light' }}">
+                        <div class="wo-item d-flex align-items-center justify-content-between p-3 border-bottom {{ $inStock ? '' : 'bg-light' }}"
+                             data-name="{{ $item->name }} {{ $item->name_en }}">
                             <div class="flex-grow-1">
                                 <div class="fw-bold">
                                     {{ $item->name }}
@@ -498,4 +543,48 @@
         @endif
     </div>
 </div>
+
+@push('scripts')
+<script>
+(function () {
+    const search = document.getElementById('wo-menu-search');
+    const catsBar = document.getElementById('wo-cats');
+    if (! search || ! catsBar) return;
+
+    const cards = Array.from(document.querySelectorAll('.wo-cat-card'));
+    let activeCat = 'all';
+
+    function apply() {
+        const q = (search.value || '').trim().toLowerCase();
+        cards.forEach(card => {
+            const catMatch = activeCat === 'all' || card.dataset.cat === activeCat;
+            let anyVisible = 0;
+            card.querySelectorAll('.wo-item').forEach(item => {
+                const nameMatch = ! q || (item.dataset.name || '').toLowerCase().includes(q);
+                const show = catMatch && nameMatch;
+                item.style.display = show ? '' : 'none';
+                if (show) anyVisible++;
+            });
+            // Hide a whole category card when it has nothing to show.
+            card.style.display = (catMatch && anyVisible > 0) ? '' : 'none';
+        });
+    }
+
+    search.addEventListener('input', apply);
+    catsBar.addEventListener('click', (e) => {
+        const chip = e.target.closest('.wo-cat');
+        if (! chip) return;
+        catsBar.querySelectorAll('.wo-cat').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        activeCat = chip.dataset.cat;
+        apply();
+        // jump the list to the top of the chosen category
+        if (activeCat !== 'all') {
+            const target = document.querySelector('.wo-cat-card[data-cat="' + activeCat + '"]');
+            target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    });
+})();
+</script>
+@endpush
 @endsection
