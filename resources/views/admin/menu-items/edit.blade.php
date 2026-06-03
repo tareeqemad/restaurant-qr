@@ -59,8 +59,11 @@
                                     {{ $line['ingredient'] }}
                                 </div>
                                 <div class="text-muted" style="font-size:.72rem;">
-                                    {{ \App\Helpers\Qty::format($line['quantity']) }} {{ $line['unit'] }}
-                                    × {{ \App\Helpers\Qty::format($line['cost_per_unit']) }}
+                                    {{-- bdi isolates each number/unit so RTL doesn't
+                                         scramble "1 pcs × 0.20" into "pcs × 0.2 1". --}}
+                                    <bdi>{{ \App\Helpers\Qty::format($line['quantity']) }} {{ $line['unit'] }}</bdi>
+                                    <span class="mx-1">×</span>
+                                    <bdi>{{ \App\Helpers\Money::format($line['cost_per_unit']) }} / {{ $line['unit'] }}</bdi>
                                 </div>
                             </div>
                             <div class="fw-bold" style="color: {{ $line['is_optional'] ? '#9ca3af' : 'var(--primary)' }}; font-variant-numeric: tabular-nums;">
