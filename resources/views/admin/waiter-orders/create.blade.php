@@ -50,9 +50,8 @@
                     ? app(\App\Services\StaffMealService::class)->monthSummary($staffMember)
                     : null;
             @endphp
-            <div class="card mb-3 {{ $staffActive ? 'border-warning' : '' }}"
-                 x-data="{ open: {{ $staffActive ? 'true' : 'false' }} }">
-                <div class="card-header d-flex justify-content-between align-items-center" @click="open = !open" style="cursor: pointer;">
+            <details class="card mb-3 wo-collapse {{ $staffActive ? 'border-warning' : '' }}" {{ $staffActive ? 'open' : '' }}>
+                <summary class="card-header d-flex justify-content-between align-items-center" style="cursor: pointer; list-style:none;">
                     <div>
                         <i class="bi bi-cup-hot-fill text-accent"></i>
                         <strong>طلب موظف (بدل الوجبات)</strong>
@@ -64,9 +63,9 @@
                             <span class="text-muted small">— غير مفعّل</span>
                         @endif
                     </div>
-                    <i class="bi" :class="open ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
-                </div>
-                <div class="card-body" x-show="open" x-cloak>
+                    <i class="bi bi-chevron-down wo-chevron"></i>
+                </summary>
+                <div class="card-body">
                     @if($staffActive)
                         <div class="alert alert-warning small mb-2">
                             <strong>{{ $staffMember->name }}</strong> —
@@ -117,14 +116,14 @@
                         </form>
                     @endif
                 </div>
-            </div>
+            </details>
         @endif
 
         {{-- Customer attach panel — collapsible to keep the menu's first
              impression compact. The waiter only opens it when they
              actually want to link a phone. --}}
-        <div class="card mb-3" x-data="{ open: {{ $session->customer_id ? 'true' : 'false' }} }">
-            <div class="card-header d-flex justify-content-between align-items-center" @click="open = !open" style="cursor: pointer;">
+        <details class="card mb-3 wo-collapse" {{ $session->customer_id ? 'open' : '' }}>
+            <summary class="card-header d-flex justify-content-between align-items-center" style="cursor: pointer; list-style:none;">
                 <div>
                     <i class="bi bi-person-circle"></i>
                     <strong>الزبون</strong>
@@ -133,12 +132,12 @@
                             مرتبط: {{ $session->customer_name ?? '#'.$session->customer_id }}
                         </span>
                     @else
-                        <span class="text-muted small">— غير محدد</span>
+                        <span class="text-muted small">— غير محدد (اضغط للإضافة)</span>
                     @endif
                 </div>
-                <i class="bi" :class="open ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
-            </div>
-            <div class="card-body" x-show="open" x-cloak>
+                <i class="bi bi-chevron-down wo-chevron"></i>
+            </summary>
+            <div class="card-body">
                 @if($session->customer_id)
                     <div class="mb-2 small">
                         <strong>{{ $session->customer_name }}</strong> ·
@@ -184,7 +183,7 @@
                     </small>
                 @endif
             </div>
-        </div>
+        </details>
 
         {{-- ─── Menu toolbar: live search + sticky category jump bar ─────
              With a big menu the waiter needs to FIND a dish fast, not scroll.
@@ -204,6 +203,15 @@
             </div>
         </div>
         <style>
+            /* Native <details> collapse — no JS/Alpine needed. Rotates the
+               chevron and removes the default disclosure triangle. */
+            .wo-collapse > summary { user-select: none; }
+            .wo-collapse > summary::-webkit-details-marker { display: none; }
+            .wo-collapse .wo-chevron { transition: transform .15s ease; }
+            .wo-collapse[open] .wo-chevron { transform: rotate(180deg); }
+            /* Breathing room so menu category cards aren't glued together. */
+            .wo-cat-card { margin-bottom: 1rem !important; }
+            .wo-cat-card .card-header { font-weight: 700; }
             .wo-menu-toolbar {
                 position: sticky; top: 0; z-index: 20; background: #fff;
                 padding: .5rem 0 .6rem; margin-bottom: .5rem;
