@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Events\TableStatusChanged;
+use App\Helpers\SafeBroadcast;
 use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\Customer;
@@ -48,11 +50,40 @@ class WaiterOrderController extends Controller
 
         $tables = Table::query()
             ->where('active', true)
-            ->with('activeSession')
+            ->with([
+                'activeSession.orders' => fn ($q) => $q->whereIn('status', ['ready', 'preparing', 'pending']),
+                'zone',
+            ])
             ->orderBy('number')
-            ->get();
+            ->get()
+            ->map(function (Table $t) {
+                $session = $t->activeSession;
+                $orders = $session?->orders ?? collect();
+                // Per-table service signals the waiter scans for at a glance.
+                $t->ready_count = $orders->where('status', 'ready')->count();
+                $t->preparing_count = $orders->whereIn('status', ['preparing', 'pending'])->count();
+                $t->has_session = (bool) $session;
+                // A unified "service state" drives the colour + the filter chips.
+                $t->service_state = match (true) {
+                    $t->status === 'disabled' => 'disabled',
+                    $t->ready_count > 0 => 'ready',        // food waiting to be served
+                    $t->has_session => 'occupied',
+                    $t->status === 'reserved' => 'reserved',
+                    default => 'available',
+                };
 
-        return view('admin.waiter-orders.index', compact('tables'));
+                return $t;
+            });
+
+        $counts = [
+            'all' => $tables->count(),
+            'available' => $tables->where('service_state', 'available')->count(),
+            'occupied' => $tables->where('service_state', 'occupied')->count(),
+            'ready' => $tables->where('service_state', 'ready')->count(),
+            'reserved' => $tables->where('service_state', 'reserved')->count(),
+        ];
+
+        return view('admin.waiter-orders.index', compact('tables', 'counts'));
     }
 
     /**
@@ -119,10 +150,12 @@ class WaiterOrderController extends Controller
                 return back()->with('error', 'الموظف المختار ليس له بدل وجبات مفعّل. عدّل ملفه أولاً.');
             }
             $this->saveStaffMode($session, ['user_id' => $staff->id]);
+
             return back()->with('success', "تفعيل وضع طلب موظف للموظف «{$staff->name}».");
         }
 
         $this->saveStaffMode($session, ['user_id' => null]);
+
         return back()->with('success', 'تم إلغاء وضع طلب موظف.');
     }
 
@@ -137,11 +170,11 @@ class WaiterOrderController extends Controller
         $this->authorize('create', Order::class);
 
         $data = $request->validate([
-            'menu_item_id'   => ['required', 'exists:menu_items,id'],
-            'quantity'       => ['required', 'numeric', 'min:1'],
-            'modifier_ids'   => ['array'],
+            'menu_item_id' => ['required', 'exists:menu_items,id'],
+            'quantity' => ['required', 'numeric', 'min:1'],
+            'modifier_ids' => ['array'],
             'modifier_ids.*' => ['exists:modifiers,id'],
-            'notes'          => ['nullable', 'string', 'max:500'],
+            'notes' => ['nullable', 'string', 'max:500'],
         ]);
 
         $item = MenuItem::with('recipeItems.ingredient')->findOrFail($data['menu_item_id']);
@@ -153,7 +186,7 @@ class WaiterOrderController extends Controller
         $virtualCart = $this->cart($session);
         $virtualCart[] = [
             'menu_item_id' => (int) $item->id,
-            'quantity'     => (float) $data['quantity'],
+            'quantity' => (float) $data['quantity'],
             'modifier_ids' => $data['modifier_ids'] ?? [],
         ];
         $issues = $this->inventory->checkStockForOrderPreview($virtualCart);
@@ -162,6 +195,7 @@ class WaiterOrderController extends Controller
                 ->map(fn ($i) => $i['ingredient'].' (متاح '.rtrim(rtrim(number_format($i['available'], 2), '0'), '.').')')
                 ->take(3)
                 ->join('، ');
+
             return back()->with('error', "نفد المخزون من: {$short}.");
         }
 
@@ -171,20 +205,20 @@ class WaiterOrderController extends Controller
 
         $cart = $this->cart($session);
         $cart[] = [
-            'id'              => uniqid(),
-            'menu_item_id'    => (int) $item->id,
-            'name'            => $item->name,
-            'quantity'        => (int) $data['quantity'],
-            'unit_price'      => $unitPrice,
-            'modifier_ids'    => $data['modifier_ids'] ?? [],
-            'modifiers'       => $modifiers->map(fn ($m) => [
-                'id'   => (int) $m->id,
+            'id' => uniqid(),
+            'menu_item_id' => (int) $item->id,
+            'name' => $item->name,
+            'quantity' => (int) $data['quantity'],
+            'unit_price' => $unitPrice,
+            'modifier_ids' => $data['modifier_ids'] ?? [],
+            'modifiers' => $modifiers->map(fn ($m) => [
+                'id' => (int) $m->id,
                 'name' => $m->name,
                 'price_delta' => (float) $m->price_delta,
             ])->values()->all(),
             'modifiers_total' => $modifiersTotal,
-            'subtotal'        => ($unitPrice + $modifiersTotal) * (int) $data['quantity'],
-            'notes'           => $data['notes'] ?? null,
+            'subtotal' => ($unitPrice + $modifiersTotal) * (int) $data['quantity'],
+            'notes' => $data['notes'] ?? null,
         ];
         $this->saveCart($session, $cart);
 
@@ -221,18 +255,19 @@ class WaiterOrderController extends Controller
         $this->authorize('create', Order::class);
 
         $data = $request->validate([
-            'phone'              => ['nullable', 'string', 'max:32'],
-            'name'               => ['nullable', 'string', 'max:120'],
-            'create_if_missing'  => ['sometimes', 'boolean'],
-            'detach'             => ['sometimes', 'boolean'],
+            'phone' => ['nullable', 'string', 'max:32'],
+            'name' => ['nullable', 'string', 'max:120'],
+            'create_if_missing' => ['sometimes', 'boolean'],
+            'detach' => ['sometimes', 'boolean'],
         ]);
 
         if (! empty($data['detach'])) {
             $session->update([
-                'customer_id'    => null,
-                'customer_name'  => null,
+                'customer_id' => null,
+                'customer_name' => null,
                 'customer_phone' => null,
             ]);
+
             return back()->with('success', 'تم إلغاء ربط الزبون.');
         }
 
@@ -258,8 +293,8 @@ class WaiterOrderController extends Controller
         }
 
         $session->update([
-            'customer_id'    => $customer->id,
-            'customer_name'  => $customer->name,
+            'customer_id' => $customer->id,
+            'customer_name' => $customer->name,
             'customer_phone' => $customer->phone,
         ]);
 
@@ -288,9 +323,9 @@ class WaiterOrderController extends Controller
             // Reuse the cart-shape the OrderService already understands.
             $orderInput = collect($cart)->map(fn ($r) => [
                 'menu_item_id' => (int) $r['menu_item_id'],
-                'quantity'     => (float) $r['quantity'],
+                'quantity' => (float) $r['quantity'],
                 'modifier_ids' => $r['modifier_ids'] ?? [],
-                'notes'        => $r['notes'] ?? null,
+                'notes' => $r['notes'] ?? null,
             ])->all();
 
             $order = $this->orders->createFromCart(
@@ -317,8 +352,8 @@ class WaiterOrderController extends Controller
 
             $msg = $staffMember
                 ? "تم إنشاء طلب موظف #{$order->number} للموظف «{$staffMember->name}» بقيمة "
-                    .number_format((float) $order->total, 2)." ش.إ. متبقي هذا الشهر: "
-                    .number_format($staffMember->fresh()->staffMealRemainingThisMonth() ?? 0, 2)." ش.إ."
+                    .number_format((float) $order->total, 2).' ش.إ. متبقي هذا الشهر: '
+                    .number_format($staffMember->fresh()->staffMealRemainingThisMonth() ?? 0, 2).' ش.إ.'
                 : "تم إنشاء الطلب #{$order->number} على طاولة {$session->table?->number}. بانتظار الاعتماد.";
 
             return redirect()->route('admin.waiter-orders.index')->with('success', $msg);
@@ -338,14 +373,16 @@ class WaiterOrderController extends Controller
     protected function ensureActiveSession(Table $table): TableSession
     {
         $session = $table->activeSession;
-        if ($session) return $session;
+        if ($session) {
+            return $session;
+        }
 
         $session = TableSession::create([
-            'branch_id'   => $table->branch_id ?? BranchContext::current(),
-            'table_id'    => $table->id,
-            'token'       => \Str::uuid()->toString(),
-            'status'      => 'active',
-            'opened_at'   => now(),
+            'branch_id' => $table->branch_id ?? BranchContext::current(),
+            'table_id' => $table->id,
+            'token' => \Str::uuid()->toString(),
+            'status' => 'active',
+            'opened_at' => now(),
             'cover_count' => 1,
             'assigned_waiter_id' => auth()->id(),
         ]);
@@ -353,8 +390,8 @@ class WaiterOrderController extends Controller
         if ($table->status !== 'occupied') {
             $previousStatus = $table->status;
             $table->update(['status' => 'occupied']);
-            \App\Helpers\SafeBroadcast::dispatch(
-                new \App\Events\TableStatusChanged($table->refresh(), $previousStatus)
+            SafeBroadcast::dispatch(
+                new TableStatusChanged($table->refresh(), $previousStatus)
             );
         }
 
