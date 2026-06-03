@@ -10,6 +10,7 @@ use App\Models\Customer;
 use App\Models\MenuItem;
 use App\Models\Modifier;
 use App\Models\Order;
+use App\Models\Setting;
 use App\Models\Table;
 use App\Models\TableSession;
 use App\Models\User;
@@ -348,13 +349,30 @@ class WaiterOrderController extends Controller
                 $this->saveStaffMode($session, ['user_id' => null]);   // reset for next order
             }
 
+            // Auto-approve: when the operator trusts waiters to push straight to
+            // the kitchen, skip the manual approval step (and the stock deduct
+            // happens now). Controlled by the `auto_approve` setting; if stock
+            // is short under strict mode the order stays Pending so nothing is
+            // silently lost — the waiter just sees the kitchen note.
+            $autoApproved = false;
+            if (Setting::get('auto_approve', config('restaurant.order.auto_approve', false))) {
+                try {
+                    $this->orders->approve($order->fresh(), auth()->id());
+                    $autoApproved = true;
+                } catch (\Throwable $e) {
+                    // Leave it Pending; surface why it couldn't auto-approve.
+                    session()->flash('warning', 'تعذّر الاعتماد التلقائي: '.$e->getMessage());
+                }
+            }
+
             $this->clearCart($session);
 
+            $statusNote = $autoApproved ? 'وأُرسل للمطبخ.' : 'بانتظار الاعتماد.';
             $msg = $staffMember
                 ? "تم إنشاء طلب موظف #{$order->number} للموظف «{$staffMember->name}» بقيمة "
                     .number_format((float) $order->total, 2).' ش.إ. متبقي هذا الشهر: '
                     .number_format($staffMember->fresh()->staffMealRemainingThisMonth() ?? 0, 2).' ش.إ.'
-                : "تم إنشاء الطلب #{$order->number} على طاولة {$session->table?->number}. بانتظار الاعتماد.";
+                : "تم إنشاء الطلب #{$order->number} على طاولة {$session->table?->number}. {$statusNote}";
 
             return redirect()->route('admin.waiter-orders.index')->with('success', $msg);
         } catch (\Throwable $e) {

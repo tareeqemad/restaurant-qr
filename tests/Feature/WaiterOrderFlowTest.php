@@ -42,14 +42,23 @@ class WaiterOrderFlowTest extends TestCase
     use RefreshDatabase;
 
     protected Branch $branch;
+
     protected User $waiter;
+
     protected Unit $gram;
+
     protected Unit $pcs;
+
     protected StorageLocation $storage;
+
     protected Station $kitchen;
+
     protected Category $category;
+
     protected MenuItem $burger;
+
     protected Ingredient $patty;
+
     protected Ingredient $bun;
 
     protected function setUp(): void
@@ -68,7 +77,7 @@ class WaiterOrderFlowTest extends TestCase
         $this->waiter->branches()->attach($this->branch->id);
 
         $this->gram = Unit::create(['code' => 'g',   'name' => 'g',   'unit_type' => 'weight', 'factor_to_base' => 1, 'is_base' => true]);
-        $this->pcs  = Unit::create(['code' => 'pcs', 'name' => 'pcs', 'unit_type' => 'count',  'factor_to_base' => 1, 'is_base' => true]);
+        $this->pcs = Unit::create(['code' => 'pcs', 'name' => 'pcs', 'unit_type' => 'count',  'factor_to_base' => 1, 'is_base' => true]);
 
         $this->storage = StorageLocation::create([
             'branch_id' => $this->branch->id, 'code' => 'k', 'name' => 'K',
@@ -84,7 +93,7 @@ class WaiterOrderFlowTest extends TestCase
         ]);
 
         $this->patty = $this->ing('Patty', $this->gram, 5000);
-        $this->bun   = $this->ing('Bun',   $this->pcs,  50);
+        $this->bun = $this->ing('Bun', $this->pcs, 50);
 
         $this->burger = MenuItem::create([
             'category_id' => $this->category->id, 'station_id' => $this->kitchen->id,
@@ -92,9 +101,9 @@ class WaiterOrderFlowTest extends TestCase
             'is_available' => true,
         ]);
         RecipeItem::create(['menu_item_id' => $this->burger->id, 'ingredient_id' => $this->patty->id,
-                            'quantity' => 150, 'unit_id' => $this->gram->id]);
+            'quantity' => 150, 'unit_id' => $this->gram->id]);
         RecipeItem::create(['menu_item_id' => $this->burger->id, 'ingredient_id' => $this->bun->id,
-                            'quantity' => 1,   'unit_id' => $this->pcs->id]);
+            'quantity' => 1,   'unit_id' => $this->pcs->id]);
     }
 
     protected function tearDown(): void
@@ -116,11 +125,11 @@ class WaiterOrderFlowTest extends TestCase
         $table = Table::create(['number' => '5', 'capacity' => 4, 'status' => 'available', 'active' => true]);
         $session = TableSession::create([
             'branch_id' => $this->branch->id,
-            'table_id'  => $table->id,
-            'token'     => 'walk-in-test',
-            'status'    => 'active',
+            'table_id' => $table->id,
+            'token' => 'walk-in-test',
+            'status' => 'active',
             'opened_at' => now(),
-            'cover_count'        => 1,
+            'cover_count' => 1,
             'assigned_waiter_id' => $this->waiter->id,
         ]);
 
@@ -129,12 +138,12 @@ class WaiterOrderFlowTest extends TestCase
             session: $session,
             cart: [[
                 'menu_item_id' => $this->burger->id,
-                'quantity'     => 2,
+                'quantity' => 2,
                 'modifier_ids' => [],
-                'notes'        => null,
+                'notes' => null,
             ]],
             createdByUserId: $this->waiter->id,
-            customerNotes:   'بدون كاتشاب',
+            customerNotes: 'بدون كاتشاب',
         );
 
         $this->assertSame($table->id, $order->table_id,
@@ -170,8 +179,8 @@ class WaiterOrderFlowTest extends TestCase
 
         // What the controller does after Customer::findForLogin matches.
         $session->update([
-            'customer_id'    => $customer->id,
-            'customer_name'  => $customer->name,
+            'customer_id' => $customer->id,
+            'customer_name' => $customer->name,
             'customer_phone' => $customer->phone,
         ]);
 
@@ -200,7 +209,7 @@ class WaiterOrderFlowTest extends TestCase
 
         $order = app(OrderService::class)->createFromCart($session, [[
             'menu_item_id' => $this->burger->id,
-            'quantity'     => 1,
+            'quantity' => 1,
             'modifier_ids' => [],
         ]], createdByUserId: $this->waiter->id);
 
@@ -457,20 +466,82 @@ class WaiterOrderFlowTest extends TestCase
     protected function ing(string $name, Unit $unit, float $stock): Ingredient
     {
         $ing = Ingredient::create([
-            'name'              => $name,
-            'base_unit_id'      => $unit->id,
-            'current_stock'     => $stock,
+            'name' => $name,
+            'base_unit_id' => $unit->id,
+            'current_stock' => $stock,
             'reorder_threshold' => 0,
-            'cost_per_unit'     => 1,
-            'track_stock'       => true,
-            'active'            => true,
+            'cost_per_unit' => 1,
+            'track_stock' => true,
+            'active' => true,
         ]);
         IngredientStock::create([
-            'ingredient_id'       => $ing->id,
+            'ingredient_id' => $ing->id,
             'storage_location_id' => $this->storage->id,
-            'quantity'            => $stock,
-            'reorder_threshold'   => 0,
+            'quantity' => $stock,
+            'reorder_threshold' => 0,
         ]);
+
         return $ing;
+    }
+
+    // ─── unapprove (فك الاعتماد) ──────────────────────────────────────────
+
+    private function approvedOrder(): Order
+    {
+        $table = Table::create(['number' => '20', 'capacity' => 4, 'status' => 'available', 'active' => true]);
+        $session = TableSession::create([
+            'branch_id' => $this->branch->id, 'table_id' => $table->id,
+            'token' => \Str::uuid()->toString(), 'status' => 'active', 'opened_at' => now(),
+        ]);
+        $order = app(OrderService::class)->createFromCart($session, [
+            ['menu_item_id' => $this->burger->id, 'quantity' => 2, 'modifier_ids' => []],
+        ], $this->waiter->id);
+        app(OrderService::class)->approve($order, $this->waiter->id);
+
+        return $order->fresh();
+    }
+
+    public function test_unapprove_reverts_an_approved_order_and_returns_stock(): void
+    {
+        $pattyBefore = (float) $this->patty->fresh()->current_stock;
+
+        $order = $this->approvedOrder();
+        $this->assertSame(OrderStatus::Approved->value, $order->status);
+        // Approval deducted 2 burgers × 150g patty.
+        $this->assertEqualsWithDelta($pattyBefore - 300, (float) $this->patty->fresh()->current_stock, 0.001);
+
+        app(OrderService::class)->unapprove($order, $this->waiter->id);
+
+        $order->refresh();
+        $this->assertSame(OrderStatus::Pending->value, $order->status);
+        $this->assertNull($order->approved_at);
+        $order->items->each(fn ($i) => $this->assertSame(OrderItemStatus::Pending->value, $i->status));
+        // Stock fully returned.
+        $this->assertEqualsWithDelta($pattyBefore, (float) $this->patty->fresh()->current_stock, 0.001);
+    }
+
+    public function test_unapprove_is_blocked_once_the_kitchen_started_preparing(): void
+    {
+        $order = $this->approvedOrder();
+        $kitchenLine = $order->items->first();
+        app(OrderService::class)->startPreparing($kitchenLine, $this->waiter->id);
+
+        $this->expectException(\RuntimeException::class);
+        app(OrderService::class)->unapprove($order->fresh(), $this->waiter->id);
+    }
+
+    public function test_unapprove_rejects_a_pending_order(): void
+    {
+        $table = Table::create(['number' => '21', 'capacity' => 2, 'status' => 'available', 'active' => true]);
+        $session = TableSession::create([
+            'branch_id' => $this->branch->id, 'table_id' => $table->id,
+            'token' => \Str::uuid()->toString(), 'status' => 'active', 'opened_at' => now(),
+        ]);
+        $order = app(OrderService::class)->createFromCart($session, [
+            ['menu_item_id' => $this->burger->id, 'quantity' => 1, 'modifier_ids' => []],
+        ], $this->waiter->id);
+
+        $this->expectException(\RuntimeException::class);
+        app(OrderService::class)->unapprove($order, $this->waiter->id);
     }
 }

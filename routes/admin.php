@@ -249,6 +249,7 @@ Route::middleware(['auth', 'setup.complete', 'admin', 'branch', 'license'])->gro
     Route::post('orders/bulk-approve', [Admin\OrderController::class, 'bulkApprove'])->name('orders.bulk-approve');
     Route::get('orders/{order}', [Admin\OrderController::class, 'show'])->name('orders.show');
     Route::post('orders/{order}/approve', [Admin\OrderController::class, 'approve'])->name('orders.approve');
+    Route::post('orders/{order}/unapprove', [Admin\OrderController::class, 'unapprove'])->name('orders.unapprove');
     Route::post('orders/{order}/transition', [Admin\OrderController::class, 'transition'])->name('orders.transition');
     Route::post('orders/{order}/cancel', [Admin\OrderController::class, 'cancel'])->name('orders.cancel');
     Route::get('orders/{order}/source', [Admin\OrderController::class, 'editSource'])->name('orders.edit-source');

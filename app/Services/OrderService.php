@@ -3,11 +3,11 @@
 namespace App\Services;
 
 use App\Enums\OrderItemStatus;
+use App\Enums\OrderSource;
 use App\Enums\OrderStatus;
 use App\Events\OrderCreated;
 use App\Events\OrderItemStatusChanged;
 use App\Events\OrderStatusChanged;
-use App\Enums\OrderSource;
 use App\Helpers\Money;
 use App\Helpers\SafeBroadcast;
 use App\Models\ActivityLog;
@@ -15,6 +15,7 @@ use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\InventoryMovement;
 use App\Models\MenuItem;
+use App\Models\MenuPromotion;
 use App\Models\Modifier;
 use App\Models\Order;
 use App\Models\OrderItem;
@@ -182,7 +183,8 @@ class OrderService
             ]);
 
             $order = $order->refresh()->load('items', 'table', 'tableSession');
-            \App\Helpers\SafeBroadcast::dispatch(new OrderCreated($order));
+            SafeBroadcast::dispatch(new OrderCreated($order));
+
             return $order;
         });
 
@@ -205,21 +207,21 @@ class OrderService
      * stamped with `order_source = portal` so reports + KDS badges can
      * distinguish it from dine-in tickets at a glance.
      *
-     * @param array<int,array<string,mixed>> $cart  same shape as createFromCart
-     * @param array{customer_notes?:?string, delivery_address?:?string, customer_address_id?:?int, scheduled_for?:?string} $opts
+     * @param  array<int,array<string,mixed>>  $cart  same shape as createFromCart
+     * @param  array{customer_notes?:?string, delivery_address?:?string, customer_address_id?:?int, scheduled_for?:?string}  $opts
      */
     public function createRemoteOrder(
         Customer $customer,
-        Branch   $branch,
-        string   $type,
-        array    $cart,
-        array    $opts = [],
+        Branch $branch,
+        string $type,
+        array $cart,
+        array $opts = [],
     ): Order {
         if (! in_array($type, ['takeaway', 'delivery'], true)) {
             throw new \InvalidArgumentException("Order type must be 'takeaway' or 'delivery'.");
         }
         if ($type === 'delivery' && empty($opts['delivery_address'])) {
-            throw new \InvalidArgumentException("Delivery orders require an address.");
+            throw new \InvalidArgumentException('Delivery orders require an address.');
         }
 
         // Pin the branch so BelongsToBranch stamps the order + items correctly
@@ -232,22 +234,22 @@ class OrderService
                 $deliveryFee = $type === 'delivery' ? $branch->deliveryFee() : 0.0;
 
                 $order = Order::create([
-                    'table_id'           => null,
-                    'table_session_id'   => null,
-                    'customer_id'        => $customer->id,
-                    'customer_name'      => $customer->name,
-                    'customer_phone'     => $customer->phone,
-                    'customer_address_id'=> $opts['customer_address_id'] ?? null,
-                    'order_type'         => $type,
-                    'order_source'       => OrderSource::Portal->value,
-                    'status'             => OrderStatus::Pending->value,
+                    'table_id' => null,
+                    'table_session_id' => null,
+                    'customer_id' => $customer->id,
+                    'customer_name' => $customer->name,
+                    'customer_phone' => $customer->phone,
+                    'customer_address_id' => $opts['customer_address_id'] ?? null,
+                    'order_type' => $type,
+                    'order_source' => OrderSource::Portal->value,
+                    'status' => OrderStatus::Pending->value,
                     'created_by_user_id' => null,           // placed by the customer themselves
-                    'customer_notes'     => $opts['customer_notes']  ?? null,
-                    'delivery_address'   => $opts['delivery_address'] ?? null,
-                    'scheduled_for'      => $opts['scheduled_for']   ?? null,
-                    'submitted_at'       => now(),
-                    'delivery_fee'       => $deliveryFee,
-                    'tax_rate'     => $this->configuredTaxRate(),
+                    'customer_notes' => $opts['customer_notes'] ?? null,
+                    'delivery_address' => $opts['delivery_address'] ?? null,
+                    'scheduled_for' => $opts['scheduled_for'] ?? null,
+                    'submitted_at' => now(),
+                    'delivery_fee' => $deliveryFee,
+                    'tax_rate' => $this->configuredTaxRate(),
                     'service_rate' => 0,                    // no service charge on remote orders
                 ]);
 
@@ -263,14 +265,15 @@ class OrderService
                     $order,
                     [
                         'items_count' => $order->items()->count(),
-                        'subtotal'    => (float) $order->subtotal,
-                        'delivery_fee'=> $deliveryFee,
-                        'type'        => $type,
+                        'subtotal' => (float) $order->subtotal,
+                        'delivery_fee' => $deliveryFee,
+                        'type' => $type,
                     ]
                 );
 
                 $order = $order->refresh()->load('items', 'customer');
-                \App\Helpers\SafeBroadcast::dispatch(new OrderCreated($order));
+                SafeBroadcast::dispatch(new OrderCreated($order));
+
                 return $order;
             });
         });
@@ -286,7 +289,7 @@ class OrderService
      * receive it like any other order, while billing can issue an invoice
      * directly against the order instead of a table session.
      *
-     * @param array<int,array<string,mixed>> $cart
+     * @param  array<int,array<string,mixed>>  $cart
      * @param array{
      *   customer_name?:?string, customer_phone?:?string, customer_address_id?:?int, customer_notes?:?string,
      *   delivery_address?:?string, delivery_fee?:float|string|null,
@@ -296,12 +299,12 @@ class OrderService
      */
     public function createCashierOrder(
         ?Customer $customer,
-        Branch    $branch,
-        string    $type,
-        string    $source,
-        array     $cart,
-        array     $opts = [],
-        ?int      $createdByUserId = null,
+        Branch $branch,
+        string $type,
+        string $source,
+        array $cart,
+        array $opts = [],
+        ?int $createdByUserId = null,
     ): Order {
         if (! in_array($type, ['takeaway', 'delivery'], true)) {
             throw new \InvalidArgumentException("Order type must be 'takeaway' or 'delivery'.");
@@ -325,26 +328,26 @@ class OrderService
                 }
 
                 $order = Order::create([
-                    'table_id'                => null,
-                    'table_session_id'        => null,
-                    'customer_id'             => $customer?->id,
-                    'customer_name'           => $customer?->name ?? ($opts['customer_name'] ?? null),
-                    'customer_phone'          => $customer?->phone ?? ($opts['customer_phone'] ?? null),
-                    'customer_address_id'     => $opts['customer_address_id'] ?? null,
-                    'order_type'              => $type,
-                    'order_source'            => $orderSource->value,
-                    'external_reference'      => $opts['external_reference'] ?? null,
-                    'delivery_receiver'       => $opts['delivery_receiver'] ?? null,
+                    'table_id' => null,
+                    'table_session_id' => null,
+                    'customer_id' => $customer?->id,
+                    'customer_name' => $customer?->name ?? ($opts['customer_name'] ?? null),
+                    'customer_phone' => $customer?->phone ?? ($opts['customer_phone'] ?? null),
+                    'customer_address_id' => $opts['customer_address_id'] ?? null,
+                    'order_type' => $type,
+                    'order_source' => $orderSource->value,
+                    'external_reference' => $opts['external_reference'] ?? null,
+                    'delivery_receiver' => $opts['delivery_receiver'] ?? null,
                     'platform_commission_pct' => (float) $commission,
-                    'status'                  => OrderStatus::Pending->value,
-                    'created_by_user_id'      => $createdByUserId,
-                    'customer_notes'          => $opts['customer_notes'] ?? null,
-                    'delivery_address'        => $opts['delivery_address'] ?? null,
-                    'scheduled_for'           => $opts['scheduled_for'] ?? null,
-                    'submitted_at'            => now(),
-                    'delivery_fee'            => $deliveryFee,
-                    'tax_rate'                => $this->configuredTaxRate(),
-                    'service_rate'            => 0,
+                    'status' => OrderStatus::Pending->value,
+                    'created_by_user_id' => $createdByUserId,
+                    'customer_notes' => $opts['customer_notes'] ?? null,
+                    'delivery_address' => $opts['delivery_address'] ?? null,
+                    'scheduled_for' => $opts['scheduled_for'] ?? null,
+                    'submitted_at' => now(),
+                    'delivery_fee' => $deliveryFee,
+                    'tax_rate' => $this->configuredTaxRate(),
+                    'service_rate' => 0,
                 ]);
 
                 foreach ($cart as $row) {
@@ -409,7 +412,7 @@ class OrderService
         $orderCustomer = $order->relationLoaded('customer')
             ? $order->customer
             : ($order->customer_id ? $order->loadMissing('customer')->customer : null);
-        $promotion = app(\App\Services\PromotionService::class)
+        $promotion = app(PromotionService::class)
             ->resolveForItem($item, null, $order->branch_id, $order->order_source, $orderCustomer);
 
         // Min-subtotal guard: if the promo requires a cart total of X
@@ -418,7 +421,7 @@ class OrderService
         // threshold, every fresh line picks up the promo as usual.
         if ($promotion && $promotion->min_subtotal !== null && (float) $promotion->min_subtotal > 0) {
             $projectedSubtotal = (float) $order->items()
-                ->where('status', '!=', \App\Enums\OrderItemStatus::Cancelled->value)
+                ->where('status', '!=', OrderItemStatus::Cancelled->value)
                 ->sum('subtotal')
                 + (($menuPrice + $modifiersTotal) * $quantity);
             if (! $promotion->meetsMinSubtotal($projectedSubtotal)) {
@@ -437,10 +440,10 @@ class OrderService
             if (! $alreadyClaimedByThisOrder) {
                 // Atomic: update only if usage_count is still below the
                 // limit. Affected rows = 1 means we claimed a slot.
-                $affected = \App\Models\MenuPromotion::where('id', $promotion->id)
+                $affected = MenuPromotion::where('id', $promotion->id)
                     ->where(function ($q) {
                         $q->whereNull('usage_limit')
-                          ->orWhereColumn('usage_count', '<', 'usage_limit');
+                            ->orWhereColumn('usage_count', '<', 'usage_limit');
                     })
                     ->update(['usage_count' => \DB::raw('usage_count + 1')]);
                 if ($affected === 0) {
@@ -451,8 +454,8 @@ class OrderService
         }
 
         $unitPrice = $promotion ? $promotion->applyTo($menuPrice) : $menuPrice;
-        $hasPromo  = $promotion !== null && $unitPrice < $menuPrice;
-        $subtotal  = ($unitPrice + $modifiersTotal) * $quantity;
+        $hasPromo = $promotion !== null && $unitPrice < $menuPrice;
+        $subtotal = ($unitPrice + $modifiersTotal) * $quantity;
 
         $oi = OrderItem::create([
             'order_id' => $order->id,
@@ -496,7 +499,7 @@ class OrderService
             $effectiveModTotal = (float) $oi->modifiers()->sum('price_delta');
             $oi->update([
                 'modifiers_total' => $effectiveModTotal,
-                'subtotal'        => ($oi->unit_price + $effectiveModTotal) * $oi->quantity,
+                'subtotal' => ($oi->unit_price + $effectiveModTotal) * $oi->quantity,
             ]);
         }
 
@@ -509,7 +512,7 @@ class OrderService
         // so they're applied here — once item snapshots are stable — as
         // a synthetic OrderDiscount row. Idempotent: re-running this
         // method removes any previous BXGY discount and recomputes.
-        app(\App\Services\PromotionService::class)->applyBxgyToOrder($order);
+        app(PromotionService::class)->applyBxgyToOrder($order);
 
         $subtotal = (float) $order->items()->where('status', '!=', OrderItemStatus::Cancelled->value)->sum('subtotal');
         $discountTotal = (float) $order->discounts()->sum('amount');
@@ -562,7 +565,7 @@ class OrderService
 
         $branch = $order->branch;
         $buffer = $branch?->prepBufferMinutes() ?? 5;
-        $prep   = max(1, $maxItemPrep + $buffer);
+        $prep = max(1, $maxItemPrep + $buffer);
 
         $start = $order->scheduled_for ?? $order->submitted_at ?? now();
         $readyAt = $start->copy()->addMinutes($prep);
@@ -574,7 +577,7 @@ class OrderService
 
         return [
             'prepMinutes' => $prep,
-            'readyAt'     => $readyAt,
+            'readyAt' => $readyAt,
             'deliveredAt' => $deliveredAt,
         ];
     }
@@ -588,9 +591,10 @@ class OrderService
         $eta = $this->computeEta($order);
         $order->update([
             'estimated_prep_minutes' => $eta['prepMinutes'],
-            'estimated_ready_at'     => $eta['readyAt'],
+            'estimated_ready_at' => $eta['readyAt'],
             'estimated_delivered_at' => $eta['deliveredAt'],
         ]);
+
         return $order->refresh();
     }
 
@@ -605,7 +609,7 @@ class OrderService
             // we start deducting. If not, throw with a clear message listing which
             // ingredients are short. The transaction rollback leaves nothing changed.
             $issues = $this->inventory->validateStockForOrder($order);
-            if (!empty($issues) && (bool) Setting::get('strict_stock', config('restaurant.inventory.strict_stock', true))) {
+            if (! empty($issues) && (bool) Setting::get('strict_stock', config('restaurant.inventory.strict_stock', true))) {
                 $this->inventory->throwIfInsufficient($issues);
             }
 
@@ -643,11 +647,65 @@ class OrderService
             ActivityLog::log('order.approved', "اعتماد طلب {$order->number}", $order);
 
             $order = $order->refresh()->load('items.station', 'table', 'tableSession');
-            \App\Helpers\SafeBroadcast::dispatch(new OrderStatusChanged($order, $previous));
+            SafeBroadcast::dispatch(new OrderStatusChanged($order, $previous));
 
             foreach ($items as $oi) {
-                \App\Helpers\SafeBroadcast::dispatch(new OrderItemStatusChanged($oi->refresh()->load('order.table', 'order.tableSession', 'station'), OrderItemStatus::Pending->value));
+                SafeBroadcast::dispatch(new OrderItemStatusChanged($oi->refresh()->load('order.table', 'order.tableSession', 'station'), OrderItemStatus::Pending->value));
             }
+
+            return $order;
+        });
+    }
+
+    /**
+     * Reverse an approval back to Pending — the waiter's "fك الاعتماد".
+     *
+     * Only allowed while the kitchen hasn't physically started: every active
+     * item must still be Approved (none Preparing / Ready / Served). Any stock
+     * deducted at approval is returned so the books stay honest, and the items
+     * roll back to Pending so the order can be edited or re-approved cleanly.
+     */
+    public function unapprove(Order $order, ?int $userId = null): Order
+    {
+        return DB::transaction(function () use ($order) {
+            $order = Order::with('items')->whereKey($order->id)->lockForUpdate()->firstOrFail();
+
+            if ($order->status !== OrderStatus::Approved->value) {
+                throw new \RuntimeException('لا يمكن فك اعتماد طلب حالته: '.$order->statusLabel());
+            }
+
+            $activeItems = $order->items->where('status', '!=', OrderItemStatus::Cancelled->value);
+
+            // If the kitchen already started any item, it's too late to unapprove.
+            $started = $activeItems->first(fn ($oi) => ! in_array($oi->status, [
+                OrderItemStatus::Pending->value,
+                OrderItemStatus::Approved->value,
+            ], true));
+            if ($started) {
+                throw new \RuntimeException('بدأ المطبخ تحضير الطلب — لا يمكن فك الاعتماد. ألغِ الطلب بدلاً من ذلك.');
+            }
+
+            $previous = $order->status;
+
+            foreach ($activeItems as $oi) {
+                // Return any stock deducted at approval before reverting state.
+                $this->inventory->returnForOrderItem($oi);
+                $oi->update([
+                    'status' => OrderItemStatus::Pending->value,
+                    'approved_at' => null,
+                ]);
+            }
+
+            $order->update([
+                'status' => OrderStatus::Pending->value,
+                'approved_by_user_id' => null,
+                'approved_at' => null,
+            ]);
+
+            ActivityLog::log('order.unapproved', "فك اعتماد طلب {$order->number}", $order);
+
+            $order = $order->refresh()->load('items.station', 'table', 'tableSession');
+            SafeBroadcast::dispatch(new OrderStatusChanged($order, $previous));
 
             return $order;
         });
@@ -670,11 +728,11 @@ class OrderService
             OrderStatus::Completed->value,
         ];
 
-        if (!in_array($target, $allowed, true)) {
+        if (! in_array($target, $allowed, true)) {
             throw new \InvalidArgumentException("Invalid target status: {$target}");
         }
 
-        return DB::transaction(function () use ($order, $target, $userId) {
+        return DB::transaction(function () use ($order, $target) {
             $order = Order::with(['items', 'tableSession.invoice', 'invoice'])
                 ->whereKey($order->id)
                 ->lockForUpdate()
@@ -690,7 +748,7 @@ class OrderService
             $order->update([
                 'status' => $target,
                 match ($target) {
-                    OrderStatus::Ready->value     => 'ready_at',
+                    OrderStatus::Ready->value => 'ready_at',
                     OrderStatus::Delivered->value => 'delivered_at',
                     OrderStatus::Completed->value => 'completed_at',
                 } => now(),
@@ -698,7 +756,7 @@ class OrderService
 
             ActivityLog::log("order.{$target}", "تحديث حالة الطلب {$order->number} إلى {$target}", $order);
             $order = $order->refresh()->load('items.station', 'table', 'tableSession');
-            \App\Helpers\SafeBroadcast::dispatch(new OrderStatusChanged($order, $previous));
+            SafeBroadcast::dispatch(new OrderStatusChanged($order, $previous));
 
             return $order;
         });
@@ -727,7 +785,8 @@ class OrderService
 
             ActivityLog::log('order.cancelled', "إلغاء طلب {$order->number}: {$reason}", $order);
             $order = $order->refresh()->load('items.station', 'table', 'tableSession');
-            \App\Helpers\SafeBroadcast::dispatch(new OrderStatusChanged($order, $previous));
+            SafeBroadcast::dispatch(new OrderStatusChanged($order, $previous));
+
             return $order;
         });
 
@@ -769,7 +828,9 @@ class OrderService
             $item = $this->lockOrderItemForWorkflow($item);
             $this->assertInvoiceCanStillChange($item->order);
 
-            if ($item->status === OrderItemStatus::Cancelled->value) return $item;
+            if ($item->status === OrderItemStatus::Cancelled->value) {
+                return $item;
+            }
             $userId = $userId ?: null;
             $previousItemStatus = $item->status;
 
@@ -818,6 +879,7 @@ class OrderService
                 $item,
                 ['reason' => $reason, 'disposition' => $disposition, 'was_deducted' => $wasDeducted],
             );
+
             return $item->refresh();
         });
     }
@@ -839,6 +901,7 @@ class OrderService
             }
             $this->syncOrderStatus($item->order);
             $this->broadcastItemChange($item, $previous);
+
             return $item->refresh();
         });
     }
@@ -859,6 +922,7 @@ class OrderService
             }
             $this->syncOrderStatus($item->order);
             $this->broadcastItemChange($item, $previous);
+
             return $item->refresh();
         });
     }
@@ -880,13 +944,14 @@ class OrderService
             }
             $this->syncOrderStatus($item->order);
             $this->broadcastItemChange($item, $previous);
+
             return $item->refresh();
         });
     }
 
     protected function broadcastItemChange(OrderItem $item, string $previous): void
     {
-        \App\Helpers\SafeBroadcast::dispatch(new OrderItemStatusChanged(
+        SafeBroadcast::dispatch(new OrderItemStatusChanged(
             $item->refresh()->load('order.table', 'order.tableSession', 'station'),
             $previous
         ));
@@ -897,16 +962,18 @@ class OrderService
         $order->refresh();
         $previous = $order->status;
         $active = $order->items()->whereNotIn('status', [OrderItemStatus::Cancelled->value])->get();
-        if ($active->isEmpty()) return;
+        if ($active->isEmpty()) {
+            return;
+        }
 
         $newStatus = null;
-        if ($active->every(fn($i) => $i->status === OrderItemStatus::Served->value)) {
+        if ($active->every(fn ($i) => $i->status === OrderItemStatus::Served->value)) {
             $order->update(['status' => OrderStatus::Delivered->value, 'delivered_at' => now()]);
             $newStatus = OrderStatus::Delivered->value;
-        } elseif ($active->every(fn($i) => in_array($i->status, [OrderItemStatus::Ready->value, OrderItemStatus::Served->value]))) {
+        } elseif ($active->every(fn ($i) => in_array($i->status, [OrderItemStatus::Ready->value, OrderItemStatus::Served->value]))) {
             $order->update(['status' => OrderStatus::Ready->value, 'ready_at' => $order->ready_at ?? now()]);
             $newStatus = OrderStatus::Ready->value;
-        } elseif ($active->contains(fn($i) => $i->status === OrderItemStatus::Preparing->value)) {
+        } elseif ($active->contains(fn ($i) => $i->status === OrderItemStatus::Preparing->value)) {
             $order->update(['status' => OrderStatus::Preparing->value]);
             $newStatus = OrderStatus::Preparing->value;
 
@@ -915,12 +982,12 @@ class OrderService
             // late second item triggering this code path won't reset the
             // baseline. Customer countdown + kitchen elapsed counters
             // both anchor on prep_started_at.
-            app(\App\Services\OrderTimingService::class)->stampPrepStart($order);
+            app(OrderTimingService::class)->stampPrepStart($order);
         }
 
         if ($newStatus && $newStatus !== $previous) {
             $order = $order->load('items.station', 'table', 'tableSession');
-            \App\Helpers\SafeBroadcast::dispatch(new OrderStatusChanged($order, $previous));
+            SafeBroadcast::dispatch(new OrderStatusChanged($order, $previous));
         }
     }
 
