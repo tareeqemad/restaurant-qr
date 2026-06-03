@@ -455,10 +455,18 @@
              app and showed the waiter; the cashier confirms later in
              the bank's own dashboard. --}}
         @php
-            $sessionOrdersCount = $session->orders()->count();
-            $sessionTotalGuess = $session->orders()->sum('total');
+            // Payment only makes sense once a real order has actually reached
+            // the kitchen — i.e. an order that's at least approved (not a draft
+            // still sitting Pending). Showing "دفع" while the waiter is still
+            // building the order, before the kitchen/customer received anything,
+            // is premature and confusing.
+            $payableOrders = $session->orders()
+                ->whereIn('status', ['approved', 'preparing', 'ready', 'delivered', 'completed'])
+                ->get(['id', 'total']);
+            $sessionPayableCount = $payableOrders->count();
+            $sessionTotalGuess = (float) $payableOrders->sum('total');
         @endphp
-        @if($sessionOrdersCount > 0)
+        @if($sessionPayableCount > 0)
             <div class="card mb-3 border-info">
                 <div class="card-header bg-info-transparent">
                     <i class="bi bi-bank text-info"></i>
@@ -466,8 +474,8 @@
                 </div>
                 <div class="card-body">
                     <small class="text-muted d-block mb-2">
-                        الزبون حوّل المبلغ على حساب المطعم من تطبيق البنك.
-                        أدخل التفاصيل وسيظهر للكاشير للتأكد من البنك.
+                        بعد أن يستلم الزبون طلبه ويحوّل المبلغ على حساب المطعم من
+                        تطبيق البنك، أدخل التفاصيل وسيظهر للكاشير للتأكد من البنك.
                     </small>
                     <button type="button" class="btn btn-info w-100"
                             data-bs-toggle="modal" data-bs-target="#transferModal">
