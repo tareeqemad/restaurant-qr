@@ -5,7 +5,15 @@
     <div class="col-md-4"><label class="form-label">الاسم *</label><input name="name" value="{{ old('name', $s?->name) }}" class="form-control" required></div>
     <div class="col-md-4"><label class="form-label">Name (EN)</label><input name="name_en" value="{{ old('name_en', $s?->name_en) }}" class="form-control"></div>
     <div class="col-md-3"><label class="form-label">اللون</label><input type="color" name="color" value="{{ old('color', $s?->color ?? '#b91c1c') }}" class="form-control form-control-color" style="width:100%"></div>
-    <div class="col-md-3"><label class="form-label">الأيقونة</label><input name="icon" value="{{ old('icon', $s?->icon ?? 'bi-fire') }}" class="form-control"></div>
+    <div class="col-md-3">
+        <label class="form-label">الأيقونة</label>
+        <div class="input-group">
+            <span class="input-group-text"><i id="iconPreview" class="{{ old('icon', $s?->icon ?: 'bi-fire') }}"></i></span>
+            <input name="icon" value="{{ old('icon', $s?->icon ?: 'bi-fire') }}" class="form-control"
+                   oninput="document.getElementById('iconPreview').className = this.value || 'bi-fire'">
+        </div>
+        <small class="text-muted">مثل <code>bi-fire</code> أو <code>ri-fire-fill</code></small>
+    </div>
     <div class="col-md-3">
         <label class="form-label">موقع خصم المخزون</label>
         <select name="storage_location_id" class="form-select" data-relax-choice data-choice-search-placeholder="ابحث عن موقع...">

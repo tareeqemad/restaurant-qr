@@ -29,7 +29,9 @@
                     <tr>
                         <td>
                             <span style="background:{{ $s->color }}; color:white; padding:.3rem .5rem; border-radius:6px;">
-                                <i class="bi {{ $s->icon }}"></i>
+                                {{-- icon already carries its full class (bi-… or ri-…);
+                                     don't prefix a hard-coded `bi`, that breaks ri-* icons. --}}
+                                <i class="{{ $s->icon ?: 'ri-fire-fill' }}"></i>
                             </span>
                         </td>
                         <td><code>{{ $s->code }}</code></td>
