@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Enums\OrderItemStatus;
+use App\Enums\OrderSource;
 use App\Enums\OrderStatus;
 use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -104,6 +106,7 @@ class Order extends Model
     {
         $today = now()->format('Ymd');
         $seq = self::whereDate('created_at', now()->toDateString())->count() + 1;
+
         return sprintf('ORD-%s-%04d', $today, $seq);
     }
 
@@ -173,7 +176,9 @@ class Order extends Model
 
         $total = 0.0;
         foreach ($items as $line) {
-            if ($line->status === \App\Enums\OrderItemStatus::Cancelled->value) continue;
+            if ($line->status === OrderItemStatus::Cancelled->value) {
+                continue;
+            }
 
             // Line-level savings
             if ($line->unit_price_original !== null
@@ -192,6 +197,7 @@ class Order extends Model
                 }
             }
         }
+
         return round($total, 2);
     }
 
@@ -263,11 +269,31 @@ class Order extends Model
         return in_array($this->status, [OrderStatus::Pending->value, OrderStatus::Approved->value], true);
     }
 
+    /**
+     * Can this approval still be reversed? Only while the order is Approved and
+     * the kitchen hasn't physically started any item (none past Approved). The
+     * service re-checks this, but the views use it to decide whether to show
+     * the "فك الاعتماد" button. Loads `items` if not already eager-loaded.
+     */
+    public function canUnapprove(): bool
+    {
+        if ($this->status !== OrderStatus::Approved->value) {
+            return false;
+        }
+
+        return $this->items
+            ->where('status', '!=', OrderItemStatus::Cancelled->value)
+            ->every(fn ($i) => in_array($i->status, [
+                OrderItemStatus::Pending->value,
+                OrderItemStatus::Approved->value,
+            ], true));
+    }
+
     // ─── Source / Delivery-platform helpers ────────────────────────────
 
-    public function source(): ?\App\Enums\OrderSource
+    public function source(): ?OrderSource
     {
-        return \App\Enums\OrderSource::tryFrom($this->order_source);
+        return OrderSource::tryFrom($this->order_source);
     }
 
     public function sourceLabel(): string

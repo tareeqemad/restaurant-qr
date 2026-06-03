@@ -2,9 +2,15 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Enums\OrderStatus;
 use App\Http\Controllers\Controller;
+use App\Models\Currency;
+use App\Models\CurrencyExchangeRate;
+use App\Models\Role;
 use App\Models\Setting;
+use App\Services\SmsService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Storage;
 
 class SettingController extends Controller
@@ -12,10 +18,11 @@ class SettingController extends Controller
     public function index()
     {
         abort_unless(auth()->user()->hasAnyRole(['super_admin', 'admin', 'manager']), 403);
+
         return view('admin.settings.index', [
-            'defaults'      => config('restaurant.theme'),
-            'currencies'    => \App\Models\Currency::orderBy('display_order')->orderBy('code')->get(),
-            'exchangeRates' => \App\Models\CurrencyExchangeRate::query()
+            'defaults' => config('restaurant.theme'),
+            'currencies' => Currency::orderBy('display_order')->orderBy('code')->get(),
+            'exchangeRates' => CurrencyExchangeRate::query()
                 ->orderByDesc('valid_from')
                 ->orderByDesc('id')
                 ->limit(50)
@@ -34,7 +41,7 @@ class SettingController extends Controller
      */
     protected function cappableRoles()
     {
-        return \App\Models\Role::query()
+        return Role::query()
             ->whereNotIn('name', ['super_admin', 'partner', 'admin'])
             ->orderBy('display_order')
             ->orderBy('name')
@@ -49,17 +56,17 @@ class SettingController extends Controller
         // role added later in /admin/roles gets validation automatically.
         // Each role contributes _pct (0..100) and _fixed (>= 0) keys.
         $cappableRoles = $this->cappableRoles();
-        $dynamicRules  = [];
+        $dynamicRules = [];
         foreach ($cappableRoles as $role) {
-            $dynamicRules['discount_cap_'.$role->name.'_pct']   = ['sometimes', 'numeric', 'min:0', 'max:100'];
+            $dynamicRules['discount_cap_'.$role->name.'_pct'] = ['sometimes', 'numeric', 'min:0', 'max:100'];
             $dynamicRules['discount_cap_'.$role->name.'_fixed'] = ['sometimes', 'numeric', 'min:0'];
         }
 
         // Order-status label/color overrides — one pair per OrderStatus case.
         // Empty strings allowed (= revert to default in OrderStatus enum).
-        foreach (\App\Enums\OrderStatus::cases() as $case) {
+        foreach (OrderStatus::cases() as $case) {
             $dynamicRules['order_status_'.$case->value.'_label'] = ['nullable', 'string', 'max:60'];
-            $dynamicRules['order_status_'.$case->value.'_color'] = ['nullable', 'in:'.implode(',', \App\Enums\OrderStatus::ALLOWED_COLORS)];
+            $dynamicRules['order_status_'.$case->value.'_color'] = ['nullable', 'in:'.implode(',', OrderStatus::ALLOWED_COLORS)];
         }
 
         $data = $request->validate(array_merge($dynamicRules, [
@@ -78,6 +85,9 @@ class SettingController extends Controller
             'session_ttl_minutes' => ['required', 'integer', 'min:30', 'max:1440'],
             'strict_stock' => ['sometimes', 'boolean'],
             'inventory_deduction_stage' => ['sometimes', 'in:approve,preparing,ready,served'],
+            // Auto-approve: when on, a waiter/QR order skips the manual
+            // approval step and goes straight to the kitchen (deducting stock).
+            'auto_approve' => ['sometimes', 'boolean'],
             // Staff meals: branch-level toggle for whether the service
             // charge stays on the employee's tab. Default off.
             'staff_meal_include_service' => ['sometimes', 'boolean'],
@@ -110,24 +120,24 @@ class SettingController extends Controller
             // expose the provider account. An empty password on submit
             // means "keep the existing one" — the form pre-fills with a
             // masked placeholder for that reason.
-            'sms_enabled'   => ['sometimes', 'boolean'],
-            'sms_provider'  => ['nullable', 'string', 'max:40'],
-            'sms_api_url'   => ['nullable', 'url', 'max:255'],
-            'sms_username'  => ['nullable', 'string', 'max:120'],
-            'sms_password'  => ['nullable', 'string', 'max:200'],
-            'sms_sender'    => ['nullable', 'string', 'max:40'],
+            'sms_enabled' => ['sometimes', 'boolean'],
+            'sms_provider' => ['nullable', 'string', 'max:40'],
+            'sms_api_url' => ['nullable', 'url', 'max:255'],
+            'sms_username' => ['nullable', 'string', 'max:120'],
+            'sms_password' => ['nullable', 'string', 'max:200'],
+            'sms_sender' => ['nullable', 'string', 'max:40'],
             // SMS body templates. Free text with placeholders ({brand},
             // {password}, {login_url}). Empty → use the controller's
             // baked-in English default so a fresh install isn't broken.
-            'sms_template_forgot_staff'    => ['nullable', 'string', 'max:500'],
+            'sms_template_forgot_staff' => ['nullable', 'string', 'max:500'],
             'sms_template_forgot_customer' => ['nullable', 'string', 'max:500'],
             // Payment-method toggles. One boolean per method known to
             // PaymentMethods::CATALOG; missing = use the catalog default.
-            'payment_method_cash_enabled'     => ['sometimes', 'boolean'],
-            'payment_method_card_enabled'     => ['sometimes', 'boolean'],
+            'payment_method_cash_enabled' => ['sometimes', 'boolean'],
+            'payment_method_card_enabled' => ['sometimes', 'boolean'],
             'payment_method_transfer_enabled' => ['sometimes', 'boolean'],
-            'payment_method_app_enabled'      => ['sometimes', 'boolean'],
-            'payment_method_credit_enabled'   => ['sometimes', 'boolean'],
+            'payment_method_app_enabled' => ['sometimes', 'boolean'],
+            'payment_method_credit_enabled' => ['sometimes', 'boolean'],
         ]));
 
         $paymentMethodKeys = [
@@ -152,7 +162,7 @@ class SettingController extends Controller
             if ($data['sms_password'] === null || $data['sms_password'] === '') {
                 unset($data['sms_password']);
             } else {
-                $data['sms_password'] = \Illuminate\Support\Facades\Crypt::encryptString($data['sms_password']);
+                $data['sms_password'] = Crypt::encryptString($data['sms_password']);
             }
         }
 
@@ -172,6 +182,7 @@ class SettingController extends Controller
             'session_ttl_minutes' => ['customer', 'int'],
             'strict_stock' => ['inventory', 'bool'],
             'inventory_deduction_stage' => ['inventory', 'string'],
+            'auto_approve' => ['orders', 'bool'],
             'staff_meal_include_service' => ['staff_meals', 'bool'],
             'staff_meal_over_limit_policy' => ['staff_meals', 'string'],
             'theme_primary' => ['theme', 'string'],
@@ -183,31 +194,31 @@ class SettingController extends Controller
             'theme_menu_style' => ['theme', 'string'],
             // discount_cap_{role}_* meta is injected from $cappableRoles
             // right after this array — same dynamic source as the rules.
-            'prep_time_buffer_pct'       => ['general', 'int'],
-            'sms_enabled'                => ['sms', 'bool'],
-            'sms_provider'               => ['sms', 'string'],
-            'sms_api_url'                => ['sms', 'string'],
-            'sms_username'               => ['sms', 'string'],
-            'sms_password'               => ['sms', 'string'],
-            'sms_sender'                 => ['sms', 'string'],
-            'sms_template_forgot_staff'    => ['sms', 'string'],
+            'prep_time_buffer_pct' => ['general', 'int'],
+            'sms_enabled' => ['sms', 'bool'],
+            'sms_provider' => ['sms', 'string'],
+            'sms_api_url' => ['sms', 'string'],
+            'sms_username' => ['sms', 'string'],
+            'sms_password' => ['sms', 'string'],
+            'sms_sender' => ['sms', 'string'],
+            'sms_template_forgot_staff' => ['sms', 'string'],
             'sms_template_forgot_customer' => ['sms', 'string'],
-            'payment_method_cash_enabled'     => ['payments', 'bool'],
-            'payment_method_card_enabled'     => ['payments', 'bool'],
+            'payment_method_cash_enabled' => ['payments', 'bool'],
+            'payment_method_card_enabled' => ['payments', 'bool'],
             'payment_method_transfer_enabled' => ['payments', 'bool'],
-            'payment_method_app_enabled'      => ['payments', 'bool'],
-            'payment_method_credit_enabled'   => ['payments', 'bool'],
+            'payment_method_app_enabled' => ['payments', 'bool'],
+            'payment_method_credit_enabled' => ['payments', 'bool'],
         ];
 
         foreach ($cappableRoles as $role) {
-            $meta['discount_cap_'.$role->name.'_pct']   = ['discounts', 'float'];
+            $meta['discount_cap_'.$role->name.'_pct'] = ['discounts', 'float'];
             $meta['discount_cap_'.$role->name.'_fixed'] = ['discounts', 'float'];
         }
 
         // Order-status meta + allow clearing to revert to defaults.
         $clearable = ['legal_name', 'tax_number', 'receipt_footer',
-                      'sms_template_forgot_staff', 'sms_template_forgot_customer'];
-        foreach (\App\Enums\OrderStatus::cases() as $case) {
+            'sms_template_forgot_staff', 'sms_template_forgot_customer'];
+        foreach (OrderStatus::cases() as $case) {
             $meta['order_status_'.$case->value.'_label'] = ['order_status', 'string'];
             $meta['order_status_'.$case->value.'_color'] = ['order_status', 'string'];
             $clearable[] = 'order_status_'.$case->value.'_label';
@@ -220,6 +231,7 @@ class SettingController extends Controller
                     Setting::where('key', $k)->delete();
                     \Cache::forget('setting.'.$k);
                 }
+
                 continue;
             }
             [$group, $type] = $meta[$k] ?? ['general', 'string'];
@@ -235,11 +247,12 @@ class SettingController extends Controller
      * Returns the balance as text so the admin sees a non-zero
      * number — a successful auth + healthy account in one round-trip.
      */
-    public function testSms(\App\Services\SmsService $sms)
+    public function testSms(SmsService $sms)
     {
         abort_unless(auth()->user()->hasAnyRole(['super_admin', 'admin']), 403);
         try {
             $balance = $sms->balance();
+
             return back()->with('success', "تم الاتصال بنجاح. الرصيد المتاح: {$balance}");
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
@@ -269,15 +282,17 @@ class SettingController extends Controller
         abort_unless(auth()->user()->hasAnyRole(['super_admin', 'admin']), 403);
 
         $request->validate([
-            'brand_logo'    => ['nullable', 'image', 'mimes:png,jpg,jpeg,webp,svg', 'max:2048'],
+            'brand_logo' => ['nullable', 'image', 'mimes:png,jpg,jpeg,webp,svg', 'max:2048'],
             'brand_favicon' => ['nullable', 'image', 'mimes:png,ico,jpg,webp,svg', 'max:512'],
         ], [], [
-            'brand_logo'    => 'شعار البرنامج',
+            'brand_logo' => 'شعار البرنامج',
             'brand_favicon' => 'أيقونة التبويب',
         ]);
 
         foreach (['brand_logo', 'brand_favicon'] as $field) {
-            if (! $request->hasFile($field)) continue;
+            if (! $request->hasFile($field)) {
+                continue;
+            }
 
             // Delete old uploaded file (if any) so storage doesn't accumulate.
             $previous = Setting::get($field);

@@ -389,10 +389,16 @@
                                     </div>
                                 </div>
                                 <div class="col-md-6">
-                                    <div class="alert bg-primary-transparent border-0 mb-0">
-                                        <i class="bi bi-info-circle"></i>
-                                        خيار الاعتماد التلقائي للطلبات غير معروض هنا لأنه غير مناسب حالياً مع مسار الجرسون.
-                                        الطلبات تبقى بانتظار اعتماد الجرسون حتى لا يذهب شيء للمطبخ/البار بالخطأ.
+                                    <div class="form-check form-switch p-3 border rounded h-100">
+                                        <input type="hidden" name="auto_approve" value="0">
+                                        <input type="checkbox" id="auto_approve" name="auto_approve" value="1" class="form-check-input"
+                                            @checked($checked('auto_approve', config('restaurant.order.auto_approve', false)))>
+                                        <label for="auto_approve" class="form-check-label fw-bold">اعتماد الطلبات تلقائياً</label>
+                                        <div class="setting-hint">
+                                            عند التفعيل، طلب الجرسون يُعتمد فوراً ويُرسل للمطبخ/البار دون انتظار اعتماد يدوي
+                                            (ويُخصم المخزون حينها). فعّله فقط إذا كان الطاقم موثوقاً ولا تريد خطوة اعتماد إضافية.
+                                            لو المخزون غير كافٍ مع وضع المنع الصارم، يبقى الطلب بانتظار الاعتماد.
+                                        </div>
                                     </div>
                                 </div>
 

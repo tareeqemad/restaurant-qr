@@ -80,6 +80,13 @@
             @if($order->status==='pending')
                 <form action="{{ route('admin.orders.approve', $order) }}" method="POST" class="d-grid mb-2">@csrf<button class="btn btn-success btn-lg"><i class="bi bi-check2-circle"></i> اعتماد الطلب</button></form>
             @endif
+            @if($order->canUnapprove())
+                <form action="{{ route('admin.orders.unapprove', $order) }}" method="POST" class="d-grid mb-2"
+                      onsubmit="return confirm('فك اعتماد الطلب وإرجاعه لقائمة الانتظار؟ سيُعاد المخزون المخصوم.');">
+                    @csrf
+                    <button class="btn btn-outline-warning btn-lg"><i class="bi bi-arrow-counterclockwise"></i> فك الاعتماد</button>
+                </form>
+            @endif
             @if($order->canCancelEntireOrder())
                 <button class="btn btn-outline-danger w-100" data-bs-toggle="modal" data-bs-target="#cancelOrder"><i class="bi bi-x-circle"></i> إلغاء الطلب بالكامل</button>
                 <div class="modal fade" id="cancelOrder"><div class="modal-dialog"><div class="modal-content">

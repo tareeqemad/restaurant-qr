@@ -88,6 +88,14 @@
                                         <i class="bi bi-check2"></i> اعتماد
                                     </button>
                                 </form>
+                            @elseif($o->canUnapprove())
+                                <form action="{{ route('admin.orders.unapprove', $o) }}" method="POST" class="d-inline"
+                                      onsubmit="return confirm('فك اعتماد الطلب وإرجاع المخزون المخصوم؟');">
+                                    @csrf
+                                    <button class="btn btn-sm btn-outline-warning">
+                                        <i class="bi bi-arrow-counterclockwise"></i> فك الاعتماد
+                                    </button>
+                                </form>
                             @endif
                         </td>
                     </tr>
