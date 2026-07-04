@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>دليل النظام المحاسبي — Relax Restaurant QR</title>
+<style>
+  :root{
+    --paper:#F4F6F1; --card:#FFFFFF; --card-2:#FBFCF9;
+    --ink:#17211B; --ink-soft:#3B463E; --muted:#657069; --faint:#8A938C;
+    --green:#0E4A32; --green-deep:#0A3624; --green-soft:#E7EEE8; --green-line:#C7D6CB;
+    --brass:#986E2A; --brass-soft:#F3EBDC;
+    --line:#DFE4DB; --line-strong:#CAD1C6;
+    --debit:#1F5B6B; --debit-bg:#EAF2F4;
+    --credit:#6E4A1A; --credit-bg:#F6EFE3;
+    --hi:#A6352A; --hi-bg:#F8E9E7; --hi-line:#E4B7B1;
+    --me:#9A6714; --me-bg:#F8F0DE; --me-line:#E6Cf9f;
+    --lo:#3F6B57; --lo-bg:#E9F1EC; --lo-line:#C3D8CB;
+    --sans:"Segoe UI","Noto Sans Arabic",Tahoma,"Geeza Pro",Arial,sans-serif;
+    --mono:"Cascadia Code","Consolas",ui-monospace,"SFMono-Regular",Menlo,monospace;
+    --maxw:1000px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;background:var(--paper);color:var(--ink);
+    font-family:var(--sans);font-size:16.5px;line-height:1.75;
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+  }
+  .num{font-family:var(--mono);direction:ltr;unicode-bidi:isolate;font-variant-numeric:tabular-nums;font-weight:600}
+  .code{font-family:var(--mono);direction:ltr;unicode-bidi:isolate;font-size:.9em}
+  a{color:var(--green);text-decoration-thickness:1px;text-underline-offset:3px}
+  h1,h2,h3,h4{line-height:1.3;text-wrap:balance;font-weight:800;color:var(--ink)}
+
+  /* ---- shell ---- */
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 22px}
+  main section{padding:46px 0;border-top:1px solid var(--line)}
+  main section:first-of-type{border-top:none}
+
+  /* ---- hero ---- */
+  .hero{background:
+      radial-gradient(1200px 340px at 88% -60px,rgba(14,74,50,.10),transparent 60%),
+      linear-gradient(180deg,#fff, #FBFCF9);
+    border-bottom:1px solid var(--line)}
+  .hero .wrap{padding-top:52px;padding-bottom:44px}
+  .eyebrow{font-size:12.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--brass);font-weight:700;font-family:var(--mono)}
+  .hero h1{font-size:clamp(30px,5vw,46px);margin:.35em 0 .2em;letter-spacing:-.01em}
+  .hero .lede{font-size:19px;color:var(--ink-soft);max-width:62ch;margin:.2em 0 0}
+  .meta-row{display:flex;flex-wrap:wrap;gap:10px 26px;margin-top:26px;font-size:14px;color:var(--muted)}
+  .meta-row b{color:var(--ink);font-weight:700}
+  .stat-band{display:flex;flex-wrap:wrap;gap:14px;margin-top:30px}
+  .stat{flex:1 1 150px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .stat .k{font-size:34px;font-weight:800;font-family:var(--mono);line-height:1;color:var(--green)}
+  .stat.hi .k{color:var(--hi)} .stat.me .k{color:var(--me)} .stat.lo .k{color:var(--lo)}
+  .stat .l{font-size:13.5px;color:var(--muted);margin-top:8px}
+
+  /* ---- toc ---- */
+  nav.toc{background:var(--green-soft);border-top:1px solid var(--green-line);border-bottom:1px solid var(--green-line)}
+  nav.toc .wrap{padding-top:18px;padding-bottom:18px}
+  nav.toc ol{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:6px 22px;counter-reset:toc}
+  nav.toc li{counter-increment:toc;font-size:14.5px}
+  nav.toc a{display:flex;gap:10px;padding:5px 0;color:var(--green-deep);text-decoration:none;align-items:baseline}
+  nav.toc a:hover{text-decoration:underline}
+  nav.toc a::before{content:counter(toc,decimal-leading-zero);font-family:var(--mono);font-size:12px;color:var(--brass);font-weight:700}
+
+  /* ---- headings ---- */
+  h2.sec{font-size:27px;margin:0 0 6px;display:flex;align-items:baseline;gap:12px}
+  h2.sec .n{font-family:var(--mono);font-size:15px;color:var(--brass);font-weight:700}
+  .sec-sub{color:var(--muted);font-size:16px;margin:0 0 26px;max-width:70ch}
+  h3{font-size:20px;margin:34px 0 10px}
+  h4{font-size:16.5px;margin:22px 0 8px;color:var(--green-deep)}
+  p{margin:12px 0}
+  .lead{font-size:17.5px;color:var(--ink-soft)}
+
+  /* ---- concept cards ---- */
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin:20px 0}
+  .concept{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+  .concept h4{margin:0 0 6px;color:var(--ink);font-size:16px;display:flex;gap:9px;align-items:center}
+  .concept .tag{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--brass);background:var(--brass-soft);border-radius:5px;padding:2px 7px}
+  .concept p{margin:6px 0 0;font-size:14.8px;color:var(--ink-soft);line-height:1.65}
+
+  /* ---- callout ---- */
+  .note{border:1px solid var(--green-line);background:var(--green-soft);border-radius:12px;padding:16px 20px;margin:20px 0;font-size:15px}
+  .note.warn{border-color:var(--me-line);background:var(--me-bg)}
+  .note b{color:var(--green-deep)}
+  .note.warn b{color:var(--me)}
+  .note .h{font-weight:800;display:block;margin-bottom:4px}
+
+  /* ---- journal voucher ---- */
+  .jv{background:var(--card);border:1px solid var(--line-strong);border-radius:12px;overflow:hidden;margin:14px 0}
+  .jv .jv-head{padding:11px 16px;background:var(--card-2);border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:baseline}
+  .jv .ev{font-weight:700;font-size:15px}
+  .jv .src{font-family:var(--mono);font-size:11.5px;color:var(--faint);direction:ltr;unicode-bidi:plaintext}
+  table.led{width:100%;border-collapse:collapse;font-size:14.5px}
+  table.led th{background:var(--green);color:#fff;font-weight:700;font-size:12.5px;letter-spacing:.02em;padding:7px 14px;text-align:right}
+  table.led th.amt{text-align:center;width:120px}
+  table.led td{padding:8px 14px;border-top:1px solid var(--line)}
+  table.led td.amt{text-align:center}
+  table.led .acc-code{font-family:var(--mono);font-weight:700;color:var(--green-deep);font-size:13px}
+  table.led tr.credit-row td:first-child{padding-right:34px;position:relative}
+  table.led tr.credit-row td:first-child::before{content:"↳";position:absolute;right:16px;color:var(--faint)}
+  table.led td.d{color:var(--debit)} table.led td.c{color:var(--credit)}
+  table.led tfoot td{border-top:2px solid var(--line-strong);font-weight:800;background:var(--card-2)}
+  .zero-entry{padding:12px 16px;font-size:14px;color:var(--muted);font-style:italic;background:var(--card-2)}
+
+  /* ---- generic data table ---- */
+  .scroll{overflow-x:auto;border:1px solid var(--line);border-radius:12px;margin:18px 0}
+  table.data{width:100%;border-collapse:collapse;font-size:14px;min-width:640px}
+  table.data thead th{background:var(--green-deep);color:#fff;text-align:right;padding:10px 13px;font-size:12.5px;font-weight:700;position:sticky;top:0}
+  table.data td{padding:9px 13px;border-top:1px solid var(--line);vertical-align:top}
+  table.data tbody tr:nth-child(even){background:var(--card-2)}
+  table.data .acc-code{font-family:var(--mono);font-weight:700;color:var(--green-deep)}
+  .grp-row td{background:var(--green-soft)!important;font-weight:800;color:var(--green-deep);font-size:13.5px;letter-spacing:.02em}
+  .pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;font-family:var(--mono);white-space:nowrap}
+  .pill.on{background:var(--green-soft);color:var(--green-deep);border:1px solid var(--green-line)}
+  .pill.off{background:#F0EEE9;color:var(--muted);border:1px solid var(--line-strong)}
+  .nb-d{color:var(--debit);font-weight:700} .nb-c{color:var(--credit);font-weight:700}
+
+  /* ---- findings ---- */
+  .legend{display:flex;flex-wrap:wrap;gap:10px;margin:6px 0 26px}
+  .legend .sev{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:700;padding:5px 12px;border-radius:20px;border:1px solid}
+  .sev.hi{color:var(--hi);background:var(--hi-bg);border-color:var(--hi-line)}
+  .sev.me{color:var(--me);background:var(--me-bg);border-color:var(--me-line)}
+  .sev.lo{color:var(--lo);background:var(--lo-bg);border-color:var(--lo-line)}
+  .sev .dot{width:9px;height:9px;border-radius:50%;background:currentColor}
+  #findings-list{display:flex;flex-direction:column;gap:16px}
+  .find{background:var(--card);border:1px solid var(--line);border-radius:13px;overflow:hidden}
+  .find .fh{display:flex;gap:12px;align-items:flex-start;padding:15px 18px 13px;border-bottom:1px solid var(--line)}
+  .find .fh .idx{font-family:var(--mono);font-weight:800;font-size:15px;color:#fff;background:var(--green);min-width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
+  .find.hi .fh .idx{background:var(--hi)} .find.me .fh .idx{background:var(--me)} .find.lo .fh .idx{background:var(--lo)}
+  .find .fh .tt{flex:1;min-width:0}
+  .find .fh h4{margin:0;font-size:16.5px;color:var(--ink);line-height:1.4}
+  .find .fh .sub{display:flex;flex-wrap:wrap;gap:8px 12px;margin-top:6px;align-items:center}
+  .chip{font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px;font-family:var(--mono)}
+  .chip.hi{color:var(--hi);background:var(--hi-bg)} .chip.me{color:var(--me);background:var(--me-bg)} .chip.lo{color:var(--lo);background:var(--lo-bg)}
+  .chip.area{color:var(--green-deep);background:var(--green-soft)}
+  .floc{font-family:var(--mono);font-size:11.5px;color:var(--faint);direction:ltr;unicode-bidi:plaintext}
+  .find .fb{padding:6px 18px 18px}
+  .find .row{padding:12px 0;border-top:1px dashed var(--line)}
+  .find .row:first-child{border-top:none}
+  .find .row .lbl{font-size:11.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--brass);font-family:var(--mono);margin-bottom:3px}
+  .find .row p{margin:0;font-size:14.8px;color:var(--ink-soft);line-height:1.7}
+  .find .fix{background:var(--green-soft);border-radius:9px;padding:11px 14px;margin-top:12px}
+  .find .fix .lbl{color:var(--green-deep)}
+  .find .fix p{color:var(--green-deep)}
+
+  /* clean areas */
+  .clean{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin-top:16px}
+  .clean div{background:var(--card);border:1px solid var(--green-line);border-radius:10px;padding:11px 14px;font-size:14px;display:flex;gap:9px}
+  .clean div::before{content:"✓";color:var(--green);font-weight:800;flex-shrink:0}
+
+  footer{background:var(--green-deep);color:#D6E3D8;padding:34px 0;font-size:13.5px;line-height:1.7}
+  footer .wrap{display:flex;flex-wrap:wrap;gap:20px;justify-content:space-between}
+  footer b{color:#fff}
+  footer .method{max-width:56ch}
+
+  @media (max-width:640px){
+    body{font-size:15.5px}
+    .hero h1{font-size:30px}
+    main section{padding:34px 0}
+    table.led th.amt{width:88px}
+  }
+  @media print{
+    body{background:#fff}
+    nav.toc{display:none}
+    .find,.jv,.concept,.stat{break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">دليل مرجعي للمحاسب · نظام Relax Restaurant QR</div>
+    <h1>النظام المحاسبي: المفاهيم، دليل الحسابات، طريقة القيد، والملاحظات</h1>
+    <p class="lede">شرحٌ كامل لكيفية تسجيل النظام لكل عملية مالية محاسبياً — من الفاتورة إلى الإقفال — يليه تقرير تدقيقي بالمشاكل المكتشفة في الدفاتر وأثرها العملي على تقاريرك.</p>
+    <div class="meta-row">
+      <span>الأساس المحاسبي: <b>القيد المزدوج (Double-entry)</b></span>
+      <span>أساس الاستحقاق: <b>Accrual</b></span>
+      <span>عدد الحسابات النظامية: <b>43 حساباً</b></span>
+      <span>محرك الترحيل: <b class="code">AccountingService</b></span>
+    </div>
+    <div class="stat-band">
+      <div class="stat"><div class="k">31</div><div class="l">ملاحظة تدقيقية مؤكَّدة بمراجعة عدائية للكود</div></div>
+      <div class="stat hi"><div class="k">12</div><div class="l">مشكلة حرجة (تؤثر على صحة الأرصدة أو تسرّب مال)</div></div>
+      <div class="stat me"><div class="k">15</div><div class="l">مشكلة متوسطة (تشوّه تقريراً أو تمنع عملية)</div></div>
+      <div class="stat lo"><div class="k">4</div><div class="l">مشكلة منخفضة أو كامنة (خاملة حتى تفعيل ميزة)</div></div>
+    </div>
+  </div>
+</header>
+
+<nav class="toc" aria-label="فهرس">
+  <div class="wrap">
+    <ol>
+      <li><a href="#concepts">المفاهيم الأساسية</a></li>
+      <li><a href="#chart">دليل الحسابات الكامل</a></li>
+      <li><a href="#revenue">دورة الإيرادات (القيود)</a></li>
+      <li><a href="#expense">دورة المصاريف والمخزون</a></li>
+      <li><a href="#reports">التقارير والإقفال والعملات</a></li>
+      <li><a href="#solid">ما يعمل بشكل صحيح</a></li>
+      <li><a href="#findings">المشاكل المكتشفة</a></li>
+    </ol>
+  </div>
+</nav>
+
+<main>
+
+<!-- ============ CONCEPTS ============ -->
+<section id="concepts">
+  <div class="wrap">
+    <h2 class="sec"><span class="n">01</span> المفاهيم الأساسية للنظام</h2>
+    <p class="sec-sub">القواعد العامة التي تحكم كل قيد في النظام. فهمها يجعل بقية الدليل بديهياً، ويشرح لماذا تتصرف بعض التقارير كما تتصرف.</p>
+
+    <div class="grid2">
+      <div class="concept">
+        <h4><span class="tag">القيد المزدوج</span> مدين = دائن دائماً</h4>
+        <p>كل عملية تُنشئ «قيد يومية» (Journal Entry) مكوّناً من سطرين أو أكثر، مجموع المدين فيه يساوي مجموع الدائن. النظام يرفض أي قيد غير متوازن (بسماحية 0.0001) قبل حفظه — لا يمكن إدخال قيد مختل يدوياً.</p>
+      </div>
+      <div class="concept">
+        <h4><span class="tag">الاستحقاق</span> الإيراد يُثبت عند الإصدار</h4>
+        <p>الإيراد يُعترف به لحظة إصدار الفاتورة (لا لحظة الدفع): مدين «الذمم المدينة 1100» ودائن «المبيعات 4000». التحصيل لاحقاً هو قيد منفصل يقفل الذمم مقابل النقد. أي أن رصيد 1100 المفتوح = ديون العملاء غير المحصلة.</p>
+      </div>
+      <div class="concept">
+        <h4><span class="tag">دفتر الديون</span> رصيد الفاتورة هو الدفتر</h4>
+        <p>لا يوجد جدول ديون منفصل: الدين هو ببساطة فاتورة رصيدها غير صفري ومؤجَّلة «على الحساب». السداد يوزَّع على الفواتير الأقدم أولاً (FIFO). هذا قرار تصميمي مقصود.</p>
+      </div>
+      <div class="concept">
+        <h4><span class="tag">بلا حسابات مقاصة</span> تسوية فورية</h4>
+        <p>الدفع كاش يذهب إلى «الصندوق 1000»، والبطاقة/التحويل إلى «البنك 1010» مباشرة بلا حساب وسيط ولا عمولات. حسابات المقاصة (1020/1030/1040) معطَّلة عمداً وتبقى فقط لقراءة قيود قديمة.</p>
+      </div>
+      <div class="concept">
+        <h4><span class="tag">منع التكرار</span> Idempotency</h4>
+        <p>لكل مستند (فاتورة، دفعة، حركة مخزون) قيدٌ واحد فقط لكل نوع حدث — يستحيل ترحيل نفس الفاتورة مرتين. <b>استثناء مهم:</b> القيود اليدوية والأرصدة الافتتاحية لا يحميها هذا الحارس (انظر الملاحظة رقم 5).</p>
+      </div>
+      <div class="concept">
+        <h4><span class="tag">قفل الفترات</span> لا ترحيل في فترة مقفلة</h4>
+        <p>عند إقفال فترة محاسبية أو سنة مالية، يرفض النظام أي قيد جديد بتاريخ داخلها. القيد يحمل «تاريخ العملية» (تاريخ الفاتورة/الدفع) لا تاريخ الإدخال، والتقارير كلها تعمل على تاريخ العملية.</p>
+      </div>
+      <div class="concept">
+        <h4><span class="tag">التصحيح بالعكس</span> لا حذف قيود</h4>
+        <p>لا يُحذف قيد أبداً. التصحيح يتم بقيد عكسي مطابق (يقلب المدين/الدائن) مربوط بالأصلي. هذا يحافظ على مسار تدقيقي كامل.</p>
+      </div>
+      <div class="concept">
+        <h4><span class="tag">تعدد العملات</span> التخزين بعملة الدفاتر</h4>
+        <p>كل مبلغ يُخزَّن بعملة الدفاتر (base currency). العمليات بعملة أخرى تُحفظ بمبلغها الأجنبي + سعر الصرف، ويُحسب المعادل بعملة الدفاتر لحظة الترحيل. فروق الصرف عند التحصيل/السداد تُرحَّل تلقائياً على 4220 (ربح) أو 5520 (خسارة).</p>
+      </div>
+    </div>
+
+    <div class="note">
+      <span class="h">أنواع الحسابات وطبيعتها</span>
+      الأصول والمصاريف طبيعتها <b>مدينة</b> (تزيد بالمدين). الالتزامات وحقوق الملكية والإيرادات طبيعتها <b>دائنة</b> (تزيد بالدائن). «مقابل الإيراد» (contra-revenue) مثل الخصومات والمردودات طبيعته مدين (يخفض الإيراد). الاستثناء الوحيد: «مجمع الإهلاك 1590» حساب أصل بطبيعة دائنة (مقابل أصل).
+    </div>
+  </div>
+</section>
+
+<!-- ============ CHART ============ -->
+<section id="chart">
+  <div class="wrap">
+    <h2 class="sec"><span class="n">02</span> دليل الحسابات الكامل</h2>
+    <p class="sec-sub">43 حساباً نظامياً مقسّمة على ست مجموعات. الحسابات المعلَّمة «مُعطَّل» مخفية من شاشات الإدخال لأن المطعم لا يستخدم آليتها، لكن محرك القيود يظل يرحّل إليها إن وقع الحدث فعلاً، وتظهر في ميزان المراجعة إن كان عليها رصيد.</p>
+    <div class="scroll">
+      <table class="data" id="chart-table">
+        <thead><tr>
+          <th style="width:70px">الكود</th><th>اسم الحساب</th><th style="width:120px">النوع</th>
+          <th style="width:80px">الطبيعة</th><th>ماذا يُرحَّل هنا</th><th style="width:90px">الحالة</th>
+        </tr></thead>
+        <tbody><!-- injected --></tbody>
+      </table>
+    </div>
+    <div class="note warn">
+      <span class="h">ملاحظات على الدليل نفسه</span>
+      الحساب <span class="code">5050</span> (مصاريف وجبات الموظفين) نشط لكنه يتيم — لا يرحّل إليه أي كود بعد إعادة تصميم قيد الوجبات إلى 4030. وحسابات الأصول الثابتة وفروق العملة (1500/1590/4230/5500/5530/4220/5520) أسماؤها بالإنجليزية في القاعدة بينما بقية الدليل عربي — تحتاج تعريباً للاتساق. وبذرة <span class="code">AccountingSeeder</span> تفرض تفعيل كل الحسابات، فإعادة تشغيلها على قاعدة قائمة تلغي تعطيل الحسابات العشرة.
+    </div>
+  </div>
+</section>
+
+<!-- ============ REVENUE ============ -->
+<section id="revenue">
+  <div class="wrap">
+    <h2 class="sec"><span class="n">03</span> دورة الإيرادات — كيف يُقيَّد كل حدث</h2>
+    <p class="sec-sub">كل مثال أدناه هو «قيد يومية» فعلي كما يُنشئه النظام. اقرأه كسند قيد: العمود الأيمن الحساب، ثم المدين، ثم الدائن.</p>
+
+    <h3>البيع والتحصيل</h3>
+    <div class="jv">
+      <div class="jv-head"><span class="ev">إصدار فاتورة: أصناف 100 + ضريبة 16% (بلا خصم)</span><span class="src">recordInvoiceIssued</span></div>
+      <table class="led"><thead><tr><th>الحساب</th><th class="amt">مدين</th><th class="amt">دائن</th></tr></thead>
+        <tbody>
+          <tr><td><span class="acc-code">1100</span> الذمم المدينة — العملاء</td><td class="amt d num">116.00</td><td class="amt"></td></tr>
+          <tr class="credit-row"><td><span class="acc-code">4000</span> إيرادات المبيعات</td><td class="amt"></td><td class="amt c num">100.00</td></tr>
+          <tr class="credit-row"><td><span class="acc-code">2100</span> ضريبة القيمة المضافة — مخرجات</td><td class="amt"></td><td class="amt c num">16.00</td></tr>
+        </tbody>
+        <tfoot><tr><td>الإجمالي</td><td class="amt num">116.00</td><td class="amt num">116.00</td></tr></tfoot>
+      </table>
+    </div>
+
+    <div class="grid2">
+      <div class="jv">
+        <div class="jv-head"><span class="ev">تحصيل كاش 116</span><span class="src">recordPaymentReceived</span></div>
+        <table class="led"><thead><tr><th>الحساب</th><th class="amt">مدين</th><th class="amt">دائن</th></tr></thead>
+          <tbody>
+            <tr><td><span class="acc-code">1000</span> الصندوق</td><td class="amt d num">116.00</td><td class="amt"></td></tr>
+            <tr class="credit-row"><td><span class="acc-code">1100</span> الذمم المدينة</td><td class="amt"></td><td class="amt c num">116.00</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="jv">
+        <div class="jv-head"><span class="ev">تحصيل ببطاقة / تحويل 116</span><span class="src">cashAccountForMethod → 1010</span></div>
+        <table class="led"><thead><tr><th>الحساب</th><th class="amt">مدين</th><th class="amt">دائن</th></tr></thead>
+          <tbody>
+            <tr><td><span class="acc-code">1010</span> البنك</td><td class="amt d num">116.00</td><td class="amt"></td></tr>
+            <tr class="credit-row"><td><span class="acc-code">1100</span> الذمم المدينة</td><td class="amt"></td><td class="amt c num">116.00</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="note">
+      <span class="h">البيع الآجل (على الحساب) لا يُنشئ قيداً</span>
+      عند تأجيل فاتورة كديْن، لا يُرحَّل قيد جديد — الرصيد باقٍ أصلاً في «الذمم المدينة 1100» من لحظة الإصدار. السداد اللاحق يوزَّع FIFO على الفواتير الأقدم، وكل جزء قيدٌ عادي مدين نقد / دائن 1100.
+    </div>
+
+    <h3>الخصومات والعروض</h3>
+    <div class="jv">
+      <div class="jv-head"><span class="ev">عرض سعر صنف: برغر سعره 100 يُباع بـ75 (بضريبة 0 للتبسيط)</span><span class="src">promoSavings — تضخيم الإيراد</span></div>
+      <table class="led"><thead><tr><th>الحساب</th><th class="amt">مدين</th><th class="amt">دائن</th></tr></thead>
+        <tbody>
+          <tr><td><span class="acc-code">1100</span> الذمم المدينة</td><td class="amt d num">75.00</td><td class="amt"></td></tr>
+          <tr><td><span class="acc-code">4090</span> خصومات ومسموحات المبيعات</td><td class="amt d num">25.00</td><td class="amt"></td></tr>
+          <tr class="credit-row"><td><span class="acc-code">4000</span> إيرادات المبيعات (بالسعر قبل العرض)</td><td class="amt"></td><td class="amt c num">100.00</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="font-size:14.5px;color:var(--muted)">النظام يُظهر الإيراد بقيمته الاسمية الكاملة (100) ويسجّل «وفر العرض» (25) في حساب الخصومات — حتى تبقى قيمة العروض مرئية في قائمة الدخل بدل أن تختفي داخل إيراد أقل.</p>
+
+    <h3>المردودات ووجبات الموظفين</h3>
+    <div class="grid2">
+      <div class="jv">
+        <div class="jv-head"><span class="ev">استرداد كاش 40</span><span class="src">recordRefundCompleted</span></div>
+        <table class="led"><thead><tr><th>الحساب</th><th class="amt">مدين</th><th class="amt">دائن</th></tr></thead>
+          <tbody>
+            <tr><td><span class="acc-code">4100</span> مردودات المبيعات</td><td class="amt d num">40.00</td><td class="amt"></td></tr>
+            <tr class="credit-row"><td><span class="acc-code">1000</span> الصندوق</td><td class="amt"></td><td class="amt c num">40.00</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="jv">
+        <div class="jv-head"><span class="ev">وجبة موظف بقيمة بيعية 45</span><span class="src">staff_meal_charged</span></div>
+        <table class="led"><thead><tr><th>الحساب</th><th class="amt">مدين</th><th class="amt">دائن</th></tr></thead>
+          <tbody>
+            <tr><td><span class="acc-code">1110</span> مستحقات على الموظفين</td><td class="amt d num">45.00</td><td class="amt"></td></tr>
+            <tr class="credit-row"><td><span class="acc-code">4030</span> إيراد وجبات الموظفين</td><td class="amt"></td><td class="amt c num">45.00</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="note warn">
+      <span class="h">تنبيه على قيد الاسترداد</span>
+      الاسترداد يخصم كامل المبلغ من «مردودات المبيعات 4100» فقط، ولا يعكس حصة الضريبة (2100) ولا الإكرامية (2200) اللتين سُجّلتا عند الإصدار. هذا مصدر الملاحظة رقم 9.
+    </div>
+  </div>
+</section>
+
+<!-- ============ EXPENSE ============ -->
+<section id="expense">
+  <div class="wrap">
+    <h2 class="sec"><span class="n">04</span> دورة المصاريف والمشتريات والمخزون</h2>
+    <p class="sec-sub">النظام يستخدم «المخزون الدائم» (Perpetual): تكلفة البضاعة المباعة تُرحَّل لحظة خصم المخزون للبيع، لا في نهاية الفترة. سلسلة الشراء تمر بحساب وسيط «استلامات غير مفوترة» (GRNI) بين الاستلام والفاتورة.</p>
+
+    <h3>سلسلة الشراء (procure-to-pay)</h3>
+    <div class="grid2">
+      <div class="jv">
+        <div class="jv-head"><span class="ev">١. استلام بضاعة من أمر شراء 100 (قبل الفاتورة)</span><span class="src">inventory_goods_received</span></div>
+        <table class="led"><thead><tr><th>الحساب</th><th class="amt">مدين</th><th class="amt">دائن</th></tr></thead>
+          <tbody>
+            <tr><td><span class="acc-code">1200</span> المخزون</td><td class="amt d num">100.00</td><td class="amt"></td></tr>
+            <tr class="credit-row"><td><span class="acc-code">2300</span> استلامات غير مفوترة (GRNI)</td><td class="amt"></td><td class="amt c num">100.00</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="jv">
+        <div class="jv-head"><span class="ev">٢. فاتورة المورد 117 (100 بضاعة + 17 ضريبة)</span><span class="src">recordSupplierInvoiceCreated</span></div>
+        <table class="led"><thead><tr><th>الحساب</th><th class="amt">مدين</th><th class="amt">دائن</th></tr></thead>
+          <tbody>
+            <tr><td><span class="acc-code">2300</span> استلامات غير مفوترة</td><td class="amt d num">100.00</td><td class="amt"></td></tr>
+            <tr><td><span class="acc-code">1300</span> ضريبة القيمة المضافة — مدخلات</td><td class="amt d num">17.00</td><td class="amt"></td></tr>
+            <tr class="credit-row"><td><span class="acc-code">2000</span> الذمم الدائنة — الموردون</td><td class="amt"></td><td class="amt c num">117.00</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h3>تكلفة البضاعة المباعة والهدر</h3>
+    <div class="grid2">
+      <div class="jv">
+        <div class="jv-head"><span class="ev">بيع صنف: خصم مكوّناته بتكلفة 30</span><span class="src">inventory_cogs_recognized</span></div>
+        <table class="led"><thead><tr><th>الحساب</th><th class="amt">مدين</th><th class="amt">دائن</th></tr></thead>
+          <tbody>
+            <tr><td><span class="acc-code">5000</span> تكلفة البضاعة المباعة</td><td class="amt d num">30.00</td><td class="amt"></td></tr>
+            <tr class="credit-row"><td><span class="acc-code">1200</span> المخزون</td><td class="amt"></td><td class="amt c num">30.00</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="jv">
+        <div class="jv-head"><span class="ev">هدر / تالف مخزون بتكلفة 20</span><span class="src">inventory_waste_recognized</span></div>
+        <table class="led"><thead><tr><th>الحساب</th><th class="amt">مدين</th><th class="amt">دائن</th></tr></thead>
+          <tbody>
+            <tr><td><span class="acc-code">5400</span> هدر وتالف المخزون</td><td class="amt d num">20.00</td><td class="amt"></td></tr>
+            <tr class="credit-row"><td><span class="acc-code">1200</span> المخزون</td><td class="amt"></td><td class="amt c num">20.00</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="note">
+      <span class="h">ما لا يلتقطه الدفتر (يجب أن يعرفه المحاسب)</span>
+      <b>أوامر الشراء قبل الاستلام</b> لا تُرحَّل (لا التزامات شراء). <b>النقل بين مواقع التخزين داخل نفس الفرع</b> حركات بلا قيود. <b>فتح الشفت وحركات درج الكاشير</b> (pay_in/pay_out) سجلات تشغيلية فقط. <b>إعادة احتساب متوسط التكلفة</b> لا تولّد قيد إعادة تقييم — رصيد المخزون 1200 هو تراكم تاريخي للحركات وليس (كمية × تكلفة حالية). هذه الفجوة الأخيرة مصدر عدة ملاحظات (22، 23، 24).
+    </div>
+
+    <h3>الأصول الثابتة والإهلاك</h3>
+    <div class="grid2">
+      <div class="jv">
+        <div class="jv-head"><span class="ev">شراء ثلاجة 5000 بتحويل بنكي</span><span class="src">fixed_asset_acquired</span></div>
+        <table class="led"><thead><tr><th>الحساب</th><th class="amt">مدين</th><th class="amt">دائن</th></tr></thead>
+          <tbody>
+            <tr><td><span class="acc-code">1500</span> الأصول الثابتة</td><td class="amt d num">5000.00</td><td class="amt"></td></tr>
+            <tr class="credit-row"><td><span class="acc-code">1010</span> البنك</td><td class="amt"></td><td class="amt c num">5000.00</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="jv">
+        <div class="jv-head"><span class="ev">قسط إهلاك شهري 83.33</span><span class="src">fixed_asset_depreciation</span></div>
+        <table class="led"><thead><tr><th>الحساب</th><th class="amt">مدين</th><th class="amt">دائن</th></tr></thead>
+          <tbody>
+            <tr><td><span class="acc-code">5500</span> مصروف الإهلاك</td><td class="amt d num">83.33</td><td class="amt"></td></tr>
+            <tr class="credit-row"><td><span class="acc-code">1590</span> مجمع الإهلاك</td><td class="amt"></td><td class="amt c num">83.33</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ REPORTS ============ -->
+<section id="reports">
+  <div class="wrap">
+    <h2 class="sec"><span class="n">05</span> التقارير والإقفال والعملات والضريبة</h2>
+    <p class="sec-sub">كل التقارير تُبنى مباشرة من قيود اليومية بشرط الحالة «مُرحَّل» (posted) — لا يوجد جدول أرصدة وسيط. كل رقم هو مجموع المدين/الدائن مجمَّعاً من الدفتر.</p>
+
+    <div class="grid2">
+      <div class="concept"><h4><span class="tag">ميزان المراجعة</span></h4><p>حركة الفترة المحددة (وليس أرصدة تراكمية إن حُدد تاريخ بداية). يعرض كل حساب نشط + أي حساب معطل عليه حركة، والرصيد يظهر في جهة واحدة فقط (مدين أو دائن). يتحقق من التوازن بسماحية 0.01.</p></div>
+      <div class="concept"><h4><span class="tag">الميزانية العمومية</span></h4><p>تراكمية من أول الدفاتر حتى التاريخ. تُضاف «الأرباح الجارية غير المقفلة» (صافي الإيراد − المصروف) كسطر مستقل في حقوق الملكية، وينتقل تلقائياً إلى «الأرباح المحتجزة 3020» بعد الإقفال.</p></div>
+      <div class="concept"><h4><span class="tag">أعمار الذمم</span></h4><p>يُبنى من قيود الفواتير والدفعات على حساب 1100/2000، مقسّماً على دلاء 0-30 / 31-60 / 61-90 / 90+ يوماً. <b>تنبيه:</b> لا يرى الأرصدة الافتتاحية أو القيود اليدوية على الذمم (الملاحظة 16).</p></div>
+      <div class="concept"><h4><span class="tag">تقرير الضريبة</span></h4><p>ضريبة المخرجات = صافي دائن 2100، ضريبة المدخلات = صافي مدين 1300، والمستحق = الفرق. يجمع «ما رُحِّل فعلياً» في الفترة ولا يحدد النسبة القانونية.</p></div>
+    </div>
+
+    <h3>الإقفال إلى الأرباح المحتجزة</h3>
+    <div class="jv">
+      <div class="jv-head"><span class="ev">إقفال فترة: إيراد 10000، خصومات 400، تكلفة 6000 ← صافي ربح 3600</span><span class="src">period_closing → 3020</span></div>
+      <table class="led"><thead><tr><th>الحساب</th><th class="amt">مدين</th><th class="amt">دائن</th></tr></thead>
+        <tbody>
+          <tr><td><span class="acc-code">4000</span> إيرادات المبيعات (تصفير رصيد دائن)</td><td class="amt d num">10000.00</td><td class="amt"></td></tr>
+          <tr class="credit-row"><td><span class="acc-code">4090</span> خصومات المبيعات (تصفير رصيد مدين)</td><td class="amt"></td><td class="amt c num">400.00</td></tr>
+          <tr class="credit-row"><td><span class="acc-code">5000</span> تكلفة البضاعة المباعة (تصفير)</td><td class="amt"></td><td class="amt c num">6000.00</td></tr>
+          <tr class="credit-row"><td><span class="acc-code">3020</span> أرباح محتجزة (صافي الربح)</td><td class="amt"></td><td class="amt c num">3600.00</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>فروق العملة عند التحصيل</h3>
+    <div class="jv">
+      <div class="jv-head"><span class="ev">تحصيل 100$ على فاتورة سُجّلت بسعر 3.60 (ذمم 360) والسداد يوم السعر 3.70</span><span class="src">receivableSettlementAdjustmentLines</span></div>
+      <table class="led"><thead><tr><th>الحساب</th><th class="amt">مدين</th><th class="amt">دائن</th></tr></thead>
+        <tbody>
+          <tr><td><span class="acc-code">1010</span> البنك (100$ × 3.70)</td><td class="amt d num">370.00</td><td class="amt"></td></tr>
+          <tr class="credit-row"><td><span class="acc-code">1100</span> الذمم المدينة</td><td class="amt"></td><td class="amt c num">370.00</td></tr>
+          <tr><td><span class="acc-code">1100</span> الذمم المدينة (تسوية فرق العملة)</td><td class="amt d num">10.00</td><td class="amt"></td></tr>
+          <tr class="credit-row"><td><span class="acc-code">4220</span> أرباح فروق العملة</td><td class="amt"></td><td class="amt c num">10.00</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="font-size:14.5px;color:var(--muted)">الغرض: إقفال حساب الذمم على قيمته الدفترية الأصلية بالضبط، وعزل فرق سعر الصرف في حساب ربح/خسارة مستقل. سداد المورد بعملة أجنبية يعمل بنفس المنطق معكوساً (5520 خسارة).</p>
+
+    <div class="note warn">
+      <span class="h">المطابقة البنكية سجل توثيقي فقط</span>
+      حفظ مطابقة بنكية لا يُنشئ أي قيد محاسبي — هو صف يوثّق (رصيد الدفتر مقابل رصيد الكشف والفرق). وجود صف واحد يُرضي بند «المطابقة» في قائمة إقفال الفترة بغض النظر عن قيمة الفرق (الملاحظة 29).
+    </div>
+  </div>
+</section>
+
+<!-- ============ SOLID ============ -->
+<section id="solid">
+  <div class="wrap">
+    <h2 class="sec"><span class="n">06</span> ما فُحص ووُجد صحيحاً</h2>
+    <p class="sec-sub">التدقيق ليس قائمة أعطال فقط — من العدل للنظام توثيق ما يعمل بشكل سليم، لتثق بالدفاتر حيث هي صحيحة. هذه أهم النقاط التي تحقّقنا من سلامتها في الكود.</p>
+    <div class="clean">
+      <div>التوازن (مدين = دائن) مفروض على كل قيد قبل الحفظ، ولا يمكن ترحيل قيد مختل.</div>
+      <div>منع التكرار يعمل على الفواتير والدفعات وحركات المخزون — لا ازدواج للعمليات الآلية.</div>
+      <div>قفل الفترات والسنوات المالية يمنع الترحيل بأثر رجعي في فترة مقفلة.</div>
+      <div>سلسلة الشراء (استلام ← فاتورة ← سداد) عبر GRNI مبنية بشكل محاسبي سليم.</div>
+      <div>تكلفة البضاعة المباعة تُرحَّل لحظياً (Perpetual) بتكلفة FIFO أو المتوسط المرجّح.</div>
+      <div>فروق الصرف عند تحصيل/سداد الذمم تُعزَل بشكل صحيح في حسابات ربح/خسارة مستقلة.</div>
+      <div>الإقفال يصفّر الإيرادات والمصاريف وينقل الصافي إلى الأرباح المحتجزة بشكل صحيح.</div>
+      <div>حماية الحسابات النظامية (منع الحذف/التعطيل/تغيير الطبيعة) وشجرة الحسابات الهرمية سليمة.</div>
+      <div>التصحيح بالقيد العكسي يحافظ على مسار تدقيقي كامل دون حذف أي قيد.</div>
+      <div>خصم الوجبات والإكراميات والخدمة كلها معالَجة بحسابات منفصلة صحيحة المنطق.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FINDINGS ============ -->
+<section id="findings">
+  <div class="wrap">
+    <h2 class="sec"><span class="n">07</span> المشاكل المكتشفة</h2>
+    <p class="sec-sub">كل ملاحظة أدناه مؤكَّدة بمراجعة عدائية متعددة الوكلاء على الكود الفعلي (وليست تخميناً): وصف المشكلة، سيناريو عملي يوضّح كيف تختل الأرقام، أثرها المباشر عليك كمحاسب، والموقع في الكود، مع اقتراح إصلاح. مرتّبة من الأخطر للأقل.</p>
+    <div class="legend">
+      <span class="sev hi"><span class="dot"></span> حرجة — تؤثر على صحة الأرصدة أو تسرّب مال</span>
+      <span class="sev me"><span class="dot"></span> متوسطة — تشوّه تقريراً أو تعطّل عملية</span>
+      <span class="sev lo"><span class="dot"></span> منخفضة / كامنة</span>
+    </div>
+    <div id="findings-list"><!-- injected --></div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="method">
+      <b>منهجية التدقيق.</b> جرى مسح النظام المحاسبي بالكامل عبر خمسة قرّاء متوازيين لبناء خريطة الحسابات والقيود، ثم ثماني جهات تدقيق متخصصة (سلامة القيد المزدوج، الاكتمال، دفتر الديون، تكلفة المخزون، الفترات والإقفال، العملات والضريبة، تعدد الفروع، رياضيات التقارير). كل ملاحظة مرّت بتحقّق عدائي من ثلاث زوايا (صحة الكود، سلامة محاسبية، إعادة إنتاج السيناريو) وأُبقيت فقط الملاحظات التي صمدت.
+    </div>
+    <div>
+      <b>Relax Restaurant QR</b><br>
+      دليل مرجعي للمحاسب — 2026<br>
+      <span style="color:#9DB6A2">وثيقة داخلية · للمراجعة المحاسبية والتطوير</span>
+    </div>
+  </div>
+</footer>
+
+<script type="application/json" id="accounts-data">
+[
+["grp","الأصول (Assets) — طبيعتها مدينة"],
+["1000","الصندوق","أصل","مدين","النقد في درج الكاشير/الخزنة: تحصيلات الكاش، صرف المصاريف والاستردادات وسداد الموردين كاش، فروقات الشفت","on"],
+["1010","البنك","أصل","مدين","كل مدفوعات البطاقة/التحويل/الشيك (تسوية فورية بلا مقاصة)؛ الحساب الافتراضي لأي طريقة دفع غير معروفة","on"],
+["1020","مقاصة بطاقات الدفع","أصل","مدين","الفيزا تُسوّى فوراً إلى 1010؛ باقٍ لقراءة القيود التاريخية فقط","off"],
+["1030","مقاصة المحافظ الإلكترونية","أصل","مدين","المحافظ غير مقبولة؛ يبقى fallback لطريقة الدفع القديمة 'app'","off"],
+["1040","مقاصة البيع الآجل","أصل","مدين","استُبدل بدفتر ديون العملاء (الرصيد يبقى على 1100)","off"],
+["1100","الذمم المدينة — العملاء","أصل","مدين","مدين بإجمالي كل فاتورة عند إصدارها، دائن عند التحصيل أو الشطب؛ رصيده المفتوح هو دفتر ديون العملاء","on"],
+["1110","مستحقات على الموظفين — بدل الوجبات","أصل","مدين","مدين بقيمة وجبة الموظف عند الاستهلاك، دائن عند التسوية (كاش/خصم راتب/هدية/إعدام)","on"],
+["1150","مخزون تحت التحويل بين الفروع","أصل","مدين","مدين عند خروج تحويل من فرع المصدر، دائن عند تأكيد الاستلام في الوجهة أو الإلغاء","on"],
+["1200","المخزون","أصل","مدين","مدين عند الاستلام والإدخال والزيادة الجردية، دائن عند تكلفة البيع والهدر والعجز والتحويل الصادر","on"],
+["1300","ضريبة القيمة المضافة — مدخلات","أصل","مدين","مدين بضريبة فواتير الموردين، دائن عند تسوية الضريبة بخصمها من المخرجات","on"],
+["1500","الأصول الثابتة","أصل","مدين","مدين عند شراء/رسملة أصل ثابت، دائن بالتكلفة عند الاستبعاد","on"],
+["1590","مجمع الإهلاك","أصل مقابل","دائن","دائن بقسط الإهلاك الدوري، مدين بالمجمع عند الاستبعاد (الحساب النظامي الوحيد أصل بطبيعة دائنة)","on"],
+["grp","الالتزامات (Liabilities) — طبيعتها دائنة"],
+["2000","الذمم الدائنة — الموردون","التزام","دائن","دائن بإجمالي فاتورة المورد، مدين عند السداد","on"],
+["2100","ضريبة القيمة المضافة — مخرجات","التزام","دائن","دائن بضريبة كل فاتورة مبيعات، مدين عند سداد الضريبة","on"],
+["2110","خصومات الرواتب المستحقة","التزام","دائن","طرف تسوية وجبات الموظفين بخصم الراتب (يُحسم من راتب الشهر التالي)","on"],
+["2200","أمانات الإكراميات","التزام","دائن","الموظفون يقبضون الإكراميات مباشرة — لكنه يظل يُرحَّل إليه إن سُجّلت إكرامية، ويُصرف من شاشة التسويات","off"],
+["2300","استلامات مخزون غير مفوترة (GRNI)","التزام","دائن","دائن عند استلام بضاعة أمر شراء قبل الفاتورة، مدين عند إثبات الفاتورة","on"],
+["grp","حقوق الملكية (Equity) — طبيعتها دائنة"],
+["3000","رأس المال وحقوق الملكية","حقوق ملكية","دائن","لا ترحيل آلي إليه — يُستخدم فقط عبر القيود اليدوية","on"],
+["3010","أرصدة افتتاحية","حقوق ملكية","دائن","الطرف الموازن التلقائي لقيد الأرصدة الافتتاحية والمخزون الافتتاحي وتمويل الأصول من مال المالك","on"],
+["3020","أرباح محتجزة","حقوق ملكية","دائن","يستقبل صافي ربح/خسارة الفترة عند الإقفال الرسمي للفترات والسنوات المالية","on"],
+["grp","الإيرادات (Revenue) — طبيعتها دائنة"],
+["4000","إيرادات المبيعات","إيراد","دائن","دائن بالإيراد الإجمالي (بالقيمة الاسمية قبل الخصومات) عند إصدار كل فاتورة","on"],
+["4010","إيرادات رسوم الخدمة","إيراد","دائن","دائن برسوم الخدمة على كل فاتورة","on"],
+["4020","إيرادات التوصيل","إيراد","دائن","دائن برسوم التوصيل على طلبات التوصيل","on"],
+["4030","إيرادات بدل وجبات الموظفين","إيراد","دائن","دائن بالقيمة الاسمية لكل وجبة موظف (إيراد داخلي)","on"],
+["4090","خصومات ومسموحات المبيعات","مقابل إيراد","مدين","مدين بالخصومات اليدوية + وفورات العروض عند الإصدار","on"],
+["4100","مردودات ومسموحات المبيعات","مقابل إيراد","مدين","مدين بقيمة كل استرداد مكتمل","on"],
+["4200","فروقات جرد دائنة","إيراد","دائن","الوجهة الآلية للزيادات الجردية والإدخالات اليدوية غير الافتتاحية","off"],
+["4210","فروقات صندوق دائنة","إيراد","دائن","يُرحَّل إليه إن سُجّل فائض صندوق فعلي عند إغلاق الشفت","off"],
+["4220","أرباح فروقات العملة","إيراد","دائن","دائن عند تسوية ذمم بعملة أجنبية بسعر صرف أفضل","on"],
+["4230","ربح استبعاد أصل ثابت","إيراد","دائن","دائن عندما يتجاوز متحصل بيع الأصل قيمته الدفترية","on"],
+["grp","المصاريف (Expenses) — طبيعتها مدينة"],
+["5000","تكلفة البضاعة المباعة","مصروف","مدين","مدين بتكلفة المكونات عند خصم المخزون المرتبط ببيع","on"],
+["5050","مصاريف وجبات الموظفين","مصروف","مدين","نشط لكنه يتيم — استُبدل بنموذج 4030؛ لا يصله إلا قيد يدوي","on"],
+["5060","هدايا ومكافآت الموظفين العينية","مصروف","مدين","مدين عند تسوية وجبة موظف كهدية","on"],
+["5100","مصروفات تشغيلية","مصروف","مدين","المصروف الافتراضي عند غياب ربط فئة مصروف، وبنود فواتير الموردين غير المخزنية","on"],
+["5200","مصروف ديون معدومة","مصروف","مدين","مدين عند شطب رصيد فاتورة عميل غير محصلة وإعدام مستحقات وجبات الموظفين","on"],
+["5300","عمولات بنكية وبطاقات","مصروف","مدين","كل القنوات تُسوّى بلا عمولات — يبقى لتسوية المقاصة اليدوية إن استُخدمت","off"],
+["5400","هدر وتالف المخزون","مصروف","مدين","مدين بتكلفة حركات الهدر وإعادة تصنيف تكلفة طلب ملغى أثناء التحضير","on"],
+["5410","عجز وفروقات جرد مدينة","مصروف","مدين","الوجهة الآلية للصرف اليدوي غير المرتبط ببيع وللعجز الجردي","off"],
+["5420","فروقات أسعار مشتريات","مصروف","مدين","فرق السعر بين قيمة الاستلام وقيمة فاتورة المورد","off"],
+["5500","مصروف الإهلاك","مصروف","مدين","مدين بقسط الإهلاك الدوري للأصول الثابتة مقابل 1590","on"],
+["5510","عجز صندوق","مصروف","مدين","يُرحَّل إليه إن سُجّل عجز نقدي فعلي عند إغلاق الشفت","off"],
+["5520","خسائر فروقات العملة","مصروف","مدين","مدين عند تسوية ذمم بعملة أجنبية بسعر صرف أسوأ","on"],
+["5530","خسارة استبعاد أصل ثابت","مصروف","مدين","مدين عندما يقل متحصل بيع الأصل عن قيمته الدفترية","on"]
+]
+</script>
+
+<script type="application/json" id="findings-data">
+[
+{"sev":"hi","area":"القيد المزدوج","title":"إلغاء فاتورة بعد خصم لاحق يعكس القيد الأصلي مرتين ويترك قيد إعادة الإصدار — أرصدة ذمم وإيراد سالبة","file":"BillingService.php:555","what":"عند تطبيق خصم بعد إصدار الفاتورة، يعكس النظام قيد الإصدار الأصلي ويُنشئ قيداً بديلاً. لكن الإلغاء اللاحق يعكس القيد الأصلي مرة ثانية ولا يمس القيد البديل، فالصافي لا يساوي صفراً.","scen":"فاتورة 100: قيد إصدار. الكاشير يطبّق خصم 20 قبل الدفع ← عكس (100) + إعادة إصدار بـ80. الزبون يغادر فيُلغى كل شيء ← الإلغاء يعكس الـ100 الأصلية مجدداً. الصافي: الذمم 1100 = ‎−20‎ (رصيد دائن!) والإيراد 4000 = ‎−20‎، رغم أن أثر الفاتورة يجب أن يكون صفراً.","imp":"حساب الذمم 1100 يتراكم عليه رصيد دائن وهمي وحساب المبيعات 4000 يظهر إيراداً سالباً مع كل فاتورة خُصمت ثم أُلغيت. الميزان يبقى متوازناً فلا أحد يلاحظ، وتقرير أعمار الذمم لا يطابق مجموع الفواتير.","fix":"يجب أن يعكس الإلغاء أحدث قيد غير معكوس (عبر الدالة الموجودة أصلاً latestUnreversedInvoicePosting) لا قيد الإصدار دائماً، مع إضافة فحص «معكوس مسبقاً» داخل دالة العكس."},
+
+{"sev":"hi","area":"المردودات","title":"الاسترداد يعيد فتح رصيد الفاتورة تشغيلياً دون إعادة إثبات الذمم دفترياً + معادلتا رصيد متناقضتان","file":"Invoice.php:170 · BillingService.php:281","what":"قيد الاسترداد يخصم من المردودات 4100 مقابل النقد ولا يلمس الذمم 1100، لكن النظام يعيد فتح رصيد الفاتورة متوقعاً تحصيلاً جديداً. كما أن دالة الدفع تحسب الرصيد متجاهلةً المبلغ المسترد، بصيغة مناقضة لصيغة ما بعد الاسترداد.","scen":"فاتورة 100 مدفوعة بالكامل، استرداد جزئي 30 ← الرصيد يُفتح على 30. الزبون يدفع 10: الدالة تحسب الرصيد = max(0, 100−110) = 0 فتُغلق الفاتورة «مدفوعة» ويضيع 20 على المطعم نهائياً (تسرّب نقدي)، ودفترياً يصبح 1100 لهذه الفاتورة سالباً.","imp":"فواتير تُغلق «مدفوعة» بأقل من المستحق بعد أي استرداد جزئي (خسارة نقدية صامتة)، وحساب الذمم 1100 ينزلق لأرصدة دائنة، والإيراد أقل من النقد المحصَّل فعلاً — يستحيل مطابقة 1100 مع مجموع أرصدة الفواتير.","fix":"توحيد معادلة الرصيد إلى total − (paid − refunded) في كل المسارات، وجعل الاسترداد يعيد إثبات الذمم بشكل صحيح بدل إعادة فتح الرصيد للتحصيل."},
+
+{"sev":"hi","area":"تعدد العملات","title":"تقريب كل سطر على حدة مع سماحية صارمة يجعل ترحيل الفواتير يفشل عشوائياً عند اختلاف عملة البيع عن عملة الدفاتر","file":"AccountingService.php:1539","what":"أسطر القيد تُحوَّل للعملة الأساس بضرب كل سطر بسعر الصرف وتقريبه مستقلاً إلى 4 منازل بلا سطر موازنة للتقريب، بينما فحص التوازن يرفض أي فرق يتجاوز 0.0001. القيد قد يضم 7 أسطر فيتجاوز الفارق التراكمي الحد.","scen":"مطعم يبيع بالشيكل ودفاتره بالدولار: فاتورة فيها خصم وضريبة وخدمة — بعد ضرب كل سطر بالسعر وتقريبه يصبح مجموع المدين 36.9041 والدائن 36.9043 ← فرق 0.0002 > 0.0001 ← «إصدار الفاتورة» يفشل برسالة إنجليزية غامضة والطاولة لا تُغلق.","imp":"عند تفعيل تعدد العملات تفشل الفوترة بشكل متقطع غير مفهوم للكاشير، وقيود أخرى تُحفَظ بفوارق أجزاء من الأغورة تجعل مجموع المدين ≠ الدائن في ميزان المراجعة على المدى الطويل.","fix":"إضافة سطر موازنة للتقريب (يُرحَّل البقية إلى حساب فروق تقريب) أو حساب الإجماليات بالعملة الأساس ثم توزيعها — توسيع السماحية وحده لا يكفي."},
+
+{"sev":"hi","area":"المشتريات","title":"حساب GRNI يُدان بسعر أمر الشراء ويُدائن بسعر التسليم الفعلي — رصيد شارد لا يُصفَّر وفروق أسعار وهمية في 5420","file":"SupplierInvoiceService.php:97","what":"استلام البضاعة يُدائن GRNI بالسعر الفعلي المستلَم، بينما فاتورة المورد تُدين GRNI بسعر أمر الشراء الأصلي. متى عدّل المستلم السعر عند التسليم، اختلف الطرفان ولا يُصفَّر الحساب أبداً، ويظهر فرق سعر زائف في 5420.","scen":"أمر شراء 10/كجم لـ100كجم، المورد يسلّم بـ12/كجم والمستلم يعدّل السعر. الاستلام: مدين 1200 = 1200 / دائن 2300 = 1200. الفاتورة 1200: مدين 2300 = 1000 + مدين 5420 = 200 / دائن 2000 = 1200. يبقى في 2300 رصيد 200 دائن للأبد و5420 يعرض «فرق سعر» لم يحدث.","imp":"حساب 2300 (استلامات غير مفوترة) يتضخم برصيد شارد يظهر كالتزام وهمي في الميزانية، وحساب 5420 يعرض فروقات أسعار زائفة تشوّه قائمة الدخل.","fix":"يجب أن تُصفّي الفاتورة GRNI بقيمة الاستلام الفعلية لا بسعر أمر الشراء، وتطبيع وحدات التعبئة في حساب الكمية المفوترة سابقاً، ومنع إلغاء أمر شراء استُلم جزئياً."},
+
+{"sev":"hi","area":"المردودات","title":"استرداد فاتورة مشطوبة يُعيدها للظهور كدين على الزبون بمبلغ سبق تحميله على الديون المعدومة","file":"RefundService.php:58","what":"دالة الاسترداد تتحقق فقط من ألا يتجاوز المبلغ ما دُفع، ولا تفحص حالة الفاتورة. فاتورة شُطبت (قيد ديون معدومة 5200) لا تزال قابلة للاسترداد، وإعادة حساب الرصيد تلغي حالة «مشطوبة» وتُعيدها للوحة الديون.","scen":"فاتورة 100: دُفع 40، أُجّل 60 ثم شُطب (مدين 5200 = 60 / دائن 1100، الرصيد صُفّر). بعد شهر يسترد الكاشير الـ40 ← تعود الفاتورة بحالة «صادرة» ورصيد 100 وتظهر كدين 100، بينما رصيدها في دفتر 1100 = صفر.","imp":"فاتورة مشطوبة تعود كدين مفتوح بمبلغ سبق تحميله على مصروف الديون المعدومة 5200 — ازدواج بين المصروف والتحصيل، ورصيد 1100 في الدفتر يخالف لوحة الديون تماماً.","fix":"إضافة حارس في دالة الاسترداد يمنع استرداد فاتورة بحالة «مشطوبة» أو «ملغاة»، وعدم إعادة احتساب الحالة بشكل يُعيد فتحها."},
+
+{"sev":"hi","area":"دفتر الديون","title":"تحصيل الديون غير محمي بمعاملة ذرّية: خطأ «المبلغ أكبر من الدين» يقع بعد ترحيل التوزيعات فعلاً","file":"BillingService.php:485","what":"دالة تحصيل الديون لا تُغلَّف بمعاملة، وكل دفعة داخل الحلقة تُرحَّل وتُلتزم على حدة. فحص «المبلغ يتجاوز إجمالي المستحق» يقع بعد الحلقة، فيظهر الخطأ بينما تكون التوزيعات قد رُحّلت والتُزمت بالفعل.","scen":"دين الزبون 300، الكاشير يكتب 350 خطأً: الحلقة توزّع 300 (دفعات وقيود ملتزمة) ثم يظهر خطأ «المبلغ أكبر… خفّض القيمة». الكاشير يظن أن شيئاً لم يُسجَّل فيعيد للزبون 350 كاملة — بينما الدفتر والدرج سجّلا تحصيل 300.","imp":"تحصيلات مرحّلة في الدفتر ومحسوبة على درج الكاشير بينما الشاشة أبلغت بالفشل — عجز صندوق غير مفسَّر عند إغلاق الشفت، ولا سجل توزيع موحّد لمطابقة الدفعة.","fix":"تغليف الدالة بمعاملة DB::transaction واحدة، والتحقق من ألا يتجاوز المبلغ إجمالي الدين قبل البدء بأي توزيع."},
+
+{"sev":"hi","area":"المخزون","title":"الجرد والتسويات اليدوية والهدر لا تُحدِّث دفعات المخزون (batches) — فإما تُباع بضاعة مشطوبة (تكلفة مزدوجة) أو تتوقف الفوترة","file":"StockCountService.php:142","what":"اعتماد الجرد والتسوية اليدوية والهدر تُحدِّث الرصيد الكلي وتُرحّل القيد لكنها لا تُعدِّل كميات الدفعات (FIFO batches). بينما مسار البيع يثق بالدفعات كمصدر حقيقة، فينشأ تعارض في الاتجاهين.","scen":"دفعة 10كجم لحم بـ40 (المخزون=400). الجرد يجد 4كجم: تسوية دائن 1200 = 240. الدفعات لا تزال تُظهر 10كجم فيستمر المطبخ ببيع 6كجم إضافية من الدفعة الوهمية: دائن 1200 مرة أخرى 240 ومدين 5000 = 240. النتيجة: تكلفة العجز تظهر مرتين (5410 + 5000) و1200 ينتهي أقل من الواقع بـ240.","imp":"ميزان المراجعة يُظهر رصيد 1200 سالباً أو أقل من الواقع، ونفس تكلفة العجز تظهر مرتين في قائمة الدخل؛ وفي الاتجاه المعاكس تتوقف الفوترة برسالة «نقص دفعات» رغم وجود مخزون.","fix":"يجب أن يُعدّل الجرد والتسوية والهدر كميات الدفعات (remaining_qty) أيضاً، أو تُطابَق الدفعات دورياً مع الرصيد الكلي."},
+
+{"sev":"hi","area":"تحويلات الفروع","title":"طرفا التحويل بين الفروع يُرحَّلان بتكلفتين مختلفتين — حساب «مخزون بالطريق 1150» لا يُصفَّر أبداً","file":"BranchTransferService.php:204","what":"يُثبَّت سعر التحويل عند المسودة بمتوسط الفرع، لكن الإرسال يخصم بالتكلفة الفعلية للدفعات (FIFO) بينما الاستلام والإلغاء يُرحَّلان بالسعر المجمَّد. متى اختلفت التكلفتان تراكم رصيد شارد في 1150.","scen":"مسودة تحويل 20كجم جبنة والمتوسط 30 (السعر المجمّد 30). وقت الإرسال يستهلك FIFO دفعة أقدم بـ26: مدين 1150 = 520. الوجهة تستلم: مدين 1200 = 600 / دائن 1150 = 600. يبقى في 1150 رصيد ‎−80‎ دائم، ومخزون الوجهة مبالغ فيه بـ80.","imp":"حساب «مخزون بالطريق 1150» يتراكم فيه رصيد شارد يظهر في الميزانية كأصل/التزام وهمي، ومخزون الفرع المستلم مُقيَّم بتكلفة خاطئة تشوّه هامش ربحه لاحقاً.","fix":"ترحيل طرفي التحويل بنفس أساس التكلفة (التقاط التكلفة الفعلية عند الإرسال وتمريرها للاستلام)، واستعادة كميات الدفعات عند الإلغاء."},
+
+{"sev":"hi","area":"التقارير","title":"تقرير الأرباح والخسائر لا يستثني قيود إقفال السنة — قائمة الدخل السنوية تظهر صفراً بعد الإقفال","file":"ProfitLossReport.php:332","what":"قيد إقفال السنة يصفّر الإيرادات والمصاريف بترحيل معاكس بتاريخ نهاية السنة. تقرير الأرباح والخسائر يقرأ من الدفتر دون استثناء قيود الإقفال، فيدخل قيد التصفير في الحساب ويلغي كل الأرصدة.","scen":"سنة 2025: إيراد 500,000 ومصاريف 350,000 وربح 150,000. بعد إقفال السنة يفتح المدير تقرير الأرباح للفترة 1/1–31/12 فيجد المبيعات = صفر والمصاريف = صفر والربح = صفر، وأي تقرير يشمل ديسمبر يظهر أرقاماً معكوسة.","imp":"يفقد المحاسب القدرة على استخراج قائمة الدخل السنوية بعد الإقفال — يظهر صفر رغم نشاط سنة كاملة، ما يجعل المقارنات السنوية والإقرارات الضريبية والعروض للإدارة غير قابلة للاستخدام من داخل النظام.","fix":"يجب أن تستثني تقارير الأرباح والخسائر وميزان المراجعة قيود event=period_closing/fiscal_year_closing (أو توفير خيار «قبل الإقفال»)."},
+
+{"sev":"hi","area":"الإقفال","title":"قيود الإقفال قابلة للعكس يدوياً من شاشة اليومية بينما الفترة مقفلة — تنتقل الأرباح بين الشهور","file":"AccountingController.php:453","what":"قيد الإقفال يمكن عكسه يدوياً من شاشة اليومية، لكن العكس يُرفض داخل الفترة المقفلة فيُؤرَّخ في الشهر التالي، فتعود إيرادات الشهر المقفل للظهور كحركة في الشهر التالي. وإعادة الفتح تتخطى بصمت ترحيل العكس الصحيح.","scen":"إقفال يونيو (ربح 30,000 إلى الأرباح المحتجزة). مدير يعكس قيد الإقفال يدوياً فيُؤرَّخ في 5/7 ← إيرادات ومصاريف يونيو تعود كحركة في يوليو، وقائمة دخل يوليو تتضخم بـ30,000 بينما الفترة ما زالت «مقفلة».","imp":"قائمة الدخل الشهرية تصبح غير قابلة للاعتماد؛ يوليو يعرض أرقام يونيو، والأرباح المحتجزة تتأرجح، وميزان المراجعة يُظهر حسابات إيراد/مصروف غير مصفّرة رغم أن الفترة «مقفلة».","fix":"منع عكس/تعديل قيود الإقفال من شاشة اليومية؛ يجب أن يتم عكسها حصراً عبر مسار «إعادة فتح الفترة» بتاريخ داخل الفترة."},
+
+{"sev":"hi","area":"الضريبة","title":"حساب تسوية الضريبة يعتمد على مدى تاريخي بينما قيد السداد مؤرَّخ خارج المدى — سداد مزدوج ومحو ضريبة الفترة التالية","file":"AccountingController.php:1337","what":"شاشة سداد الضريبة تحسب المستحق ضمن مدى محدد، لكن قيد السداد يُؤرَّخ بتاريخ اليوم (خارج المدى غالباً). فيظل المدى يُظهر المستحق كاملاً بعد السداد، ويدخل السداد في حساب الفترة التالية.","scen":"ضريبة يونيو 1,000. في 5/7 يسدّدها المحاسب بمدى يونيو وتاريخ اليوم. يعيد فتح الصفحة فيجد المستحق ما زال 1,000 فيسدّد ثانيةً (سداد مزدوج). وفي تسوية يوليو يدخل قيد 5/7 فيظهر مستحق يوليو 200 بدل 1,200.","imp":"يظهر مستحق لمدى سبق سداده فيُرحَّل سداد مكرر يُخرج نقدية مرتين، وتقرير الفترة التالية يعرض مستحقاً أقل من الحقيقي فيُقدَّم إقرار ناقص مع غرامات محتملة.","fix":"يجب أن يخصم حساب المستحق قيود السداد السابقة بغض النظر عن تاريخها (تتبّع المدى المسدَّد صراحةً)، والتحذير إن كان المدى مسدَّداً."},
+
+{"sev":"hi","area":"الضريبة","title":"السوق الأمريكي: ضريبة مدخلات فواتير الموردين تُرحَّل كأصل 1300 ولا تُطبَّق ولا تُصرَف أبداً — أصل وهمي متنامٍ","file":"AccountingService.php:535","what":"في السوق الأمريكي (Sales Tax) تُرحَّل ضريبة فاتورة المورد مديناً على 1300 (أصل)، لكن قيد سداد الضريبة يفرض input=0 فلا يلمس 1300 إطلاقاً — فيتراكم الرصيد بلا تصفية.","scen":"مطعم أمريكي يشتري بفاتورة 1,000$ عليها 80$ ضريبة مبيعات ← مدين 1300 = 80. السداد الشهري يخصم من المخرجات 2100 فقط ولا يلمس 1300. بعد سنة بضريبة إجمالية 10,000$ يظهر أصل وهمي 10,000$ لا يقابله حق استرداد.","imp":"رصيد 1300 يتضخم شهرياً بلا حركة دائنة — أصل غير قابل للاسترداد في نظام الضريبة الأمريكي. إجمالي الأصول مبالغ فيه، والتكلفة/المصروفات ناقصة، فصافي الربح أعلى من الحقيقة.","fix":"في السوق الأمريكي يجب ترحيل ضريبة مبيعات المورد كجزء من تكلفة الشراء/المصروف لا كأصل قابل للاسترداد على 1300."},
+
+{"sev":"me","area":"القيد المزدوج","title":"تكديس خصومات يتجاوز مجموعها قيمة الطلب يجعل قيد الإصدار غير متوازن — الفاتورة لا تُصدَر نهائياً","file":"OrderService.php:520","what":"يُسقّف كل خصم منفرد عند قيمة الطلب لكن لا يُفحص مجموع الخصومات. يُقصّ الصافي عند الصفر لكن يُخزَّن الخصم كاملاً، فإذا تجاوز المجموع القيمة ظهر عجز في القيد ورُفض عند كل إصدار.","scen":"جلسة قيمتها 50: النادل يطبّق خصماً 40، ثم المدير خصم 30 (كلاهما مسموح منفرداً) ← الخصم الكلي 70. عند «فاتورة»: مدين 70، دائن 50 ← «Unbalanced entry» والجلسة عالقة لا فاتورة ولا إغلاق طاولة.","imp":"الفوترة تتوقف برسالة خطأ إنجليزية تقنية كلما تجاوز مجموع الخصومات قيمة الطلب — طاولات لا تُغلق ومبيعات لا تُثبت.","fix":"تسقيف مجموع الخصومات عند قيمة الطلب في حساب الإجماليات، لا كل خصم على حدة فقط."},
+
+{"sev":"me","area":"القيد المزدوج","title":"القيود اليدوية والأرصدة الافتتاحية بلا حماية من الإرسال المزدوج + سباق في شاشة عكس القيد","file":"AccountingController.php:667","what":"القيود اليدوية والأرصدة الافتتاحية تُرحَّل بلا مصدر، فحارس منع التكرار لا ينطبق عليها. الضغط المزدوج على الحفظ (أو F5) ينشئ قيدين متطابقين، وفحص «معكوس مسبقاً» يقع خارج المعاملة فيسمح بعكسين متزامنين.","scen":"المحاسب يدخل الأرصدة الافتتاحية (أصول 500,000) والشبكة بطيئة فيضغط الحفظ مرتين ← قيدا افتتاح متطابقان: كل الأرصدة مضاعفة والميزانية تُظهر أصولاً بمليون، وميزان المراجعة يبقى متوازناً.","imp":"أرصدة افتتاحية أو قيود يدوية مضاعفة تضخّم الحسابات دون أي إنذار — تُكتشف فقط بمراجعة يدوية لليومية.","fix":"إضافة رمز طلب فريد (idempotency token) وتعطيل الزر بعد الإرسال، ووضع فحص العكس داخل معاملة بقفل."},
+
+{"sev":"me","area":"المردودات","title":"الاسترداد لا يعكس ضريبة المخرجات (2100) ولا التزام الإكراميات (2200) — كامل المبلغ يُحمَّل على المردودات فقط","file":"AccountingService.php:488","what":"قيد الاسترداد سطران فقط: مدين مردودات 4100 بكامل المبلغ / دائن نقد. المبلغ يشمل الضريبة والخدمة والإكرامية التي سُجّلت عند الإصدار، لكن أياً منها لا يُعاد إثباته.","scen":"فاتورة 116 = 100 + 16% ضريبة، دُفعت ثم رُدّت كاملة في نفس الشهر. الدفتر: 2100 لا يزال يُظهر 16 مستحقة ← يدفع المطعم 16 للضريبة عن بيع لم يحدث. ومع إكرامية 10 على فاتورة مردودة، يظل 2200 يُظهر 10 «مستحقة للموظف» وتسمح شاشة التسويات بصرفها.","imp":"تقرير الضريبة وشاشة التسوية يبالغان في ضريبة المخرجات فيدفع المطعم ضريبة عن مبيعات مُرجعة، ورصيد الإكراميات 2200 يسمح بصرف إكرامية أُعيدت للزبون أصلاً.","fix":"تقسيم قيد الاسترداد إلى مكوّناته (ضريبة/خدمة/إكرامية/إيراد) بما يعكس قيد الإصدار نسبياً."},
+
+{"sev":"me","area":"الشفت","title":"الكاش المتوقع عند إغلاق الشفت يحسب استردادات كاش معلّقة/ملغاة لم تُرحَّل أصلاً — فيسجّل فائضاً وهمياً","file":"ShiftController.php:106","what":"معادلة الكاش المتوقع تطرح كل استردادات الكاش المرتبطة بالشفت بلا فلترة حالة، بينما الاستردادات المعلّقة والملغاة لا تُرحَّل ولا تُخرج مالاً. فيقل الكاش المتوقع بينما المال في الدرج.","scen":"الكاشير يسجّل استرداد 50 كاش «معلّق» (بانتظار موافقة) ويغلق الشفت. الكاش المتوقع ينقص 50 والدرج فيه المال ← فائض +50 ← قيد مدين 1000 / دائن 4210 بـ50. لاحقاً يكتمل الاسترداد فيُرحَّل دائن 1000 بـ50.","imp":"قيود فروقات الصندوق (4210/5510) تسجّل فوائض وعجوزات وهمية، فرصيد 1000 لا يطابق النقد الفعلي ويُتَّهم الكاشير بفروقات لم تحدث.","fix":"فلترة مجموع الاستردادات في معادلة الكاش المتوقع على الحالة «مكتمل» فقط."},
+
+{"sev":"me","area":"دفتر الديون","title":"فحص الحد الائتماني والدين المستحق مفلتران بالفرع الحالي — يمكن تجاوز السقف بتوزيع الدين على الفروع","file":"Customer.php:168","what":"الدين المستحق للعميل يُجمع من فواتيره وهي مفلترة تلقائياً بالفرع النشط. فحص الحد الائتماني يرى ديون الفرع الحالي فقط رغم أن الحد عمود واحد على مستوى العميل، وكذلك لوحة الديون وقائمة السداد.","scen":"عميل حده 1000 وعليه دين 900 في فرع خانيونس. يزور فرع غزة ويؤجّل 900 أخرى: الفحص يرى ديون غزة فقط (صفر) فيوافق — التعرّض الحقيقي 1800 (180% من الحد). وعند السداد في غزة لا تظهر ديون خانيونس فلا تُحصَّل.","imp":"الحد الائتماني يُتجاوَز فعلياً بالتوزيع على الفروع، وإجمالي «الدين المستحق» المعروض ناقص — أرصدة قديمة في فروع أخرى لا يراها أحد فلا تُحصَّل.","fix":"حساب الدين المستحق عبر كل الفروع (تجاوز نطاق الفرع) في فحص الحد الائتماني ولوحة الديون."},
+
+{"sev":"me","area":"التقارير","title":"تقرير أعمار الذمم لا يطابق حساب 1100: الأرصدة الافتتاحية والقيود اليدوية على الذمم غير مرئية والأرصدة السالبة تُسقَط","file":"AccountingController.php:2007","what":"يُبنى التقرير فقط من قيود مصدرها فاتورة أو دفعة. القيود على 1100 بلا مصدر (أرصدة افتتاحية، قيود يدوية) مستثناة بنيوياً، والأرصدة السالبة لكل مستند تُسقَط، فلا يتطابق الإجمالي مع رصيد 1100 ولا مع مجموع أرصدة الفواتير.","scen":"محاسب ينتقل من نظام قديم ويُدخل رصيد ذمم افتتاحي 50,000 عبر شاشة الأرصدة الافتتاحية. ميزان المراجعة يُظهر 1100 = 50,000 بينما تقرير الأعمار فارغ تماماً — الإدارة تظن لا ديون مستحقة ولا يُتابَع تحصيل أي منها.","imp":"إجمالي تقرير أعمار الذمم لا يساوي رصيد 1100 في ميزان المراجعة متى وُجدت أرصدة افتتاحية أو قيود يدوية أو أرصدة سالبة، دون أي سطر تسوية أو تحذير.","fix":"تضمين قيود الذمم بلا مصدر (افتتاحية/يدوية) والأرصدة السالبة في التقرير، أو إضافة سطر تسوية يفسّر الفرق."},
+
+{"sev":"me","area":"دفتر الديون","title":"نموذج سداد الديون بلا حماية من النقر المزدوج — نقرة مزدوجة تسجّل دفعة الزبون مرتين","file":"debts/show.blade.php:62","what":"نموذج السداد إرسال عادي بلا رمز تفرد ولا تعطيل بعد الإرسال. ولأن السداد يوزَّع FIFO على كل الديون، لا يحميه حارس الدفع الزائد للفاتورة الواحدة — ما دام الدين الكلي يتجاوز المبلغ، تمر الدفعة المكررة كاملةً.","scen":"زبون عليه 1000 يدفع 200 كاش. الكاشير ينقر «تسجيل الدفعة» مرتين بسرعة ← دفعتان بـ200 لكل منهما قيد مدين نقد / دائن 1100. الدفتر يقول 400 والدرج فيه 200 فقط.","imp":"تحصيل مكرر في الدفتر مقابل نقد واحد في الدرج: عجز صندوق عند الإغلاق ورصيد ذمم 1100 أقل من الدين الحقيقي.","fix":"تعطيل الزر بعد الإرسال + رمز تفرد على الطلب."},
+
+{"sev":"me","area":"المخزون","title":"المخزون المنقول بين المواقع/الفروع يصبح غير قابل للبيع — الخصم يفشل ويمنع إصدار الفاتورة","file":"InventoryService.php:254","what":"نقل المخزون بين المواقع ينقل الكمية لكن لا ينقل الدفعات، واستلام تحويل الفرع لا يُنشئ دفعة في الوجهة. فأي مكوّن مُتتبَّع بالدفعات يُنقل لا يمكن خصمه في الموقع الجديد فيرمي خطأً يوقف الاعتماد والفوترة.","scen":"المخزن الرئيسي يستلم 50كجم طحين كدفعة، يُنقل 20كجم للمطبخ. طلب بيتزا في محطة المطبخ: لا دفعات في المطبخ رغم وجودها في المخزن ← خطأ «لا توجد دفعات في هذا الموقع»، وإن كانت مرحلة الخصم «عند الاعتماد» لا يمكن اعتماد الطلب ولا إصدار الفاتورة.","imp":"الكاشير لا يستطيع إصدار الفاتورة بعد أي نقل مخزون بين المواقع/الفروع، أو تُخصم الدفعات من الموقع القديم فيصبح رصيده سالباً وأرصدة المواقع كاذبة.","fix":"نقل الدفعات مع الكمية في النقل بين المواقع، وإنشاء دفعة في الوجهة عند استلام تحويل الفرع."},
+
+{"sev":"me","area":"المخزون","title":"تقرير الاستهلاك النظري مقابل الفعلي يحسب كل حركة «صادرة» كاستهلاك بيع — فتظهر التحويلات كسرقة/هدر وهمي","file":"ReportController.php:365","what":"يقول التوثيق إن «الفعلي» = حركات الصادر المرتبطة بأصناف الطلب فقط، لكن الاستعلام يجمع كل الحركات الصادرة والهدر بلا فلترة المرجع. فتُحسب تحويلات الفروع والصرف اليدوي كاستهلاك زائد.","scen":"العملية تنقل 30كجم أرز لفرع آخر و10كجم من المخزن للمطبخ. تقرير الفروقات الشهري يُظهر 40كجم «فقد غامض» للأرز ← تُحقَّق مع المطبخ في سرقة لم تحدث، بينما يغرق تسريب حقيقي 2% على أصناف أخرى في الضجيج.","imp":"التقرير يتّهم المطبخ بهدر/سرقة وهمية بمجرد وجود تحويلات بين الفروع أو المواقع — قرارات رقابية خاطئة وفقدان الثقة بالتقرير.","fix":"إضافة فلتر «المرجع = صنف طلب» على استعلام الاستهلاك الفعلي."},
+
+{"sev":"me","area":"المخزون","title":"تكلفة المكوّن قابلة للتعديل يدوياً من شاشة الأصناف — تعيد تقييم كل المخزون وتكلفة البيع بلا أي قيد","file":"IngredientController.php:414","what":"حقل تكلفة الوحدة يُحفَظ مباشرة من النموذج. تعديله يغيّر فوراً تقييم المخزون وتكلفة الجرد وتكلفة كل خصم مستقبلي غير مرتبط بدفعة، دون أي قيد إعادة تقييم — فينحرف حساب 1200 الدفتري عن (كمية × تكلفة).","scen":"المدير يرى تكلفة السكر قديمة فيكتب 8 بدل 5 مع 100كجم بالمخزون. التقييم الفعلي يقفز 300 بلا قيد، ودفتر 1200 لا يزال يحمل البضاعة بـ5. الجرد التالي يُسعّر عجز 10كجم بـ8 لبضاعة الدفتر يحملها بـ5.","imp":"قيمة المخزون في تقارير التشغيل والجرد لا تساوي رصيد 1200 في الدفتر ولا يمكن مطابقتهما، وقيود فروق الجرد تُسعَّر بتكلفة لا علاقة لها بالمثبَت في الدفاتر.","fix":"جعل تكلفة الوحدة للقراءة فقط (يديرها النظام)، أو ترحيل قيد إعادة تقييم على 1200 عند أي تعديل يدوي."},
+
+{"sev":"me","area":"تعدد العملات","title":"حركات المخزون تُقوَّم بعملة البيع وتُحوَّل بسعر كل تاريخ — حساب المخزون 1200 يتراكم فيه فرق صرف لا يُصفَّى","file":"AccountingService.php:1506","what":"استلام المخزون يُقيَّد بسعر يوم الاستلام والصرف بسعر يوم البيع. عند اختلاف العملتين يبقى في 1200 فرق = التكلفة × (سعر الاستلام − سعر البيع) بعد نفاد الكمية، ولا توجد أداة إعادة تقييم لتصفيته.","scen":"دفاتر بالدولار وبيع بالشيكل: استلام طحين بـ1000 شيكل والسعر 0.27 ← مدين 1200 = 270$. يُستهلك كله والسعر أصبح 0.25 ← دائن 1200 = 250$. المخزون الفعلي صفر لكن يبقى في 1200 عشرون دولاراً «عالقة».","imp":"رصيد المخزون 1200 يبتعد تدريجياً عن القيمة الفعلية للمخزون؛ عند الجرد لا يطابق الحساب البضاعة على الرفوف حتى لو كانت الكميات صحيحة، والفرق «رواسب فرق عملة» لا يفسرها أي تقرير. (يظهر فقط عند اختلاف عملة البيع عن عملة الدفاتر).","fix":"تصفية المخزون بالتكلفة التاريخية بعملة الدفاتر (طبقات تكلفة)، أو إضافة قيد إعادة تقييم دوري للمخزون."},
+
+{"sev":"me","area":"المخزون","title":"الاستلام على رصيد سالب يشوّه متوسط التكلفة المرجّح — تكلفة البيع اللاحقة أعلى من أي سعر شراء حقيقي","file":"PurchaseOrderService.php:275","what":"معادلة المتوسط المرجّح تستخدم الرصيد الحالي بلا تصفير للسالب. عندما يكون الرصيد سالباً قبل الاستلام، يُستقرأ المتوسط الجديد خارج نطاق أي سعر شراء حقيقي.","scen":"مكوّن رصيده −10كجم (استمر البيع رغم نفاد الدفعات) وتكلفته 4.00. وصلت 20كجم بسعر 5.00. المعادلة: (−10×4 + 20×5) ÷ 10 = 6.00 — أعلى من أي سعر حقيقي. كل خصم لاحق يُسعَّر بـ6.00 فيسجّل تكلفة أعلى من الواقع.","imp":"تكلفة البضاعة المباعة تُرحَّل بمبالغ أعلى من أي سعر شراء فعلي فيظهر هامش الربح أقل من الحقيقة، وتقييم المخزون والهدر والوصفات النظرية كلها مشوّهة.","fix":"تصفير الرصيد السالب في معادلة المتوسط المرجّح، أو منع الخصم لما دون الصفر."},
+
+{"sev":"me","area":"المردودات","title":"استرداد بطاقة معلّق أُقفل شهر إنشائه لا يمكن إتمامه أبداً — تاريخ الترحيل مجمَّد داخل فترة مقفلة","file":"AccountingService.php:485","what":"الاسترداد المعلّق يُرحَّل عند إتمامه بتاريخ إنشائه المجمَّد. إذا أُقفلت فترة الإنشاء قبل الإتمام، يرفض حارس الفترات المقفلة القيد وتنعكس المعاملة — فيبقى الاسترداد معلّقاً للأبد.","scen":"28/6 استرداد بطاقة 150 «معلّق». 3/7 يُقفل المحاسب يونيو (لا فحص للاستردادات المعلّقة). 5/7 تؤكد البوابة الإرجاع فيضغط الكاشير «إتمام»: النظام يحاول الترحيل بتاريخ 28/6 ← يُرفض والمعاملة تنعكس. كل إعادة محاولة تفشل بنفس الطريقة.","imp":"المال خرج من البنك فعلاً لكن الدفتر لا يعرف: لا قيد مردودات ولا تخفيض للبنك، فرصيد البنك الدفتري أعلى من الواقع وتفشل مطابقة الكشف. الحل الوحيد إعادة فتح فترة يونيو المقفلة.","fix":"ترحيل إتمام الاسترداد المعلّق بتاريخ الإتمام لا بتاريخ الإنشاء المجمَّد، أو منع إقفال فترة بها استردادات معلّقة."},
+
+{"sev":"me","area":"الإقفال","title":"إقفال السنة المالية يفشل إذا وقع تاريخ نهايتها داخل فترة شهرية مقفلة مع بقاء أرصدة غير مقفلة","file":"AccountingController.php:947","what":"قيد إقفال السنة يُرحَّل بتاريخ نهاية السنة. إذا كان شهر ديسمبر مقفلاً كفترة شهرية وبقيت أرصدة أرباح/خسائر من شهور أخرى غير مقفلة، يرفض حارس الفترات القيد فيفشل إقفال السنة بالكامل.","scen":"سنة 1/1–31/12، أُقفل ديسمبر كفترة شهرية لكن مارس بقي مفتوحاً. عند «إقفال السنة» يحاول النظام الترحيل بتاريخ 31/12 ← «الفترة ديسمبر مقفلة» ويفشل رغم استيفاء كل شروط القائمة.","imp":"يُمنع المحاسب من إقفال السنة ولا تُرحَّل أرباحها للأرباح المحتجزة، وتبقى السنة مفتوحة لقبول قيود متأخرة. الحل الوحيد إعادة فتح ديسمبر (ما يشوّه تقاريره).","fix":"إعفاء قيد إقفال السنة من قفل الفترة الشهرية (فهو قيد إقفال)، أو اشتراط إقفال كل الشهور أولاً مع توجيه واضح."},
+
+{"sev":"me","area":"الإقفال","title":"قائمة فحص الإقفال تقبل أي مطابقة بنكية مهما كان فرقها، والمطابقات المخزَّنة تتقادم بصمت","file":"AccountingController.php:1756","what":"وجود صف مطابقة واحد داخل المدى يُرضي بند «المطابقة» في قائمة الإقفال بغض النظر عن قيمة الفرق. وقيد يدوي لاحق بتاريخ سابق يغيّر رصيد الدفتر فتصبح أرقام المطابقة المخزَّنة قديمة بلا إعادة حساب أو تنبيه.","scen":"أمين الصندوق يسجّل مطابقة: الدفتر 52,000 والكشف 45,000 — فرق 7,000 غير مفسَّر. يُحفَظ الصف «مطابق» بلا اعتراض. نهاية الشهر يجد المحاسب البند بعلامة خضراء لمجرد وجود صف، فيقفل الفترة.","imp":"يقفل المحاسب الفترة معتقداً أن الأرصدة مطابقة بينما المطابقة الوحيدة تحمل فرقاً كبيراً أو أصبحت بالية بعد قيود بأثر رجعي — تفقد قائمة الإقفال قيمتها كأداة رقابة.","fix":"اشتراط أن يكون فرق المطابقة ضمن السماحية وحديثاً، وإعادة حساب رصيد الدفتر عند الفحص."},
+
+{"sev":"lo","area":"القيد المزدوج","title":"سماحية 0.01 في تقسيم الفاتورة والدفع الزائد تُراكم أغورات على حساب الذمم 1100","file":"BillingService.php:582","what":"تقسيم الفاتورة يقبل مجموع أجزاء يبعد حتى 0.01 عن الإجمالي، والدفع يسمح بتجاوز 0.01 ثم يقصّ الرصيد. فتبقى بقايا أغورة مدينة أو دائنة على 1100 لا يظهرها تقرير الأعمار (يُسقط ما ≤ 0.01).","scen":"فاتورة 100.00 مقسومة 33.33×3 = 99.99 (ضمن السماحية). يدفع الثلاثة ← يبقى 0.01: الطاولة لا تُغلق تلقائياً، وتبقى أغورة عالقة في 1100 لا تظهر في الأعمار. مع مئات الفواتير شهرياً يتراكم فرق بالشواقل.","imp":"رصيد 1100 ينحرف بالأغورات (موجباً وسالباً) عن مجموع أرصدة الفواتير، وتقرير الأعمار يخفي البقايا — فرق غير قابل للمطابقة يكبر مع الزمن.","fix":"عند سداد كل الأجزاء وبقاء ≤ السماحية، إغلاق تلقائي وشطب فرق التقريب، وإلزام مجموع الأجزاء بالتساوي التام."},
+
+{"sev":"lo","area":"الضريبة","title":"وضع الضريبة الشاملة (tax inclusive) يضيف الضريبة المستخرجة فوق الإجمالي بدل إبقائها داخله","file":"OrderService.php:529","what":"في الوضع الشامل تُستخرَج الضريبة من السعر بشكل صحيح، لكن الناتج يُضاف فوق الإجمالي بلا شرط — فيدفع الزبون الضريبة مرتين ويتضخم الإيراد. خامل حالياً (الإعداد معطَّل افتراضياً) لكنه ينفجر فور تفعيله.","scen":"مطعم أسعاره شاملة 16%: طبق بـ116 (منها 16 ضريبة). عند تفعيل inclusive: الحساب يصبح 116 + 16 = 132 — الزبون مُحمَّل 16 زيادة، وقائمة الدخل تُظهر إيراد 116 بدل 100.","imp":"عند أي تفعيل مستقبلي للضريبة الشاملة: تحصيل زائد من الزبائن، وإيراد مبيعات يتضمن حصة الضريبة — الإيراد وقاعدة احتساب الخدمة كلاهما خاطئ.","fix":"في الوضع الشامل، عدم إضافة الضريبة المستخرجة إلى الإجمالي في حساب الإجماليات."},
+
+{"sev":"lo","area":"الشفت","title":"النقد المستلم خارج الدفعات (تسويات وجبات الموظفين نقداً) غير مرئي لمطابقة الشفت — يُسجَّل فائض وهمي","file":"ShiftController.php:121","what":"معادلة الكاش المتوقع لا تتضمن تسويات وجبات الموظفين النقدية (ولا صرف الإكراميات/الضريبة نقداً من الدرج) رغم أنها تُرحَّل مديناً على 1000 — فلا يمكن أن يتطابق الدفتر والدرج معاً لهذه العمليات.","scen":"موظف يسدّد دين وجبته 30 كاش عند الدرج منتصف الشفت. الدفتر فيه مدين 1000 = 30. عند الإغلاق يعدّ الدرج 30 زيادة عن المتوقع ← فائض +30 ← قيد مدين 1000 / دائن 4210 بـ30. الدفتر الآن +60 لـ30 نقد فعلي.","imp":"كل تسوية وجبات نقدية عند الدرج تولّد فائض صندوق وهمياً يُرحَّل قيداً حقيقياً، فيتضخم حساب 1000 ويظهر إيراد فوائض (4210) زائف.","fix":"إضافة تسويات الوجبات النقدية (وصرف الإكراميات/الضريبة نقداً) كبنود في معادلة الكاش المتوقع، أو توجيهها عبر حركة درج."},
+
+{"sev":"lo","area":"كامن","title":"خدمة نقاط الولاء الخاملة تعدّل إجمالي الفاتورة مباشرة بلا عكس/إعادة ترحيل — لغم إن فُعِّلت كما هي","file":"LoyaltyService.php:138","what":"دالة استبدال النقاط تعدّل خصم/إجمالي/رصيد الفاتورة مباشرة دون المرور بدورة العكس وإعادة الترحيل. مؤكَّد أنها خاملة (لا يستدعيها أي كود)، فأثرها الحالي صفر، لكن تفعيلها كما هي بعد الإصدار يجعل الذمم 1100 قديمة.","scen":"مطوّر مستقبلي يضيف زر «استبدال نقاط» يستدعي الدالة بعد إصدار الفاتورة: إجمالي الفاتورة ينخفض 10 لكن قيد الإصدار يبقى بالمبلغ القديم. الزبون يدفع المخفَّض فيبقى في 1100 بقية 10 لكل استبدال لا يفسّرها أي تقرير.","imp":"لا أثر حالياً لأن الخدمة غير موصولة؛ لكن تفعيلها كما هي سيجعل رصيد الذمم 1100 أعلى من فواتير العملاء الفعلية بمقدار كل استبدال نقاط.","fix":"إن فُعِّلت، توجيه الاستبدال عبر دورة العكس وإعادة الترحيل (كما في خصومات ما بعد الإصدار)؛ وإلا إبقاؤها خاملة."}
+]
+</script>
+
+<script>
+(function(){
+  var natureClass = {"مدين":"nb-d","دائن":"nb-c"};
+  // chart of accounts
+  try{
+    var accts = JSON.parse(document.getElementById("accounts-data").textContent);
+    var tb = document.querySelector("#chart-table tbody");
+    accts.forEach(function(r){
+      var tr = document.createElement("tr");
+      if(r[0]==="grp"){
+        tr.className="grp-row";
+        var td=document.createElement("td"); td.colSpan=6; td.textContent=r[1]; tr.appendChild(td);
+      } else {
+        var nb = natureClass[r[3]]||"";
+        tr.innerHTML =
+          '<td class="acc-code">'+r[0]+'</td>'+
+          '<td>'+r[1]+'</td>'+
+          '<td>'+r[2]+'</td>'+
+          '<td class="'+nb+'">'+r[3]+'</td>'+
+          '<td>'+r[4]+'</td>'+
+          '<td><span class="pill '+r[5]+'">'+(r[5]==="on"?"نشط":"مُعطَّل")+'</span></td>';
+      }
+      tb.appendChild(tr);
+    });
+  }catch(e){}
+
+  // findings
+  try{
+    var sevName={hi:"حرجة",me:"متوسطة",lo:"منخفضة"};
+    var finds = JSON.parse(document.getElementById("findings-data").textContent);
+    var order={hi:0,me:1,lo:2};
+    finds.sort(function(a,b){return order[a.sev]-order[b.sev];});
+    var list = document.getElementById("findings-list");
+    finds.forEach(function(f,i){
+      var el=document.createElement("article");
+      el.className="find "+f.sev;
+      el.innerHTML =
+        '<div class="fh">'+
+          '<div class="idx">'+(i+1)+'</div>'+
+          '<div class="tt">'+
+            '<h4>'+f.title+'</h4>'+
+            '<div class="sub">'+
+              '<span class="chip '+f.sev+'">'+sevName[f.sev]+'</span>'+
+              '<span class="chip area">'+f.area+'</span>'+
+              '<span class="floc">'+f.file+'</span>'+
+            '</div>'+
+          '</div>'+
+        '</div>'+
+        '<div class="fb">'+
+          '<div class="row"><div class="lbl">المشكلة</div><p>'+f.what+'</p></div>'+
+          '<div class="row"><div class="lbl">سيناريو عملي</div><p>'+f.scen+'</p></div>'+
+          '<div class="row"><div class="lbl">الأثر عليك كمحاسب</div><p>'+f.imp+'</p></div>'+
+          '<div class="fix"><div class="lbl">الإصلاح المقترح</div><p>'+f.fix+'</p></div>'+
+        '</div>';
+      list.appendChild(el);
+    });
+  }catch(e){
+    document.getElementById("findings-list").innerHTML='<p style="color:#A6352A">تعذّر عرض قائمة الملاحظات.</p>';
+  }
+})();
+</script>
+
+</body>
+</html>

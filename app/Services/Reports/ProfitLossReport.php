@@ -329,7 +329,15 @@ class ProfitLossReport
             ->where('journal_entries.status', 'posted')
             ->whereDate('journal_entries.posted_on', '>=', $this->from)
             ->whereDate('journal_entries.posted_on', '<=', $this->to)
-            ->whereNotIn('journal_entries.event_type', ['period_closing', 'period_closing_reversal']);
+            // Closing entries zero revenue/expense into retained earnings — they
+            // are a bookkeeping mechanism, not operating activity, so the income
+            // statement must exclude BOTH the monthly period close AND the annual
+            // fiscal-year close (the latter was missing → an annual P&L that spans
+            // the year-end close showed zero revenue/expense).
+            ->whereNotIn('journal_entries.event_type', [
+                'period_closing', 'period_closing_reversal',
+                'fiscal_year_closing', 'fiscal_year_closing_reversal',
+            ]);
 
         if ($this->branchId) {
             $query->where('journal_entries.branch_id', $this->branchId);

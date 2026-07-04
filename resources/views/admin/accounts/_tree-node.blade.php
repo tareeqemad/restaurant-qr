@@ -21,7 +21,8 @@
     $hasChildren = $children->isNotEmpty();
 @endphp
 
-<li class="{{ $hasChildren ? 'parent_li' : '' }}" data-id="{{ $account->id }}">
+<li class="{{ $hasChildren ? 'parent_li' : '' }}{{ $account->is_active ? '' : ' acc-inactive' }}"
+    data-id="{{ $account->id }}" data-active="{{ $account->is_active ? '1' : '0' }}">
     <span
         data-id="{{ $account->id }}"
         data-code="{{ $account->code }}"

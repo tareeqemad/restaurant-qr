@@ -271,9 +271,17 @@ class PurchaseOrderService
                 // never compute against stale numbers.
                 $oldStock = (float) $ingredient->current_stock;
                 $oldCpu   = (float) $ingredient->cost_per_unit;
-                $newStock = $oldStock + $qtyBase;
-                $newCpu   = $newStock > 0
-                    ? (($oldStock * $oldCpu) + ($qtyBase * $baseUnitCost)) / $newStock
+
+                // Weighted average must not be computed against a NEGATIVE
+                // starting stock (a prior sale drove current_stock below zero).
+                // The negative term extrapolates the cost outside any real
+                // purchase price — e.g. −10@4 receiving 20@5 → 6.00, dearer than
+                // any lot ever bought, which then over-prices every later COGS.
+                // Clamp the basis at zero: the incoming lot sets the cost and the
+                // back-filled deficit simply inherits that price.
+                $basisStock = max(0.0, $oldStock);
+                $newCpu     = ($basisStock + $qtyBase) > 0
+                    ? (($basisStock * $oldCpu) + ($qtyBase * $baseUnitCost)) / ($basisStock + $qtyBase)
                     : $baseUnitCost;
 
                 // 1) Create the batch FIRST so we have an id to link to the movement.

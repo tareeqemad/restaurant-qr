@@ -108,35 +108,35 @@
                             @php $base = $existingUnits->count(); @endphp
                             <td>
                                 <input type="text"
-                                       :name="`units[${{{ $base }} + i - 1}][name]`"
+                                       :name="`units[${ {{ $base }} + i - 1 }][name]`"
                                        required class="form-control form-control-sm"
                                        placeholder="مثلاً: كرتون 24 علبة">
                             </td>
                             <td>
                                 <input type="number" step="0.0001" min="0.0001"
-                                       :name="`units[${{{ $base }} + i - 1}][factor_to_base]`"
+                                       :name="`units[${ {{ $base }} + i - 1 }][factor_to_base]`"
                                        required class="form-control form-control-sm text-end"
                                        placeholder="24">
                             </td>
                             <td>
                                 <input type="text"
-                                       :name="`units[${{{ $base }} + i - 1}][barcode]`"
+                                       :name="`units[${ {{ $base }} + i - 1 }][barcode]`"
                                        dir="ltr" class="form-control form-control-sm">
                             </td>
                             <td>
                                 <input type="number" step="0.01" min="0"
-                                       :name="`units[${{{ $base }} + i - 1}][purchase_price]`"
+                                       :name="`units[${ {{ $base }} + i - 1 }][purchase_price]`"
                                        class="form-control form-control-sm text-end">
                             </td>
                             <td>
                                 <input type="number" step="0.01" min="0"
-                                       :name="`units[${{{ $base }} + i - 1}][sale_price]`"
+                                       :name="`units[${ {{ $base }} + i - 1 }][sale_price]`"
                                        class="form-control form-control-sm text-end">
                             </td>
                             <td class="text-center">
-                                <input type="hidden" :name="`units[${{{ $base }} + i - 1}][is_default_purchase]`" value="0">
+                                <input type="hidden" :name="`units[${ {{ $base }} + i - 1 }][is_default_purchase]`" value="0">
                                 <input type="radio" name="default_purchase_idx"
-                                       :value="`${{{ $base }} + i - 1}`"
+                                       :value="`${ {{ $base }} + i - 1 }`"
                                        class="form-check-input"
                                        onchange="document.querySelectorAll('input[name$=\'[is_default_purchase]\']').forEach(el => el.value = '0'); this.previousElementSibling.value = '1';">
                             </td>
@@ -240,7 +240,7 @@ function ingredientUnitsEditor(initialCount) {
                     <template x-for="i in extraRows" :key="i">
                         <tr>
                             <td>
-                                <select :name="`lines[${{{ $existingLines->count() }} + i - 1}][ingredient_id]`" class="form-select form-select-sm" required>
+                                <select :name="`lines[${ {{ $existingLines->count() }} + i - 1 }][ingredient_id]`" class="form-select form-select-sm" required>
                                     @foreach($allIngredients as $i)
                                         <option value="{{ $i->id }}">{{ $i->name }} ({{ $i->sku }})</option>
                                     @endforeach
@@ -248,11 +248,11 @@ function ingredientUnitsEditor(initialCount) {
                             </td>
                             <td>
                                 <input type="number" step="0.0001" min="0.0001"
-                                       :name="`lines[${{{ $existingLines->count() }} + i - 1}][quantity]`"
+                                       :name="`lines[${ {{ $existingLines->count() }} + i - 1 }][quantity]`"
                                        class="form-control form-control-sm text-end" required>
                             </td>
                             <td>
-                                <select :name="`lines[${{{ $existingLines->count() }} + i - 1}][unit_id]`" class="form-select form-select-sm" required>
+                                <select :name="`lines[${ {{ $existingLines->count() }} + i - 1 }][unit_id]`" class="form-select form-select-sm" required>
                                     @foreach($allUnits as $u)
                                         <option value="{{ $u->id }}">{{ $u->name }} ({{ $u->code }})</option>
                                     @endforeach

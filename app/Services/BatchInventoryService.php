@@ -160,11 +160,13 @@ class BatchInventoryService
                     $bindings[] = $remainingQty;
                 }
                 $idsPlaceholder = implode(',', array_fill(0, count($ids), '?'));
+                // Bind the timestamp instead of NOW() — NOW() is MySQL-only and
+                // breaks the SQLite test database (and any non-MySQL driver).
                 $sql = "UPDATE ingredient_batches
                         SET remaining_qty = CASE id " . implode(' ', $cases) . " END,
-                            updated_at = NOW()
+                            updated_at = ?
                         WHERE id IN ($idsPlaceholder)";
-                DB::statement($sql, array_merge($bindings, $ids));
+                DB::statement($sql, array_merge($bindings, [now()->format('Y-m-d H:i:s')], $ids));
             }
 
             return $taken;

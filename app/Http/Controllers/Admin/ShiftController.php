@@ -103,8 +103,12 @@ class ShiftController extends Controller
                 // tracks how the money LEFT the drawer (which is what we
                 // care about here), independent of the original payment
                 // method. NULL guard for the column rolls in NULL→0.
+                // ONLY completed refunds actually left the drawer — pending
+                // (awaiting gateway) and cancelled refunds move no cash, so
+                // counting them would post a phantom shift variance.
                 $cashRefunds = (float) \App\Models\Refund::where('shift_id', $shift->id)
                     ->where('method', 'cash')
+                    ->where('status', 'completed')
                     ->sum('amount');
 
                 $cashPayIns = (float) $shift->cashMovements()

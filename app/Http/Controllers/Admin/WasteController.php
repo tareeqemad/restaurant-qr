@@ -306,6 +306,9 @@ class WasteController extends Controller
                     wasteReason: $data['reason'],
                     storageLocationId: $data['storage_location_id'] ?? null,
                     wasteReasonLookupId: $reasonLookupId,
+                    // Explicit-batch waste already decremented the batch above;
+                    // location/global waste (no $batch) must reconcile FIFO here.
+                    syncBatches: $batch === null,
                 );
 
                 ActivityLog::log(

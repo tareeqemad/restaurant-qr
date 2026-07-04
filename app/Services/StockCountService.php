@@ -148,6 +148,7 @@ class StockCountService
                     reason:     "جرد {$count->number}",
                     userId:     $userId,
                     storageLocationId: $count->storage_location_id,
+                    syncBatches: true,   // keep FIFO batches aligned with the counted stock
                 );
                 $created++;
             }

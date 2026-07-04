@@ -52,6 +52,16 @@ class RefundService
             // Lock the invoice row so two cashiers can't refund the same balance simultaneously
             $invoice = Invoice::lockForUpdate()->findOrFail($invoice->id);
 
+            // A written-off / cancelled invoice is closed: its residual was
+            // already expensed to bad debt (5200) or reversed. Refunding it
+            // would silently recompute its status back to open and resurrect
+            // it on the debt board with a balance the ledger no longer holds.
+            if (in_array($invoice->status, ['unpaid_writeoff', 'cancelled'], true)) {
+                throw ValidationException::withMessages([
+                    'amount' => 'لا يمكن استرداد فاتورة مشطوبة أو ملغاة. تراجع عن الشطب أولاً إن لزم.',
+                ]);
+            }
+
             $alreadyRefunded = (float) $invoice->refunded_total;
             $available       = (float) $invoice->paid_total - $alreadyRefunded;
 

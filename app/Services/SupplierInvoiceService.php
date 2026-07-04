@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\ActivityLog;
 use App\Models\PurchaseOrderItem;
+use App\Models\PurchaseReceiptItem;
 use App\Models\Shift;
 use App\Models\SupplierInvoice;
 use App\Models\SupplierInvoiceItem;
@@ -80,6 +81,21 @@ class SupplierInvoiceService
                         ->pluck('qty', 'purchase_order_item_id')
                     : collect();
 
+                // GRNI (2300) was CREDITED at receipt using the ACTUAL delivered
+                // price (the receiver can override the PO price). To clear it we
+                // must DEBIT at that same actual value — not the notional PO price
+                // — or 2300 keeps a permanent residue and 5420 shows a purchase
+                // price variance that never happened. receipt_item.subtotal =
+                // quantity_received × actual_unit_price, so total ÷ qty is the
+                // actual weighted-average delivered price per PO unit.
+                $receiptActuals = $poItemIds
+                    ? PurchaseReceiptItem::whereIn('purchase_order_item_id', $poItemIds)
+                        ->groupBy('purchase_order_item_id')
+                        ->selectRaw('purchase_order_item_id, SUM(subtotal) as total, SUM(quantity_received) as qty')
+                        ->get()
+                        ->keyBy('purchase_order_item_id')
+                    : collect();
+
                 foreach ($lines as $line) {
                     $poItem = ! empty($line['purchase_order_item_id'])
                         ? $poItems->get((int) $line['purchase_order_item_id'])
@@ -94,7 +110,14 @@ class SupplierInvoiceService
                     $receivedQty = $poItem
                         ? max(0, (float) $poItem->quantity_received - $invoicedSoFar)
                         : null;
-                    $receivedTotal = $receivedQty !== null ? $receivedQty * (float) $poItem->unit_price : null;
+                    // Clear GRNI at the actual weighted-average delivered price;
+                    // fall back to the PO price only when nothing was received yet
+                    // (which preserves the original behaviour for un-overridden POs).
+                    $actualUnitValue = $poItem ? (float) $poItem->unit_price : 0.0;
+                    if ($poItem && ($ra = $receiptActuals->get($poItem->id)) && (float) $ra->qty > 0.0001) {
+                        $actualUnitValue = (float) $ra->total / (float) $ra->qty;
+                    }
+                    $receivedTotal = $receivedQty !== null ? round($receivedQty * $actualUnitValue, 4) : null;
 
                     // Quantity variance — needs base-unit normalization
                     // when the PO and the invoice use different pack

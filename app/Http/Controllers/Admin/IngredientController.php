@@ -439,6 +439,7 @@ class IngredientController extends Controller
             qtyBase: $qtyBase,
             unitCost: (float) ($data['unit_cost'] ?? $ingredient->cost_per_unit),
             reason: $data['reason'],
+            syncBatches: true,   // manual adjustment must keep FIFO batches aligned
         );
         return back()->with('success', 'تم تسجيل الحركة');
     }

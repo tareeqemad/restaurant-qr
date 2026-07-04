@@ -99,10 +99,20 @@
                             <td class="text-end fw-bold">{{ \App\Helpers\Money::formatAccounting($debit) }}</td>
                             <td class="text-end fw-bold">{{ \App\Helpers\Money::formatAccounting($credit) }}</td>
                             <td class="text-end">
-                                @if(auth()->user()?->hasPermission('chart_of_accounts.create') && ! in_array((int) $entry->id, $reversedEntryIds ?? [], true))
+                                @php
+                                    $isClosingEntry = in_array($entry->event_type, [
+                                        'period_closing', 'fiscal_year_closing',
+                                        'period_closing_reversal', 'fiscal_year_closing_reversal',
+                                    ], true);
+                                @endphp
+                                @if(auth()->user()?->hasPermission('chart_of_accounts.create') && ! in_array((int) $entry->id, $reversedEntryIds ?? [], true) && ! $isClosingEntry)
                                     <a href="{{ route('admin.accounting.journal.adjust.create', $entry) }}" class="btn btn-sm btn-outline-warning">
                                         <i class="bi bi-arrow-counterclockwise"></i> عكس/تصحيح
                                     </a>
+                                @elseif($isClosingEntry)
+                                    <span class="badge bg-secondary-transparent text-muted" title="قيد إقفال — يُعكس فقط عبر إعادة فتح الفترة أو السنة المالية">
+                                        <i class="bi bi-lock-fill"></i> إقفال
+                                    </span>
                                 @else
                                     <span class="text-muted small">-</span>
                                 @endif

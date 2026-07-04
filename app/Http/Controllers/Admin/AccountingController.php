@@ -450,6 +450,20 @@ class AccountingController extends Controller
         abort_unless(auth()->user()?->hasPermission('chart_of_accounts.create'), 403);
         $this->assertEntryInCurrentBranch($entry);
 
+        // Closing entries carry period state — they zero the P&L into retained
+        // earnings and belong to a closed period/year. Reversing one from the
+        // journal screen dates the reversal OUTSIDE the closed period (the lock
+        // pushes it forward), shifting a whole month's revenue into the next
+        // month while the period still reads "closed". Undoing a close is only
+        // correct via the Reopen flow, which restores the period status and
+        // dates the reversal back inside the period.
+        if (in_array($entry->event_type, [
+            'period_closing', 'fiscal_year_closing',
+            'period_closing_reversal', 'fiscal_year_closing_reversal',
+        ], true)) {
+            return back()->with('error', 'قيود الإقفال لا تُعكس من شاشة اليومية. استخدم «إعادة فتح الفترة أو السنة المالية» من شاشة الفترات.');
+        }
+
         if ($this->entryIsReversed($entry)) {
             return back()->with('error', 'هذا القيد تم عكسه مسبقا. لا يمكن عكس نفس القيد مرتين.');
         }
@@ -1872,7 +1886,16 @@ class AccountingController extends Controller
 
     private function taxSettlementAmounts(string $from, string $to): array
     {
-        $rows = $this->ledgerAccountRows($from, $to);
+        // Balance-based settlement: the payable is the OUTSTANDING balance of the
+        // VAT accounts as of TODAY (cumulative from the start of the books), which
+        // every prior tax_payment already reduced (it debits 2100 / credits 1300).
+        // We measure as of today — NOT the range end $to — because a settlement is
+        // dated when it's actually paid (often after the period it covers). Using
+        // $to would exclude that later payment and let the same range be paid
+        // twice. Measuring to today captures every prior payment, so re-opening
+        // shows only what's still owed and a payment never bleeds into the next
+        // period. $from/$to are kept only for the on-screen label / metadata.
+        $rows = $this->ledgerAccountRows(null, now()->toDateString());
         $outputTax = round(max(0, $this->netForCodes($rows, $this->postingRoleCodes('output_vat'), 'credit')), 2);
         $inputTax = MarketProfile::isUs()
             ? 0.0

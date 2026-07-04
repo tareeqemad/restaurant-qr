@@ -279,12 +279,21 @@ class BillingService
             ]);
 
             $paidTotal = (float) $invoice->payments()->sum('amount');
-            $balance = max(0, (float) $invoice->total - $paidTotal);
+
+            // Balance is measured against NET payments (gross paid − refunded),
+            // exactly like Invoice::recomputeBalanceAfterRefund. The old formula
+            // used paid_total alone and ignored refunded_total, so after any
+            // partial refund an invoice could close as "paid" while the net cash
+            // collected was still below the total — a silent shortfall. The two
+            // formulas must agree or the same column drifts between the payment
+            // path and the refund path.
+            $netPaid = $paidTotal - (float) $invoice->refunded_total;
+            $balance = max(0, round((float) $invoice->total - $netPaid, 2));
 
             $status = match (true) {
-                $balance <= 0 => 'paid',
-                $paidTotal > 0 => 'partially_paid',
-                default => 'issued',
+                $balance <= 0.001 && $netPaid > 0 => 'paid',
+                $netPaid > 0                      => 'partially_paid',
+                default                           => 'issued',
             };
 
             $invoice->update([
@@ -445,50 +454,82 @@ class BillingService
             throw new \RuntimeException('قيمة الدفعة يجب أن تكون أكبر من صفر.');
         }
 
-        $allocations = [];
+        // The whole allocation is ONE atomic unit. Previously the loop ran
+        // without an enclosing transaction — each addPayment committed on its
+        // own, then the "amount exceeds total owed" check threw AFTER money was
+        // already posted, leaving committed allocations behind an error screen
+        // (real ledger + drawer moved while the cashier was told it failed).
+        $allocations = DB::transaction(function () use ($customer, $amount, $method, $userId, $primaryInvoice, $reference, $notes) {
+            // Drain the oldest open debts first, then the primary (current
+            // visit) invoice. Lock each invoice row so concurrent cashier
+            // sessions can't both apply the same payment dollar (the lock now
+            // holds until this outer transaction commits).
+            $debtInvoices = $customer->invoices()
+                ->whereNotNull('settled_on_account_at')
+                ->where('balance', '>', 0)
+                ->whereNotIn('status', ['cancelled', 'unpaid_writeoff'])
+                ->orderBy('settled_on_account_at')
+                ->pluck('id');
 
-        // Drain the oldest open debts first, then the primary (current
-        // visit) invoice. Lock each invoice row so concurrent cashier
-        // sessions can't both apply the same payment dollar.
-        $debtInvoices = $customer->invoices()
-            ->whereNotNull('settled_on_account_at')
-            ->where('balance', '>', 0)
-            ->whereNotIn('status', ['cancelled', 'unpaid_writeoff'])
-            ->orderBy('settled_on_account_at')
-            ->pluck('id');
+            $queue = $debtInvoices->toArray();
+            if ($primaryInvoice) {
+                $queue[] = $primaryInvoice->id;
+            }
+            // De-dupe in case the primary is also a debt (cashier reopened it
+            // to add more money).
+            $queue = array_values(array_unique($queue));
 
-        $queue = $debtInvoices->toArray();
-        if ($primaryInvoice) {
-            $queue[] = $primaryInvoice->id;
-        }
-        // De-dupe in case the primary is also a debt (cashier reopened it
-        // to add more money).
-        $queue = array_values(array_unique($queue));
+            // Pre-flight: reject up-front if the payment exceeds the total
+            // collectable balance, so the common overpay case never partially
+            // allocates (and never fires a stray "paid" broadcast) before
+            // aborting. The in-loop remainder check below is the authoritative
+            // guard against a concurrent balance change — if it throws, the
+            // whole transaction rolls back and nothing is posted.
+            $collectable = 0.0;
+            foreach ($queue as $invoiceId) {
+                $inv = Invoice::find($invoiceId);
+                if (! $inv || in_array($inv->status, ['paid', 'cancelled', 'unpaid_writeoff'], true)) continue;
+                $collectable += max(0, (float) $inv->balance);
+            }
+            $collectable = Money::round($collectable);
+            if ($amount - $collectable > 0.01) {
+                throw new \RuntimeException(sprintf(
+                    'المبلغ المدفوع (%s) أكبر من إجمالي المستحق (%s). خفّض المبلغ.',
+                    number_format($amount, 2),
+                    number_format($collectable, 2),
+                ));
+            }
 
-        $remaining = $amount;
-        foreach ($queue as $invoiceId) {
-            if ($remaining <= 0.001) break;
+            $allocations = [];
+            $remaining = $amount;
+            foreach ($queue as $invoiceId) {
+                if ($remaining <= 0.001) break;
 
-            $inv = Invoice::whereKey($invoiceId)->lockForUpdate()->first();
-            if (! $inv) continue;
-            if (in_array($inv->status, ['paid', 'cancelled', 'unpaid_writeoff'], true)) continue;
+                $inv = Invoice::whereKey($invoiceId)->lockForUpdate()->first();
+                if (! $inv) continue;
+                if (in_array($inv->status, ['paid', 'cancelled', 'unpaid_writeoff'], true)) continue;
 
-            $invBalance = Money::round((float) $inv->balance);
-            if ($invBalance <= 0.001) continue;
+                $invBalance = Money::round((float) $inv->balance);
+                if ($invBalance <= 0.001) continue;
 
-            $apply = min($remaining, $invBalance);
-            $this->addPayment($inv, $apply, $method, $userId, $reference, $notes);
-            $allocations[] = ['invoice_id' => $inv->id, 'invoice_number' => $inv->number, 'amount' => $apply];
-            $remaining = Money::round($remaining - $apply);
-        }
+                $apply = min($remaining, $invBalance);
+                $this->addPayment($inv, $apply, $method, $userId, $reference, $notes);
+                $allocations[] = ['invoice_id' => $inv->id, 'invoice_number' => $inv->number, 'amount' => $apply];
+                $remaining = Money::round($remaining - $apply);
+            }
 
-        if ($remaining > 0.001) {
-            throw new \RuntimeException(sprintf(
-                'المبلغ المدفوع أكبر من إجمالي المستحق. المتبقّي بدون توزيع: %s. خفّض المبلغ.',
-                number_format($remaining, 2),
-            ));
-        }
+            if ($remaining > 0.001) {
+                // Rolls back every allocation above — nothing is half-committed.
+                throw new \RuntimeException(sprintf(
+                    'المبلغ المدفوع أكبر من إجمالي المستحق. المتبقّي بدون توزيع: %s. خفّض المبلغ.',
+                    number_format($remaining, 2),
+                ));
+            }
 
+            return $allocations;
+        });
+
+        // Side effects run only after the transaction commits successfully.
         ActivityLog::log(
             'customer.debt_payment',
             "دفعة من الزبون {$customer->name} بقيمة ".number_format($amount, 2)." موزّعة على ".count($allocations)." فاتورة",

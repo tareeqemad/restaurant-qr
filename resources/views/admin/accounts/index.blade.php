@@ -60,6 +60,16 @@
             <i class="bi bi-arrows-collapse"></i> طيّ الكل
         </button>
 
+        @php $inactiveCount = $allAccounts->where('is_active', false)->count(); @endphp
+        @if($inactiveCount)
+            <div class="form-check form-switch mb-0 ms-1" title="الحسابات المعطّلة مخفية افتراضياً لتبسيط الشجرة. القيود التلقائية تظل تعمل معها.">
+                <input class="form-check-input" type="checkbox" id="acc-show-inactive">
+                <label class="form-check-label small text-muted" for="acc-show-inactive">
+                    إظهار المعطّلة ({{ $inactiveCount }})
+                </label>
+            </div>
+        @endif
+
         <div class="input-group input-group-sm ms-auto" style="max-width:260px;">
             <span class="input-group-text"><i class="bi bi-search"></i></span>
             <input type="search" id="acc-tree-search" class="form-control"
@@ -75,8 +85,11 @@
             <i class="bi bi-plus-square text-success"></i> لتطوي أو تفتح الفروع.
         </div>
         <div>
-            <strong>{{ $allAccounts->count() }}</strong> حساب
-            (<strong>{{ $allAccounts->where('is_system', true)->count() }}</strong> نظامي)
+            <strong>{{ $allAccounts->where('is_active', true)->count() }}</strong> نشط
+            @if($allAccounts->where('is_active', false)->count())
+                · <strong>{{ $allAccounts->where('is_active', false)->count() }}</strong> معطّل
+            @endif
+            · <strong>{{ $allAccounts->where('is_system', true)->count() }}</strong> نظامي
         </div>
     </div>
 </div>
@@ -89,17 +102,23 @@
     <div class="card-body p-2">
         <ul class="tree" id="accounts-tree">
             @foreach($typeMeta as $type => $meta)
-                @php $typeRoots = $byParent->get(0, collect())->where('type', $type); @endphp
+                @php
+                    $typeRoots   = $byParent->get(0, collect())->where('type', $type);
+                    $activeCount = $typeRoots->where('is_active', true)->count();
+                    $totalCount  = $typeRoots->count();
+                @endphp
                 @if($typeRoots->isNotEmpty())
                     {{-- Synthetic type wrapper (not an account itself).
                          Marked data-type="header" so the JS skips it for
                          account-level actions like select/edit/delete. --}}
                     <li class="parent_li type-header" data-id="header-{{ $type }}">
-                        <span data-type="header">
+                        <span data-type="header"
+                              data-count-active="{{ $activeCount }}"
+                              data-count-total="{{ $totalCount }}">
                             <i class="bi bi-dash-square"></i>
                             <i class="bi {{ $meta['icon'] }} text-primary mx-1"></i>
                             <strong>{{ $meta['label'] }}</strong>
-                            <span class="badge bg-secondary mx-1">{{ $typeRoots->count() }}</span>
+                            <span class="badge bg-secondary mx-1 type-count">{{ $activeCount }}</span>
                         </span>
                         <ul>
                             @foreach($typeRoots->sortBy('code') as $root)
@@ -387,6 +406,10 @@
     /* Search filter */
     .tree li.is-filtered-out { display: none; }
 
+    /* Hide disabled accounts by default so the chart stays lean for a
+       small setup. The "إظهار المعطّلة" switch removes this class. */
+    .tree.hide-inactive li.acc-inactive { display: none; }
+
     /* The toolbar card spacing */
     .acc-toolbar .input-group-text { background: #f8fafc; }
 </style>
@@ -398,6 +421,19 @@
     // ═══════════════════ TREE CORE (gfc.tree port) ═══════════════════
     const tree = document.getElementById('accounts-tree');
     if (! tree) return;
+
+    // Disabled accounts are hidden by default → lean chart. The toggle below
+    // reveals them (they still post/appear in the trial balance either way).
+    tree.classList.add('hide-inactive');
+    document.getElementById('acc-show-inactive')?.addEventListener('change', (e) => {
+        const showInactive = e.target.checked;
+        tree.classList.toggle('hide-inactive', ! showInactive);
+        // Keep the per-type count badges honest as rows appear/disappear.
+        tree.querySelectorAll('li.type-header > span[data-type="header"]').forEach(h => {
+            const badge = h.querySelector('.type-count');
+            if (badge) badge.textContent = showInactive ? h.dataset.countTotal : h.dataset.countActive;
+        });
+    });
 
     let selected = null;       // currently-selected <span> element
 

@@ -431,8 +431,9 @@ class InventoryService
         ?string $wasteReason = null,
         ?int $storageLocationId = null,
         ?int $wasteReasonLookupId = null,
+        bool $syncBatches = false,
     ): InventoryMovement {
-        [$mv, $crossedLowStock, $freshIngredient] = DB::transaction(function () use ($ingredient, $type, $qtyBase, $unitCost, $reference, $reason, $userId, $batchId, $wasteReason, $storageLocationId, $wasteReasonLookupId) {
+        [$mv, $crossedLowStock, $freshIngredient] = DB::transaction(function () use ($ingredient, $type, $qtyBase, $unitCost, $reference, $reason, $userId, $batchId, $wasteReason, $storageLocationId, $wasteReasonLookupId, $syncBatches) {
             // Lock the ingredient row for the duration of this transaction.
             // Concurrent receipts/deductions on the same SKU are now serialized,
             // preventing weighted-average cost interleaving.
@@ -482,6 +483,38 @@ class InventoryService
                     ->sum('quantity');
                 $ingredient->update(['current_stock' => $newGlobal]);
                 $stockAfter = $newGlobal;
+            }
+
+            // Keep FIFO batches in step with an UNMANAGED stock change (stock
+            // count, manual ingredient adjustment, location/global waste).
+            // Callers that manage batches themselves — PO receipt via
+            // createBatchOnReceipt, a sale via deductFifo, or an explicit-batch
+            // waste — leave $syncBatches false so we never double-count.
+            // Without this, batch totals drift from ingredient_stock: a surplus
+            // leaves batches SHORT (a later sale throws "batches < needed" and
+            // blocks checkout), and a shortage leaves ghost batches that a later
+            // sale re-costs, double-hitting COGS / inventory (1200).
+            if ($syncBatches && $ingredient->track_stock && abs($delta) > 0.0001
+                && IngredientBatch::where('ingredient_id', $ingredient->id)->exists()) {
+                if ($delta > 0 && $storageLocationId) {
+                    $this->batches->createBatchOnReceipt(
+                        ingredient: $ingredient,
+                        qtyBase: $delta,
+                        unitCost: $unitCost,
+                        source: $reference,
+                        notes: $reason,
+                        storageLocationId: $storageLocationId,
+                    );
+                } elseif ($delta < 0) {
+                    $need = abs($delta);
+                    $available = (float) IngredientBatch::where('ingredient_id', $ingredient->id)
+                        ->when($storageLocationId, fn ($q) => $q->where('storage_location_id', $storageLocationId))
+                        ->where('remaining_qty', '>', 0)
+                        ->sum('remaining_qty');
+                    if ($available > 0.0001) {
+                        $this->batches->deductFifo($ingredient, min($need, $available), $storageLocationId);
+                    }
+                }
             }
 
             // inventory_movements has a NOT NULL branch_id. The trait

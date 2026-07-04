@@ -496,20 +496,10 @@ class OrderDiscountService
 
     protected function latestUnreversedInvoicePosting(Invoice $invoice): ?JournalEntry
     {
-        $entries = $invoice->journalEntries()
-            ->orderBy('id')
-            ->get();
-
-        $reversedIds = $entries
-            ->map(fn (JournalEntry $entry) => (int) ($entry->metadata['reverses_entry_id'] ?? 0))
-            ->filter()
-            ->all();
-
-        return $entries
-            ->filter(fn (JournalEntry $entry) => $entry->event_type === 'invoice_issued'
-                || preg_match('/^invoice_reissued_\d+$/', (string) $entry->event_type))
-            ->reject(fn (JournalEntry $entry) => in_array((int) $entry->id, $reversedIds, true))
-            ->sortByDesc('id')
-            ->first();
+        // Single source of truth lives in AccountingService so the discount
+        // repost path and the invoice-cancel path can never disagree on which
+        // entry is "live".
+        return app(\App\Services\Accounting\AccountingService::class)
+            ->latestUnreversedInvoicePosting($invoice);
     }
 }

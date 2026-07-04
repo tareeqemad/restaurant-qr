@@ -378,15 +378,50 @@ class AccountingService
 
     public function reverseInvoiceIssued(Invoice $invoice, ?int $userId = null, ?string $reason = null): ?JournalEntry
     {
-        return $this->reverse(
+        // Reverse the LIVE posting — the original `invoice_issued`, OR the latest
+        // `invoice_reissued_N` when a post-issuance discount already re-posted the
+        // invoice. Blindly reversing `invoice_issued` (the old behaviour) would
+        // double-reverse an already-neutralised entry AND leave the repost
+        // standing → phantom negative A/R (1100) and revenue (4000) on every
+        // discounted-then-cancelled invoice.
+        $live = $this->latestUnreversedInvoicePosting($invoice);
+        if (! $live) {
+            return null;   // never posted, or its live entry is already reversed
+        }
+
+        return $this->reverseEntry(
+            original: $live,
             eventType: 'invoice_cancelled',
-            source: $invoice,
-            originalEventType: 'invoice_issued',
             postedOn: now(),
             description: "عكس فاتورة {$invoice->number}",
-            createdBy: $userId,
             metadata: ['reason' => $reason],
+            createdBy: $userId,
         );
+    }
+
+    /**
+     * The single LIVE (unreversed) posting for an invoice: its original
+     * `invoice_issued` entry, or the latest `invoice_reissued_N` if the
+     * totals were re-posted after a post-issuance discount. Returns null
+     * when the invoice was never posted or its live posting is already
+     * reversed. Shared by the cancel path and OrderDiscountService so both
+     * always target the same entry.
+     */
+    public function latestUnreversedInvoicePosting(Invoice $invoice): ?JournalEntry
+    {
+        $entries = $invoice->journalEntries()->orderBy('id')->get();
+
+        $reversedIds = $entries
+            ->map(fn (JournalEntry $entry) => (int) ($entry->metadata['reverses_entry_id'] ?? 0))
+            ->filter()
+            ->all();
+
+        return $entries
+            ->filter(fn (JournalEntry $entry) => $entry->event_type === 'invoice_issued'
+                || preg_match('/^invoice_reissued_\d+$/', (string) $entry->event_type))
+            ->reject(fn (JournalEntry $entry) => in_array((int) $entry->id, $reversedIds, true))
+            ->sortByDesc('id')
+            ->first();
     }
 
     /**

@@ -7,19 +7,50 @@ use Illuminate\Support\Facades\DB;
 
 class AccountingSeeder extends Seeder
 {
+    /**
+     * Advanced-accounting mechanics a small cash/bank-transfer restaurant
+     * never uses. They are seeded (so historical postings still resolve)
+     * but shipped INACTIVE — hidden from the chart tree, mapping dropdowns
+     * and manual-entry screens. The posting engine still writes to them if
+     * an event ever fires, so disabling is safe and reversible.
+     *
+     * NOTE: this is the single source of truth for the disabled set. Do NOT
+     * force is_active=true below, or the disable migrations get undone on
+     * every re-seed (the bug this replaces).
+     */
+    private const DISABLED_CODES = [
+        '1020', // مقاصة بطاقات — تسوية فورية إلى 1010
+        '1030', // مقاصة المحافظ — غير مستخدمة
+        '1040', // مقاصة البيع الآجل — الرصيد يبقى على 1100
+        '2200', // أمانات الإكراميات — تُقبض مباشرة
+        '4200', // فروقات جرد دائنة — لا جرد فعلي
+        '4210', // فروقات صندوق دائنة — لا عدّ نقدية
+        '5300', // عمولات بنكية — تسوية بلا رسوم
+        '5410', // عجز جرد — لا جرد فعلي
+        '5420', // فروقات أسعار مشتريات — لا مطابقة بندية
+        '5510', // عجز صندوق — لا عدّ نقدية
+    ];
+
     public function run(): void
     {
         foreach ($this->accounts() as $account) {
-            DB::table('accounts')->updateOrInsert(
-                ['code' => $account['code']],
-                [
-                    ...$account,
-                    'is_system' => true,
-                    'is_active' => true,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]
-            );
+            $exists = DB::table('accounts')->where('code', $account['code'])->exists();
+
+            $payload = [
+                ...$account,
+                'is_system'  => true,
+                'updated_at' => now(),
+            ];
+
+            // Only set is_active on first insert — never override an operator's
+            // (or a disable migration's) later toggle on an existing account.
+            // Fresh installs get the correct default: disabled set starts off.
+            if (! $exists) {
+                $payload['is_active']  = ! in_array($account['code'], self::DISABLED_CODES, true);
+                $payload['created_at'] = now();
+            }
+
+            DB::table('accounts')->updateOrInsert(['code' => $account['code']], $payload);
         }
     }
 
@@ -57,6 +88,26 @@ class AccountingSeeder extends Seeder
             ['code' => '5410', 'name' => 'عجز وفروقات جرد مدينة', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'نقص جردي أو صرف مخزون غير مرتبط ببيع.'],
             ['code' => '5420', 'name' => 'فروقات أسعار مشتريات', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'فرق السعر بين قيمة الاستلام وقيمة فاتورة المورد.'],
             ['code' => '5510', 'name' => 'عجز صندوق', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'نقص نقدي عند إغلاق الشفت.'],
+
+            // ── وجبات الموظفين (staff meals) — تنشئها هجرات 2026_05_25_* أيضاً؛
+            //    مكرّرة هنا ليبقى الـ seeder مصدراً كاملاً للدليل (updateOrInsert idempotent).
+            ['code' => '1110', 'name' => 'مستحقات على الموظفين - بدل الوجبات', 'type' => 'asset', 'normal_balance' => 'debit', 'description' => 'قيمة وجبات الموظفين المستحقة عليهم قبل التسوية نقداً أو بخصم الراتب.'],
+            ['code' => '2110', 'name' => 'خصومات الرواتب المستحقة', 'type' => 'liability', 'normal_balance' => 'credit', 'description' => 'مبالغ خُصمت على الموظفين في إقفال شهري وستُحسم من راتب الشهر التالي.'],
+            ['code' => '4030', 'name' => 'إيرادات بدل وجبات الموظفين', 'type' => 'revenue', 'normal_balance' => 'credit', 'description' => 'القيمة البيعية لوجبات الموظفين الداخلية.'],
+            ['code' => '5050', 'name' => 'مصاريف وجبات الموظفين', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'تكلفة الوجبات المقدّمة للموظفين كميزة عينية.'],
+            ['code' => '5060', 'name' => 'هدايا ومكافآت الموظفين العينية', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'وجبات مُنحت للموظفين مجاناً (هدية أو تنازل إداري).'],
+
+            // ── الأصول الثابتة والإهلاك (fixed assets) — تنشئها هجرة 2026_05_31_190000.
+            ['code' => '1500', 'name' => 'الأصول الثابتة', 'type' => 'asset', 'normal_balance' => 'debit', 'description' => 'تكلفة المعدات والأثاث والتجهيزات المرسملة.'],
+            ['code' => '1590', 'name' => 'مجمع الإهلاك', 'type' => 'asset', 'normal_balance' => 'credit', 'description' => 'مجمع إهلاك الأصول الثابتة (حساب مقابل للأصل بطبيعة دائنة).'],
+            ['code' => '4230', 'name' => 'ربح استبعاد أصل ثابت', 'type' => 'revenue', 'normal_balance' => 'credit', 'description' => 'الربح عندما يتجاوز متحصل بيع الأصل قيمته الدفترية.'],
+            ['code' => '5500', 'name' => 'مصروف الإهلاك', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'قسط الإهلاك الدوري للأصول الثابتة.'],
+            ['code' => '5530', 'name' => 'خسارة استبعاد أصل ثابت', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'الخسارة عندما يقل متحصل بيع الأصل عن قيمته الدفترية.'],
+
+            // ── فروقات العملة (FX) — تنشئها هجرة 2026_05_31_180000. تبقى نشطة لأنها
+            //    تُرحَّل تلقائياً عند تسوية ذمم بعملة أجنبية حتى لو عملة الدفاتر واحدة اليوم.
+            ['code' => '4220', 'name' => 'أرباح فروقات العملة', 'type' => 'revenue', 'normal_balance' => 'credit', 'description' => 'ربح صرف عند تسوية ذمم أو التزامات بعملة أجنبية بسعر أفضل.'],
+            ['code' => '5520', 'name' => 'خسائر فروقات العملة', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'خسارة صرف عند تسوية ذمم أو التزامات بعملة أجنبية بسعر أسوأ.'],
         ];
     }
 }
