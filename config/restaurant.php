@@ -95,6 +95,21 @@ return [
         'deduction_stage' => env('RESTAURANT_DEDUCTION_STAGE', 'approve'),
     ],
 
+    // Sidebar visibility for OPTIONAL back-of-house screens. A small,
+    // single-branch restaurant rarely needs these, so they're hidden by
+    // default to keep the inventory/purchasing menu lean. Flip a flag on
+    // (here or via the matching env var) when you actually start using it.
+    //
+    // Hiding a screen only removes it from the menu — the underlying feature
+    // keeps working (batches still cost FIFO, units still convert). Branch
+    // transfers are NOT listed here: they auto-appear the moment a second
+    // active branch exists, and auto-hide while you run a single branch.
+    'nav' => [
+        'vendor_price_compare' => env('NAV_VENDOR_PRICE_COMPARE', false),
+        'batch_expiry'         => env('NAV_BATCH_EXPIRY', false),
+        'units_management'     => env('NAV_UNITS_MANAGEMENT', false),
+    ],
+
     // Cashier-applied discounts. Caps are role-keyed defaults; the running
     // value comes from the Settings table when present (key:
     // `discount_cap_<role>_pct` / `..._fixed`) so admins can tune them at

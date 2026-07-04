@@ -398,6 +398,12 @@
                      Administration per owner's reorganisation. What remains
                      here is inventory + purchasing — back-of-house ops. --}}
                 @if($u && $u->hasAnyRole(['super_admin','admin','manager']))
+                @php
+                    // Branch transfers are only meaningful with 2+ active branches —
+                    // auto-hide for a single-branch shop, auto-show once a second
+                    // branch is added. Cheap COUNT on a tiny table.
+                    $multiBranch = \App\Models\Branch::where('is_active', true)->count() > 1;
+                @endphp
                 <li class="slide has-sub {{ $isOpen('admin.ingredients.*','admin.inventory.*','admin.units.*','admin.suppliers.*','admin.purchase-orders.*','admin.supplier-invoices.*','admin.stock-counts.*','admin.batches.*','admin.storage-locations.*','admin.waste.*','admin.vendor-prices.*') }}">
                     <a href="javascript:void(0);" class="side-menu__item {{ $isActive('admin.ingredients.*','admin.inventory.*','admin.units.*','admin.suppliers.*','admin.purchase-orders.*','admin.supplier-invoices.*','admin.stock-counts.*','admin.batches.*','admin.storage-locations.*','admin.waste.*','admin.vendor-prices.*') }}">
                         {{-- Feather "box" icon — same outer hex as before but with the
@@ -426,20 +432,28 @@
 
                         <li class="slide-section">{{ __('admin.nav.references') }}</li>
                         <li class="slide"><a href="{{ route('admin.ingredients.index') }}" class="side-menu__item {{ $isActive('admin.ingredients.*') }}"><i class="bi bi-basket-fill submenu-icon"></i>{{ __('admin.nav.ingredients') }}</a></li>
+                        @if(config('restaurant.nav.units_management'))
                         <li class="slide"><a href="{{ route('admin.units.index') }}" class="side-menu__item {{ $isActive('admin.units.*') }}"><i class="bi bi-rulers submenu-icon"></i>{{ __('admin.nav.units') }}</a></li>
+                        @endif
                         <li class="slide"><a href="{{ route('admin.storage-locations.index') }}" class="side-menu__item {{ $isActive('admin.storage-locations.*') }}"><i class="bi bi-house-door-fill submenu-icon"></i>{{ __('admin.nav.storage_locations') }}</a></li>
 
                         <li class="slide-section">{{ __('admin.nav.purchasing') }}</li>
                         <li class="slide"><a href="{{ route('admin.suppliers.index') }}" class="side-menu__item {{ $isActive('admin.suppliers.*') }}"><i class="bi bi-truck submenu-icon"></i>{{ __('admin.nav.suppliers') }}</a></li>
+                        @if(config('restaurant.nav.vendor_price_compare'))
                         <li class="slide"><a href="{{ route('admin.vendor-prices.compare') }}" class="side-menu__item {{ $isActive('admin.vendor-prices.*') }}"><i class="bi bi-arrows-collapse submenu-icon"></i>{{ __('admin.nav.vendor_price_compare') }}</a></li>
+                        @endif
                         <li class="slide"><a href="{{ route('admin.purchase-orders.index') }}" class="side-menu__item {{ $isActive('admin.purchase-orders.*') }}"><i class="bi bi-file-earmark-text-fill submenu-icon"></i>{{ __('admin.nav.purchase_orders') }}</a></li>
                         <li class="slide"><a href="{{ route('admin.supplier-invoices.index') }}" class="side-menu__item {{ $isActive('admin.supplier-invoices.*') }}"><i class="bi bi-receipt submenu-icon"></i>{{ __('admin.nav.supplier_invoices') }}</a></li>
 
                         <li class="slide-section">{{ __('admin.nav.daily_operations') }}</li>
+                        @if(config('restaurant.nav.batch_expiry'))
                         <li class="slide"><a href="{{ route('admin.batches.index') }}" class="side-menu__item {{ $isActive('admin.batches.*') }}"><i class="bi bi-calendar-x submenu-icon"></i>{{ __('admin.nav.batches_expiry') }}</a></li>
+                        @endif
                         <li class="slide"><a href="{{ route('admin.stock-counts.index') }}" class="side-menu__item {{ $isActive('admin.stock-counts.*') }}"><i class="bi bi-clipboard-check-fill submenu-icon"></i>{{ __('admin.nav.stock_counts') }}</a></li>
                         <li class="slide"><a href="{{ route('admin.waste.index') }}" class="side-menu__item {{ $isActive('admin.waste.*') }}"><i class="bi bi-trash3-fill submenu-icon"></i>{{ __('admin.nav.waste') }}</a></li>
+                        @if($multiBranch)
                         <li class="slide"><a href="{{ route('admin.branch-transfers.index') }}" class="side-menu__item {{ $isActive('admin.branch-transfers.*') }}"><i class="bi bi-arrow-left-right submenu-icon"></i>{{ __('admin.nav.branch_transfers') }}</a></li>
+                        @endif
                     </ul>
                 </li>
                 @endif
