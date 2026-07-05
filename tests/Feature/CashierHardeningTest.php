@@ -185,4 +185,49 @@ class CashierHardeningTest extends TestCase
         $this->assertSame(1, $invoice->payments()->count(), 'Duplicate token must not post a second payment.');
         $this->assertEqualsWithDelta(40.0, (float) $invoice->paid_total, 0.001);
     }
+
+    /** Deferred-item #1 — a refund on a settle-on-account (customer-debt) invoice
+     *  is refused: refunding would inflate the parked debt vs the GL A/R. */
+    public function test_refund_blocked_on_settled_on_account_invoice(): void
+    {
+        $this->actingAs($this->admin);
+        [$invoice] = $this->issueMeal();
+        app(BillingService::class)->addPayment($invoice, 60.0, 'cash', $this->admin->id);   // partial
+        app(BillingService::class)->settleOnAccount($invoice->fresh(), $this->admin->id);   // park 40 as debt
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessageMatches('/مؤجّلة كدين/u');
+        app(RefundService::class)->issue($invoice->fresh(), 30.0, 'cash', 'مرتجع', $this->admin->id);
+    }
+
+    /** Deferred-item #2 — a capped cashier cannot STACK within-cap discounts past
+     *  the cumulative role ceiling (max of percent- and fixed-ceilings). */
+    public function test_capped_cashier_cannot_stack_discounts_past_ceiling(): void
+    {
+        Role::firstOrCreate(['name' => 'cashier'], ['label' => 'Cashier', 'is_system' => true]);
+        $cashier = User::create([
+            'name' => 'K', 'username' => 'chd-cashier', 'role' => 'cashier',
+            'status' => 'active', 'password' => bcrypt('x'), 'primary_branch_id' => $this->branch->id,
+        ]);
+        $cashier->branches()->attach($this->branch->id, ['is_primary' => true, 'joined_at' => now()]);
+
+        $session = $this->openSession();
+        $order = app(OrderService::class)->createFromCart($session, [['menu_item_id'=>$this->menuItem->id,'quantity'=>1,'modifier_ids'=>[]]]);
+        app(OrderService::class)->approve($order, $this->admin->id);
+
+        // Subtotal 100, cashier cap 10% / fixed 5 → cumulative ceiling max(10,5)=10.
+        // First 10% (=10) is exactly at the ceiling and allowed.
+        app(OrderDiscountService::class)->applyToSession(
+            $session->fresh(), ['type' => 'percent', 'value' => 10, 'reason' => 'ولاء'], $cashier
+        );
+        $this->assertEqualsWithDelta(10.0,
+            (float) \App\Models\OrderDiscount::where('order_id', $order->id)->sum('amount'), 0.001);
+
+        // A second within-cap 5% would push the cumulative to 15 > 10 → refused.
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessageMatches('/يتجاوز حد دورك/u');
+        app(OrderDiscountService::class)->applyToSession(
+            $session->fresh(), ['type' => 'percent', 'value' => 5, 'reason' => 'إضافي'], $cashier
+        );
+    }
 }

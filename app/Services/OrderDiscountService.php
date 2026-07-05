@@ -46,7 +46,8 @@ class OrderDiscountService
             $order = Order::whereKey($order->id)->lockForUpdate()->firstOrFail();
             $this->guardOrderMutable($order);
 
-            $payload = $this->validateAndPrepare($data, $user, (float) $order->subtotal);
+            $existingDiscount = (float) OrderDiscount::where('order_id', $order->id)->sum('amount');
+            $payload = $this->validateAndPrepare($data, $user, (float) $order->subtotal, $existingDiscount);
 
             $discount = OrderDiscount::create([
                 // Branch from the order — discount belongs to wherever the
@@ -122,7 +123,8 @@ class OrderDiscountService
             }
 
             $sessionSubtotal = (float) $billable->sum('subtotal');
-            $payload = $this->validateAndPrepare($data, $user, $sessionSubtotal);
+            $existingDiscount = (float) OrderDiscount::whereIn('order_id', $billable->pluck('id'))->sum('amount');
+            $payload = $this->validateAndPrepare($data, $user, $sessionSubtotal, $existingDiscount);
 
             $created = [];
 
@@ -257,7 +259,7 @@ class OrderDiscountService
         return $discount->refresh();
     }
 
-    protected function validateAndPrepare(array $data, User $user, float $subtotal): array
+    protected function validateAndPrepare(array $data, User $user, float $subtotal, float $existingDiscount = 0): array
     {
         $type = $data['type'] ?? null;
         if (! in_array($type, ['percent', 'fixed'], true)) {
@@ -318,6 +320,21 @@ class OrderDiscountService
                 throw ValidationException::withMessages([
                     'value' => 'الحد الأقصى للخصم لدورك هو '.Money::format($cap['fixed']).
                         '. للمبالغ الأكبر اطلب موافقة المدير.',
+                ]);
+            }
+
+            // Cumulative ceiling: discounts already on this target plus the new
+            // one may not exceed the MOST a single allowed discount could reach —
+            // max(percent-ceiling, fixed-ceiling). Without this a capped cashier
+            // could stack many within-cap discounts to comp the entire bill.
+            $ceiling = max(
+                Money::round($subtotal * (float) $cap['percent'] / 100),
+                (float) $cap['fixed'],
+            );
+            if (($existingDiscount + $amount) - $ceiling > 0.01) {
+                throw ValidationException::withMessages([
+                    'value' => 'إجمالي الخصومات على هذا الطلب يتجاوز حد دورك ('.Money::format($ceiling).
+                        '). أزل خصماً سابقاً أو اطلب موافقة المدير.',
                 ]);
             }
         }

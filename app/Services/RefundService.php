@@ -62,6 +62,19 @@ class RefundService
                 ]);
             }
 
+            // A settle-on-account invoice IS the customer's debt record: its
+            // balance is what they still owe. A cash refund here would raise
+            // that balance (balance = total − netPaid grows as refunded rises),
+            // inflating outstandingDebt() while the GL A/R (1100) is never
+            // re-debited — the debt board and the ledger drift apart, and
+            // returning money to a debtor absurdly makes the debt LARGER. Handle
+            // a return on a parked bill through the customer's debt, not a refund.
+            if ($invoice->settled_on_account_at) {
+                throw ValidationException::withMessages([
+                    'amount' => 'هذه الفاتورة مؤجّلة كدين على الزبون — لا تُسترَد نقداً. حصّل الدين أو عدّله من سجل ديون الزبون.',
+                ]);
+            }
+
             $alreadyRefunded = (float) $invoice->refunded_total;
             $available       = (float) $invoice->paid_total - $alreadyRefunded;
 
