@@ -108,7 +108,7 @@ class ChartOfAccountsManagementTest extends TestCase
     public function test_normal_balance_must_match_account_type(): void
     {
         $this->expectException(ValidationException::class);
-        $this->expectExceptionMessageMatches('/normal_balance|ط§ظ„ط·ط¨ظٹط¹ط©/u');
+        $this->expectExceptionMessageMatches('/الطبيعة المحاسبية/u');
 
         app(AccountService::class)->create([
             'code' => '9210', 'name' => 'Broken asset',

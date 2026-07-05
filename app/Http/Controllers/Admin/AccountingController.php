@@ -311,6 +311,7 @@ class AccountingController extends Controller
     public function storeManualEntry(Request $request)
     {
         abort_unless(auth()->user()?->hasPermission('chart_of_accounts.create'), 403);
+        if ($dupe = $this->duplicateSubmitGuard($request)) return $dupe;
 
         $data = $request->validate([
             'posted_on'   => ['required', 'date'],
@@ -643,6 +644,7 @@ class AccountingController extends Controller
     public function storeOpeningBalances(Request $request)
     {
         abort_unless(auth()->user()?->hasPermission('chart_of_accounts.create'), 403);
+        if ($dupe = $this->duplicateSubmitGuard($request)) return $dupe;
 
         $data = $request->validate([
             'posted_on' => ['required', 'date'],
@@ -1215,12 +1217,28 @@ class AccountingController extends Controller
             ->filter(fn (array $row) => $row['amount'] > 0.01)
             ->values();
 
+        $arTotals = $this->agingTotals($arRows);
+        $apTotals = $this->agingTotals($apRows);
+
+        // Tie-out to the general ledger. The invoice-level aging total can differ
+        // from the 1100 / 2000 account balance because AR/AP can also carry
+        // opening balances and manual journal entries (which have no invoice
+        // document) plus per-invoice negatives dropped above. Surfacing that
+        // residual lets the report reconcile to the trial balance instead of
+        // silently disagreeing with it.
+        $arLedger = $this->bookBalanceForRole('accounts_receivable', 'debit', $asOf);
+        $apLedger = $this->bookBalanceForRole('accounts_payable', 'credit', $asOf);
+
         return view('admin.accounting.aging', [
             'asOf' => $asOf,
             'arRows' => $arRows,
             'apRows' => $apRows,
-            'arTotals' => $this->agingTotals($arRows),
-            'apTotals' => $this->agingTotals($apRows),
+            'arTotals' => $arTotals,
+            'apTotals' => $apTotals,
+            'arLedgerBalance' => $arLedger,
+            'apLedgerBalance' => $apLedger,
+            'arUnassigned' => round($arLedger - (float) $arTotals['total'], 2),
+            'apUnassigned' => round($apLedger - (float) $apTotals['total'], 2),
         ]);
     }
 
@@ -1691,6 +1709,24 @@ class AccountingController extends Controller
         }
     }
 
+    /**
+     * One-shot idempotency guard for source-less financial posts (manual journal,
+     * opening balances). The form carries a fresh `_idem` UUID; the first submit
+     * claims it atomically, a duplicate (F5 / back-then-resubmit) finds it taken
+     * and is bounced with a clear message instead of double-posting.
+     */
+    private function duplicateSubmitGuard(Request $request)
+    {
+        $token = (string) $request->input('_idem', '');
+        if ($token === '') {
+            return null;   // stale cached form without the field — let it through
+        }
+        if (! \Illuminate\Support\Facades\Cache::add('idem:acct:'.$token, true, now()->addMinutes(10))) {
+            return back()->withInput()->with('error', 'تم ترحيل هذا القيد مسبقاً — مُنع إرسال مكرر.');
+        }
+        return null;
+    }
+
     private function closingChecklist(string $from, string $to, ?int $branchId): array
     {
         $ledger = $this->ledgerTotals($from, $to, $branchId);
@@ -1723,10 +1759,15 @@ class AccountingController extends Controller
             ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
             ->count();
 
-        $reconciliations = CashReconciliation::query()
+        $reconciliationsQuery = CashReconciliation::query()
             ->whereDate('statement_date', '>=', $from)
             ->whereDate('statement_date', '<=', $to)
-            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId));
+        $reconciliations = (clone $reconciliationsQuery)->count();
+        // A saved reconciliation with a non-zero difference is NOT resolved — it
+        // must not turn the checklist item green just by existing.
+        $unbalancedReconciliations = (clone $reconciliationsQuery)
+            ->whereRaw('ABS(difference) > 0.01')
             ->count();
 
         return [
@@ -1767,10 +1808,14 @@ class AccountingController extends Controller
             ],
             [
                 'label' => 'مطابقة الصندوق/البنك',
-                'ok' => $reconciliations > 0,
+                'ok' => $reconciliations > 0 && $unbalancedReconciliations === 0,
                 'severity' => 'warn',
-                'message' => 'لا توجد مطابقة صندوق أو بنك داخل المدى',
-                'detail' => $reconciliations.' مطابقة محفوظة',
+                'message' => $reconciliations === 0
+                    ? 'لا توجد مطابقة صندوق أو بنك داخل المدى'
+                    : 'توجد مطابقة بفرق غير مسوّى بين الدفتر والكشف',
+                'detail' => $unbalancedReconciliations > 0
+                    ? $reconciliations.' مطابقة — منها '.$unbalancedReconciliations.' بفرق غير مسوّى'
+                    : $reconciliations.' مطابقة محفوظة',
             ],
         ];
     }

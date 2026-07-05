@@ -158,6 +158,12 @@ class RefundService
             $refund->update([
                 'status'    => 'completed',
                 'reference' => $reference ?? $refund->reference,
+                // The money actually leaves at gateway confirmation (now), not
+                // when the pending refund was initiated. Stamping the completion
+                // date also keeps the posting out of an already-closed period —
+                // otherwise a pending refund whose creation month got closed
+                // could never be completed (its frozen date hit the lock).
+                'refunded_at' => now(),
             ]);
 
             // Now affect the ledger

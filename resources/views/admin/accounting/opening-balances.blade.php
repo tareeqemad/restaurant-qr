@@ -19,6 +19,9 @@
 
 <form method="POST" action="{{ route('admin.accounting.opening-balances.store') }}">
     @csrf
+    {{-- One-shot token: blocks a duplicate post (F5 / back-then-resubmit) that
+         would otherwise double every opening balance. --}}
+    <input type="hidden" name="_idem" value="{{ \Illuminate\Support\Str::uuid() }}">
 
     <div class="card mb-3">
         <div class="card-header bg-light"><strong>بيانات القيد الافتتاحي</strong></div>

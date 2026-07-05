@@ -411,7 +411,13 @@ class IngredientController extends Controller
     public function update(Request $request, Ingredient $ingredient)
     {
         $this->authorize('manage', Ingredient::class);
-        $ingredient->update($this->valid($request));
+        $data = $this->valid($request);
+        // cost_per_unit is a SYSTEM-maintained weighted average (recomputed by
+        // PO receipts). Editing it here would silently revalue all stock with no
+        // matching GL entry, drifting the inventory account (1200) from reality,
+        // so it's read-only after creation — ignore any posted value.
+        unset($data['cost_per_unit']);
+        $ingredient->update($data);
         return redirect()->route('admin.ingredients.index')->with('success', 'تم التحديث');
     }
 

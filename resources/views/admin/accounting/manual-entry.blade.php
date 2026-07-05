@@ -26,6 +26,9 @@
 <form method="POST" action="{{ route('admin.accounting.manual-entry.store') }}"
       x-data="manualEntry()" x-init="addLine(); addLine()">
     @csrf
+    {{-- One-shot token: blocks a duplicate post (F5 / back-then-resubmit) since
+         a manual journal has no source document to dedupe on. --}}
+    <input type="hidden" name="_idem" value="{{ \Illuminate\Support\Str::uuid() }}">
 
     {{-- ────────── Header ────────── --}}
     <div class="card mb-3">

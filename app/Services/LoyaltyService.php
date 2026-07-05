@@ -116,6 +116,18 @@ class LoyaltyService
             ]);
         }
 
+        // GUARD (defensive — this service is currently dormant/unwired):
+        // redeemPoints mutates the invoice totals directly with NO ledger
+        // reversal/repost. Applying it to an already-journaled invoice would
+        // silently desync A/R (1100) and revenue (4000) from the invoice table.
+        // Block it — redemption must happen before issuance, or be routed through
+        // OrderDiscountService (which reverses + reposts the journal entry).
+        if ($invoice->journalEntries()->exists()) {
+            throw ValidationException::withMessages([
+                'invoice' => 'لا يمكن استبدال النقاط على فاتورة مُرحَّلة محاسبياً. نفّذ الاستبدال قبل إصدار الفاتورة أو عبر مسار الخصم الذي يعكس القيد ويعيده.',
+            ]);
+        }
+
         return DB::transaction(function () use ($customer, $points, $invoice, $userId) {
             $customer = $customer->fresh()->lockForUpdate();
             $invoice  = $invoice->fresh()->lockForUpdate();

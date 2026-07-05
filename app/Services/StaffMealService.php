@@ -497,6 +497,30 @@ class StaffMealService
                 $remaining = 0;
             }
 
+            // A CASH settlement puts money into the settling user's drawer.
+            // Mirror it as a shift pay_in so the shift-close reconciliation
+            // expects that cash — without it, every cash meal settlement shows
+            // up as a phantom drawer surplus. If the settler has no open shift
+            // (a back-office / manager settlement), nothing is recorded: the
+            // cash never passed through a cashier drawer.
+            if ($method === 'cash' && $settledByUserId) {
+                $cashApplied = round($amount - $remaining, 2);
+                $openShift = \App\Models\Shift::where('user_id', $settledByUserId)
+                    ->where('status', 'open')
+                    ->latest('opened_at')
+                    ->first();
+                if ($cashApplied > 0.001 && $openShift) {
+                    \App\Models\CashMovement::create([
+                        'branch_id' => $openShift->branch_id,
+                        'shift_id'  => $openShift->id,
+                        'type'      => 'pay_in',
+                        'amount'    => $cashApplied,
+                        'reason'    => "تسوية بدل وجبات نقداً — {$staff->name}",
+                        'user_id'   => $settledByUserId,
+                    ]);
+                }
+            }
+
             ActivityLog::log(
                 'staff_meal.settled',
                 "تسوية بدل وجبات للموظف {$staff->name} بقيمة ".number_format($amount, 2)." ({$method})",

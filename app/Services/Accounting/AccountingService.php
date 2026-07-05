@@ -512,17 +512,41 @@ class AccountingService
     public function recordRefundCompleted(Refund $refund): ?JournalEntry
     {
         $refund->loadMissing('invoice');
+        $invoice = $refund->invoice;
+        $amount  = (float) $refund->amount;
+
+        // Split the refund across the SAME components the sale credited, in
+        // proportion to how much of the bill is being returned. Otherwise the
+        // full amount hit sales-returns (4100) alone and the VAT (2100), service
+        // (4010), delivery (4020) and tips (2200) baked into it were never
+        // relieved — the restaurant kept remitting tax on returned sales and the
+        // settlements screen let you pay out tips already handed back.
+        $total = $invoice ? (float) $invoice->total : 0.0;
+        $p = $total > 0.0001 ? $amount / $total : 0.0;
+
+        $taxPart      = $invoice ? round((float) $invoice->tax_total     * $p, 2) : 0.0;
+        $servicePart  = $invoice ? round((float) $invoice->service_total * $p, 2) : 0.0;
+        $deliveryPart = $invoice ? round((float) $invoice->delivery_fee  * $p, 2) : 0.0;
+        $tipPart      = $invoice ? round((float) $invoice->tip           * $p, 2) : 0.0;
+        // Revenue portion absorbs the rounding so debits sum EXACTLY to the cash out.
+        $revenuePart  = round($amount - $taxPart - $servicePart - $deliveryPart - $tipPart, 2);
+
+        $lines = [
+            $this->debit($this->postingAccount('sales_returns'), $revenuePart, 'مردودات ومسموحات مبيعات'),
+        ];
+        if ($taxPart > 0.0001)      $lines[] = $this->debit($this->postingAccount('output_vat'), $taxPart, 'عكس ضريبة مخرجات على المرتجع');
+        if ($servicePart > 0.0001)  $lines[] = $this->debit($this->postingAccount('service_revenue'), $servicePart, 'عكس رسوم خدمة على المرتجع');
+        if ($deliveryPart > 0.0001) $lines[] = $this->debit($this->postingAccount('delivery_revenue'), $deliveryPart, 'عكس رسوم توصيل على المرتجع');
+        if ($tipPart > 0.0001)      $lines[] = $this->debit($this->postingAccount('tips_payable'), $tipPart, 'عكس إكرامية مستحقة على المرتجع');
+        $lines[] = $this->credit($this->cashAccountForMethod($refund->method), $amount, 'صرف استرداد عبر '.$this->paymentMethodLabel($refund->method));
 
         return $this->post(
             eventType: 'refund_completed',
             source: $refund,
-            branchId: $refund->branch_id ?: $refund->invoice?->branch_id,
+            branchId: $refund->branch_id ?: $invoice?->branch_id,
             postedOn: $refund->refunded_at ?: $refund->updated_at ?: now(),
-            description: "استرداد {$refund->number} على فاتورة {$refund->invoice?->number}",
-            lines: [
-                $this->debit($this->postingAccount('sales_returns'), (float) $refund->amount, 'مردودات ومسموحات مبيعات'),
-                $this->credit($this->cashAccountForMethod($refund->method), (float) $refund->amount, 'صرف استرداد عبر '.$this->paymentMethodLabel($refund->method)),
-            ],
+            description: "استرداد {$refund->number} على فاتورة {$invoice?->number}",
+            lines: $lines,
             createdBy: $refund->processed_by,
         );
     }
@@ -905,7 +929,7 @@ class AccountingService
         for ($attempt = 1; $attempt <= 3; $attempt++) {
             try {
                 return DB::transaction(function () use ($eventType, $source, $branchId, $postedOn, $description, $lines, $metadata, $createdBy, $baseCurrencyCode, $currencyCode, $exchangeRate) {
-                    $this->assertPostingPeriodOpen($postedOn, $branchId);
+                    $this->assertPostingPeriodOpen($postedOn, $branchId, $eventType);
 
                     $existing = $source
                         ? JournalEntry::where('source_type', $source::class)
@@ -965,8 +989,23 @@ class AccountingService
         return null;
     }
 
-    private function assertPostingPeriodOpen($postedOn, ?int $branchId): void
+    /** System closing/reversal entries — exempt from the period lock (see below). */
+    private const CLOSING_EVENT_TYPES = [
+        'period_closing', 'fiscal_year_closing',
+        'period_closing_reversal', 'fiscal_year_closing_reversal',
+    ];
+
+    private function assertPostingPeriodOpen($postedOn, ?int $branchId, ?string $eventType = null): void
     {
+        // The closing machinery must be able to post AT period/year boundaries
+        // even when a period/year is (or is being) closed — otherwise a
+        // fiscal-year close dated Dec 31 is rejected by an already-closed
+        // December period, and reopening is rejected by the closed year.
+        // Operational postings stay locked; only these system entries pass.
+        if ($eventType !== null && in_array($eventType, self::CLOSING_EVENT_TYPES, true)) {
+            return;
+        }
+
         $date = Carbon::parse($postedOn)->toDateString();
 
         $closedPeriod = AccountingPeriod::query()

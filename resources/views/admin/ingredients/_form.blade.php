@@ -175,7 +175,18 @@
         @endif
     </div>
 
-    <div class="col-md-4"><label class="form-label">التكلفة/وحدة *</label><input type="number" step="0.0001" name="cost_per_unit" value="{{ old('cost_per_unit', $ing?->cost_per_unit ?? 0) }}" class="form-control" required></div>
+    <div class="col-md-4">
+        <label class="form-label">التكلفة/وحدة *</label>
+        <input type="number" step="0.0001" name="cost_per_unit"
+               value="{{ old('cost_per_unit', $ing?->cost_per_unit ?? 0) }}"
+               class="form-control{{ $ing ? ' bg-light' : '' }}" required
+               @if($ing) readonly tabindex="-1" title="تُدار آلياً كمتوسط مرجَّح من الاستلامات — للعرض فقط" @endif>
+        @if($ing)
+            <small class="text-muted d-block mt-1">
+                متوسط مرجَّح يُحدَّث تلقائياً عند استلام المشتريات — لا يُعدَّل يدوياً.
+            </small>
+        @endif
+    </div>
 
     <div class="col-md-4"><label class="form-label">حد الطلب *</label><input type="number" step="0.0001" name="reorder_threshold" value="{{ old('reorder_threshold', $ing?->reorder_threshold ?? 0) }}" class="form-control" required></div>
 

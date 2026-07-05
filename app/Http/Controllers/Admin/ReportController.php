@@ -359,10 +359,18 @@ class ReportController extends Controller
             }
         }
 
-        // ── 2. Actual + Waste — straight aggregates from inventory_movements ─
+        // ── 2. Actual + Waste — aggregates from inventory_movements ─
+        // "Actual" is KITCHEN CONSUMPTION only, i.e. sale deductions referencing
+        // an OrderItem. A branch transfer, manual issue, or the 'out' leg of a
+        // location move is also type='out' but is NOT consumption — counting it
+        // would report phantom theft/over-portioning. Waste stays unfiltered.
         $movementAgg = InventoryMovement::query()
             ->whereBetween('occurred_at', [$start, $end])
-            ->whereIn('type', ['out', 'waste'])
+            ->where(function ($q) {
+                $q->where(fn ($w) => $w->where('type', 'out')
+                        ->where('reference_type', \App\Models\OrderItem::class))
+                  ->orWhere('type', 'waste');
+            })
             ->select('ingredient_id', 'type',
                 DB::raw('SUM(quantity_in_base) as qty'),
                 DB::raw('SUM(total_cost) as total_cost'))

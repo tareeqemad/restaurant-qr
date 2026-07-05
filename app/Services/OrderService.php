@@ -514,12 +514,30 @@ class OrderService
         // method removes any previous BXGY discount and recomputes.
         app(PromotionService::class)->applyBxgyToOrder($order);
 
-        $subtotal = (float) $order->items()->where('status', '!=', OrderItemStatus::Cancelled->value)->sum('subtotal');
-        $discountTotal = (float) $order->discounts()->sum('amount');
+        $subtotalGross = (float) $order->items()->where('status', '!=', OrderItemStatus::Cancelled->value)->sum('subtotal');
+        $taxRate = (float) $order->tax_rate;
 
+        // Tax-inclusive menus quote prices WITH tax baked in. Strip it out
+        // up-front so discount, tax, service and the ledger posting all work on
+        // the NET base — otherwise the embedded tax was added AGAIN on top (the
+        // customer paid tax twice and the issuance entry couldn't balance).
+        $subtotal = ($taxRate > 0 && config('restaurant.tax.inclusive'))
+            ? Money::round($subtotalGross / (1 + $taxRate / 100))
+            : $subtotalGross;
+
+        // Cap total discounts at the sale value. Stacked cashier + BXGY
+        // discounts could otherwise exceed the subtotal, making the issuance
+        // entry unbalanced (DR discounts > CR revenue) so the invoice could
+        // never be issued and the table stayed stuck.
+        $discountTotal = min((float) $order->discounts()->sum('amount'), $subtotal);
         $subAfterDiscount = max(0, $subtotal - $discountTotal);
 
-        $tax = Money::applyTax($subAfterDiscount, (float) $order->tax_rate);
+        // Tax is now always ADDED on top of the net base (inclusive was
+        // normalised above), so compute it directly instead of via
+        // Money::applyTax's inclusive-extraction branch.
+        $tax = $taxRate > 0
+            ? ['tax' => Money::round($subAfterDiscount * $taxRate / 100), 'rate' => $taxRate]
+            : ['tax' => 0.0, 'rate' => 0.0];
         $service = Money::applyService($subAfterDiscount, (float) $order->service_rate);
 
         // Delivery fee is a flat add-on, frozen at order creation time —

@@ -26,6 +26,9 @@
             'icon' => 'bi-person-lines-fill',
             'rows' => $arRows,
             'totals' => $arTotals,
+            'ledgerBalance' => $arLedgerBalance,
+            'unassigned' => $arUnassigned,
+            'ledgerLabel' => 'رصيد حساب الذمم المدينة (1100)',
         ])
     </div>
     <div class="col-lg-6">
@@ -34,6 +37,9 @@
             'icon' => 'bi-truck',
             'rows' => $apRows,
             'totals' => $apTotals,
+            'ledgerBalance' => $apLedgerBalance,
+            'unassigned' => $apUnassigned,
+            'ledgerLabel' => 'رصيد حساب الذمم الدائنة (2000)',
         ])
     </div>
 </div>

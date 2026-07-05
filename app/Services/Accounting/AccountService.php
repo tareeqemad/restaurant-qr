@@ -180,8 +180,15 @@ class AccountService
             && $clean['type'] === 'asset'
             && $clean['normal_balance'] === 'credit';
         if ($clean['normal_balance'] !== $expectedNormalBalance && ! $isProtectedContraAsset) {
+            $typeLabels = [
+                'asset' => 'أصل', 'liability' => 'التزام', 'equity' => 'حقوق ملكية',
+                'revenue' => 'إيراد', 'contra_revenue' => 'مقابل إيراد', 'expense' => 'مصروف',
+            ];
+            $balanceLabels = ['debit' => 'مدين', 'credit' => 'دائن'];
             throw ValidationException::withMessages([
-                'normal_balance' => "ط§ظ„ط·ط¨ظٹط¹ط© ط§ظ„ظ…ط­ط§ط³ط¨ظٹط© ظ„ظ†ظˆط¹ {$clean['type']} ظٹط¬ط¨ ط£ظ† طھظƒظˆظ† {$expectedNormalBalance}.",
+                'normal_balance' => 'الطبيعة المحاسبية لنوع «'
+                    .($typeLabels[$clean['type']] ?? $clean['type']).'» يجب أن تكون «'
+                    .($balanceLabels[$expectedNormalBalance] ?? $expectedNormalBalance).'».',
             ]);
         }
 

@@ -620,7 +620,11 @@ class BillingService
             $total = (float) $invoice->total;
             $sumOfShares = array_sum(array_map(fn($s) => (float) ($s['amount'] ?? 0), $splits));
 
-            if (abs($sumOfShares - $total) > 0.01) {
+            // Require the shares to sum EXACTLY to the total (the equal-split UI
+            // already assigns the rounding remainder to the last share). The old
+            // 0.01 tolerance let 33.33×3 = 99.99 through, leaving a 0.01 residue
+            // that never auto-closed the table and quietly piled up on A/R (1100).
+            if (abs($sumOfShares - $total) > 0.001) {
                 throw new \RuntimeException(sprintf('مجموع الأجزاء (%.2f) لا يساوي إجمالي الفاتورة (%.2f)', $sumOfShares, $total));
             }
 
