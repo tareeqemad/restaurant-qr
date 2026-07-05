@@ -85,6 +85,12 @@ class CashierHardeningTest extends TestCase
         return TableSession::create(['table_id'=>$table->id,'customer_id'=>$this->customer->id,'cover_count'=>1,'status'=>'active']);
     }
 
+    private function acctNet(string $code): float
+    {
+        $lines = \App\Models\JournalLine::whereHas('account', fn ($q) => $q->where('code', $code))->get();
+        return round((float) $lines->sum('debit') - (float) $lines->sum('credit'), 2);
+    }
+
     /** @return array{0: \App\Models\Invoice, 1: TableSession, 2: \App\Models\Order} */
     private function issueMeal(): array
     {
@@ -198,6 +204,55 @@ class CashierHardeningTest extends TestCase
         $this->expectException(ValidationException::class);
         $this->expectExceptionMessageMatches('/مؤجّلة كدين/u');
         app(RefundService::class)->issue($invoice->fresh(), 30.0, 'cash', 'مرتجع', $this->admin->id);
+    }
+
+    /** Voiding a mistaken payment reverses its ledger entry and reopens the invoice. */
+    public function test_void_payment_reverses_ledger_and_reopens_invoice(): void
+    {
+        $this->actingAs($this->admin);
+        [$invoice] = $this->issueMeal();                                  // total 100
+        $payment = app(BillingService::class)->addPayment($invoice, 100.0, 'cash', $this->admin->id);
+        $this->assertSame('paid', $invoice->fresh()->status);
+
+        app(BillingService::class)->voidPayment($payment->fresh(), $this->admin->id, 'أُدخل مرتين');
+
+        $invoice->refresh();
+        $this->assertSame(0, $invoice->payments()->count(), 'The voided payment row is removed.');
+        $this->assertEqualsWithDelta(0.0, (float) $invoice->paid_total, 0.001);
+        $this->assertEqualsWithDelta(100.0, (float) $invoice->balance, 0.001, 'Invoice reopens fully unpaid.');
+        $this->assertSame('issued', $invoice->status);
+
+        // The payment_received entry AND its reversal are both posted (audit
+        // trail kept in the ledger), and the cash account nets back to zero.
+        $this->assertSame(2, \App\Models\JournalEntry::where('source_type', \App\Models\Payment::class)
+            ->where('source_id', $payment->id)->count());
+        $this->assertEqualsWithDelta(0.0, $this->acctNet('1000'), 0.001, 'Cash posting fully reversed.');
+    }
+
+    /** Void is refused when the invoice already has a completed refund. */
+    public function test_void_payment_blocked_when_refund_exists(): void
+    {
+        $this->actingAs($this->admin);
+        [$invoice] = $this->issueMeal();
+        $payment = app(BillingService::class)->addPayment($invoice, 100.0, 'cash', $this->admin->id);
+        app(RefundService::class)->issue($invoice->fresh(), 30.0, 'cash', 'صنف معاد', $this->admin->id);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessageMatches('/استرداد/u');
+        app(BillingService::class)->voidPayment($payment->fresh(), $this->admin->id, 'محاولة');
+    }
+
+    /** Void is refused on an invoice parked as customer debt. */
+    public function test_void_payment_blocked_on_settled_invoice(): void
+    {
+        $this->actingAs($this->admin);
+        [$invoice] = $this->issueMeal();
+        $payment = app(BillingService::class)->addPayment($invoice, 60.0, 'cash', $this->admin->id);
+        app(BillingService::class)->settleOnAccount($invoice->fresh(), $this->admin->id);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessageMatches('/مؤجّلة كدين/u');
+        app(BillingService::class)->voidPayment($payment->fresh(), $this->admin->id, 'محاولة');
     }
 
     /** Deferred-item #2 — a capped cashier cannot STACK within-cap discounts past

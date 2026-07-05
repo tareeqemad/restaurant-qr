@@ -337,6 +337,13 @@ new class extends Component
             $methodTotals[$method] ??= 0.0;
         }
 
+        // Net the CASH line of same-day completed cash refunds so the drawer
+        // figure reflects what's actually in it. Adjusted in place so the
+        // per-method breakdown card and the headline stay consistent.
+        $cashRefunds = (float) \App\Models\Refund::whereDate('refunded_at', today())
+            ->where('method', 'cash')->where('status', 'completed')->sum('amount');
+        $methodTotals['cash'] = max(0, ($methodTotals['cash'] ?? 0.0) - $cashRefunds);
+
         return [
             'invoices' => Invoice::whereDate('created_at', today())->count(),
             'revenue'  => (float) Invoice::whereDate('created_at', today())

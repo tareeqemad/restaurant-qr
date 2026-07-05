@@ -125,6 +125,62 @@
                         <i class="bi bi-box-arrow-right"></i> إغلاق الشفت الآن
                     </button>
 
+                    {{-- Mid-shift tools: peek the drawer / record a cash movement, without closing --}}
+                    <div class="d-flex gap-2 mt-2">
+                        <a href="{{ route('admin.shifts.x-report', $activeShift) }}" class="btn btn-outline-secondary flex-fill">
+                            <i class="bi bi-clipboard-data"></i> تقرير الدرج الآن
+                        </a>
+                        <button class="btn btn-outline-primary flex-fill" data-bs-toggle="modal" data-bs-target="#cashMove">
+                            <i class="bi bi-arrow-left-right"></i> إيداع / صرف نقدي
+                        </button>
+                    </div>
+
+                    {{-- Ad-hoc cash pay-in / pay-out on the open shift --}}
+                    <div class="modal fade" id="cashMove" tabindex="-1">
+                        <div class="modal-dialog modal-dialog-centered">
+                            <div class="modal-content">
+                                <form action="{{ route('admin.shifts.cash-movement', $activeShift) }}" method="POST">
+                                    @csrf
+                                    <div class="modal-header">
+                                        <h5 class="modal-title"><i class="bi bi-arrow-left-right"></i> حركة نقدية على الدرج</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <div class="alert alert-info small mb-3">
+                                            <i class="bi bi-info-circle-fill"></i>
+                                            سجّل نقداً <b>دخل</b> الدرج (فكة من الخزنة) أو <b>خرج</b> منه (صرف بسيط)
+                                            حتى يتطابق عدّ الدرج عند الإغلاق. لا يؤثّر على المبيعات ولا القيود المحاسبية.
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label fw-bold">نوع الحركة <span class="text-danger">*</span></label>
+                                            <select name="type" class="form-select" required>
+                                                <option value="pay_in">إيداع في الدرج (+)</option>
+                                                <option value="pay_out">صرف من الدرج (−)</option>
+                                            </select>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label fw-bold">المبلغ <span class="text-danger">*</span></label>
+                                            <div class="input-group">
+                                                <input type="number" step="0.01" min="0.01" max="99999999.99" name="amount"
+                                                       class="form-control text-end" required>
+                                                <span class="input-group-text">{{ $currency }}</span>
+                                            </div>
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label">السبب <span class="text-danger">*</span></label>
+                                            <input type="text" name="reason" maxlength="255" class="form-control" required
+                                                   placeholder="مثلاً: فكة من الخزنة / شراء أكياس نقداً">
+                                        </div>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">تراجع</button>
+                                        <button class="btn btn-primary"><i class="bi bi-check-circle-fill"></i> تسجيل الحركة</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="modal fade" id="close" tabindex="-1">
                         <div class="modal-dialog modal-dialog-centered">
                             <div class="modal-content">
@@ -179,6 +235,17 @@
                             ابدأ يومك بإدخال الكاش الموجود في الدرج. هذا الرقم
                             هو نقطة البداية لحساب الفرق عند الإغلاق.
                         </p>
+                        @if($lastClosedShift)
+                            <div class="alert alert-secondary small d-flex align-items-center gap-2 py-2">
+                                <i class="bi bi-box-arrow-in-left"></i>
+                                <span>
+                                    آخر إغلاق للدرج:
+                                    <strong>{{ \App\Helpers\Money::format($lastClosedShift->cash_closing) }}</strong>
+                                    بواسطة {{ $lastClosedShift->user->name ?? '—' }}.
+                                    عُدّ الدرج — إن اختلف الرقم سننبّهك لفرق التسليم.
+                                </span>
+                            </div>
+                        @endif
                         <form action="{{ route('admin.shifts.store') }}" method="POST">
                             @csrf
                             <label class="form-label fw-bold">

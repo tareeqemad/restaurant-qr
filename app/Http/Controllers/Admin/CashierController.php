@@ -7,6 +7,7 @@ use App\Models\Invoice;
 use App\Models\Order;
 use App\Models\OrderDiscount;
 use App\Models\Payment;
+use App\Models\Refund;
 use App\Models\TableSession;
 use App\Services\BillingService;
 use App\Services\OrderDiscountService;
@@ -38,8 +39,14 @@ class CashierController extends Controller
             'active_sessions' => $activeSessions->count(),
             'invoices_today'  => Invoice::whereDate('created_at', today())->count(),
             'revenue_today'   => (float) (clone $todayPaid)->sum('total'),
+            // NET of same-day completed cash refunds — otherwise the drawer
+            // figure reads high on any day a cash refund was paid out.
             'cash_today'      => (float) Payment::whereDate('created_at', today())
                                                  ->where('method', 'cash')
+                                                 ->sum('amount')
+                                 - (float) Refund::whereDate('refunded_at', today())
+                                                 ->where('method', 'cash')
+                                                 ->where('status', 'completed')
                                                  ->sum('amount'),
         ];
 
@@ -97,6 +104,23 @@ class CashierController extends Controller
         try {
             $this->billing->addPayment($invoice, $data['amount'], $data['method'], auth()->id(), $data['reference'] ?? null, $data['notes'] ?? null);
             return back()->with('success', 'تم تسجيل الدفعة');
+        } catch (\Throwable $e) {
+            return back()->with('error', $e->getMessage());
+        }
+    }
+
+    /**
+     * Void a single mistaken payment (wrong method / fat-fingered amount /
+     * double entry) — reverses its ledger posting and reopens the invoice.
+     * For legitimately returning money to a customer, use a Refund instead.
+     */
+    public function voidPayment(Request $request, Payment $payment)
+    {
+        $this->authorize('create', Payment::class);
+        $data = $request->validate(['reason' => ['required', 'string', 'max:255']]);
+        try {
+            $this->billing->voidPayment($payment, auth()->id(), $data['reason']);
+            return back()->with('success', 'تم إلغاء الدفعة وعكس قيدها.');
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
         }

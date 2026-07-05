@@ -202,10 +202,10 @@
                          only. A direct payment here would shrink the balance and
                          strand the (now-too-large) split buttons as unpayable. --}}
                     @if($inv->splits->isEmpty())
-                    <form action="{{ route('admin.cashier.pay', $inv) }}" method="POST"
+                    <form id="cashPayForm" action="{{ route('admin.cashier.pay', $inv) }}" method="POST"
                           onsubmit="setTimeout(() => { const b = this.querySelector('button'); if (b) b.disabled = true; }, 0)">@csrf
                         <input type="hidden" name="_idem" value="{{ \Illuminate\Support\Str::uuid() }}">
-                        <div class="mb-2"><label class="form-label">المبلغ</label><input type="number" step="0.01" name="amount" value="{{ $inv->balance }}" class="form-control" required></div>
+                        <div class="mb-2"><label class="form-label">المبلغ</label><input type="number" step="0.01" id="payAmount" name="amount" value="{{ $inv->balance }}" class="form-control" required></div>
                         <div class="mb-2"><label class="form-label">طريقة الدفع</label>
                             <select name="method" class="form-select" required>
                                 @foreach($enabledPaymentMethods as $code => $meta)
@@ -213,9 +213,42 @@
                                 @endforeach
                             </select>
                         </div>
+                        {{-- Cash-tendered → change-due helper. Display only: no `name`
+                             so it's never POSTed; the applied amount is capped at the
+                             balance (the server caps too), so change reflects reality. --}}
+                        <div class="mb-2">
+                            <label class="form-label">المبلغ المستلم نقداً <small class="text-muted">(لحساب الباقي)</small></label>
+                            <input type="number" step="0.01" min="0" id="cashTendered" inputmode="decimal"
+                                   class="form-control text-end" placeholder="المبلغ الذي دفعه الزبون">
+                        </div>
+                        <div id="changeDueBox" class="alert alert-info py-2 px-2 mb-2 d-none justify-content-between align-items-center">
+                            <span>الباقي (فكة):</span><strong id="changeDueVal" class="fs-6">0.00</strong>
+                        </div>
                         <div class="mb-2"><input name="reference" class="form-control" placeholder="رقم المرجع (اختياري)"></div>
                         <button class="btn btn-success w-100"><i class="bi bi-cash"></i> تسجيل الدفعة</button>
                     </form>
+                    @push('scripts')
+                    <script>
+                    (function () {
+                        const form = document.getElementById('cashPayForm');
+                        if (!form) return;
+                        const amountEl = document.getElementById('payAmount');
+                        const tenderedEl = document.getElementById('cashTendered');
+                        const box = document.getElementById('changeDueBox');
+                        const val = document.getElementById('changeDueVal');
+                        const balance = {{ (float) $inv->balance }};
+                        function recompute() {
+                            const tendered = parseFloat(tenderedEl.value);
+                            const applied = Math.min(parseFloat(amountEl.value) || 0, balance);
+                            if (!isFinite(tendered) || tendered <= applied) { box.classList.add('d-none'); box.classList.remove('d-flex'); return; }
+                            val.textContent = (tendered - applied).toFixed(2);
+                            box.classList.remove('d-none'); box.classList.add('d-flex');
+                        }
+                        amountEl.addEventListener('input', recompute);
+                        tenderedEl.addEventListener('input', recompute);
+                    })();
+                    </script>
+                    @endpush
                     @else
                     <div class="alert alert-info small mb-2 py-2 mb-0">
                         <i class="bi bi-info-circle"></i> الفاتورة مقسّمة — حصّل الدفعات من أزرار الأجزاء بالأسفل، أو أزل التقسيم أولاً.
@@ -406,9 +439,23 @@
                 <div class="card mt-3"><div class="card-header"><strong>الدفعات</strong></div>
                 <ul class="list-group list-group-flush">
                 @foreach($inv->payments as $p)
-                    <li class="list-group-item d-flex justify-content-between">
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
                         <div><span class="badge bg-secondary">{{ $p->method }}</span> {{ $p->paid_at->format('H:i') }}</div>
-                        <strong>{{ \App\Helpers\Money::format($p->amount) }}</strong>
+                        <div class="d-flex align-items-center gap-2">
+                            <strong>{{ \App\Helpers\Money::format($p->amount) }}</strong>
+                            {{-- Void a mistaken payment (wrong method/amount) — reverses its
+                                 ledger entry and reopens the invoice. Not for real refunds. --}}
+                            @if($inv->status !== 'cancelled')
+                                <form method="POST" action="{{ route('admin.cashier.payments.void', $p) }}"
+                                      onsubmit="return (this.reason.value = prompt('سبب إلغاء الدفعة؟ (خطأ في المبلغ أو طريقة الدفع…)') || '') !== ''">
+                                    @csrf
+                                    <input type="hidden" name="reason">
+                                    <button class="btn btn-sm btn-outline-danger py-0 px-1" title="إلغاء الدفعة (عكس القيد)">
+                                        <i class="bi bi-x-lg"></i>
+                                    </button>
+                                </form>
+                            @endif
+                        </div>
                     </li>
                 @endforeach
                 </ul></div>

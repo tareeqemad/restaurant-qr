@@ -296,6 +296,7 @@ Route::middleware(['auth', 'setup.complete', 'admin', 'branch', 'license'])->gro
     Route::get('cashier/session/{session}', [Admin\CashierController::class, 'show'])->name('cashier.show');
     Route::post('cashier/session/{session}/issue', [Admin\CashierController::class, 'issue'])->name('cashier.issue');
     Route::post('cashier/invoice/{invoice}/pay', [Admin\CashierController::class, 'pay'])->name('cashier.pay');
+    Route::post('cashier/payments/{payment}/void', [Admin\CashierController::class, 'voidPayment'])->name('cashier.payments.void');
     Route::post('cashier/invoice/{invoice}/writeoff', [Admin\CashierController::class, 'writeoff'])->name('cashier.writeoff');
     Route::post('cashier/invoice/{invoice}/cancel', [Admin\CashierController::class, 'cancel'])->name('cashier.cancel');
     Route::post('cashier/invoice/{invoice}/settle-on-account', [Admin\CashierController::class, 'settleOnAccount'])->name('cashier.settle_on_account');
@@ -319,7 +320,9 @@ Route::middleware(['auth', 'setup.complete', 'admin', 'branch', 'license'])->gro
 
     // Shifts
     Route::resource('shifts', Admin\ShiftController::class)->only(['index', 'store']);
+    Route::get('shifts/{shift}/x-report', [Admin\ShiftController::class, 'xReport'])->name('shifts.x-report');
     Route::post('shifts/{shift}/close', [Admin\ShiftController::class, 'close'])->name('shifts.close');
+    Route::post('shifts/{shift}/cash-movement', [Admin\ShiftController::class, 'cashMovement'])->name('shifts.cash-movement');
 
     // Expenses (branch-scoped) — see ExpenseController for the approval flow
     // and the cash-movement bridge into the active shift's till.

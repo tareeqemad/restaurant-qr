@@ -333,6 +333,93 @@ class BillingService
     }
 
     /**
+     * Void a single mistaken payment (wrong method, fat-fingered amount,
+     * entered twice) — the "undo the last few seconds" correction, distinct
+     * from a refund (which returns real money and hits sales-returns).
+     *
+     * The payment's live GL entry is REVERSED (Dr A/R / Cr cash, netting the
+     * original to zero — a full audit trail stays in journal_entries), then the
+     * payment row is removed and the invoice paid_total/balance/status are
+     * recomputed from the remaining payments. Hard-delete (not a soft flag) is
+     * deliberate: every cash sum (shift close, cash_today, invoice paid_total)
+     * reads the payments table directly, so a lingering "voided" row would need
+     * filtering in a dozen places — removing it keeps them all correct for free.
+     *
+     * Refuses when the payment has a refund against it, or the invoice is
+     * cancelled or parked as customer debt (those go through their own flows).
+     */
+    public function voidPayment(Payment $payment, int $userId, string $reason): void
+    {
+        DB::transaction(function () use ($payment, $userId, $reason) {
+            $payment = Payment::whereKey($payment->id)->lockForUpdate()->firstOrFail();
+            $invoice = Invoice::whereKey($payment->invoice_id)->lockForUpdate()->firstOrFail();
+
+            if ($invoice->status === 'cancelled') {
+                throw new \RuntimeException('لا يمكن إلغاء دفعة على فاتورة ملغاة.');
+            }
+            if ($invoice->settled_on_account_at) {
+                throw new \RuntimeException('الفاتورة مؤجّلة كدين — عالج المتبقي من سجل الديون بدل إلغاء الدفعة.');
+            }
+            // Block if the invoice has ANY completed refund — voiding a payment
+            // that (partly) funded a refund would leave refunded > paid and a
+            // corrupt balance. Reverse the refund first, then void.
+            if (\App\Models\Refund::where('invoice_id', $invoice->id)->where('status', 'completed')->exists()) {
+                throw new \RuntimeException('على هذه الفاتورة استرداد — لا يمكن إلغاء الدفعة. عالج الاسترداد أولاً.');
+            }
+
+            // Reverse the payment's live (un-reversed) GL posting, if any.
+            $entries = \App\Models\JournalEntry::where('source_type', Payment::class)
+                ->where('source_id', $payment->id)
+                ->orderBy('id')
+                ->get();
+            $reversedIds = $entries
+                ->map(fn ($e) => (int) ($e->metadata['reverses_entry_id'] ?? 0))
+                ->filter()
+                ->all();
+            $live = $entries
+                ->firstWhere(fn ($e) => $e->event_type === 'payment_received'
+                    && ! in_array((int) $e->id, $reversedIds, true));
+            if ($live) {
+                app(AccountingService::class)->reverseEntry(
+                    original: $live,
+                    eventType: 'payment_voided_'.$payment->id,
+                    postedOn: now(),
+                    description: "عكس دفعة ملغاة على فاتورة {$invoice->number}",
+                    createdBy: $userId,
+                );
+            }
+
+            $amount = (float) $payment->amount;
+            $method = $payment->method;
+            ActivityLog::log(
+                'payment.voided',
+                "إلغاء دفعة ".number_format($amount, 2)." ({$method}) على فاتورة {$invoice->number} — {$reason}",
+                $invoice,
+                ['payment_id' => $payment->id, 'amount' => $amount, 'method' => $method, 'reason' => $reason]
+            );
+
+            $payment->delete();
+
+            // Recompute from the REMAINING payments (net of refunds), mirroring
+            // addPayment's status/balance logic so the invoice reopens correctly.
+            $paidTotal = (float) $invoice->payments()->sum('amount');
+            $netPaid   = $paidTotal - (float) $invoice->refunded_total;
+            $balance   = max(0, round((float) $invoice->total - $netPaid, 2));
+            $status = match (true) {
+                $balance <= 0.001 && $netPaid > 0 => 'paid',
+                $netPaid > 0                      => 'partially_paid',
+                default                           => 'issued',
+            };
+            $invoice->update([
+                'paid_total' => Money::round($paidTotal),
+                'balance'    => Money::round($balance),
+                'status'     => $status,
+                'paid_at'    => $status === 'paid' ? ($invoice->paid_at ?? now()) : null,
+            ]);
+        });
+    }
+
+    /**
      * Park a partially-paid invoice on the customer's debt ledger and free
      * the table. The invoice keeps its `balance > 0` and `partially_paid`
      * status (so payments still flow through `addPayment` unchanged); the
