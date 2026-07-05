@@ -308,8 +308,9 @@ Route::middleware(['auth', 'setup.complete', 'admin', 'branch', 'license'])->gro
     Route::get('cashier/invoice/{invoice}/pdf', [Admin\CashierController::class, 'pdf'])->name('cashier.pdf');
     Route::get('cashier/invoice/{invoice}/print', [Admin\CashierController::class, 'print'])->name('cashier.print');
 
-    // Pending bank transfers — waiter claims, cashier verifies
+    // Pending bank transfers — waiter/cashier/customer claim, cashier verifies
     Route::post('waiter-orders/{session}/transfer', [Admin\PendingTransferController::class, 'store'])->name('waiter-orders.transfer.store');
+    Route::post('cashier/session/{session}/transfer', [Admin\PendingTransferController::class, 'store'])->name('cashier.transfers.store');
     Route::get('cashier/transfers', [Admin\PendingTransferController::class, 'queue'])->name('cashier.transfers.queue');
     Route::post('cashier/transfers/{transfer}/verify', [Admin\PendingTransferController::class, 'verify'])->name('cashier.transfers.verify');
     Route::post('cashier/transfers/{transfer}/reject', [Admin\PendingTransferController::class, 'reject'])->name('cashier.transfers.reject');

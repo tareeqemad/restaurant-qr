@@ -48,7 +48,17 @@ class CashierController extends Controller
     {
         $this->authorize('viewAny', Payment::class);
         $session->load(['table', 'orders.items.modifiers', 'invoice.payments', 'invoice.refunds.processor']);
-        return view('admin.cashier.show', compact('session'));
+
+        // Any bank transfer the diner/waiter claimed for THIS table — shown at the
+        // top of the pay screen with inline verify/reject so the cashier acts
+        // without leaving the payment flow.
+        $pendingTransfers = \App\Models\PendingTransfer::with('recordedBy')
+            ->where('table_session_id', $session->id)
+            ->pending()
+            ->latest()
+            ->get();
+
+        return view('admin.cashier.show', compact('session', 'pendingTransfers'));
     }
 
     public function issue(TableSession $session)

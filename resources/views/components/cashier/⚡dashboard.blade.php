@@ -1105,11 +1105,12 @@ new class extends Component
      */
     #[On('echo-private:cashiers,.order.status_changed')]
     #[On('echo-private:cashiers,.invoice.paid')]
+    #[On('echo-private:cashiers,.pending_transfer.declared')]
     #[On('echo-private:waiters,.order.created')]
     #[On('echo-private:waiters,.table.status_changed')]
     public function refreshFromBroadcast(): void
     {
-        unset($this->sessions, $this->selectedSession, $this->billStats);
+        unset($this->sessions, $this->selectedSession, $this->billStats, $this->pendingTransfersCount);
     }
 
     /**
@@ -1212,6 +1213,14 @@ new class extends Component
             'remote_unpaid' => $remoteUnpaid,
         ];
     }
+
+    /** Bank transfers waiting for the cashier to confirm against the bank app.
+     *  Branch-scoped via the PendingTransfer BelongsToBranch global scope. */
+    #[Computed]
+    public function pendingTransfersCount(): int
+    {
+        return \App\Models\PendingTransfer::where('status', 'pending')->count();
+    }
 }
 ?>
 
@@ -1225,7 +1234,23 @@ new class extends Component
      data-bill-total="{{ $billStats['requests_total'] }}"
      data-bill-amber="{{ $billStats['amber'] }}"
      data-bill-red="{{ $billStats['red'] }}"
-     data-remote-unpaid="{{ $billStats['remote_unpaid'] }}">
+     data-remote-unpaid="{{ $billStats['remote_unpaid'] }}"
+     data-pending-transfers="{{ $this->pendingTransfersCount }}">
+    {{-- Bank-transfer alert strip — customer/waiter-claimed transfers waiting
+         for the cashier to confirm against the bank. Links straight to the
+         verification queue so the cashier isn't left hunting for it. --}}
+    @if($this->pendingTransfersCount > 0)
+        <a href="{{ route('admin.cashier.transfers.queue') }}"
+           class="cx-alarm-strip is-amber" style="text-decoration:none">
+            <div class="cx-alarm-content">
+                <i class="bi bi-bank2"></i>
+                <strong>
+                    {{ $this->pendingTransfersCount }} تحويل بنكي بانتظار التأكيد
+                </strong>
+                <span class="cx-alarm-chip cx-alarm-chip--amber">افتح للتأكيد ←</span>
+            </div>
+        </a>
+    @endif
     {{-- Bill-request alarm strip — only renders when something needs the
          cashier's attention. Compact bar with red/amber chips and the sound
          toggle. Hidden when there's nothing pending so a quiet shift looks
@@ -2460,16 +2485,18 @@ new class extends Component
                     attributeFilter: [
                         'data-bill-total', 'data-bill-amber',
                         'data-bill-red', 'data-remote-unpaid',
+                        'data-pending-transfers',
                     ],
                 });
             },
             snapshot() {
                 const r = this.$root;
                 return {
-                    total:  parseInt(r.dataset.billTotal    || '0', 10),
-                    amber:  parseInt(r.dataset.billAmber    || '0', 10),
-                    red:    parseInt(r.dataset.billRed      || '0', 10),
-                    remote: parseInt(r.dataset.remoteUnpaid || '0', 10),
+                    total:  parseInt(r.dataset.billTotal        || '0', 10),
+                    amber:  parseInt(r.dataset.billAmber        || '0', 10),
+                    red:    parseInt(r.dataset.billRed          || '0', 10),
+                    remote: parseInt(r.dataset.remoteUnpaid     || '0', 10),
+                    transfers: parseInt(r.dataset.pendingTransfers || '0', 10),
                 };
             },
             toggleSound() {
@@ -2498,6 +2525,11 @@ new class extends Component
                     else if (cur.amber > prev.amber)   this.playNudge();
                     // New phone/delivery order needing collection.
                     else if (cur.remote > prev.remote) this.playRemoteOrder();
+
+                    // A bank transfer was just claimed — independent signal, so
+                    // it chimes even alongside a bill request. Distinct low
+                    // two-tone so the cashier hears "money to verify", not "table waiting".
+                    if (cur.transfers > prev.transfers) this.playTransfer();
                 }
                 window.__cxPrev = cur;
             },
@@ -2519,6 +2551,7 @@ new class extends Component
             playRemoteOrder() { this.beep(659, 0.18, 'sine', 0.26); },
             playWarning()     { this.beep(330, 0.20, 'square', 0.30); setTimeout(() => this.beep(330, 0.20, 'square', 0.30), 280); setTimeout(() => this.beep(330, 0.24, 'square', 0.34), 580); },
             playNudge()       { this.beep(700, 0.12, 'sine', 0.20); },
+            playTransfer()    { this.beep(494, 0.16, 'sine', 0.30); setTimeout(() => this.beep(370, 0.22, 'sine', 0.30), 190); },
         };
     }
     </script>

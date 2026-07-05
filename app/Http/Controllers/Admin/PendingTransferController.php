@@ -4,16 +4,12 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
-use App\Models\Customer;
 use App\Models\PendingTransfer;
 use App\Models\TableSession;
-use App\Notifications\PendingTransferRecordedNotification;
 use App\Services\BillingService;
-use App\Support\BranchContext;
 use App\Support\SidebarBadges;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Notification;
 
 /**
  * Bank-transfer payments that the diner claims from their banking app
@@ -34,7 +30,10 @@ use Illuminate\Support\Facades\Notification;
  */
 class PendingTransferController extends Controller
 {
-    public function __construct(protected BillingService $billing) {}
+    public function __construct(
+        protected BillingService $billing,
+        protected \App\Services\PendingTransferService $transfers,
+    ) {}
 
     /**
      * Waiter records a claimed bank transfer for a table session.
@@ -48,57 +47,39 @@ class PendingTransferController extends Controller
      */
     public function store(Request $request, TableSession $session)
     {
-        $this->authorize('create', \App\Models\Order::class);
+        // A transfer claim can be recorded by a waiter OR a cashier, so accept
+        // either capability (payment-creating cashiers don't necessarily have
+        // order-create rights).
+        abort_unless(
+            auth()->user()?->can('create', \App\Models\Order::class)
+            || auth()->user()?->can('create', \App\Models\Payment::class),
+            403
+        );
 
         $data = $request->validate([
-            'amount'         => ['required', 'numeric', 'min:0.01'],
+            'amount'         => ['required', 'numeric', 'min:0.01', 'max:99999999.99'],
             'sender_name'    => ['required', 'string', 'max:120'],
             'customer_phone' => ['nullable', 'string', 'max:32'],
             'customer_name'  => ['nullable', 'string', 'max:120'],
             'notes'          => ['nullable', 'string', 'max:500'],
         ]);
 
-        $customer = null;
-        $phone = trim((string) ($data['customer_phone'] ?? ''));
-        if ($phone !== '') {
-            $customer = Customer::findForLogin($phone);
+        try {
+            $this->transfers->record(
+                session: $session,
+                amount: (float) $data['amount'],
+                senderName: $data['sender_name'],
+                recordedByUserId: auth()->id(),
+                notes: $data['notes'] ?? null,
+                phone: $data['customer_phone'] ?? null,
+                typedName: $data['customer_name'] ?? null,
+            );
+        } catch (\App\Exceptions\DuplicatePendingTransferException $e) {
+            // A pending claim already exists for this table (customer declared
+            // it, or another staffer just recorded it). Don't stack a second
+            // verifiable row — point the cashier at the one that's there.
+            return back()->with('info', 'يوجد تحويل معلّق لهذه الطاولة بالفعل — أكّده أو ارفضه أولاً.');
         }
-
-        // Display snapshot priority:
-        //   1. matched customer's name (most authoritative),
-        //   2. typed name from the form,
-        //   3. fall back to the session's pre-linked customer name,
-        //   4. blank — the cashier still has table + sender to match.
-        $displayName = $customer?->name
-            ?: trim((string) ($data['customer_name'] ?? ''))
-            ?: $session->customer_name
-            ?: null;
-
-        $displayPhone = $customer?->phone ?: ($phone !== '' ? $phone : $session->customer_phone);
-
-        $transfer = PendingTransfer::create([
-            'branch_id'               => $session->branch_id,
-            'table_session_id'        => $session->id,
-            'invoice_id'              => $session->invoice?->id,
-            'customer_id'             => $customer?->id ?? $session->customer_id,
-            'amount'                  => $data['amount'],
-            'sender_name'             => trim($data['sender_name']),
-            'customer_name_snapshot'  => $displayName,
-            'customer_phone_snapshot' => $displayPhone,
-            'notes'                   => $data['notes'] ?? null,
-            'status'                  => PendingTransfer::STATUS_PENDING,
-            'recorded_by_user_id'     => auth()->id(),
-        ]);
-
-        ActivityLog::log(
-            'pending_transfer.recorded',
-            "تسجيل تحويل بانتظار التأكيد بمبلغ {$transfer->amount} للطاولة #{$session->table?->number}",
-            $transfer,
-            ['sender' => $transfer->sender_name, 'amount' => (float) $transfer->amount]
-        );
-
-        $this->notifyCashiers($transfer);
-        SidebarBadges::bust();
 
         return back()->with('success', 'تم تسجيل التحويل. الكاشير سيتأكد من البنك ويغلق الطلب.');
     }
@@ -181,8 +162,22 @@ class PendingTransferController extends Controller
             ? (float) $data['verified_amount']
             : (float) $transfer->amount;
 
+        // Captured out of the transaction so we can warn AFTER commit when a
+        // short-pay leaves the invoice open (see the residual-balance flash).
+        $remainingBalance = 0.0;
+        $invoiceNumber = null;
+
         try {
-            DB::transaction(function () use ($transfer, $verifiedAmount, $data) {
+            DB::transaction(function () use (&$transfer, $verifiedAmount, $data, &$remainingBalance, &$invoiceNumber) {
+                // Lock THIS pending row and re-check its status inside the
+                // transaction. The pre-flight isPending() check above runs on a
+                // request-time read; without re-checking under a lock, two
+                // concurrent verifies (double-click / retried POST) both pass it
+                // and — because a short-pay leaves the invoice open — each posts
+                // its own payment, double-crediting a single real transfer.
+                $transfer = PendingTransfer::whereKey($transfer->id)->lockForUpdate()->firstOrFail();
+                abort_unless($transfer->isPending(), 422, 'هذا التحويل لم يعد بانتظار التأكيد.');
+
                 $session = $transfer->tableSession()->lockForUpdate()->firstOrFail();
 
                 $invoice = $session->invoice()->where('status', '!=', 'cancelled')->latest()->first();
@@ -228,12 +223,28 @@ class PendingTransferController extends Controller
                     $message .= " (المُدّعى {$transfer->amount} ← المؤكد {$verifiedAmount})";
                 }
                 ActivityLog::log('pending_transfer.verified', $message, $transfer, $logExtra);
+
+                $invoice->refresh();
+                $remainingBalance = (float) $invoice->balance;
+                $invoiceNumber = $invoice->number;
             });
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
         }
 
         SidebarBadges::bust();
+
+        // A confirmed amount below the invoice balance is legitimate (the bank
+        // shows less than claimed), but the invoice stays open and the table is
+        // NOT closed. Say so loudly — otherwise the cashier reads the plain
+        // success toast and lets the diner walk on a half-paid bill.
+        if ($remainingBalance > 0.001) {
+            return back()->with('warning',
+                'تم تأكيد التحويل بمبلغ '.\App\Helpers\Money::format($verifiedAmount).'. لا يزال متبقٍ '
+                .\App\Helpers\Money::format($remainingBalance).' على الفاتورة '.$invoiceNumber
+                .' — حصّله أو أجّله كدين قبل إغلاق الطاولة.');
+        }
+
         return back()->with('success', 'تم تأكيد التحويل وتسجيله كدفعة.');
     }
 
@@ -331,32 +342,5 @@ class PendingTransferController extends Controller
         $totals = collect($summary)->map(fn ($g) => (float) $g->sum('amount'));
 
         return view('admin.cashier.transfers-report', compact('rows', 'summary', 'totals', 'date'));
-    }
-
-    /**
-     * Dispatch the in-app notification to every cashier / shift cashier
-     * / manager on the same branch. We filter on role so kitchen and
-     * waiter accounts don't get woken up by something they can't act on.
-     */
-    protected function notifyCashiers(PendingTransfer $transfer): void
-    {
-        $branchId = $transfer->branch_id;
-
-        $recipients = \App\Models\User::query()
-            ->where('status', 'active')
-            ->whereIn('role', ['cashier', 'manager', 'super_admin', 'admin'])
-            ->when($branchId, fn ($q) => $q->whereHas('branches', fn ($b) => $b->where('branches.id', $branchId)))
-            ->get();
-
-        if ($recipients->isEmpty()) {
-            return;
-        }
-
-        // Wrap the dispatch in the originating branch context so the
-        // notification rows are stamped with the right branch_id even
-        // when the recipient lookup runs under a different context.
-        BranchContext::forBranch($branchId, function () use ($recipients, $transfer) {
-            Notification::send($recipients, new PendingTransferRecordedNotification($transfer));
-        });
     }
 }

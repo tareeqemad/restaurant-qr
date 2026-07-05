@@ -28,4 +28,7 @@ Route::middleware(['table.session', 'license'])->group(function () {
     Route::post('/profile', [Customer\OrderStatusController::class, 'saveProfile'])->name('customer.profile');
     Route::get('/bill', [Customer\BillController::class, 'show'])->name('customer.bill');
     Route::post('/bill/request', [Customer\BillController::class, 'requestBill'])->name('customer.bill.request');
+    // Diner declares they paid by bank transfer → creates a pending-transfer the
+    // cashier verifies against the bank app (no payment is posted until verified).
+    Route::post('/bill/transfer', [Customer\BillController::class, 'declareTransfer'])->name('customer.bill.transfer');
 });

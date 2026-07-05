@@ -13,6 +13,81 @@
     subtitle="{{ $session->orders->count() }} طلبات"
     :crumbs="[['label' => 'الكاشير', 'url' => route('admin.cashier.index')]]" />
 
+{{-- ── Bank transfers claimed for THIS table — verify without leaving the page ── --}}
+@if($pendingTransfers->isNotEmpty())
+    <div class="card border-warning mb-3">
+        <div class="card-header d-flex align-items-center gap-2" style="background:#f8f0de">
+            <i class="bi bi-bank2 text-warning"></i>
+            <strong>تحويلات بنكية بانتظار تأكيدك ({{ $pendingTransfers->count() }})</strong>
+        </div>
+        <div class="card-body">
+            @foreach($pendingTransfers as $t)
+                <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 {{ ! $loop->last ? 'border-bottom pb-3 mb-3' : '' }}">
+                    <div>
+                        <div class="fw-bold fs-5">{{ \App\Helpers\Money::format($t->amount) }}</div>
+                        <small class="text-muted">
+                            المُرسِل: <strong>{{ $t->sender_name }}</strong>
+                            · سُجّل بواسطة: {{ $t->recorded_by_user_id ? ($t->recordedBy?->name ?? 'الطاقم') : 'الزبون من التطبيق' }}
+                            @if($t->notes) · {{ $t->notes }} @endif
+                        </small>
+                    </div>
+                    <div class="d-flex gap-2 align-items-end">
+                        <form method="POST" action="{{ route('admin.cashier.transfers.verify', $t) }}" class="d-flex gap-1 align-items-end">
+                            @csrf
+                            <div>
+                                <label class="form-label small mb-0">المبلغ المؤكد</label>
+                                <input type="number" step="0.01" min="0.01" name="verified_amount"
+                                       value="{{ number_format((float) $t->amount, 2, '.', '') }}"
+                                       class="form-control form-control-sm text-end" style="width:110px">
+                            </div>
+                            <button class="btn btn-success btn-sm"><i class="bi bi-check-circle-fill"></i> تأكيد</button>
+                        </form>
+                        <form method="POST" action="{{ route('admin.cashier.transfers.reject', $t) }}"
+                              onsubmit="return (this.reason.value = prompt('سبب رفض التحويل؟') || '') !== ''">
+                            @csrf
+                            <input type="hidden" name="reason">
+                            <button class="btn btn-outline-danger btn-sm"><i class="bi bi-x-circle"></i> رفض</button>
+                        </form>
+                    </div>
+                </div>
+            @endforeach
+            <div class="small text-muted mt-2">
+                <i class="bi bi-info-circle"></i> تأكّد من وصول المبلغ في تطبيق البنك قبل التأكيد. المبلغ الأقل يترك رصيداً متبقياً على الفاتورة.
+            </div>
+        </div>
+    </div>
+@endif
+
+{{-- ── Cashier records a transfer claim manually (customer told them directly) ── --}}
+@if(auth()->user()?->can('create', \App\Models\Payment::class))
+    <div class="mb-3">
+        <a class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" href="#cashierRecordTransfer" role="button">
+            <i class="bi bi-plus-circle"></i> تسجيل تحويل بنكي يدوياً
+        </a>
+        <div class="collapse mt-2" id="cashierRecordTransfer">
+            <form method="POST" action="{{ route('admin.cashier.transfers.store', $session) }}"
+                  class="card card-body row g-2 align-items-end">
+                @csrf
+                <div class="col-md-4">
+                    <label class="form-label small">اسم المُرسِل *</label>
+                    <input type="text" name="sender_name" maxlength="120" required class="form-control form-control-sm">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small">المبلغ *</label>
+                    <input type="number" step="0.01" min="0.01" max="99999999.99" name="amount" required class="form-control form-control-sm text-end">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small">هاتف الزبون (اختياري)</label>
+                    <input type="text" name="customer_phone" maxlength="32" class="form-control form-control-sm">
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-primary btn-sm w-100"><i class="bi bi-save"></i> حفظ</button>
+                </div>
+            </form>
+        </div>
+    </div>
+@endif
+
 <div class="row g-3">
     <div class="col-lg-8">
         <div class="card">
@@ -109,6 +184,17 @@
                     </div>
                 @endif
                 <div class="d-flex justify-content-between text-danger"><span>متبقي:</span><strong>{{ \App\Helpers\Money::format($inv->balance) }}</strong></div>
+
+                {{-- Loud residual-balance flag — a short-paid transfer (cashier
+                     confirmed less than the balance) leaves the table OPEN. This
+                     draws the eye so the diner isn't waved off on a half-paid bill. --}}
+                @if($inv->status === 'partially_paid' && (float)$inv->balance > 0.001)
+                    <div class="alert alert-danger d-flex align-items-center gap-2 mt-2 mb-0 py-2 px-2 small">
+                        <i class="bi bi-exclamation-triangle-fill fs-6"></i>
+                        <span>الطاولة <strong>غير مغلقة</strong> — متبقٍ
+                            <strong>{{ \App\Helpers\Money::format($inv->balance) }}</strong>. حصّله أو أجّله كدين.</span>
+                    </div>
+                @endif
 
                 @if((float)$inv->balance > 0)
                     <hr>

@@ -289,6 +289,15 @@
                                         placeholder="مثلاً: شكراً لزيارتكم، نتمنى لكم يوماً سعيداً">{{ $read('receipt_footer', 'شكراً لزيارتكم') }}</textarea>
                                 </div>
 
+                                <div class="col-12">
+                                    <label class="form-label">
+                                        <i class="bi bi-bank"></i> تفاصيل الحساب البنكي للتحويل
+                                    </label>
+                                    <textarea name="bank_transfer_details" class="form-control" rows="3" maxlength="1000"
+                                        placeholder="اسم صاحب الحساب، اسم البنك، رقم الحساب / الآيبان — تظهر للزبون عند اختياره الدفع بتحويل بنكي">{{ $read('bank_transfer_details', '') }}</textarea>
+                                    <small class="text-muted">تُعرض للزبون في شاشة الفاتورة عندما يختار «دفعت تحويلاً بنكياً»، ليعرف إلى أين يحوّل.</small>
+                                </div>
+
                                 {{-- ─── Payment methods toggles ──────────────── --}}
                                 <div class="col-12">
                                     <hr class="my-2">

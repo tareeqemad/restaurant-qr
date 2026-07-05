@@ -450,6 +450,80 @@
                 {{ $billRequested ? __('ui.customer_order.bill_requested') : ($orders->isEmpty() ? __('ui.customer_order.request_close_session') : __('ui.customer_order.request_bill_from_cashier')) }}
             </button>
         </form>
+
+        {{-- ── Pay by bank transfer ──────────────────────────────────────
+             The diner wires money from their banking app and declares it here;
+             it lands in the cashier's queue for verification. --}}
+        @if($orders->isNotEmpty())
+            <div class="bill-transfer">
+                @if(! empty($pendingTransfer))
+                    <div class="bill-transfer-done">
+                        <i class="bi bi-hourglass-split"></i>
+                        <div>
+                            <strong>تم استلام إشعار تحويلك ({{ \App\Helpers\Money::format($pendingTransfer->amount) }})</strong>
+                            <span>الكاشير يتأكد منه في البنك الآن — رجاءً انتظر التأكيد قبل المغادرة.</span>
+                        </div>
+                    </div>
+                @else
+                    <details class="bill-transfer-box">
+                        <summary>
+                            <i class="bi bi-bank"></i> دفعت تحويلاً بنكياً؟ سجّله هنا
+                        </summary>
+                        <div class="bill-transfer-body">
+                            @if($bankTransferDetails !== '')
+                                <div class="bill-transfer-details">
+                                    <div class="bill-transfer-details-label">حوّل إلى:</div>
+                                    <div class="bill-transfer-details-text">{!! nl2br(e($bankTransferDetails)) !!}</div>
+                                </div>
+                            @else
+                                <p class="bill-transfer-hint">اسأل الكاشير عن رقم الحساب البنكي، ثم بعد التحويل سجّل التفاصيل هنا.</p>
+                            @endif
+
+                            <form method="POST" action="{{ route('customer.bill.transfer') }}" class="bill-transfer-form">
+                                @csrf
+                                <label>اسم المُرسِل <span>*</span>
+                                    <input type="text" name="sender_name" maxlength="120" required
+                                           value="{{ old('sender_name', $session->customer_name) }}"
+                                           placeholder="الاسم كما يظهر في التحويل">
+                                </label>
+                                <label>المبلغ المحوَّل <span>*</span>
+                                    <input type="number" name="amount" step="0.01" min="0.01" max="99999999.99" required
+                                           value="{{ old('amount', number_format((float) $totals['total'], 2, '.', '')) }}">
+                                </label>
+                                <label>ملاحظة (اختياري)
+                                    <input type="text" name="notes" maxlength="500" placeholder="رقم العملية مثلاً">
+                                </label>
+                                <button class="bill-transfer-btn">
+                                    <i class="bi bi-send-check"></i> أبلغ الكاشير بالتحويل
+                                </button>
+                            </form>
+                        </div>
+                    </details>
+                @endif
+            </div>
+        @endif
     @endif
 </div>
+
+<style>
+    .bill-transfer { margin-top: 14px; }
+    .bill-transfer-box { border: 1px solid rgba(15,71,49,.18); border-radius: 12px; background: #fff; overflow: hidden; }
+    .bill-transfer-box > summary { list-style: none; cursor: pointer; padding: 14px 16px; font-weight: 700; color: #0e4a32; display: flex; align-items: center; gap: 8px; }
+    .bill-transfer-box > summary::-webkit-details-marker { display: none; }
+    .bill-transfer-box[open] > summary { border-bottom: 1px solid rgba(15,71,49,.12); }
+    .bill-transfer-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+    .bill-transfer-details { background: #f4f6f1; border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+    .bill-transfer-details-label { font-weight: 700; color: #657069; margin-bottom: 4px; }
+    .bill-transfer-details-text { direction: ltr; unicode-bidi: plaintext; font-family: monospace; color: #17211b; line-height: 1.6; }
+    .bill-transfer-hint { font-size: 13.5px; color: #657069; margin: 0; }
+    .bill-transfer-form { display: flex; flex-direction: column; gap: 10px; }
+    .bill-transfer-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; font-weight: 600; color: #3b463e; }
+    .bill-transfer-form label span { color: #a6352a; }
+    .bill-transfer-form input { border: 1px solid #cad1c6; border-radius: 9px; padding: 10px 12px; font-size: 15px; }
+    .bill-transfer-btn { background: #0e4a32; color: #fff; border: 0; border-radius: 10px; padding: 12px; font-weight: 700; font-size: 15px; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; }
+    .bill-transfer-btn:active { opacity: .85; }
+    .bill-transfer-done { display: flex; gap: 10px; align-items: flex-start; background: #f8f0de; border: 1px solid #e6cf9f; border-radius: 12px; padding: 14px 16px; color: #9a6714; }
+    .bill-transfer-done strong { display: block; }
+    .bill-transfer-done span { font-size: 13.5px; }
+</style>
 @endsection
