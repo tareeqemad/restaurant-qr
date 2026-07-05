@@ -12,6 +12,8 @@ use App\Services\BillingService;
 use App\Services\OrderDiscountService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class CashierController extends Controller
 {
@@ -81,6 +83,17 @@ class CashierController extends Controller
             'reference' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string'],
         ]);
+
+        // Idempotency: the pay form embeds a one-per-render token. A genuine
+        // double-submit (double-click / slow-network retry) of ONE partial
+        // payment would otherwise post twice — neither exceeds the balance, so
+        // nothing rejects the duplicate and the drawer ends up over. First POST
+        // claims the token; a second with the same token is bounced.
+        $idem = (string) $request->input('_idem', '');
+        if ($idem !== '' && ! Cache::add('idem:pay:'.$idem, true, now()->addMinutes(10))) {
+            return back()->with('info', 'تم تسجيل هذه الدفعة بالفعل — مُنع إرسال مكرر.');
+        }
+
         try {
             $this->billing->addPayment($invoice, $data['amount'], $data['method'], auth()->id(), $data['reference'] ?? null, $data['notes'] ?? null);
             return back()->with('success', 'تم تسجيل الدفعة');
@@ -93,8 +106,14 @@ class CashierController extends Controller
     {
         $this->authorize('create', Payment::class);
         $data = $request->validate(['reason' => ['required', 'string']]);
-        $this->billing->writeOffInvoice($invoice, auth()->id(), $data['reason']);
-        return back()->with('success', 'تم شطب الفاتورة');
+        try {
+            $this->billing->writeOffInvoice($invoice, auth()->id(), $data['reason']);
+            return back()->with('success', 'تم شطب الفاتورة');
+        } catch (\Throwable $e) {
+            // writeOffInvoice throws on an already-closed / zero-balance invoice
+            // (e.g. a stale second submit) — show it, don't 500.
+            return back()->with('error', $e->getMessage());
+        }
     }
 
     /**
@@ -179,10 +198,20 @@ class CashierController extends Controller
     public function clearSplits(Invoice $invoice)
     {
         $this->authorize('create', Payment::class);
-        if ($invoice->payments()->exists()) {
-            return back()->with('error', 'لا يمكن إزالة التقسيم بعد تسجيل دفعات');
+        // Lock + re-check inside a transaction: a bare exists()-then-delete
+        // races paySplit (which locks the invoice first), so a split paid a
+        // moment ago could be deleted, orphaning its committed payment.
+        try {
+            DB::transaction(function () use ($invoice) {
+                $inv = Invoice::whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+                if ($inv->payments()->exists()) {
+                    throw new \RuntimeException('لا يمكن إزالة التقسيم بعد تسجيل دفعات');
+                }
+                $inv->splits()->delete();
+            });
+        } catch (\Throwable $e) {
+            return back()->with('error', $e->getMessage());
         }
-        $invoice->splits()->delete();
         return back()->with('success', 'تم إلغاء التقسيم');
     }
 

@@ -198,7 +198,13 @@
 
                 @if((float)$inv->balance > 0)
                     <hr>
-                    <form action="{{ route('admin.cashier.pay', $inv) }}" method="POST">@csrf
+                    {{-- When the bill is split, collect via the per-split buttons
+                         only. A direct payment here would shrink the balance and
+                         strand the (now-too-large) split buttons as unpayable. --}}
+                    @if($inv->splits->isEmpty())
+                    <form action="{{ route('admin.cashier.pay', $inv) }}" method="POST"
+                          onsubmit="setTimeout(() => { const b = this.querySelector('button'); if (b) b.disabled = true; }, 0)">@csrf
+                        <input type="hidden" name="_idem" value="{{ \Illuminate\Support\Str::uuid() }}">
                         <div class="mb-2"><label class="form-label">المبلغ</label><input type="number" step="0.01" name="amount" value="{{ $inv->balance }}" class="form-control" required></div>
                         <div class="mb-2"><label class="form-label">طريقة الدفع</label>
                             <select name="method" class="form-select" required>
@@ -210,6 +216,11 @@
                         <div class="mb-2"><input name="reference" class="form-control" placeholder="رقم المرجع (اختياري)"></div>
                         <button class="btn btn-success w-100"><i class="bi bi-cash"></i> تسجيل الدفعة</button>
                     </form>
+                    @else
+                    <div class="alert alert-info small mb-2 py-2 mb-0">
+                        <i class="bi bi-info-circle"></i> الفاتورة مقسّمة — حصّل الدفعات من أزرار الأجزاء بالأسفل، أو أزل التقسيم أولاً.
+                    </div>
+                    @endif
 
                     {{-- Settle on Account — separate flow that closes the
                          session and parks the balance on the customer's
@@ -458,7 +469,7 @@
                             const i = splitIdx++;
                             const row = `<tr>
                                 <td><input name="splits[${i}][label]" class="form-control" value="${label ?? ('الشخص '+(i+1))}"></td>
-                                <td><input type="number" step="0.01" min="0" name="splits[${i}][amount]" class="form-control split-amt" value="${amount}" onchange="updateSplitSum()"></td>
+                                <td><input type="number" step="0.01" min="0.01" name="splits[${i}][amount]" class="form-control split-amt" value="${amount}" onchange="updateSplitSum()"></td>
                                 <td><select name="splits[${i}][method]" class="form-select">${splitMethodOptions()}</select></td>
                                 <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove(); updateSplitSum();"><i class="bi bi-x"></i></button></td>
                             </tr>`;

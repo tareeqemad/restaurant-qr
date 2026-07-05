@@ -98,6 +98,18 @@ class OrderDiscountService
         return DB::transaction(function () use ($session, $data, $user) {
             $session->loadMissing('orders');
 
+            // Block discount changes once the session invoice is closed.
+            // applyToSession never went through guardOrderMutable, so without
+            // this the order rows get mutated (recalculateTotals) and only
+            // syncInvoiceFromSession later no-ops on the closed invoice —
+            // desyncing order totals from a paid invoice with no ledger repost.
+            $sessionInvoice = $session->invoice()->where('status', '!=', 'cancelled')->latest()->first();
+            if ($sessionInvoice && in_array($sessionInvoice->status, ['paid', 'unpaid_writeoff'], true)) {
+                throw ValidationException::withMessages([
+                    'value' => 'الفاتورة مغلقة. لتعديل الخصم اعمل استرداد ثم أعد الإصدار.',
+                ]);
+            }
+
             $billable = $session->orders
                 ->where('status', '!=', OrderStatus::Cancelled->value)
                 ->filter(fn (Order $o) => (float) $o->subtotal > 0)
@@ -334,12 +346,34 @@ class OrderDiscountService
         if ($order->status === OrderStatus::Cancelled->value) {
             throw ValidationException::withMessages(['value' => 'الطلب ملغي — لا يقبل خصومات.']);
         }
-        $invoice = $order->invoice;
+        $invoice = $this->invoiceFor($order);
         if ($invoice && in_array($invoice->status, ['paid', 'cancelled', 'unpaid_writeoff'], true)) {
             throw ValidationException::withMessages([
                 'value' => 'الفاتورة مغلقة. لتعديل الخصم اعمل استرداد ثم أعد الإصدار.',
             ]);
         }
+    }
+
+    /**
+     * Resolve the invoice governing this order. Standalone/portal orders own
+     * their invoice via order_id, so $order->invoice works. Dine-in SESSION
+     * orders do NOT — the session invoice is keyed on table_session_id with
+     * order_id left null, so $order->invoice is ALWAYS null for them. Without
+     * this fallback the paid-invoice guard silently no-ops on every dine-in
+     * order, letting a discount be applied/removed on a paid, closed invoice.
+     */
+    protected function invoiceFor(Order $order): ?Invoice
+    {
+        if ($order->invoice) {
+            return $order->invoice;
+        }
+        if ($order->table_session_id) {
+            return Invoice::where('table_session_id', $order->table_session_id)
+                ->where('status', '!=', 'cancelled')
+                ->latest()
+                ->first();
+        }
+        return null;
     }
 
     /**
@@ -349,7 +383,7 @@ class OrderDiscountService
      */
     protected function syncInvoiceFromOrder(Order $order): void
     {
-        $invoice = $order->invoice;
+        $invoice = $this->invoiceFor($order);
         if (! $invoice) return;
         if (in_array($invoice->status, ['paid', 'cancelled', 'unpaid_writeoff'], true)) return;
 
@@ -394,16 +428,21 @@ class OrderDiscountService
 
     protected function writeInvoiceTotals(Invoice $invoice, array $totals): void
     {
+        // Net of refunds — matches BillingService::addPayment and
+        // Invoice::netPaid(). Using GROSS payments here would let a discount
+        // applied AFTER a partial refund close the invoice as 'paid' (balance
+        // 0) while money is still owed, silently writing off the remainder.
         $paidTotal = (float) $invoice->payments()->sum('amount');
+        $netPaid   = max(0, $paidTotal - (float) $invoice->refunded_total);
         $newTotal  = Money::round($totals['total']);
-        $balance   = max(0, $newTotal - $paidTotal);
+        $balance   = max(0, $newTotal - $netPaid);
 
-        // If a partial payment was made, recompute the running status so a
+        // If a (net) payment was made, recompute the running status so a
         // discount that brings balance to 0 closes the invoice properly.
         $status = match (true) {
-            $balance <= 0.001 && $paidTotal > 0 => 'paid',
-            $paidTotal > 0                      => 'partially_paid',
-            default                             => 'issued',
+            $balance <= 0.001 && $netPaid > 0 => 'paid',
+            $netPaid > 0                      => 'partially_paid',
+            default                           => 'issued',
         };
 
         // Split-invoice guard (G5): if the customer chose to split the

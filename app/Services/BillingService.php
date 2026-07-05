@@ -363,6 +363,15 @@ class BillingService
                 throw new \RuntimeException('لا يمكن تأجيل فاتورة مغلقة أو ملغاة.');
             }
 
+            // Idempotency: a settled invoice stays 'partially_paid' with the
+            // flag set (it IS the debt record), so nothing above blocks a
+            // re-POST. On a second call outstandingDebt() already counts THIS
+            // invoice, so the credit-limit math double-counts its balance, and
+            // the session-close / notes / notifications all fire again.
+            if ($invoice->settled_on_account_at) {
+                throw new \RuntimeException('الفاتورة مؤجّلة كدين مسبقاً.');
+            }
+
             if (! $invoice->customer_id) {
                 throw new \RuntimeException('لا يمكن تسجيل دين بدون زبون مرتبط بالفاتورة. اربط زبوناً للجلسة أولاً.');
             }
