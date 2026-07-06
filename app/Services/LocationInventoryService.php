@@ -69,6 +69,32 @@ class LocationInventoryService
             $out  = $this->recordLocationMovement($ingredient, 'out', $from, $qtyBase, $cost, $reason ?? "نقل إلى {$to->name}", $userId);
             $in   = $this->recordLocationMovement($ingredient, 'in',  $to,   $qtyBase, $cost, $reason ?? "وارد من {$from->name}", $userId);
 
+            // Move the FIFO batch layers too, not just the stock quantity.
+            // Without this the batches stay pinned to the source location, so
+            // ingredient_stock says the goods are at the destination while the
+            // batch sub-ledger says they're at the source — and the next batched
+            // sale at the destination hard-blocks ('no_batches_for_storage').
+            // Only for batch-tracked ingredients; legacy non-batched ones keep
+            // the stock-only move. Consume FIFO at source, re-create each lot at
+            // the destination carrying its real unit_cost + expiry (FIFO + cost
+            // preserved), instead of a single global-average layer.
+            $batchSvc = app(BatchInventoryService::class);
+            $sourceHasBatches = \App\Models\IngredientBatch::where('ingredient_id', $ingredient->id)
+                ->where('storage_location_id', $from->id)
+                ->where('remaining_qty', '>', 0)
+                ->exists();
+            if ($sourceHasBatches) {
+                foreach ($batchSvc->deductFifo($ingredient, $qtyBase, $from->id) as $row) {
+                    $batchSvc->createBatchOnReceipt(
+                        ingredient: $ingredient,
+                        qtyBase: (float) $row['qty'],
+                        unitCost: (float) $row['batch']->unit_cost,
+                        expiryDate: $row['batch']->expiry_date?->toDateString(),
+                        storageLocationId: $to->id,
+                    );
+                }
+            }
+
             // Total hasn't changed (shifted between locations) — but ensure sum matches
             $this->syncIngredientTotal($ingredient);
 

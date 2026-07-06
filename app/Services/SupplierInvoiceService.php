@@ -107,9 +107,41 @@ class SupplierInvoiceService
                     $lineTax = (float) ($line['tax_total'] ?? 0);
                     $lineTotal = $lineSubtotal + $lineTax;
                     $invoicedSoFar = $poItem ? (float) ($alreadyInvoiced[$poItem->id] ?? 0) : 0.0;
-                    $receivedQty = $poItem
+                    $uninvoicedReceived = $poItem
                         ? max(0, (float) $poItem->quantity_received - $invoicedSoFar)
                         : null;
+
+                    // Unit factors — the PO line and the invoice line may use
+                    // different pack sizes (24-can cartons vs single cans), so
+                    // every quantity comparison below normalizes to base units.
+                    $poFactor  = $poItem && $poItem->ingredient_unit_id && $poItem->ingredientUnit
+                        ? (float) $poItem->ingredientUnit->factor_to_base
+                        : 1.0;
+                    $invFactor = ! empty($line['ingredient_unit_id'])
+                        ? (float) (\App\Models\IngredientUnit::find($line['ingredient_unit_id'])?->factor_to_base ?? 1.0)
+                        : 1.0;
+
+                    // You can only bill (and clear GRNI 2300 for) goods that were
+                    // actually received and not yet invoiced. Billing before
+                    // receipt or over-billing would dump the excess value into
+                    // purchase-price-variance (5420) as a phantom and leave a
+                    // permanent 2300 residue. Compared in BASE units so mixed
+                    // pack sizes (cartons vs cans) don't false-trigger.
+                    if ($poItem && (($qty * $invFactor) - ($uninvoicedReceived * $poFactor)) > 0.0001) {
+                        throw ValidationException::withMessages([
+                            'lines' => "الكمية المفوترة ({$qty}) للصنف «{$line['description']}» تتجاوز المستلَم غير المفوتَر. استلم البضاعة أولاً أو صحّح الكمية.",
+                        ]);
+                    }
+
+                    // GRNI clears exactly THIS line's billed qty (in PO units),
+                    // capped at the uninvoiced-received qty — NOT the whole
+                    // receipt (which would let the first partial invoice
+                    // over-clear the entire GRNI).
+                    $billedInPoUnits = $poFactor > 0 ? ($qty * $invFactor) / $poFactor : (float) $qty;
+                    $receivedQty = $uninvoicedReceived !== null
+                        ? min($billedInPoUnits, $uninvoicedReceived)
+                        : null;
+
                     // Clear GRNI at the actual weighted-average delivered price;
                     // fall back to the PO price only when nothing was received yet
                     // (which preserves the original behaviour for un-overridden POs).
@@ -119,37 +151,13 @@ class SupplierInvoiceService
                     }
                     $receivedTotal = $receivedQty !== null ? round($receivedQty * $actualUnitValue, 4) : null;
 
-                    // Quantity variance — needs base-unit normalization
-                    // when the PO and the invoice use different pack
-                    // sizes. Money variance stays comparable as-is
-                    // because both sides are amounts.
-                    //
-                    // Example: PO line in 24-can cartons (received 5
-                    // cartons), invoice itemized in single cans
-                    // (claims 120 cans). Naive subtraction (120 − 5)
-                    // = 115 is meaningless. Normalising both sides
-                    // gives 120 − (5 × 24) = 0 — actually balanced.
+                    // Quantity variance for display — in the natural unit when
+                    // both sides match, else normalized to base units.
                     $varianceQty = null;
                     if ($poItem && $receivedQty !== null) {
-                        $poFactor  = $poItem->ingredient_unit_id && $poItem->ingredientUnit
-                            ? (float) $poItem->ingredientUnit->factor_to_base
-                            : 1.0;
-                        $invFactor = ! empty($line['ingredient_unit_id'])
-                            ? (float) (\App\Models\IngredientUnit::find($line['ingredient_unit_id'])?->factor_to_base ?? 1.0)
-                            : 1.0;
-
-                        if (abs($poFactor - $invFactor) < 0.0001) {
-                            // Same unit on both sides — keep the
-                            // variance in that unit so the existing UI
-                            // (which shows "X كرتون") reads naturally.
-                            $varianceQty = $qty - $receivedQty;
-                        } else {
-                            // Different units — normalise both to base
-                            // and report the variance in base units.
-                            // The UI prints the ingredient's base-unit
-                            // code so the operator knows the scale.
-                            $varianceQty = ($qty * $invFactor) - ($receivedQty * $poFactor);
-                        }
+                        $varianceQty = abs($poFactor - $invFactor) < 0.0001
+                            ? $qty - $receivedQty
+                            : ($qty * $invFactor) - ($receivedQty * $poFactor);
                     }
 
                     $invoice->items()->create([

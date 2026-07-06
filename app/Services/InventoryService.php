@@ -176,12 +176,21 @@ class InventoryService
      */
     public function ensureDeducted(OrderItem $orderItem): bool
     {
-        $alreadyDeducted = InventoryMovement::where('reference_type', OrderItem::class)
+        // NET-aware idempotency. Checking only for the existence of an 'out'
+        // movement is wrong: unapprove() writes a 'return' but KEEPS the 'out',
+        // so on a re-approve the stale 'out' would make us skip — leaking free
+        // stock (deducted once, returned once, then served with no deduction).
+        // Compare total out vs total returned: only skip when net is still out.
+        $out = (float) InventoryMovement::where('reference_type', OrderItem::class)
             ->where('reference_id', $orderItem->id)
             ->where('type', 'out')
-            ->exists();
+            ->sum('quantity_in_base');
+        $returned = (float) InventoryMovement::where('reference_type', OrderItem::class)
+            ->where('reference_id', $orderItem->id)
+            ->where('type', 'return')
+            ->sum('quantity_in_base');
 
-        if ($alreadyDeducted) {
+        if ($out - $returned > 0.0001) {
             return false;
         }
 
@@ -252,8 +261,15 @@ class InventoryService
             ->exists();
 
         if (! $hasBatches && $storageLocationId) {
+            // Scope the "batches exist elsewhere" probe to the SAME branch as
+            // the target location. An unrelated stranded lot in another branch
+            // must not turn a legitimate local sale into a hard block; only a
+            // same-branch batch (this ingredient IS batch-tracked here, just not
+            // at this location) should force the operator to fix placement.
+            $branchId = StorageLocation::whereKey($storageLocationId)->value('branch_id');
             $hasBatchesInOtherLocation = IngredientBatch::where('ingredient_id', $ingredient->id)
                 ->where('remaining_qty', '>', 0)
+                ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
                 ->exists();
 
             if ($hasBatchesInOtherLocation) {

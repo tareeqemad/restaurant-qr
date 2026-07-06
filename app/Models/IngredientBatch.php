@@ -65,6 +65,10 @@ class IngredientBatch extends Model
             ->where('remaining_qty', '>', 0)
             ->orderByRaw('CASE WHEN expiry_date IS NULL THEN 1 ELSE 0 END ASC')
             ->orderBy('expiry_date', 'asc')
-            ->orderBy('received_date', 'asc');
+            ->orderBy('received_date', 'asc')
+            // Final deterministic tiebreaker: received_date is a DATE (no time),
+            // so same-day lots would otherwise consume in engine-defined order
+            // and book non-deterministic COGS. id is monotonic with receipt order.
+            ->orderBy('id', 'asc');
     }
 }

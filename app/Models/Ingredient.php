@@ -116,8 +116,27 @@ class Ingredient extends Model
      * yield_pct (<100), grosses up the paid cost so a 5kg purchase that
      * yields only 3.5kg usable shows the true $/kg of usable product.
      */
-    public function effectiveCostPerUnit(): float
+    public function effectiveCostPerUnit(array $seen = []): float
     {
+        // Composite: roll the sub-recipe cost up (Σ child_qty_base × child
+        // effective cost) ÷ yield, instead of trusting the raw cost_per_unit
+        // column (which is never synced from the sub-recipe). $seen guards a
+        // cycle (A contains B contains A) so we never infinite-loop.
+        if ($this->is_composite && ! in_array($this->id, $seen, true)) {
+            $yield = (float) $this->composite_yield;
+            if ($yield > 0) {
+                $seen[] = $this->id;
+                $total = 0.0;
+                foreach ($this->subRecipe()->with('ingredient')->get() as $line) {
+                    $child = $line->ingredient;
+                    if (! $child) continue;
+                    $total += $line->quantityInBase() * $child->effectiveCostPerUnit($seen);
+                }
+                return round($total / $yield, 6);
+            }
+            // yield missing/zero → can't roll up; fall through to the raw column.
+        }
+
         $base = (float) $this->cost_per_unit;
 
         // Yield-adjusted raw cost: $10/kg paid for chicken with 70% yield

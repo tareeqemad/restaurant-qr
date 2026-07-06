@@ -126,29 +126,60 @@ class StockCountService
             throw ValidationException::withMessages(['status' => 'الجرد مُعتمد مسبقاً.']);
         }
 
-        $withVariance = $count->items()->with('ingredient')
-            ->whereNotNull('counted_qty')
-            ->get()
-            ->filter(fn($i) => abs((float) $i->variance) > 0.0001);
+        return DB::transaction(function () use ($count, $userId) {
+            // Lock + re-check status INSIDE the transaction. Without this two
+            // concurrent finalizes (double-click / retried POST) both pass the
+            // pre-tx guard and each posts a full set of adjustment movements —
+            // double-applying every variance. recordMovement has no per-run
+            // dedupe (it creates fresh movement rows), so the lock is the guard.
+            $count = StockCount::whereKey($count->id)->lockForUpdate()->firstOrFail();
+            if ($count->status !== 'draft') {
+                throw ValidationException::withMessages(['status' => 'الجرد مُعتمد مسبقاً.']);
+            }
 
-        return DB::transaction(function () use ($count, $withVariance, $userId) {
+            $items = $count->items()->with('ingredient')->whereNotNull('counted_qty')->get();
+
             $created = 0;
-            foreach ($withVariance as $item) {
+            foreach ($items as $item) {
                 $ing = $item->ingredient;
                 if (!$ing) continue;
 
-                // recordMovement() with type='adjustment' and the absolute base qty;
-                // sign is determined by the qty value (positive = add, negative = remove).
+                // SET-TO-COUNTED against LIVE stock, not the frozen open-time
+                // variance. If stock moved between opening the count and now
+                // (sales during service), replaying the stale variance leaves
+                // the book wrong; the adjustment must be (counted − what's on
+                // the books right now).
+                $liveQty = $count->storage_location_id
+                    ? (float) (IngredientStock::where('ingredient_id', $ing->id)
+                        ->where('storage_location_id', $count->storage_location_id)
+                        ->value('quantity') ?? 0)
+                    : (float) $ing->fresh()->current_stock;
+
+                $delta = round((float) $item->counted_qty - $liveQty, 4);
+
+                // Persist the ACTUALLY-posted variance so reports reconcile to
+                // the ledger (the stored open-time variance is now stale).
+                $item->update([
+                    'variance'      => $delta,
+                    'variance_cost' => round($delta * (float) ($ing->cost_per_unit ?? 0), 4),
+                ]);
+
+                if (abs($delta) <= 0.0001) {
+                    continue;
+                }
+
+                // Signed base qty; recordMovement adds it directly (positive =
+                // found stock, negative = shrinkage). syncBatches keeps FIFO aligned.
                 $this->inventory->recordMovement(
                     ingredient: $ing,
                     type:       'adjustment',
-                    qtyBase:    (float) $item->variance,  // signed — recordMovement adds it directly
+                    qtyBase:    $delta,
                     unitCost:   (float) $ing->cost_per_unit,
                     reference:  $item,
                     reason:     "جرد {$count->number}",
                     userId:     $userId,
                     storageLocationId: $count->storage_location_id,
-                    syncBatches: true,   // keep FIFO batches aligned with the counted stock
+                    syncBatches: true,
                 );
                 $created++;
             }

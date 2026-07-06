@@ -118,7 +118,7 @@ class RecipeCostService
                 'ingredient'  => $line->ingredient?->name ?? '—',
                 'quantity'    => (float) $line->quantity,
                 'unit'        => $line->unit?->code ?? '',
-                'cost_per_unit'=> (float) ($line->ingredient?->cost_per_unit ?? 0),
+                'cost_per_unit'=> (float) ($line->ingredient?->effectiveCostPerUnit() ?? 0),
                 'line_cost'   => $cost,
                 'is_optional' => (bool) $line->is_optional,
             ];
@@ -153,7 +153,7 @@ class RecipeCostService
             if ($unit) {
                 return (float) $line->quantity
                     * (float) $unit->factor_to_base
-                    * (float) $ingredient->cost_per_unit;
+                    * $ingredient->effectiveCostPerUnit();
             }
         }
 
@@ -169,6 +169,6 @@ class RecipeCostService
             return 0.0;
         }
 
-        return $qtyBase * (float) $ingredient->cost_per_unit;
+        return $qtyBase * $ingredient->effectiveCostPerUnit();
     }
 }
