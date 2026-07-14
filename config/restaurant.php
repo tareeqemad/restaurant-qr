@@ -54,13 +54,13 @@ return [
     'phone_country' => $envOrMarket('RESTAURANT_PHONE_COUNTRY', $isUsMarket ? 'US' : 'PS', 'PS'),
 
     'theme' => [
-        'primary' => '#164c37',
-        'dark' => '#0f2d22',
-        'header' => '#164c37',
-        'accent' => '#b97818',
-        'menu' => '#f7f8f5',
+        'primary' => '#166534',
+        'dark' => '#14532d',
+        'header' => '#ffffff',
+        'accent' => '#d97706',
+        'menu' => '#ffffff',
         'menu_style' => 'brand',
-        'header_style' => 'color',
+        'header_style' => 'light',
     ],
 
     'order' => [

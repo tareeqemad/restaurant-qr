@@ -26,11 +26,11 @@
 
 <style>
     :root {
-        --green-deep: #0f2d22;
-        --green-mid: #1f4733;
+        --green-deep: #14532d;
+        --green-mid: #166534;
         --green-soft: #2d6e4a;
         --green-tint: #f0fdf4;
-        --gold: #b97818;
+        --gold: #d97706;
         --gold-soft: #fef9e7;
         --gold-mid: #d8a13a;
         --red: #b91c1c;

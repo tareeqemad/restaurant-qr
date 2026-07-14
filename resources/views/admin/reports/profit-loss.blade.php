@@ -70,7 +70,7 @@
                     <input type="checkbox" name="per_branch_cost" value="1" class="form-check-input m-0 mt-1"
                            @checked($perBranchCost) onchange="this.form.submit()">
                     <span class="d-block flex-grow-1">
-                        <strong style="color:#b97818;">
+                        <strong style="color:#d97706;">
                             <i class="bi bi-building"></i> احسب التكلفة بأسعار شراء هذا الفرع
                         </strong>
 
@@ -92,7 +92,7 @@
                             </span>
 
                             <span class="d-block mt-2">
-                                <span class="badge" style="background:#b97818; color:#fff;">شغّال</span>
+                                <span class="badge" style="background:#d97706; color:#fff;">شغّال</span>
                                 نحسب تكلفة الطبق بـ<strong>السعر الفعلي اللي دفعه هذا الفرع</strong>
                                 (متوسطه على فواتيره). فرع بيشتري أرخص = ربحه يطلع أعلى.
                             </span>
@@ -571,18 +571,18 @@
     box-shadow: 0 2px 8px rgba(0,0,0,.04);
 }
 .pl-kpi::after {
-    content: ''; position: absolute; top: 0; right: 0; width: 4px; height: 100%; background: var(--accent, #b97818);
+    content: ''; position: absolute; top: 0; right: 0; width: 4px; height: 100%; background: var(--accent, #d97706);
 }
-.pl-kpi--revenue::after { background: #1f4733; }
+.pl-kpi--revenue::after { background: #166534; }
 .pl-kpi--gross::after   { background: #2d6e4a; }
 .pl-kpi--expenses::after{ background: #b45309; }
-.pl-kpi--net::after     { background: #b97818; }
+.pl-kpi--net::after     { background: #d97706; }
 .pl-kpi--net.is-loss::after { background: #b91c1c; }
 .pl-kpi__head {
     display: flex; align-items: center; gap: 8px; color: #475569; font-size: .85rem; margin-bottom: 8px;
 }
 .pl-kpi__head i { font-size: 1rem; }
-.pl-kpi__value { font-size: 1.6rem; font-weight: 800; color: #0f2d22; line-height: 1.2; }
+.pl-kpi__value { font-size: 1.6rem; font-weight: 800; color: #0f172a; line-height: 1.2; }
 .pl-kpi--net.is-loss .pl-kpi__value { color: #b91c1c; }
 .pl-kpi__sub { font-size: .8rem; color: #64748b; margin-top: 4px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .pl-kpi__chip { padding: 2px 8px; background: #fef2f2; border-radius: 6px; font-weight: 600; font-size: .75rem; }
@@ -594,9 +594,9 @@
 }
 .pl-statement__head {
     display: flex; justify-content: space-between; align-items: baseline;
-    border-bottom: 2px solid #b97818; padding-bottom: 10px; margin-bottom: 12px;
+    border-bottom: 2px solid #d97706; padding-bottom: 10px; margin-bottom: 12px;
 }
-.pl-statement__head h5, .pl-statement__head h6 { color: #0f2d22; font-weight: 700; }
+.pl-statement__head h5, .pl-statement__head h6 { color: #0f172a; font-weight: 700; }
 
 .pl-row {
     display: flex; align-items: center; gap: 10px;
@@ -605,7 +605,7 @@
 }
 .pl-row:last-child { border-bottom: none; }
 .pl-row span:first-child { flex: 1; color: #334155; }
-.pl-row strong { color: #0f2d22; min-width: 110px; text-align: end; }
+.pl-row strong { color: #0f172a; min-width: 110px; text-align: end; }
 .pl-row__pct {
     background: #f1f5f9; padding: 2px 8px; border-radius: 6px; font-size: .78rem;
     font-weight: 600; color: #475569; min-width: 56px; text-align: center;
@@ -626,17 +626,17 @@
     margin: 6px 0; border: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0;
     font-weight: 600;
 }
-.pl-row--subtotal span:first-child { color: #0f2d22; }
+.pl-row--subtotal span:first-child { color: #0f172a; }
 .pl-row--gross { background: #f0fdf4; border-color: #bbf7d0; }
 .pl-row--gross strong { color: #14532d; }
 
 .pl-row--final {
     background: linear-gradient(135deg, #f0fdf4, #fef9e7);
-    border: 2px solid #b97818; border-radius: 10px;
+    border: 2px solid #d97706; border-radius: 10px;
     padding: 14px 16px; margin-top: 10px; font-size: 1.05rem; font-weight: 700;
 }
-.pl-row--final span:first-child { color: #0f2d22; font-size: 1rem; }
-.pl-row--final strong { font-size: 1.25rem; color: #b97818; min-width: 130px; }
+.pl-row--final span:first-child { color: #0f172a; font-size: 1rem; }
+.pl-row--final strong { font-size: 1.25rem; color: #d97706; min-width: 130px; }
 .pl-row--final.is-loss { background: linear-gradient(135deg, #fef2f2, #fff7e6); border-color: #b91c1c; }
 .pl-row--final.is-loss strong { color: #b91c1c; }
 
@@ -649,7 +649,7 @@
     cursor: help; line-height: 1; display: inline-flex; align-items: center; justify-content: center;
     transition: all .15s;
 }
-.pl-help:hover { background: #b97818; color: white; border-color: #b97818; transform: scale(1.1); }
+.pl-help:hover { background: #d97706; color: white; border-color: #d97706; transform: scale(1.1); }
 
 /* CARD */
 .pl-card {
@@ -660,14 +660,14 @@
     padding: 12px 16px; background: linear-gradient(180deg, #fafdfa, #f5f9f5);
     border-bottom: 1px solid #e6efe9; display: flex; justify-content: space-between; align-items: baseline;
 }
-.pl-card__head strong { color: #0f2d22; }
+.pl-card__head strong { color: #0f172a; }
 .pl-card__body { padding: 14px 16px; }
 
 /* TABLE */
 .pl-table { font-size: .87rem; }
 .pl-table thead th {
     font-size: .75rem; color: #64748b; font-weight: 600; text-transform: uppercase;
-    letter-spacing: .5px; border-bottom: 2px solid #b97818; padding: 6px 8px;
+    letter-spacing: .5px; border-bottom: 2px solid #d97706; padding: 6px 8px;
 }
 .pl-table td { padding: 8px; vertical-align: middle; }
 .pl-dot {
@@ -675,7 +675,7 @@
 }
 .pl-rank {
     display: inline-block; width: 24px; height: 24px; line-height: 24px; text-align: center;
-    background: #fef9e7; color: #b97818; font-weight: 700; border-radius: 50%; font-size: .72rem; margin-left: 6px;
+    background: #fef9e7; color: #d97706; font-weight: 700; border-radius: 50%; font-size: .72rem; margin-left: 6px;
 }
 
 /* GLOSSARY */
@@ -684,7 +684,7 @@
     border: 1px solid rgba(15,71,49,.08); box-shadow: 0 1px 3px rgba(0,0,0,.03);
 }
 .pl-glossary > summary {
-    cursor: pointer; font-weight: 700; color: #0f2d22; padding: 4px 0;
+    cursor: pointer; font-weight: 700; color: #0f172a; padding: 4px 0;
     list-style: none; display: flex; align-items: center; gap: 8px;
 }
 .pl-glossary > summary::-webkit-details-marker { display: none; }
@@ -697,12 +697,12 @@
 }
 .pl-glossary dl { margin: 0; }
 .pl-glossary dt {
-    font-weight: 700; color: #b97818; font-size: .9rem; margin-top: 10px;
+    font-weight: 700; color: #d97706; font-size: .9rem; margin-top: 10px;
 }
 .pl-glossary dt:first-child { margin-top: 0; }
 .pl-glossary dd { color: #475569; font-size: .87rem; margin: 2px 0 0 0; line-height: 1.7; }
 .pl-glossary code {
-    background: #f1f5f9; padding: 1px 6px; border-radius: 4px; color: #0f2d22; font-size: .82rem;
+    background: #f1f5f9; padding: 1px 6px; border-radius: 4px; color: #0f172a; font-size: .82rem;
 }
 
 /* PRINT */
@@ -734,8 +734,8 @@ document.addEventListener('DOMContentLoaded', function () {
         data: {
             labels: data.map(d => d.label),
             datasets: [
-                { label: 'صافي المبيعات', data: data.map(d => d.net_sales), borderColor: '#1f4733', backgroundColor: 'rgba(31,71,51,.08)', fill: true, tension: .35, borderWidth: 2 },
-                { label: 'الربح',         data: data.map(d => d.profit),    borderColor: '#b97818', backgroundColor: 'rgba(185,120,24,.08)', fill: true, tension: .35, borderWidth: 2 },
+                { label: 'صافي المبيعات', data: data.map(d => d.net_sales), borderColor: '#166534', backgroundColor: 'rgba(22,101,52,.08)', fill: true, tension: .35, borderWidth: 2 },
+                { label: 'الربح',         data: data.map(d => d.profit),    borderColor: '#d97706', backgroundColor: 'rgba(217,119,6,.08)', fill: true, tension: .35, borderWidth: 2 },
                 { label: 'المصروفات',     data: data.map(d => d.expenses),  borderColor: '#b45309', backgroundColor: 'transparent', borderDash: [6,4], tension: .25, borderWidth: 1.6 },
             ],
         },

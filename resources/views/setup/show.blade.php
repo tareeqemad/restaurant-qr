@@ -644,8 +644,8 @@
                             </div>
                         </div>
                         <div class="theme-preset-grid">
-                            <button type="button" class="theme-preset" data-theme-preset='{"theme_primary":"#164c37","theme_dark":"#0f2d22","theme_header":"#164c37","theme_accent":"#b97818","theme_menu":"#f7f8f5"}'>
-                                <span class="preset-swatches"><span style="background:#164c37"></span><span style="background:#b97818"></span></span>
+                            <button type="button" class="theme-preset" data-theme-preset='{"theme_primary":"#166534","theme_dark":"#14532d","theme_header":"#ffffff","theme_accent":"#d97706","theme_menu":"#ffffff"}'>
+                                <span class="preset-swatches"><span style="background:#166534"></span><span style="background:#d97706"></span></span>
                                 {{ __('setup.theme_presets.default') }}
                             </button>
                             <button type="button" class="theme-preset" data-theme-preset='{"theme_primary":"#0f766e","theme_dark":"#134e4a","theme_header":"#0f766e","theme_accent":"#d97706","theme_menu":"#f0fdfa"}'>

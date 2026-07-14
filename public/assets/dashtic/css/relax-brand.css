@@ -13,46 +13,51 @@
 
 /* ═══ 1. Dashtic variable overrides (the ONLY thing needed for re-theming) ═══ */
 :root {
-    /* Primary (forest green) — flows to Dashtic's --primary01..09 tiers */
-    --primary-rgb: 31, 71, 51;
+    /* Primary (fresh green) — flows to Dashtic's --primary01..09 tiers.
+       Reserved for primary buttons + active states only; surfaces stay neutral. */
+    --primary-rgb: 22, 101, 52;
 
-    /* Semantic colors — desaturated to live harmoniously next to forest+gold
-       palette. Dashtic defaults are too vivid (emerald #2dce89, bright red
-       #ff5b51, yellow #ecb403) and clash with brand. */
-    --success-rgb: 94,  145, 101;    /* muted sage — works with forest */
-    --danger-rgb:  184,  79,  79;    /* muted terracotta */
-    --warning-rgb: 201, 154,  56;    /* warm amber, near our accent */
-    --info-rgb:     78, 121, 148;    /* dusty teal */
+    /* Semantic colors — clear and distinct from the brand green so states
+       (success / warning / danger) never compete with primary actions. */
+    --success-rgb: 22, 163, 74;
+    --danger-rgb:  220, 38, 38;
+    --warning-rgb: 217, 119, 6;
+    --info-rgb:    37, 99, 235;
 
-    /* Body surface (cream) */
-    --body-bg-rgb: 250, 245, 235;
-    --body-bg-rgb2: 255, 255, 245;
+    /* Dashtic's demo secondary is hot pink (#f72d66) — neutralize to slate
+       so leftover .bg-secondary / .btn-secondary usages stop clashing. */
+    --secondary-rgb: 100, 116, 139;
+
+    /* Body surface (cool neutral) */
+    --body-bg-rgb: 248, 250, 252;
+    --body-bg-rgb2: 255, 255, 255;
     --default-body-bg-color: rgb(var(--body-bg-rgb));
 
     /* Hover / form tints */
-    --light-rgb: 240, 232, 216;
+    --light-rgb: 241, 245, 249;
     --form-control-bg: #ffffff;
-    --input-border: rgba(var(--primary-rgb), 0.16);
+    --input-border: #e2e8f0;
 
     /* Text + border */
-    --default-text-color: #1c1917;
-    --default-border: rgba(var(--primary-rgb), 0.12);
+    --default-text-color: #0f172a;
+    --default-border: rgba(15, 23, 42, 0.08);
 
     /* Arabic-first typography */
     --default-font-family: "Tajawal", "Segoe UI", sans-serif;
 }
 
 /* Bootstrap semantic overrides (so .btn-success / .bg-danger / .text-warning
-   all inherit our muted palette automatically) */
+   all inherit our palette automatically) */
 :root {
-    --bs-success-rgb: 94,  145, 101;
-    --bs-danger-rgb:  184,  79,  79;
-    --bs-warning-rgb: 201, 154,  56;
-    --bs-info-rgb:     78, 121, 148;
-    /* Warm cream light surface (harmonizes with forest + gold + cream body).
-       Used by .bg-light, <thead class="bg-light">, .btn-light backgrounds. */
-    --bs-light-rgb:   252, 246, 232;
-    --bs-dark-rgb:     18,  45,  30;
+    --bs-success-rgb: 22, 163, 74;
+    --bs-danger-rgb:  220, 38, 38;
+    --bs-warning-rgb: 217, 119, 6;
+    --bs-info-rgb:    37, 99, 235;
+    --bs-secondary-rgb: 100, 116, 139;
+    /* Cool neutral light surface. Used by .bg-light, <thead class="bg-light">,
+       .btn-light backgrounds. */
+    --bs-light-rgb:   241, 245, 249;
+    --bs-dark-rgb:     15, 23, 42;
 }
 
 /* Tab-pane display fix: Bootstrap's default rule `.tab-content > .tab-pane`
@@ -87,36 +92,49 @@
     transform: none !important;        /* drop Dashtic's 180deg RTL flip (a bullet doesn't need flipping) */
 }
 
-/* Explicit override for .bg-light so it looks warm, not stark white.
+/* Explicit override for .bg-light — cool neutral, not stark white.
    Some Bootstrap rules compete with Dashtic's — forcing our value wins. */
 .bg-light,
 table thead.bg-light,
 .table thead.bg-light {
-    background-color: rgba(var(--accent-rgb), 0.06) !important;
+    background-color: #f1f5f9 !important;
 }
 
-/* .btn-light — sits cleanly inside our warm cream palette */
+/* .btn-light — quiet neutral button */
 .btn-light {
-    background-color: rgba(var(--accent-rgb), 0.08) !important;
-    border-color: rgba(var(--accent-rgb), 0.2) !important;
-    color: rgb(var(--primary-rgb)) !important;
+    background-color: #f1f5f9 !important;
+    border-color: #e2e8f0 !important;
+    color: #334155 !important;
     font-weight: 600;
 }
 .btn-light:hover,
 .btn-light:focus {
-    background-color: rgba(var(--accent-rgb), 0.16) !important;
-    border-color: rgba(var(--accent-rgb), 0.35) !important;
-    color: rgb(var(--primary-rgb)) !important;
+    background-color: #e2e8f0 !important;
+    border-color: #cbd5e1 !important;
+    color: #0f172a !important;
 }
+
+/* ═══ Soft badges — light fill + dark text of the same family ═══
+   Solid semantic badges (white text on saturated fills) read heavy when a
+   table shows dozens of them. Flip every Bootstrap solid badge to a tinted
+   background with dark text; the .badge scope keeps buttons/alerts intact. */
+.badge.bg-primary   { background-color: rgba(var(--primary-rgb), .10) !important; color: rgb(var(--primary-rgb)) !important; }
+.badge.bg-success   { background-color: rgba(var(--success-rgb), .12) !important; color: #15803d !important; }
+.badge.bg-danger    { background-color: rgba(var(--danger-rgb),  .10) !important; color: #b91c1c !important; }
+.badge.bg-warning   { background-color: rgba(var(--warning-rgb), .14) !important; color: #92400e !important; }
+.badge.bg-info      { background-color: rgba(var(--info-rgb),    .10) !important; color: #1d4ed8 !important; }
+.badge.bg-secondary { background-color: rgba(var(--secondary-rgb), .12) !important; color: #475569 !important; }
+.badge.bg-dark      { background-color: rgba(15, 23, 42, .10) !important; color: #0f172a !important; }
+.badge.bg-accent    { background-color: rgba(var(--accent-rgb), .14) !important; color: var(--accent-dark, #92400e) !important; }
 
 /* Dark-mode scaffolding (activated only when user toggles via switcher) */
 [data-theme-mode="dark"] {
-    --body-bg-rgb: 18, 45, 30;
-    --body-bg-rgb2: 32, 59, 44;
-    --light-rgb: 24, 50, 36;
-    --form-control-bg: rgb(24, 50, 36);
+    --body-bg-rgb: 15, 23, 42;
+    --body-bg-rgb2: 30, 41, 59;
+    --light-rgb: 30, 41, 59;
+    --form-control-bg: rgb(30, 41, 59);
     --input-border: rgba(255, 255, 255, 0.08);
-    --default-text-color: #e7e5e4;
+    --default-text-color: #e2e8f0;
 }
 
 
@@ -174,54 +192,55 @@ body {
 
 /* ═══ 3. Brand-specific buttons (ours on top of Dashtic's) ═══ */
 .btn-accent {
-    background-color: var(--accent, #b8872a);
-    border-color: var(--accent, #b8872a);
-    color: var(--dark, #122d1e);
+    background-color: var(--accent, #d97706);
+    border-color: var(--accent, #d97706);
+    color: #ffffff;
     font-weight: 800;
 }
 .btn-accent:hover,
 .btn-accent:focus {
-    background-color: #a87921;
-    border-color: #a87921;
+    background-color: #b45309;
+    border-color: #b45309;
     color: #ffffff;
 }
 
-.text-accent { color: var(--accent, #b8872a) !important; }
-.bg-accent   { background-color: var(--accent, #b8872a) !important; }
+.text-accent { color: var(--accent, #d97706) !important; }
+.bg-accent   { background-color: var(--accent, #d97706) !important; }
 
 
-/* ═══ 4. Pending-orders badge (gold) in header ═══ */
+/* ═══ 4. Pending-orders badge (amber) in header ═══ */
 .app-header .header-icon-badge {
-    background: var(--accent, #b8872a) !important;
-    color: var(--dark, #122d1e) !important;
+    background: var(--accent, #d97706) !important;
+    color: #ffffff !important;
     font-weight: 900 !important;
 }
 
 
-/* ═══ 5. User role-pill in header profile ═══ */
+/* ═══ 5. User role-pill in header profile ═══
+   The header is white now — both pills use quiet neutral chips with dark
+   text instead of the old on-dark-green translucent white treatment. */
 .role-pill {
     display: inline-flex; align-items: center; gap: 4px;
-    background: var(--accent, #b8872a);
-    color: #ffffff;
+    background: rgba(var(--accent-rgb), 0.14);
+    color: var(--accent-dark, #92400e);
     padding: 2px 10px;
     border-radius: 99px;
     font-size: .68rem;
     font-weight: 800;
     margin-top: 3px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
 }
 .role-pill-subtle {
     display: inline-flex; align-items: center; gap: 4px;
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.75);
+    background: rgba(15, 23, 42, 0.04);
+    color: #475569;
     padding: 2px 10px;
     border-radius: 99px;
     font-size: .64rem;
     font-weight: 600;
     margin-top: 3px;
-    border: 1px solid rgba(var(--accent-rgb), 0.35);
+    border: 1px solid rgba(15, 23, 42, 0.10);
 }
-.role-pill-subtle i { color: #10b981; font-size: .55rem; }
+.role-pill-subtle i { color: #16a34a; font-size: .55rem; }
 
 
 /* ═══ 6. Page-header (breadcrumb) ═══
@@ -245,6 +264,12 @@ body {
 .app-header .horizontal-logo .header-logo img {
     transform: scale(1.3);
     transform-origin: center;
+}
+
+/* On the white header, thin light-gold logo strokes wash out. Deepen them
+   slightly; dark custom logos are unaffected enough to stay correct. */
+[data-header-styles="light"] .app-header .horizontal-logo .header-logo img {
+    filter: brightness(.78) saturate(1.25);
 }
 .main-sidebar-header .header-logo img {
     transform: scale(1.35);

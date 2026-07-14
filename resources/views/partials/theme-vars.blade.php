@@ -38,9 +38,12 @@
     --brand-light: {{ $theme['primary_light'] }};
     --brand-soft: {{ $theme['primary_soft'] }};
     --gold-soft: var(--accent-soft);
-    --success: var(--primary);
-    --warning: var(--accent);
-    --info: var(--primary);
+    /* Semantic state colors are intentionally NOT tied to the brand palette:
+       success/warning/info must stay readable as states even if the admin
+       recolors the brand from settings. */
+    --success: #16a34a;
+    --warning: #d97706;
+    --info: #2563eb;
     --brand-gradient: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
     --brand-gradient-y: linear-gradient(135deg, var(--brand) 0%, var(--accent) 100%);
     --gold-gradient: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);

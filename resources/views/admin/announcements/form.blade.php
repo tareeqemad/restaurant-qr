@@ -590,7 +590,7 @@
     .ann-preview__body { flex: 1; min-width: 0; }
     .ann-preview__body strong {
         display: block; font-size: 1.05rem;
-        color: #0f2d22; margin-bottom: 6px;
+        color: #0f172a; margin-bottom: 6px;
         word-wrap: break-word;
     }
     .ann-preview__body p {

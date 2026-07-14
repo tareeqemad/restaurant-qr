@@ -44,7 +44,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            background: rgb(var(--body-bg-rgb, 250, 245, 235));
+            background: rgb(var(--body-bg-rgb, 248, 250, 252));
         }
 
         #loader.d-none {
@@ -241,7 +241,7 @@
             gap: .55rem;
             padding: .55rem 1rem;
             border-radius: 999px;
-            background: linear-gradient(135deg, #b97818, #d18a23);
+            background: linear-gradient(135deg, #d97706, #f59e0b);
             color: #fff;
             font-weight: 800;
             font-size: .82rem;

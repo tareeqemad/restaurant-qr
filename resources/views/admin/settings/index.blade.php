@@ -700,8 +700,11 @@
                                 الألوان الافتراضية تأتي من إعدادات النظام، وأي تعديل هنا يحفظ تخصيصاً خاصاً بلوحة التحكم. زر الاستعادة يرجع الألوان الافتراضية.
                             </div>
                             <div class="d-flex flex-wrap gap-2 mb-3">
+                                <button type="button" class="theme-preset" data-preset='{"theme_primary":"#166534","theme_dark":"#14532d","theme_header":"#ffffff","theme_accent":"#d97706","theme_menu":"#ffffff"}'>
+                                    <span class="swatch" style="background:#166534"></span><span class="swatch" style="background:#d97706"></span> الافتراضي
+                                </button>
                                 <button type="button" class="theme-preset" data-preset='{"theme_primary":"#164c37","theme_dark":"#0f2d22","theme_header":"#164c37","theme_accent":"#b97818","theme_menu":"#f7f8f5"}'>
-                                    <span class="swatch" style="background:#164c37"></span><span class="swatch" style="background:#b97818"></span> الافتراضي
+                                    <span class="swatch" style="background:#164c37"></span><span class="swatch" style="background:#b97818"></span> كلاسيكي
                                 </button>
                                 <button type="button" class="theme-preset" data-preset='{"theme_primary":"#0f766e","theme_dark":"#134e4a","theme_header":"#0f766e","theme_accent":"#d97706","theme_menu":"#f0fdfa"}'>
                                     <span class="swatch" style="background:#0f766e"></span><span class="swatch" style="background:#d97706"></span> تركواز
@@ -720,7 +723,7 @@
                                         <label class="theme-color-pick" aria-label="اختيار اللون الأساسي">
                                             <span class="theme-color-swatch" data-theme-color-swatch="theme_primary"></span>
                                             <input type="color" name="theme_primary" class="form-control form-control-color color-input"
-                                                data-theme-color value="{{ $read('theme_primary', $themeDefaults['primary'] ?? '#164c37') }}">
+                                                data-theme-color value="{{ $read('theme_primary', $themeDefaults['primary'] ?? '#166534') }}">
                                         </label>
                                         <span class="theme-color-code" data-theme-color-code="theme_primary"></span>
                                     </div>
@@ -731,7 +734,7 @@
                                         <label class="theme-color-pick" aria-label="اختيار اللون الغامق">
                                             <span class="theme-color-swatch" data-theme-color-swatch="theme_dark"></span>
                                             <input type="color" name="theme_dark" class="form-control form-control-color color-input"
-                                                data-theme-color value="{{ $read('theme_dark', $themeDefaults['dark'] ?? '#0f2d22') }}">
+                                                data-theme-color value="{{ $read('theme_dark', $themeDefaults['dark'] ?? '#14532d') }}">
                                         </label>
                                         <span class="theme-color-code" data-theme-color-code="theme_dark"></span>
                                     </div>
@@ -742,7 +745,7 @@
                                         <label class="theme-color-pick" aria-label="اختيار لون الهيدر">
                                             <span class="theme-color-swatch" data-theme-color-swatch="theme_header"></span>
                                             <input type="color" name="theme_header" class="form-control form-control-color color-input"
-                                                data-theme-color value="{{ $read('theme_header', $themeDefaults['header'] ?? '#164c37') }}">
+                                                data-theme-color value="{{ $read('theme_header', $themeDefaults['header'] ?? '#ffffff') }}">
                                         </label>
                                         <span class="theme-color-code" data-theme-color-code="theme_header"></span>
                                     </div>
@@ -753,7 +756,7 @@
                                         <label class="theme-color-pick" aria-label="اختيار لون التمييز">
                                             <span class="theme-color-swatch" data-theme-color-swatch="theme_accent"></span>
                                             <input type="color" name="theme_accent" class="form-control form-control-color color-input"
-                                                data-theme-color value="{{ $read('theme_accent', $themeDefaults['accent'] ?? '#b97818') }}">
+                                                data-theme-color value="{{ $read('theme_accent', $themeDefaults['accent'] ?? '#d97706') }}">
                                         </label>
                                         <span class="theme-color-code" data-theme-color-code="theme_accent"></span>
                                     </div>
@@ -1087,11 +1090,11 @@
         const mainTabs = ['#tab-general', '#tab-billing', '#tab-operations', '#tab-discounts', '#tab-statuses', '#tab-sms', '#tab-theme'];
         const root = document.documentElement;
         const colorFields = {
-            theme_primary: '#164c37',
-            theme_dark: '#0f2d22',
-            theme_header: '#164c37',
-            theme_accent: '#b97818',
-            theme_menu: '#f7f8f5',
+            theme_primary: '#166534',
+            theme_dark: '#14532d',
+            theme_header: '#ffffff',
+            theme_accent: '#d97706',
+            theme_menu: '#ffffff',
         };
 
         function syncSaveRow() {

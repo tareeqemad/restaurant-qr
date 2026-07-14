@@ -27,7 +27,7 @@
         </div>
         <div class="col-md-4">
             <label class="form-label">اللون</label>
-            <input type="color" name="color" value="{{ old('color', $location->color ?? '#1f4733') }}" class="form-control form-control-color">
+            <input type="color" name="color" value="{{ old('color', $location->color ?? '#166534') }}" class="form-control form-control-color">
         </div>
         <div class="col-md-4">
             <label class="d-block form-label">الإعدادات</label>

@@ -4008,45 +4008,45 @@ body {
    12. ADMIN REFRESH - calm operations UI
    ========================================================================= */
 :root {
-    --primary: #164c37;
-    --primary-rgb: 22, 76, 55;
-    --dark: #0f2d22;
-    --dark-rgb: 15, 45, 34;
-    --accent: #b97818;
-    --accent-rgb: 185, 120, 24;
-    --accent-dark: #805113;
+    --primary: #166534;
+    --primary-rgb: 22, 101, 52;
+    --dark: #14532d;
+    --dark-rgb: 20, 83, 45;
+    --accent: #d97706;
+    --accent-rgb: 217, 119, 6;
+    --accent-dark: #92400e;
 
-    --success-rgb: 45, 122, 82;
-    --danger-rgb: 174, 55, 45;
-    --warning-rgb: 185, 120, 24;
-    --info-rgb: 52, 107, 137;
+    --success-rgb: 22, 163, 74;
+    --danger-rgb: 220, 38, 38;
+    --warning-rgb: 217, 119, 6;
+    --info-rgb: 37, 99, 235;
 
-    --bs-primary-rgb: 22, 76, 55;
-    --bs-success-rgb: 45, 122, 82;
-    --bs-danger-rgb: 174, 55, 45;
-    --bs-warning-rgb: 185, 120, 24;
-    --bs-info-rgb: 52, 107, 137;
-    --bs-light-rgb: 244, 246, 242;
-    --bs-dark-rgb: 15, 45, 34;
+    --bs-primary-rgb: 22, 101, 52;
+    --bs-success-rgb: 22, 163, 74;
+    --bs-danger-rgb: 220, 38, 38;
+    --bs-warning-rgb: 217, 119, 6;
+    --bs-info-rgb: 37, 99, 235;
+    --bs-light-rgb: 241, 245, 249;
+    --bs-dark-rgb: 15, 23, 42;
 
-    --body-bg-rgb: 247, 248, 245;
-    --body-bg-rgb2: 247, 248, 245;
-    --default-body-bg-color: #f7f8f5;
-    --default-text-color: #17231d;
-    --default-border: rgba(18, 39, 31, .1);
-    --input-border: #d8e0d7;
+    --body-bg-rgb: 248, 250, 252;
+    --body-bg-rgb2: 248, 250, 252;
+    --default-body-bg-color: #f8fafc;
+    --default-text-color: #0f172a;
+    --default-border: rgba(15, 23, 42, .08);
+    --input-border: #e2e8f0;
     --form-control-bg: #ffffff;
 
-    --relax-page-bg: #f7f8f5;
+    --relax-page-bg: #f8fafc;
     --relax-surface: #ffffff;
-    --relax-surface-muted: #f4f6f2;
-    --relax-soft: #edf3ee;
-    --relax-border: #dde5dc;
-    --relax-border-strong: #cbd6cc;
-    --relax-text: #17231d;
-    --relax-muted: #66746c;
-    --relax-shadow: 0 1px 2px rgba(15, 35, 27, .04), 0 10px 24px rgba(15, 35, 27, .05);
-    --relax-shadow-hover: 0 2px 4px rgba(15, 35, 27, .05), 0 14px 30px rgba(15, 35, 27, .08);
+    --relax-surface-muted: #f1f5f9;
+    --relax-soft: #f0fdf4;
+    --relax-border: #e2e8f0;
+    --relax-border-strong: #cbd5e1;
+    --relax-text: #0f172a;
+    --relax-muted: #64748b;
+    --relax-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 10px 24px rgba(15, 23, 42, .05);
+    --relax-shadow-hover: 0 2px 4px rgba(15, 23, 42, .05), 0 14px 30px rgba(15, 23, 42, .08);
 }
 
 html[data-theme-mode="light"],
