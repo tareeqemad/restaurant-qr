@@ -544,6 +544,25 @@ body {
     0%, 100% { box-shadow: 0 0 0 3px rgba(var(--success-rgb), .3); }
     50%      { box-shadow: 0 0 0 6px rgba(var(--success-rgb), .1); }
 }
+/* wire:offline flips these — the dot goes solid red and the label shows
+   the moment the browser loses network (no server roundtrip involved). */
+.kb-live-dot.is-offline {
+    background: #dc2626;
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, .35);
+    animation: none;
+}
+.kb-live-offline {
+    display: none; /* wire:offline.inline-flex reveals it */
+    align-items: center;
+    gap: 4px;
+    padding: 2px 10px;
+    border-radius: 99px;
+    background: #dc2626;
+    color: #fff;
+    font-size: .75rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
 
 /* Active-tables quick filter (below header) */
 .kb-table-filter {
@@ -692,12 +711,12 @@ body {
     50%      { box-shadow: 0 0 0 8px rgba(220, 38, 38, 0); }
 }
 
-/* Ready strip — bottom shelf for finished tickets pending pickup.
-   Less prominent than the active grid but still glanceable from across the
-   kitchen. Horizontal scroll if many. */
+/* Ready strip — pickup shelf for finished tickets. Sits ABOVE the ticket
+   grid: at 20 open tickets the old bottom placement pushed it below the
+   fold and ready food went cold unseen. Horizontal scroll if many. */
 .kb-ready-strip {
-    margin-top: 1.2rem;
-    padding: .75rem .9rem;
+    margin-block: 0 .85rem;
+    padding: .6rem .9rem;
     background: linear-gradient(135deg, rgba(34, 197, 94, .08), rgba(34, 197, 94, .03));
     border: 1px solid rgba(34, 197, 94, .25);
     border-radius: 14px;
@@ -743,15 +762,79 @@ body {
 .kb-ready-table small { display: block; font-size: .65rem; color: #166534; }
 .kb-ready-table strong { display: block; font-size: 1.4rem; color: #166534; line-height: 1; font-weight: 950; }
 .kb-ready-items {
-    display: flex; flex-wrap: wrap; gap: .25rem .5rem;
-    font-size: .82rem; color: #1c1917; font-weight: 700;
+    display: flex; flex-direction: column; gap: .3rem;
+    font-size: .85rem; color: #1c1917; font-weight: 700;
+}
+.kb-ready-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .25rem .45rem;
+}
+.kb-ready-item-line { white-space: nowrap; }
+/* Modifiers used to be DROPPED from the strip — the waiter grabbed the
+   wrong plate. Small but present. */
+.kb-ready-item-mods {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 3px;
+}
+.kb-ready-item-mods small {
+    font-size: .72rem;
+    font-weight: 700;
+    padding: 0 6px;
+    border-radius: 99px;
+    background: #f1f5f9;
+    color: #334155;
+    border: 1px solid #cbd5e1;
+    line-height: 1.5;
 }
 .kb-ready-meta {
-    display: flex; justify-content: space-between;
+    display: flex; justify-content: space-between; align-items: center;
+    gap: .4rem;
     font-size: .72rem; color: #78716c;
     grid-column: 2;
 }
 .kb-ready-num { font-family: monospace; }
+/* Serve — the strip's primary action: entry clears when the runner
+   takes the plates. Big enough for greasy fingers. */
+.kb-ready-serve {
+    margin-inline-start: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 40px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 8px;
+    background: #16a34a;
+    color: #fff;
+    font-size: .82rem;
+    font-weight: 800;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background .12s;
+}
+.kb-ready-serve:hover { background: #15803d; }
+.kb-ready-serve:disabled { opacity: .6; cursor: default; }
+/* Mis-tap undo («تراجع») — compact pill next to the line it reverts. */
+.kb-undo-mini {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    min-height: 28px;
+    padding: 0 8px;
+    border-radius: 99px;
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fcd34d;
+    font-size: .72rem;
+    font-weight: 800;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background .12s;
+}
+.kb-undo-mini:hover { background: #fde68a; color: #78350f; }
 
 /* Ready-strip escalation. The food is already cooked → every minute on the
    pass is heat lost. Tighter thresholds (3/8 min) than the active grid: the
@@ -920,15 +1003,22 @@ body {
 }
 .kb-item-body { flex: 1 1 auto; min-width: 0; }
 .kb-item-name { font-size: .88rem; font-weight: 700; color: rgb(var(--primary-rgb)); }
-.kb-item-mods { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.kb-item-mods { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+/* Modifiers are cooking INSTRUCTIONS — the old .68rem gold-on-gold chip was
+   the smallest text on the ticket. Solid light chips, dark text, and the
+   removal/addition variants color-code the risk. */
 .kb-item-mods span {
-    font-size: .68rem;
-    padding: 1px 6px;
-    background: rgba(var(--accent-rgb), 0.1);
-    color: var(--accent, #b8872a);
+    font-size: .85rem;
+    padding: 2px 9px;
+    background: #f1f5f9;
+    color: #1e293b;
+    border: 1px solid #cbd5e1;
     border-radius: 99px;
-    font-weight: 600;
+    font-weight: 700;
+    line-height: 1.45;
 }
+.kb-item-mods .kb-mod--remove { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+.kb-item-mods .kb-mod--extra  { background: #dcfce7; color: #166534; border-color: #86efac; }
 .kb-item-note {
     font-size: .75rem;
     color: #92400e;
@@ -940,35 +1030,59 @@ body {
     align-items: center;
     gap: 4px;
 }
-.kb-item-actions { display: flex; align-items: center; gap: 2px; }
+.kb-item-actions { display: flex; align-items: center; gap: 6px; }
+/* ≥40px touch targets — 30px buttons plus a 2px gap to the destructive
+   cancel produced constant mis-taps on the kitchen touch screens. */
 .kb-item-btn {
-    width: 30px; height: 30px;
+    width: 40px; height: 40px;
+    min-height: 40px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     border: 0;
     background: rgba(var(--primary-rgb), 0.08);
     color: rgb(var(--primary-rgb));
-    border-radius: 6px;
+    border-radius: 8px;
+    font-size: 1.05rem;
     cursor: pointer;
     transition: all .12s;
 }
 .kb-item-btn:hover { background: rgb(var(--primary-rgb)); color: #fff; }
 .kb-item-btn-success { background: rgba(34, 197, 94, 0.12); color: #16a34a; }
 .kb-item-btn-success:hover { background: #16a34a; color: #fff; }
+/* Mis-tap undo («تراجع») — amber, time-boxed by the blade (60s/120s). */
+.kb-item-btn-undo {
+    width: auto;
+    padding: 0 10px;
+    gap: 4px;
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fcd34d;
+    font-size: .78rem;
+    font-weight: 800;
+    font-family: inherit;
+    white-space: nowrap;
+}
+.kb-item-btn-undo:hover { background: #fde68a; color: #78350f; }
 .kb-item-badge { font-size: 1rem; color: #16a34a; font-weight: 800; }
 
 /* Kitchen card notes + footer */
+/* Order note — customers write ALLERGY warnings here. It renders ABOVE the
+   item list as a high-contrast amber band (was a grey .78rem footnote
+   below the items, i.e. the least visible text on the ticket). */
 .kb-card-note {
-    padding: .4rem .75rem;
-    font-size: .78rem;
-    color: #78716c;
-    background: rgba(var(--accent-rgb), 0.05);
-    border-top: 1px dashed rgba(var(--accent-rgb), 0.2);
+    padding: .55rem .75rem;
+    font-size: .92rem;
+    font-weight: 700;
+    line-height: 1.45;
+    color: #78350f;
+    background: #fef3c7;
+    border-bottom: 1px solid #fcd34d;
     display: flex;
-    align-items: center;
-    gap: 6px;
+    align-items: flex-start;
+    gap: 8px;
 }
+.kb-card-note i { color: #d97706; font-size: 1rem; flex: 0 0 auto; margin-top: 2px; }
 .kb-card-foot {
     padding: .5rem .75rem;
     border-top: 1px solid rgba(var(--primary-rgb), 0.08);
@@ -1007,6 +1121,125 @@ body {
     font-size: .82rem;
     font-weight: 700;
     color: #166534;
+}
+
+/* ─── All-day batching strip (above the grid, display only) ──────────
+   Identical dishes summed across every open ticket — the cook fires
+   «٣× كباب» in one go instead of reading three cards. */
+.kb-allday {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    padding: .45rem .85rem;
+    margin-bottom: .75rem;
+    background: #fff;
+    border: 1px solid rgba(var(--primary-rgb), .08);
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(var(--primary-rgb), .04);
+}
+.kb-allday-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: .78rem;
+    font-weight: 800;
+    color: rgb(var(--primary-rgb));
+    white-space: nowrap;
+}
+.kb-allday-label i { color: #ea580c; }
+.kb-allday-scroll {
+    display: flex;
+    gap: .4rem;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    padding-bottom: 2px;
+}
+.kb-allday-chip {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 99px;
+    background: rgba(var(--primary-rgb), .05);
+    border: 1px solid rgba(var(--primary-rgb), .12);
+    color: #1c1917;
+    font-size: .85rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.kb-allday-chip strong { color: #ea580c; font-weight: 900; }
+
+/* ─── Board toast (wire-action feedback) ─────────────────────────────
+   Fixed top-center so it reads from across the line; board-local so it
+   also works in wall/tv mode where the admin chrome is hidden. */
+/* Alpine's x-cloak has no global rule in the admin bundle — without this
+   the toast host flashes as an empty pill between page paint and Alpine
+   boot on the slow wall tablets. */
+[x-cloak] { display: none !important; }
+.kb-toast-host {
+    position: fixed;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2000;
+    max-width: min(92vw, 560px);
+}
+.kb-toast {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: .65rem 1rem;
+    border-radius: 12px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, .22);
+    font-size: .95rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+.kb-toast > i { font-size: 1.15rem; flex: 0 0 auto; }
+.kb-toast--success { border-inline-start: 4px solid #16a34a; }
+.kb-toast--success > i { color: #16a34a; }
+.kb-toast--warning { border-inline-start: 4px solid #d97706; background: #fffbeb; }
+.kb-toast--warning > i { color: #d97706; }
+.kb-toast--error { border-inline-start: 4px solid #dc2626; background: #fef2f2; }
+.kb-toast--error > i { color: #dc2626; }
+.kb-toast button {
+    margin-inline-start: auto;
+    border: 0;
+    background: transparent;
+    color: #64748b;
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    cursor: pointer;
+    flex: 0 0 auto;
+}
+.kb-toast button:hover { background: rgba(15, 23, 42, .06); color: #0f172a; }
+
+/* ─── Follow-up marker (table has >1 open ticket on this board) ────── */
+.kb-followup-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-inline-start: .45rem;
+    padding: 2px 9px;
+    border-radius: 99px;
+    background: rgba(255, 255, 255, .22);
+    border: 1px solid rgba(255, 255, 255, .35);
+    color: #fff;
+    font-size: .72rem;
+    font-weight: 800;
+    white-space: nowrap;
+    align-self: center;
+}
+.kb-followup-chip i { font-size: .7rem; }
+
+/* ─── New-ticket flash — ~2s amber pulse when a card first lands ───── */
+.kb-card--flash { animation: kb-card-flash 2s ease-out 1; }
+@keyframes kb-card-flash {
+    0%   { box-shadow: 0 0 0 5px rgba(245, 158, 11, .65); background: #fffbeb; }
+    100% { box-shadow: 0 0 0 2px rgba(245, 158, 11, 0); background: #fff; }
 }
 
 

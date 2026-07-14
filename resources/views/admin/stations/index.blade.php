@@ -51,6 +51,14 @@
                             @else<span class="badge bg-secondary">متوقفة</span>@endif
                         </td>
                         <td>
+                            <a href="{{ route('admin.station.show', $s->code) }}" class="btn btn-sm btn-light"
+                               title="فتح شاشة المحطة">
+                                <i class="bi bi-display"></i> الشاشة
+                            </a>
+                            <a href="{{ route('admin.station.show', $s->code) }}?tv=1" target="_blank" class="btn btn-sm btn-light"
+                               title="وضع الشاشة الكاملة للتابلت المثبّت على الحائط — ثبّت الرابط على متصفح الجهاز">
+                                <i class="bi bi-tv"></i> وضع الشاشة
+                            </a>
                             <a href="{{ route('admin.stations.edit', $s) }}" class="btn btn-sm btn-light"><i class="bi bi-pencil"></i></a>
                             <form action="{{ route('admin.stations.destroy', $s) }}" method="POST" class="d-inline" onsubmit="return confirm('حذف؟')">
                                 @csrf @method('DELETE')

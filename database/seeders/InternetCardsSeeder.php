@@ -17,8 +17,9 @@ use Illuminate\Database\Seeder;
  * than as a shared global resource. The price ladder is the same across
  * branches by default — owner can edit per-branch from the admin UI.
  *
- * No `station_id`: cards are sold by the cashier directly, never routed
- * to a kitchen / bar station, so they don't appear on any KDS.
+ * No `station_id` and `prep = 0`: cards need no preparation. OrderService
+ * auto-readies zero-prep stationless items at approval, so they never
+ * appear on any KDS and never block an order from reaching «جاهز».
  *
  * No recipe: zero ingredients consumed (the card itself is just a coupon
  * code). `cost = 0` so profit reports treat the full price as margin.

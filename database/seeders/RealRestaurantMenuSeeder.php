@@ -42,11 +42,14 @@ class RealRestaurantMenuSeeder extends Seeder
 
     protected function seedMenu(): void
     {
-        // Resolve stations (kitchen for food, bar for drinks)
-        $kitchen = Station::where('code', 'KITCHEN')->first() ?? Station::first();
-        $bar     = Station::where('code', 'BAR')->first()     ?? Station::where('name', 'LIKE', '%بار%')->first() ?? $kitchen;
+        // Resolve stations (kitchen for food, bar for drinks, grill for المشاوي).
+        // Codes are seeded lowercase by StationSeeder — the old uppercase
+        // lookups always missed and only worked by fallback luck.
+        $kitchen = Station::where('code', 'kitchen')->first() ?? Station::first();
+        $bar     = Station::where('code', 'bar')->first()     ?? Station::where('name', 'LIKE', '%بار%')->first() ?? $kitchen;
+        $grill   = Station::where('code', 'grill')->first()   ?? $kitchen;
 
-        DB::transaction(function () use ($kitchen, $bar) {
+        DB::transaction(function () use ($kitchen, $bar, $grill) {
             // Wipe existing (and their dependencies) — orders keep historic name_snapshot
             DB::table('recipe_items')->delete();
             DB::table('menu_item_allergens')->delete();
@@ -60,7 +63,7 @@ class RealRestaurantMenuSeeder extends Seeder
                 Category::withTrashed()->forceDelete();
             });
 
-            $data = $this->menuData($kitchen->id ?? 1, $bar->id ?? 1);
+            $data = $this->menuData($kitchen->id ?? 1, $bar->id ?? 1, $grill->id ?? ($kitchen->id ?? 1));
 
             foreach ($data as $catIdx => $cat) {
                 $category = Category::create([
@@ -112,7 +115,7 @@ class RealRestaurantMenuSeeder extends Seeder
      * Every image URL is a stable Unsplash photo (https://images.unsplash.com/photo-XXX),
      * each HEAD-checked to return HTTP 200 on 2026-07-14.
      */
-    protected function menuData(int $kitchenId, int $barId): array
+    protected function menuData(int $kitchenId, int $barId, int $grillId): array
     {
         return [
             // ═════════════════════════════════════ 1. المقبلات
@@ -203,7 +206,10 @@ class RealRestaurantMenuSeeder extends Seeder
                 'name' => 'المشاوي', 'name_en' => 'Grill', 'slug' => 'grill',
                 'icon' => 'ri-fire-fill', 'color' => '#b91c1c',
                 'image' => 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=600&q=80',
-                'station_id' => $kitchenId,
+                // The grill station exists precisely for these — routing them
+                // to kitchen left the grill KDS permanently empty while kebabs
+                // crowded the kitchen board.
+                'station_id' => $grillId,
                 'items' => [
                     ['name' => 'كباب لحم', 'name_en' => 'Lamb Kebab', 'sku' => 'GRL-01', 'price' => 9.00,
                      'image' => 'https://images.unsplash.com/photo-1529193591184-b1d58069ecdd?w=600&q=80',

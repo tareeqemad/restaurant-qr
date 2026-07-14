@@ -3,10 +3,18 @@
   The table number is a large colored "ribbon" at the top — visible from
   across the kitchen. Order number, items, and actions sit below.
 
-  Variables: $order, $items, $age_min, $urgency, $notes, $column
+  Variables: $order, $items, $age_min, $urgency, $notes, $column,
+             $eta_at (per-card ETA), $follow_up (table has >1 open ticket).
+  Inherited from the board's scope: $fmtQty (shared qty formatter).
+
+  wire:key on the article + item rows is what keeps open cancel popovers
+  anchored to THEIR dish across polls — without keys Livewire morphs
+  positionally and re-anchors DOM state onto whichever card/row lands
+  at that index next.
 --}}
 
-<article class="kb-card kb-urg-{{ $urgency }} {{ $order->isExternal() ? 'kb-card--external' : 'kb-card--dinein' }}"
+<article class="kb-card kb-urg-{{ $urgency }} {{ $order->isExternal() ? 'kb-card--external' : 'kb-card--dinein' }} {{ ($items->min('approved_at')?->gt(now()->subSeconds(15))) ? 'kb-card--flash' : '' }}"
+         wire:key="card-{{ $order->id }}"
          @if($order->isExternal()) style="--source-color: {{ $order->sourceColor() }};" @endif>
     @php
         $isTableOrder = (bool) $order->table;
@@ -34,11 +42,12 @@
         $scheduledFor = $order->scheduled_for;
         $externalRef = trim((string) ($order->external_reference ?? ''));
 
-        // Order-level ETA — set the moment status flipped to "preparing"
-        // (OrderTimingService::stampPrepStart). Shown as a "due by" badge
-        // so the chef sees the order's overall deadline, not just per-item.
-        $orderEta = $order->estimated_ready_at;
-        $orderOverdue = $orderEta && now()->greaterThan($orderEta);
+        // Card-level ETA — computed by the board from THIS card's own lines
+        // (earliest prep start + longest prep among them), so a bar ticket
+        // never shows the kitchen's deadline. Rendered as a countdown that
+        // refreshes every poll; negative = overdue.
+        $etaAt = $eta_at ?? null;
+        $etaMin = $etaAt ? (int) round(now()->diffInMinutes($etaAt, false)) : null;
     @endphp
     {{-- Hero ribbon: table# for dine-in, channel verb (تيكاوي/توصيل) for
          external tickets. Source-coloured for non-dine-in so the chef can
@@ -50,6 +59,14 @@
             @endif
             <span class="kb-table-label">{{ $ribbonLabel }}</span>
             <span class="kb-table-big">{{ $ribbonBig ?? '—' }}</span>
+            @if(!empty($follow_up))
+                {{-- This table has ANOTHER open ticket on this board — the
+                     kitchen should coordinate the two instead of firing
+                     them independently. --}}
+                <span class="kb-followup-chip" title="لهذه الطاولة أكثر من طلب نشط على هذه الشاشة">
+                    <i class="bi bi-layers-fill"></i> +طلب إضافي
+                </span>
+            @endif
         </div>
         <div class="kb-table-ribbon-side">
             <span class="kb-age-chip" title="منذ {{ $age_min }} دقيقة">
@@ -57,11 +74,13 @@
                 <strong>{{ $age_min < 1 ? '<1' : $age_min }}</strong>
                 <span class="kb-age-unit">د</span>
             </span>
-            @if($orderEta && $column === 'cooking')
-                <span class="kb-eta-chip {{ $orderOverdue ? 'is-overdue' : '' }}"
-                      title="ينتهي تحضيره عند {{ $orderEta->format('H:i') }}">
+            @if($etaMin !== null && $column === 'cooking')
+                {{-- Countdown, not a wall-clock time: «باقي ٤ د» is readable
+                     mid-rush without mental arithmetic against the clock. --}}
+                <span class="kb-eta-chip {{ $etaMin < 0 ? 'is-overdue' : '' }}"
+                      title="موعد الجاهزية المتوقع {{ $etaAt->format('H:i') }}">
                     <i class="bi bi-flag-fill"></i>
-                    <strong>{{ $orderEta->format('H:i') }}</strong>
+                    <strong>{{ $etaMin < 0 ? 'متأخر '.max(1, (int) abs($etaMin)).' د' : 'باقي '.($etaMin < 1 ? '<1' : $etaMin).' د' }}</strong>
                 </span>
             @endif
             <div class="kb-order-mini">#{{ $order->number }}</div>
@@ -106,6 +125,16 @@
         </div>
     @endif
 
+    {{-- Whole-order note — customers write allergy warnings here, so it
+         sits ABOVE the items as a loud amber band the cook cannot miss,
+         not a grey footnote under them. --}}
+    @if(!empty($notes))
+        <div class="kb-card-note">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            {{ $notes }}
+        </div>
+    @endif
+
     {{-- Items --}}
     <div class="kb-items">
         @foreach($items as $it)
@@ -134,14 +163,52 @@
                     }
                 }
             @endphp
-            <div class="kb-item {{ $itemClass }} {{ $delayClass }}">
-                <span class="kb-item-qty">×{{ $it->quantity }}</span>
+            <div class="kb-item {{ $itemClass }} {{ $delayClass }}" wire:key="it-{{ $it->id }}">
+                @if(in_array($it->status, ['approved', 'preparing']))
+                    {{-- Chef-side cancel: two paths.
+                         "لم يبدأ" = return ingredients to stock.
+                         "بدأ التحضير" = log them as waste (food can't
+                         be reused, but still need to reset the ticket).
+                         Lives at the OPPOSITE end of the row from the main
+                         action button, behind a divider — a destructive
+                         control 2px from «جاهز» was a mis-tap magnet. --}}
+                    <div class="kb-item-cancel kb-item-cancel--edge" x-data="{ open: false }">
+                        <button type="button" class="kb-item-btn kb-item-btn-cancel"
+                                @click="open = !open" title="إلغاء الصنف">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                        <div class="kb-cancel-menu" x-show="open" x-cloak @click.outside="open = false">
+                            <div class="kb-cancel-title">إلغاء الصنف؟</div>
+                            <button type="button" class="kb-cancel-opt kb-cancel-opt--return"
+                                    wire:click="cancelItemFromKds({{ $it->id }}, 'return', 'إلغاء من المطبخ — لم يبدأ التحضير')"
+                                    @click="open = false">
+                                <i class="bi bi-arrow-counterclockwise"></i>
+                                <div>
+                                    <strong>لم يبدأ التحضير</strong>
+                                    <small>إرجاع المكوّنات للمخزون</small>
+                                </div>
+                            </button>
+                            <button type="button" class="kb-cancel-opt kb-cancel-opt--waste"
+                                    wire:click="cancelItemFromKds({{ $it->id }}, 'waste', 'إلغاء من المطبخ — بدأ التحضير')"
+                                    @click="open = false">
+                                <i class="bi bi-trash3"></i>
+                                <div>
+                                    <strong>بدأ التحضير</strong>
+                                    <small>تسجيل المكوّنات كهدر</small>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+                @endif
+                <span class="kb-item-qty">×{{ $fmtQty($it->quantity) }}</span>
                 <div class="kb-item-body">
                     <div class="kb-item-name">
                         {{ $it->name_snapshot }}
-                        @if($prepTime > 0)
-                            {{-- Static prep_time tag — always shown so the
-                                 chef knows the target before starting. --}}
+                        @if($prepTime > 0 && $it->status !== 'preparing')
+                            {{-- Static prep_time tag — the target BEFORE
+                                 starting. Hidden while cooking: the elapsed
+                                 tag's colors already encode the ratio, and
+                                 two timers per line just add noise. --}}
                             <span class="kb-prep-tag" title="وقت التحضير المتوقع">
                                 <i class="bi bi-clock"></i> {{ $prepTime }}د
                             </span>
@@ -167,7 +234,15 @@
                     @if($it->modifiers->count())
                         <div class="kb-item-mods">
                             @foreach($it->modifiers as $m)
-                                <span>{{ $m->name_snapshot }}</span>
+                                @php
+                                    // Removals (بدون/بلا/من غير) tint red, additions
+                                    // (زيادة/اضافة/إضافة) tint green — a wrong chip
+                                    // here is a remade plate or an allergy incident.
+                                    $mName = trim((string) $m->name_snapshot);
+                                    $modClass = preg_match('/^(بدون|بلا|من غير)/u', $mName) ? 'kb-mod--remove'
+                                              : (preg_match('/^(زيادة|اضافة|إضافة)/u', $mName) ? 'kb-mod--extra' : '');
+                                @endphp
+                                <span class="{{ $modClass }}">{{ $mName }}</span>
                             @endforeach
                         </div>
                     @endif
@@ -187,6 +262,17 @@
                             <span wire:loading wire:target="startItem({{ $it->id }})" class="spinner-border spinner-border-sm"></span>
                         </button>
                     @elseif($it->status === 'preparing')
+                        @php
+                            // Undo window: 60s after a possibly mis-tapped «ابدأ».
+                            $startedAgo = $it->prep_started_at?->diffInSeconds(now());
+                        @endphp
+                        @if($startedAgo !== null && $startedAgo <= 60)
+                            <button type="button" wire:click="undoStart({{ $it->id }})"
+                                    wire:loading.attr="disabled" wire:target="undoStart({{ $it->id }})"
+                                    class="kb-item-btn kb-item-btn-undo" title="تراجع — يعيد الصنف لقائمة الانتظار">
+                                <i class="bi bi-arrow-counterclockwise"></i> تراجع
+                            </button>
+                        @endif
                         <button type="button" wire:click="markReady({{ $it->id }})"
                                 wire:loading.attr="disabled" wire:target="markReady({{ $it->id }})"
                                 class="kb-item-btn kb-item-btn-success" title="جاهز">
@@ -194,53 +280,23 @@
                             <span wire:loading wire:target="markReady({{ $it->id }})" class="spinner-border spinner-border-sm"></span>
                         </button>
                     @elseif($it->status === 'ready')
-                        <span class="kb-item-badge">✓</span>
-                    @endif
-
-                    {{-- Chef-side cancel: two paths.
-                         "لم يبدأ" = return ingredients to stock.
-                         "بدأ التحضير" = log them as waste (food can't
-                         be reused, but still need to reset the ticket). --}}
-                    @if(in_array($it->status, ['approved', 'preparing']))
-                        <div class="kb-item-cancel" x-data="{ open: false }">
-                            <button type="button" class="kb-item-btn kb-item-btn-cancel"
-                                    @click="open = !open" title="إلغاء الصنف">
-                                <i class="bi bi-x-lg"></i>
+                        @php
+                            // Undo window: 120s after a possibly mis-tapped «جاهز».
+                            $readyAgo = ($it->ready_at ?? $it->updated_at)?->diffInSeconds(now());
+                        @endphp
+                        @if($readyAgo !== null && $readyAgo <= 120)
+                            <button type="button" wire:click="undoReady({{ $it->id }})"
+                                    wire:loading.attr="disabled" wire:target="undoReady({{ $it->id }})"
+                                    class="kb-item-btn kb-item-btn-undo" title="تراجع — يعيد الصنف لقيد التحضير">
+                                <i class="bi bi-arrow-counterclockwise"></i> تراجع
                             </button>
-                            <div class="kb-cancel-menu" x-show="open" x-cloak @click.outside="open = false">
-                                <div class="kb-cancel-title">إلغاء الصنف؟</div>
-                                <button type="button" class="kb-cancel-opt kb-cancel-opt--return"
-                                        wire:click="cancelItemFromKds({{ $it->id }}, 'return', 'إلغاء من المطبخ — لم يبدأ التحضير')"
-                                        @click="open = false">
-                                    <i class="bi bi-arrow-counterclockwise"></i>
-                                    <div>
-                                        <strong>لم يبدأ التحضير</strong>
-                                        <small>إرجاع المكوّنات للمخزون</small>
-                                    </div>
-                                </button>
-                                <button type="button" class="kb-cancel-opt kb-cancel-opt--waste"
-                                        wire:click="cancelItemFromKds({{ $it->id }}, 'waste', 'إلغاء من المطبخ — بدأ التحضير')"
-                                        @click="open = false">
-                                    <i class="bi bi-trash3"></i>
-                                    <div>
-                                        <strong>بدأ التحضير</strong>
-                                        <small>تسجيل المكوّنات كهدر</small>
-                                    </div>
-                                </button>
-                            </div>
-                        </div>
+                        @endif
+                        <span class="kb-item-badge">✓</span>
                     @endif
                 </div>
             </div>
         @endforeach
     </div>
-
-    @if(!empty($notes))
-        <div class="kb-card-note">
-            <i class="bi bi-sticky-fill"></i>
-            {{ $notes }}
-        </div>
-    @endif
 
     <footer class="kb-card-foot">
         @if($column === 'waiting')
@@ -470,6 +526,22 @@
        and stays compact so it doesn't crowd the row on narrow KDS
        screens. */
     .kb-item-cancel { position: relative; }
+    /* Edge variant — cancel is the FIRST child of the item row, so it sits
+       at the row's inline-start while the main action sits at inline-end:
+       maximal physical separation from «ابدأ/جاهز», plus a divider. */
+    .kb-item-cancel--edge {
+        align-self: stretch;
+        display: flex;
+        align-items: center;
+        padding-inline-end: .55rem;
+        border-inline-end: 1px dashed rgba(15, 23, 42, .18);
+    }
+    /* The default menu anchoring (inset-inline-end: 0) would push the
+       popover outside the card when the button sits at the row start. */
+    .kb-item-cancel--edge .kb-cancel-menu {
+        inset-inline-start: 0;
+        inset-inline-end: auto;
+    }
     .kb-item-btn-cancel {
         background: rgba(239, 68, 68, .08) !important;
         color: #b91c1c !important;

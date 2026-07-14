@@ -38,11 +38,21 @@
     :station-color="$station->color ?: '#166534'" />
 
 @if($tvMode)
-    {{-- Floating exit — the only chrome left in wall mode. --}}
-    <a href="{{ request()->fullUrlWithoutQuery('tv') }}" class="kds-tv-exit" title="الخروج من وضع الشاشة">
-        <i class="bi bi-box-arrow-right"></i>
-        <span>خروج من وضع الشاشة</span>
-    </a>
+    {{-- Floating dock — the only chrome left in wall mode: the exit pill
+         plus a one-tap fullscreen toggle. requestFullscreen() demands a
+         user gesture anyway, so a single tap at shift start is the
+         cheapest possible ceremony. --}}
+    <div class="kds-tv-dock">
+        <a href="{{ request()->fullUrlWithoutQuery('tv') }}" class="kds-tv-exit" title="الخروج من وضع الشاشة">
+            <i class="bi bi-box-arrow-right"></i>
+            <span>خروج من وضع الشاشة</span>
+        </a>
+        <button type="button" id="kds-tv-fullscreen" class="kds-tv-exit kds-tv-fs"
+                title="ملء الشاشة — نقرة واحدة عند بداية الوردية، ثم ثبّت المتصفح بوضع الكشك">
+            <i class="bi bi-arrows-fullscreen"></i>
+            <span>ملء الشاشة</span>
+        </button>
+    </div>
 @endif
 
 @push('styles')
@@ -224,13 +234,20 @@
         padding-inline: .6rem !important;
     }
 
-    /* Floating exit — deliberately small and translucent so it never
-       competes with tickets, but still easy to tap. */
-    .kds-tv-exit {
+    /* Floating dock (exit + fullscreen) — deliberately small and
+       translucent so it never competes with tickets, but still easy
+       to tap. The dock owns the fixed positioning so the pills can
+       sit side by side without hardcoding offsets. */
+    .kds-tv-dock {
         position: fixed;
         inset-block-end: 14px;
         inset-inline-start: 14px;
         z-index: 1080;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .kds-tv-exit {
         display: inline-flex;
         align-items: center;
         gap: 6px;
@@ -246,6 +263,98 @@
         transition: opacity .15s ease;
     }
     .kds-tv-exit:hover { opacity: 1; }
+    /* Fullscreen toggle reuses the pill look; a <button> doesn't inherit
+       the anchor styling so it needs its own resets. */
+    .kds-tv-fs {
+        border: 0;
+        cursor: pointer;
+        font-family: inherit;
+    }
+
+    /* ── Wall-mode typography ────────────────────────────────────
+       Hiding the chrome (above) frees the pixels; this block makes
+       them readable from where cooks actually stand — 1-2 m away
+       from a wall-mounted tablet, not 50 cm from a desk monitor.
+       `html.kds-tv` out-ranks the component's single-class rules by
+       specificity, so no !important war with relax-components.css. */
+
+    /* Bigger type needs wider tickets to keep the same proportions —
+       at 1280px this trades 3 narrow columns for 2 readable ones. */
+    html.kds-tv .kb-tickets {
+        grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+        gap: 1.1rem;
+    }
+
+    /* Item rows — the text the cook actually reads per dish. */
+    html.kds-tv .kb-item-qty  { font-size: 1.4rem; width: 44px; }
+    html.kds-tv .kb-item-name { font-size: 1.35rem; line-height: 1.35; }
+    html.kds-tv .kb-item-note {
+        font-size: 1.35rem;
+        line-height: 1.4;
+        padding: 4px 10px;
+    }
+    html.kds-tv .kb-item-mods { gap: 6px; margin-top: 4px; }
+    html.kds-tv .kb-item-mods span { font-size: 1.05rem; padding: 2px 10px; }
+
+    /* Timing chips — age, target prep, live elapsed, ETA, orphan tag. */
+    html.kds-tv .kb-age-chip,
+    html.kds-tv .kb-eta-chip,
+    html.kds-tv .kb-prep-tag,
+    html.kds-tv .kb-elapsed-tag,
+    html.kds-tv .kb-orphan-tag { font-size: 1rem; }
+    html.kds-tv .kb-age-chip strong { font-size: 1.2rem; }
+    html.kds-tv .kb-age-chip i,
+    html.kds-tv .kb-eta-chip i,
+    html.kds-tv .kb-prep-tag i,
+    html.kds-tv .kb-elapsed-tag i,
+    html.kds-tv .kb-orphan-tag i { font-size: .9rem; }
+
+    /* Whole-order note band under the items. */
+    html.kds-tv .kb-card-note { font-size: 1.05rem; }
+
+    /* Touch targets — 48px is the reliable minimum for taps with
+       wet/greasy kitchen fingers on a wall tablet. */
+    html.kds-tv .kb-item-btn {
+        width: 48px;
+        height: 48px;
+        min-height: 48px;
+        font-size: 1.25rem;
+    }
+    /* The undo variant carries a text label («تراجع») — the fixed 48px
+       square above would crush it. Let it grow with its content. */
+    html.kds-tv .kb-item-btn-undo {
+        width: auto;
+        padding-inline: 14px;
+        font-size: 1rem;
+    }
+    html.kds-tv .kb-undo-mini {
+        min-height: 44px;
+        padding-inline: 12px;
+        font-size: .95rem;
+    }
+    html.kds-tv .kb-ready-serve {
+        min-height: 48px;
+        padding-inline: 16px;
+        font-size: 1.05rem;
+    }
+    html.kds-tv .kb-card-btn {
+        min-height: 48px;
+        font-size: 1.05rem;
+    }
+    html.kds-tv .kb-item-badge { font-size: 1.4rem; }
+    html.kds-tv .kb-cancel-menu { min-width: 280px; }
+    html.kds-tv .kb-cancel-opt { min-height: 48px; }
+    html.kds-tv .kb-cancel-opt strong { font-size: 1rem; }
+    html.kds-tv .kb-cancel-opt small  { font-size: .85rem; }
+
+    /* Ready strip — gets called out across the kitchen, so it scales too. */
+    html.kds-tv .kb-ready-strip > header h4 { font-size: 1.15rem; }
+    html.kds-tv .kb-ready-items { font-size: 1.15rem; }
+    html.kds-tv .kb-ready-meta  { font-size: 1.1rem; }
+    html.kds-tv .kb-ready-customer { font-size: 1rem; }
+    html.kds-tv .kb-ready-table strong { font-size: 1.7rem; }
+    html.kds-tv .kb-ready-table small  { font-size: .8rem; }
+    html.kds-tv .kb-ready-card { min-width: 260px; max-width: 340px; }
 </style>
 @endpush
 
@@ -255,5 +364,113 @@
      broke some wire:click DOM updates so actions saved but the UI didn't
      refresh until the page was reloaded. --}}
 @livewireScripts
+
+<script>
+/* ── Session-death + network guard (all modes) ──────────────────────
+   A KDS runs unattended: when the session dies (SESSION_LIFETIME) the
+   next poll 401/419s and Livewire's default reaction is a full-screen
+   ENGLISH dialog while the board silently freezes — and the green
+   «متصل» dot keeps pulsing. Cooks can't act on that. Instead:
+     - 401/419  → full-screen Arabic overlay + reload button. The board
+       is hidden, which stops wire:poll.visible cold (its visibility
+       check no longer sees the element) — no more doomed requests
+       hammering a dead session.
+     - network drop / 5xx → slim red top banner that clears itself on
+       the next successful request.
+   Vanilla JS + inline styles on purpose: this must render even when
+   the network — and therefore any asset pipeline — is the thing
+   that's failing. */
+document.addEventListener('livewire:init', () => {
+    let sessionDead = false;
+
+    const banner = document.createElement('div');
+    banner.setAttribute('dir', 'rtl');
+    banner.style.cssText = 'position:fixed;top:0;right:0;left:0;z-index:2147483000;display:none;'
+        + 'background:#b91c1c;color:#fff;text-align:center;font-weight:800;font-size:1rem;'
+        + 'padding:10px 16px;box-shadow:0 2px 10px rgba(0,0,0,.35);';
+    banner.innerHTML = '<i class="bi bi-wifi-off"></i> انقطع الاتصال بالخادم — تُعاد المحاولة تلقائياً';
+    document.body.appendChild(banner);
+
+    const showSessionOverlay = () => {
+        if (sessionDead) return;
+        sessionDead = true;
+        document.querySelectorAll('.kb-wrap').forEach((el) => { el.style.display = 'none'; });
+        banner.style.display = 'none';
+        const overlay = document.createElement('div');
+        overlay.setAttribute('dir', 'rtl');
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483001;display:flex;flex-direction:column;'
+            + 'align-items:center;justify-content:center;gap:18px;background:rgba(15,23,42,.96);color:#fff;'
+            + 'text-align:center;padding:24px;';
+        overlay.innerHTML =
+            '<div style="font-size:3.2rem;line-height:1">⏰</div>'
+            + '<div style="font-size:1.6rem;font-weight:900">انتهت الجلسة — سجّل الدخول من جديد</div>'
+            + '<div style="font-size:1.05rem;opacity:.8">توقّف تحديث الشاشة. أعد تحميل الصفحة وسجّل الدخول لاستئناف العرض.</div>'
+            + '<button type="button" onclick="window.location.reload()" style="border:0;cursor:pointer;'
+            + 'background:#16a34a;color:#fff;font-weight:800;font-size:1.15rem;padding:14px 34px;'
+            + 'border-radius:12px;min-height:48px">إعادة تحميل الصفحة</button>';
+        document.body.appendChild(overlay);
+    };
+
+    Livewire.hook('request', ({ fail, succeed }) => {
+        succeed(() => { if (!sessionDead) banner.style.display = 'none'; });
+        fail(({ status, preventDefault }) => {
+            if (status === 401 || status === 419) {
+                preventDefault();   // suppress Livewire's English "page expired" confirm
+                showSessionOverlay();
+            } else if (!status || status >= 500) {
+                preventDefault();   // suppress the full-screen English error modal
+                if (!sessionDead) banner.style.display = 'block';
+            }
+        });
+    });
+});
+</script>
 @endpush
+
+@if($tvMode)
+    @push('scripts')
+    <script>
+    /* ── Wall-tablet hardening (tv mode only) ─────────────────────── */
+    (function () {
+        // 1) Screen Wake Lock — a tablet that dozes off mid-service is a
+        //    dark, silent KDS and nobody notices until food runs late.
+        //    Chromium tablets support the API; elsewhere this no-ops and
+        //    the device's own kiosk "stay awake" setting is the fallback.
+        let lock = null;
+        const acquire = () => {
+            if (!('wakeLock' in navigator)) return;
+            navigator.wakeLock.request('screen')
+                .then((l) => {
+                    lock = l;
+                    // The OS silently releases the lock when the tab hides
+                    // or battery saver kicks in — null it so the handler
+                    // below knows to re-acquire.
+                    l.addEventListener('release', () => { lock = null; });
+                })
+                .catch(() => {});   // denied (battery saver) — nothing to do
+        };
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && !lock) acquire();
+        });
+        acquire();
+
+        // 2) Fullscreen toggle for the dock button.
+        const btn = document.getElementById('kds-tv-fullscreen');
+        if (!btn) return;
+        btn.addEventListener('click', () => {
+            if (document.fullscreenElement) {
+                document.exitFullscreen().catch(() => {});
+            } else {
+                document.documentElement.requestFullscreen().catch(() => {});
+            }
+        });
+        document.addEventListener('fullscreenchange', () => {
+            const on = !!document.fullscreenElement;
+            btn.querySelector('i').className = on ? 'bi bi-fullscreen-exit' : 'bi bi-arrows-fullscreen';
+            btn.querySelector('span').textContent = on ? 'إنهاء ملء الشاشة' : 'ملء الشاشة';
+        });
+    })();
+    </script>
+    @endpush
+@endif
 @endsection
