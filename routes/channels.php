@@ -7,9 +7,11 @@ use Illuminate\Support\Facades\Broadcast;
 // Private per-user channel (default Laravel pattern)
 Broadcast::channel('App.Models.User.{id}', fn($user, $id) => (int) $user->id === (int) $id);
 
-// Waiters hall — all waiters/managers see new pending orders
+// Waiters hall — all waiters/managers see new pending orders.
+// Chef + bartender are in too: the KDS boards subscribe to this channel
+// for their live refresh, and those are exactly the people at the pass.
 Broadcast::channel('waiters', function (User $user) {
-    return $user->hasAnyRole(['super_admin', 'admin', 'manager', 'waiter']);
+    return $user->hasAnyRole(['super_admin', 'admin', 'manager', 'waiter', 'chef', 'bartender']);
 });
 
 // Cashier

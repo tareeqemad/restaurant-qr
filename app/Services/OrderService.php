@@ -96,7 +96,11 @@ class OrderService
 
     protected function itemHasInventoryDeduction(OrderItem $item): bool
     {
-        return InventoryMovement::where('reference_type', OrderItem::class)
+        // Unscoped on purpose: movements carry the ORDER's branch, and this
+        // check must not lie when the operator stands on another branch
+        // (reference_id is exact, so nothing can leak across orders).
+        return InventoryMovement::withoutGlobalScopes()
+            ->where('reference_type', OrderItem::class)
             ->where('reference_id', $item->id)
             ->where('type', 'out')
             ->exists();
@@ -662,6 +666,42 @@ class OrderService
                 $order->tableSession->touch();
             }
 
+            // ── Auto-ready instant lines (بطاقات النت وأمثالها): zero prep
+            // time AND no station means no KDS ever shows them, so no cook
+            // can tap them forward — an order containing one could never
+            // reach Ready. They fulfil DIRECTLY approved→ready, deliberately
+            // NOT through startPreparing: walking them through 'preparing'
+            // flipped the whole order to Preparing at approval and stamped
+            // the customer prep clock/ETA before the kitchen touched
+            // anything. No prep stamps here — prep_started_at stays NULL,
+            // which is also what keeps them off the KDS boards. Deduction
+            // stages 'preparing'/'ready' both collapse to "now" for a line
+            // that skips the kitchen (ensureDeducted is idempotent).
+            $order->load('items.menuItem.category');
+            $autoReadied = false;
+            foreach ($order->items as $oi) {
+                if ($oi->status !== OrderItemStatus::Approved->value || $oi->station_id !== null) {
+                    continue;
+                }
+                $menu = $oi->menuItem;
+                if ($menu && (int) ($menu->prep_time_minutes ?? 0) === 0 && $menu->resolvedStationId() === null) {
+                    $oi->update([
+                        'status' => OrderItemStatus::Ready->value,
+                        'ready_at' => now(),
+                    ]);
+                    if (in_array($this->inventoryDeductionStage(), ['preparing', 'ready'], true)) {
+                        $this->inventory->ensureDeducted($oi);
+                    }
+                    $autoReadied = true;
+                }
+            }
+            if ($autoReadied) {
+                // One recompute, muted: a pure instant order flips to Ready;
+                // a mixed order stays Approved (food lines untouched). The
+                // order-level broadcast below carries the final state.
+                $this->syncOrderStatus($order, broadcast: false);
+            }
+
             ActivityLog::log('order.approved', "اعتماد طلب {$order->number}", $order);
 
             $order = $order->refresh()->load('items.station', 'table', 'tableSession');
@@ -694,11 +734,19 @@ class OrderService
 
             $activeItems = $order->items->where('status', '!=', OrderItemStatus::Cancelled->value);
 
+            // Instant lines (بطاقات النت: no station, never had a prep clock)
+            // are auto-readied AT approval — no cook ever touched them, so
+            // they must not count as "kitchen started" and they roll back
+            // with everything else.
+            $isInstantLine = fn ($oi) => $oi->status === OrderItemStatus::Ready->value
+                && $oi->station_id === null
+                && $oi->prep_started_at === null;
+
             // If the kitchen already started any item, it's too late to unapprove.
             $started = $activeItems->first(fn ($oi) => ! in_array($oi->status, [
                 OrderItemStatus::Pending->value,
                 OrderItemStatus::Approved->value,
-            ], true));
+            ], true) && ! $isInstantLine($oi));
             if ($started) {
                 throw new \RuntimeException('بدأ المطبخ تحضير الطلب — لا يمكن فك الاعتماد. ألغِ الطلب بدلاً من ذلك.');
             }
@@ -711,6 +759,8 @@ class OrderService
                 $oi->update([
                     'status' => OrderItemStatus::Pending->value,
                     'approved_at' => null,
+                    // Instant lines got ready_at stamped at approval — clear it.
+                    'ready_at' => null,
                 ]);
             }
 
@@ -898,13 +948,34 @@ class OrderService
                 ['reason' => $reason, 'disposition' => $disposition, 'was_deducted' => $wasDeducted],
             );
 
+            // ── Zombie guard: cancelling the LAST live line must take the
+            // order down with it, otherwise it floats on the waiter/KDS
+            // boards forever with nothing left to cook. Reuse the normal
+            // order-cancel path (status, timestamps, broadcast, log). Bulk
+            // cancels (cancel()) pass skipRecalculate=true and close the
+            // order themselves, so only single-item cancels come through.
+            if (! $skipRecalculate
+                && $item->order->status !== OrderStatus::Cancelled->value
+                && ! $item->order->items()
+                    ->where('status', '!=', OrderItemStatus::Cancelled->value)
+                    ->exists()
+            ) {
+                $this->cancel($item->order->refresh(), $userId, $reason);
+            }
+
             return $item->refresh();
         });
     }
 
-    public function startPreparing(OrderItem $item, int $userId): OrderItem
+    /**
+     * `$broadcast = false` mutes the per-item AND order-level socket events
+     * (DB writes, status recompute and deduction still happen). Bulk KDS
+     * actions («ابدأ الكل» / «الكل جاهز») loop with false then fire ONE
+     * broadcastOrderRefresh() — otherwise every screen re-renders N×M times.
+     */
+    public function startPreparing(OrderItem $item, int $userId, bool $broadcast = true): OrderItem
     {
-        return DB::transaction(function () use ($item, $userId) {
+        return DB::transaction(function () use ($item, $userId, $broadcast) {
             $item = $this->lockOrderItemForWorkflow($item);
             $this->assertItemCanMove($item, OrderItemStatus::Approved->value, 'start_preparing');
 
@@ -917,16 +988,19 @@ class OrderService
             if ($this->inventoryDeductionStage() === 'preparing') {
                 $this->inventory->ensureDeducted($item);
             }
-            $this->syncOrderStatus($item->order);
-            $this->broadcastItemChange($item, $previous);
+            $this->syncOrderStatus($item->order, $broadcast);
+            if ($broadcast) {
+                $this->broadcastItemChange($item, $previous);
+            }
 
             return $item->refresh();
         });
     }
 
-    public function markItemReady(OrderItem $item): OrderItem
+    /** @see startPreparing() for the $broadcast batching contract. */
+    public function markItemReady(OrderItem $item, bool $broadcast = true): OrderItem
     {
-        return DB::transaction(function () use ($item) {
+        return DB::transaction(function () use ($item, $broadcast) {
             $item = $this->lockOrderItemForWorkflow($item);
             $this->assertItemCanMove($item, OrderItemStatus::Preparing->value, 'mark_ready');
 
@@ -938,11 +1012,125 @@ class OrderService
             if ($this->inventoryDeductionStage() === 'ready') {
                 $this->inventory->ensureDeducted($item);
             }
+            $this->syncOrderStatus($item->order, $broadcast);
+            if ($broadcast) {
+                $this->broadcastItemChange($item, $previous);
+            }
+
+            return $item->refresh();
+        });
+    }
+
+    // ─── KDS undo (mis-tap reverts) ───────────────────────────────────────
+
+    /**
+     * Undo a mis-tapped «جاهز» — ready → preparing.
+     *
+     * Inventory is deliberately NOT returned: the food is physically cooked
+     * whether or not the tap was right, and ensureDeducted is idempotent so
+     * the re-ready that follows won't double-deduct.
+     */
+    public function revertItemReady(OrderItem $item, int $userId): OrderItem
+    {
+        return DB::transaction(function () use ($item, $userId) {
+            $item = $this->lockOrderItemForWorkflow($item);
+            $this->assertItemCanRevert($item, OrderItemStatus::Ready->value);
+
+            $previous = $item->status;
+            // Keep prep_started_at / prepared_by_user_id — the item really
+            // is still cooking, only the "ready" stamp was premature.
+            $item->update([
+                'status' => OrderItemStatus::Preparing->value,
+                'ready_at' => null,
+            ]);
+
+            ActivityLog::log(
+                'order_item.revert_ready',
+                "تراجع عن جاهزية «{$item->name_snapshot}» في الطلب {$item->order->number}",
+                $item,
+                ['by_user_id' => $userId],
+            );
+
+            // An order that was Ready drops back to Preparing here.
             $this->syncOrderStatus($item->order);
             $this->broadcastItemChange($item, $previous);
 
             return $item->refresh();
         });
+    }
+
+    /**
+     * Undo a mis-tapped «ابدأ» — preparing → approved.
+     *
+     * Stock deducted at the 'preparing' stage stays deducted on purpose:
+     * ensureDeducted is idempotent, so the inevitable re-start right after
+     * a mis-tap won't deduct twice, while returning-then-re-deducting here
+     * would only churn movement rows.
+     */
+    public function revertItemStart(OrderItem $item, int $userId): OrderItem
+    {
+        return DB::transaction(function () use ($item, $userId) {
+            $item = $this->lockOrderItemForWorkflow($item);
+            $this->assertItemCanRevert($item, OrderItemStatus::Preparing->value);
+
+            $previous = $item->status;
+            // Clear the prep stamps — elapsed-time counters anchor on
+            // prep_started_at and a mis-tap must not keep the clock running.
+            $item->update([
+                'status' => OrderItemStatus::Approved->value,
+                'prep_started_at' => null,
+                'prepared_by_user_id' => null,
+            ]);
+
+            ActivityLog::log(
+                'order_item.revert_start',
+                "تراجع عن بدء تحضير «{$item->name_snapshot}» في الطلب {$item->order->number}",
+                $item,
+                ['by_user_id' => $userId],
+            );
+
+            $this->syncOrderStatus($item->order);
+            $this->broadcastItemChange($item, $previous);
+
+            return $item->refresh();
+        });
+    }
+
+    /**
+     * Shared guard for the KDS undo actions. Reverting is only safe while
+     * the ticket is still live on the boards: once the order is Delivered /
+     * Completed / Cancelled — or an invoice exists — rolling an item back
+     * would desync billing and history.
+     */
+    protected function assertItemCanRevert(OrderItem $item, string $expectedStatus): void
+    {
+        $orderStatus = $item->order?->status;
+
+        if (in_array($orderStatus, [
+            OrderStatus::Delivered->value,
+            OrderStatus::Completed->value,
+            OrderStatus::Cancelled->value,
+        ], true)) {
+            throw new \RuntimeException('لا يمكن التراجع — حالة الطلب: '.($item->order?->statusLabel() ?? $orderStatus).'.');
+        }
+
+        if ($item->status !== $expectedStatus) {
+            throw new \RuntimeException('لا يمكن التراجع — حالة الصنف الحالية: '.$item->statusLabel().'.');
+        }
+
+        // Server-side ceiling on the undo window. The board renders the
+        // «تراجع» button for 60/120s, but that's client cosmetics — without
+        // this cap a forged/stale call could rewind a line long after the
+        // food left the pass. 10 minutes is deliberately looser than the UI
+        // so a legitimate tap that raced the poll still lands.
+        $anchor = $expectedStatus === OrderItemStatus::Ready->value
+            ? $item->ready_at
+            : $item->prep_started_at;
+        if ($anchor && $anchor->diffInMinutes(now()) > 10) {
+            throw new \RuntimeException('انتهت مهلة التراجع لهذا الصنف.');
+        }
+
+        $this->assertInvoiceCanStillChange($item->order);
     }
 
     public function markItemServed(OrderItem $item, int $userId): OrderItem
@@ -975,7 +1163,18 @@ class OrderService
         ));
     }
 
-    protected function syncOrderStatus(Order $order): void
+    /**
+     * One order-level "refresh" broadcast. Bulk KDS actions run the item
+     * transitions with $broadcast=false, then call this ONCE so every
+     * listening screen re-renders a single time instead of N×M.
+     */
+    public function broadcastOrderRefresh(Order $order): void
+    {
+        $order = $order->refresh()->load('items.station', 'table', 'tableSession');
+        SafeBroadcast::dispatch(new OrderStatusChanged($order, $order->status));
+    }
+
+    protected function syncOrderStatus(Order $order, bool $broadcast = true): void
     {
         $order->refresh();
         $previous = $order->status;
@@ -992,7 +1191,14 @@ class OrderService
             $order->update(['status' => OrderStatus::Ready->value, 'ready_at' => $order->ready_at ?? now()]);
             $newStatus = OrderStatus::Ready->value;
         } elseif ($active->contains(fn ($i) => $i->status === OrderItemStatus::Preparing->value)) {
-            $order->update(['status' => OrderStatus::Preparing->value]);
+            $order->update([
+                'status' => OrderStatus::Preparing->value,
+                // Dropping back from Ready (only reachable via the KDS
+                // «تراجع» on the last ready line) — the premature order-level
+                // ready stamp must go with it, or the next flip to Ready
+                // keeps the OLD timestamp and the pass age lies.
+                'ready_at' => $previous === OrderStatus::Ready->value ? null : $order->ready_at,
+            ]);
             $newStatus = OrderStatus::Preparing->value;
 
             // Stamp prep_started_at + estimated_ready_at the first time
@@ -1001,9 +1207,26 @@ class OrderService
             // baseline. Customer countdown + kitchen elapsed counters
             // both anchor on prep_started_at.
             app(OrderTimingService::class)->stampPrepStart($order);
+        } elseif ($previous === OrderStatus::Preparing->value
+            && $active->every(fn ($i) => in_array($i->status, [
+                OrderItemStatus::Pending->value,
+                OrderItemStatus::Approved->value,
+            ], true))
+        ) {
+            // Only reachable via revertItemStart: the single started line
+            // went back to Approved, so the order isn't "preparing" anymore.
+            // Clear the order-level prep stamps too — the elapsed clock and
+            // customer ETA anchored on them and the mis-tap must not keep
+            // them running (they re-stamp cleanly on the real start).
+            $order->update([
+                'status' => OrderStatus::Approved->value,
+                'prep_started_at' => null,
+                'estimated_ready_at' => null,
+            ]);
+            $newStatus = OrderStatus::Approved->value;
         }
 
-        if ($newStatus && $newStatus !== $previous) {
+        if ($newStatus && $newStatus !== $previous && $broadcast) {
             $order = $order->load('items.station', 'table', 'tableSession');
             SafeBroadcast::dispatch(new OrderStatusChanged($order, $previous));
         }

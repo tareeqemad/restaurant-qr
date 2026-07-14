@@ -287,9 +287,9 @@ Route::middleware(['auth', 'setup.complete', 'admin', 'branch', 'license'])->gro
     // Back-compat aliases — old /admin/kitchen and /admin/bar links still work.
     Route::redirect('kitchen', 'admin/station/kitchen')->name('kitchen.index');
     Route::redirect('bar', 'admin/station/bar')->name('bar.index');
-
-    Route::post('station/items/{item}/start', [Admin\KitchenDisplayController::class, 'startItem'])->name('station.items.start');
-    Route::post('station/items/{item}/ready', [Admin\KitchenDisplayController::class, 'markReady'])->name('station.items.ready');
+    // NOTE: the old POST station/items/{item}/start + /ready endpoints are
+    // gone — the Livewire kitchen-board owns every item transition now and
+    // no view/JS ever pointed at those routes.
 
     // Cashier / Billing
     Route::get('cashier', [Admin\CashierController::class, 'index'])->name('cashier.index');
