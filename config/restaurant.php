@@ -67,6 +67,14 @@ return [
         'auto_approve' => env('RESTAURANT_AUTO_APPROVE', false),
         'customer_cancel_window_seconds' => 120,
         'session_ttl_minutes' => 240,
+        // Server-side idle-session sweeper: an active table session with no
+        // activity for this long gets auto-closed when it carries no financial
+        // exposure (no orders / all cancelled / fully paid). Exposed sessions
+        // are flagged for the cashier instead of silently closed.
+        'session_idle_close_minutes' => env('RESTAURANT_SESSION_IDLE_CLOSE', 240),
+        // Threshold for the "جلسة طويلة تحتاج متابعة" attention banner —
+        // previously hardcoded as 75 in four places across the boards.
+        'session_attention_minutes' => env('RESTAURANT_SESSION_ATTENTION', 75),
     ],
 
     'staff_meals' => [

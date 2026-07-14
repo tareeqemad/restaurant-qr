@@ -9,6 +9,7 @@ use App\Models\Order;
 use App\Models\Scopes\BranchScope;
 use App\Models\Table;
 use App\Models\TableSession;
+use App\Services\BillingService;
 use App\Services\TableSessionTransferService;
 use App\Support\BranchContext;
 use BaconQrCode\Renderer\ImageRenderer;
@@ -106,11 +107,18 @@ class TableController extends Controller
 
     /**
      * Force-close the table's active session — used by the "إغلاق الجلسة"
-     * button on the table card when a guest never closed out (24h+ idle).
-     * Refuses to close sessions that still have orders, since those need
-     * the cashier flow to settle first.
+     * button on the table card when a guest never closed out.
+     *
+     * Guard = the ZERO-EXPOSURE contract (BillingService::isZeroExposure),
+     * shared with the tables-board render condition and the
+     * `table-sessions:close-idle` sweep: closable when no orders exist,
+     * everything is cancelled/zero-total, or the invoice is fully paid.
+     * The old orders()->count() guard wrongly rejected sessions whose
+     * orders were ALL cancelled — the board showed the button but the
+     * click always failed. Sessions with unpaid money still need the
+     * cashier flow.
      */
-    public function closeSession(Table $table)
+    public function closeSession(Table $table, BillingService $billing)
     {
         $this->authorize('update', $table);
 
@@ -119,19 +127,21 @@ class TableController extends Controller
             return back()->with('error', 'لا توجد جلسة نشطة على هذه الطاولة.');
         }
 
-        if ($session->orders()->count() > 0) {
-            return back()->with('error', 'الجلسة تحتوي على طلبات — أغلقها من شاشة الكاشير أو ألغِ الطلبات أولاً.');
+        if (! $billing->isZeroExposure($session)) {
+            return back()->with('error', 'الجلسة عليها طلبات غير مسدّدة — أغلقها من شاشة الكاشير أو ألغِ الطلبات أولاً.');
         }
 
-        $session->update([
-            'status'    => 'closed',
-            'closed_at' => now(),
-        ]);
+        try {
+            // Same close path as the cron sweep: frees the table and
+            // broadcasts TableStatusChanged so the boards refresh.
+            $billing->closeZeroExposureSession($session, (int) auth()->id(), 'إغلاق يدوي من لوحة الطاولات');
+        } catch (\RuntimeException $e) {
+            // Domain guard messages are written for the UI (Arabic) — safe to show.
+            return back()->with('error', $e->getMessage());
+        } catch (\Throwable $e) {
+            report($e);
 
-        if ($table->status === 'occupied') {
-            $previousStatus = $table->status;
-            $table->update(['status' => 'available']);
-            SafeBroadcast::dispatch(new TableStatusChanged($table->refresh(), $previousStatus));
+            return back()->with('error', 'تعذّر إغلاق الجلسة — حاول مجدداً أو راجع السجلات.');
         }
 
         return back()->with('success', "تم إغلاق الجلسة الراكدة لطاولة {$table->number}.");

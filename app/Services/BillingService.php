@@ -808,7 +808,10 @@ class BillingService
                 'bill_request_note' => null,
             ]);
 
-            if ($session->table) {
+            if ($session->table && $session->table->status === 'occupied') {
+                // Only free tables the session itself occupied — a table the
+                // manager flipped to reserved/out_of_service mid-session must
+                // keep that status (the cron sweep runs this silently).
                 $previousStatus = $session->table->status;
                 $session->table->update(['status' => 'available']);
                 SafeBroadcast::dispatch(new TableStatusChanged($session->table->refresh(), $previousStatus));
@@ -823,6 +826,97 @@ class BillingService
             );
 
             return $session->refresh();
+        });
+    }
+
+    /**
+     * TRUE when force-closing this session cannot lose money — the shared
+     * "zero-exposure" contract between the manual «إغلاق الجلسة» button
+     * (TableController@closeSession), the tables-board render condition,
+     * and the `table-sessions:close-idle` cron sweep:
+     *
+     *   (a) no orders at all, or
+     *   (b) nothing billable remains — every order cancelled or zero-total
+     *       (the exact guard closeSessionWithoutBilling() enforces), or
+     *   (c) the latest non-cancelled invoice is fully collected
+     *       (balance <= 0; written-off counts — the manager decided).
+     *
+     * Sessions with unpaid/unbilled money must go through the cashier.
+     */
+    public function isZeroExposure(TableSession $session): bool
+    {
+        $billableTotal = (float) $session->orders()
+            ->where('status', '!=', OrderStatus::Cancelled->value)
+            ->sum('total');
+        if ($billableTotal <= 0.001) {
+            return true;
+        }
+
+        $invoice = $session->invoice()
+            ->where('status', '!=', 'cancelled')
+            ->latest()
+            ->first();
+
+        if ($invoice === null || (float) $invoice->balance > 0.001) {
+            return false;
+        }
+
+        // A paid invoice only covers the orders that existed when it was
+        // issued. Orders placed AFTER it carry uncollected money — closing
+        // now would silently complete them unbilled.
+        return ! $session->orders()
+            ->where('status', '!=', OrderStatus::Cancelled->value)
+            ->where('total', '>', 0)
+            ->where('created_at', '>', $invoice->created_at)
+            ->exists();
+    }
+
+    /**
+     * Force-close an idle session under the zero-exposure contract above,
+     * dispatching to the SAME code path a normal close would take so the
+     * table is freed and TableStatusChanged broadcasts identically:
+     *
+     *   - fully-paid invoice  → closeOrdersAndSession() (the settle path)
+     *   - nothing billable    → closeSessionWithoutBilling()
+     *
+     * Throws if real money is still on the table (guard inside
+     * closeSessionWithoutBilling). Idempotent: an already-closed session
+     * is returned untouched — safe for the cron sweep to re-hit.
+     */
+    public function closeZeroExposureSession(TableSession $session, ?int $userId = null, string $reason = ''): TableSession
+    {
+        return DB::transaction(function () use ($session, $userId, $reason) {
+            $session = TableSession::whereKey($session->id)->lockForUpdate()->firstOrFail();
+
+            if ($session->status !== 'active') {
+                return $session;
+            }
+
+            $invoice = $session->invoice()
+                ->where('status', '!=', 'cancelled')
+                ->latest()
+                ->first();
+
+            $hasPostInvoiceOrders = $invoice && $session->orders()
+                ->where('status', '!=', OrderStatus::Cancelled->value)
+                ->where('total', '>', 0)
+                ->where('created_at', '>', $invoice->created_at)
+                ->exists();
+
+            if ($invoice && (float) $invoice->balance <= 0.001 && ! $hasPostInvoiceOrders) {
+                // Paid (or written-off) invoice whose session never closed —
+                // finish the job the settle path was supposed to do.
+                $this->closeOrdersAndSession($invoice);
+                ActivityLog::log(
+                    'session.closed_zero_exposure',
+                    "إغلاق جلسة الطاولة {$session->tableLabel()} — الفاتورة {$invoice->number} مسدّدة بالكامل".($reason ? ": {$reason}" : ''),
+                    $session,
+                    ['reason' => $reason, 'invoice_id' => $invoice->id, 'by_user_id' => $userId]
+                );
+                return $session->refresh();
+            }
+
+            return $this->closeSessionWithoutBilling($session, (int) $userId, $reason);
         });
     }
 
@@ -844,7 +938,10 @@ class BillingService
             'bill_requested_at' => null,
             'bill_request_note' => null,
         ]);
-        if ($session->table) {
+        if ($session->table && $session->table->status === 'occupied') {
+            // Same guard as closeSessionWithoutBilling: don't yank a table
+            // out of reserved/out_of_service just because its old session
+            // finished (the idle-close cron reaches this path too).
             $previousStatus = $session->table->status;
             $session->table->update(['status' => 'available']);
             SafeBroadcast::dispatch(new TableStatusChanged($session->table->refresh(), $previousStatus));

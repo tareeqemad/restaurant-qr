@@ -43,6 +43,25 @@ Schedule::command('attendance:close-stale')
 
 /*
 |--------------------------------------------------------------------------
+| Table sessions — auto-close idle zero-exposure sessions
+|--------------------------------------------------------------------------
+|
+| A guest walks out without the session ever closing → the row stays
+| `active` forever (the only TTL was the customer's cookie), the table
+| looks permanently occupied, and the NEXT guest scanning the same QR
+| joins the ghost party's session — their orders merge onto a stranger's
+| bill. Sweep every 10 minutes: close sessions idle beyond
+| restaurant.order.session_idle_close_minutes (default 240) — but ONLY
+| when no money is at stake (no orders / all cancelled / invoice fully
+| paid). Sessions with unpaid orders are logged for the cashier instead.
+*/
+Schedule::command('table-sessions:close-idle')
+    ->everyTenMinutes()
+    ->withoutOverlapping()
+    ->runInBackground();
+
+/*
+|--------------------------------------------------------------------------
 | Inventory — nightly snapshot
 |--------------------------------------------------------------------------
 |
