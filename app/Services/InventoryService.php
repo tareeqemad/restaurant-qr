@@ -16,6 +16,7 @@ use App\Models\StorageLocation;
 use App\Services\Accounting\AccountingService;
 use App\Support\BranchContext;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 class InventoryService
@@ -176,27 +177,36 @@ class InventoryService
      */
     public function ensureDeducted(OrderItem $orderItem): bool
     {
-        // NET-aware idempotency. Checking only for the existence of an 'out'
-        // movement is wrong: unapprove() writes a 'return' but KEEPS the 'out',
-        // so on a re-approve the stale 'out' would make us skip — leaking free
-        // stock (deducted once, returned once, then served with no deduction).
-        // Compare total out vs total returned: only skip when net is still out.
-        $out = (float) InventoryMovement::where('reference_type', OrderItem::class)
-            ->where('reference_id', $orderItem->id)
-            ->where('type', 'out')
-            ->sum('quantity_in_base');
-        $returned = (float) InventoryMovement::where('reference_type', OrderItem::class)
-            ->where('reference_id', $orderItem->id)
-            ->where('type', 'return')
-            ->sum('quantity_in_base');
+        // Branch-pin first (same as deductForOrderItem): movements are
+        // stamped with the ORDER's branch, so the idempotency sums must read
+        // there too. Under a mismatched operator context the scoped sums saw
+        // ZERO movements and deducted AGAIN — silent double-deduction.
+        $order = $orderItem->order()->withoutGlobalScopes()->firstOrFail();
+        $orderItem->setRelation('order', $order);
 
-        if ($out - $returned > 0.0001) {
-            return false;
-        }
+        return BranchContext::forBranch((int) $order->branch_id, function () use ($orderItem) {
+            // NET-aware idempotency. Checking only for the existence of an 'out'
+            // movement is wrong: unapprove() writes a 'return' but KEEPS the 'out',
+            // so on a re-approve the stale 'out' would make us skip — leaking free
+            // stock (deducted once, returned once, then served with no deduction).
+            // Compare total out vs total returned: only skip when net is still out.
+            $out = (float) InventoryMovement::where('reference_type', OrderItem::class)
+                ->where('reference_id', $orderItem->id)
+                ->where('type', 'out')
+                ->sum('quantity_in_base');
+            $returned = (float) InventoryMovement::where('reference_type', OrderItem::class)
+                ->where('reference_id', $orderItem->id)
+                ->where('type', 'return')
+                ->sum('quantity_in_base');
 
-        $this->deductForOrderItem($orderItem);
+            if ($out - $returned > 0.0001) {
+                return false;
+            }
 
-        return true;
+            $this->deductForOrderItem($orderItem);
+
+            return true;
+        });
     }
 
     /**
@@ -212,26 +222,56 @@ class InventoryService
      */
     public function deductForOrderItem(OrderItem $orderItem): void
     {
-        $orderItem->loadMissing('order', 'station.storageLocation');
+        // Resolve the parent order UNSCOPED first — Order itself is
+        // branch-scoped, so under a mismatched operator context even the
+        // relation load returns null (and would cache that null).
+        $order = $orderItem->order()->withoutGlobalScopes()->firstOrFail();
+        $orderItem->setRelation('order', $order);
 
-        $modifierIds = $orderItem->modifiers()->whereNotNull('modifier_id')->pluck('modifier_id')->toArray();
-        // Eager-load the ingredient_unit too so previewDeductionForItem
-        // can resolve "1 tbsp sugar" without hitting the DB per line.
-        $item = $orderItem->menuItem()->with('recipeItems.ingredient', 'recipeItems.ingredientUnit')->first();
-        $lines = $this->previewDeductionForItem($item, (float) $orderItem->quantity, $modifierIds);
-        $storageLocationId = $orderItem->station?->storage_location_id
-            ?: StorageLocation::default()?->id;
+        // Every scoped lookup below (menu item, station, default storage
+        // location) must resolve inside the ORDER's branch — not the
+        // operator's current context. An admin standing on branch A
+        // approving branch B's order used to get a NULL menu item
+        // (BranchScope filtered it out) and a TypeError from
+        // previewDeductionForItem, and worse, StorageLocation::default()
+        // would have picked branch A's store.
+        BranchContext::forBranch((int) $order->branch_id, function () use ($orderItem) {
+            $orderItem->loadMissing('station.storageLocation');
+            $modifierIds = $orderItem->modifiers()->whereNotNull('modifier_id')->pluck('modifier_id')->toArray();
+            // Eager-load the ingredient_unit too so previewDeductionForItem
+            // can resolve "1 tbsp sugar" without hitting the DB per line.
+            // withTrashed: a deleted dish on a historical order still owns
+            // its recipe — deduction must not fatal on it.
+            $item = $orderItem->menuItem()->withTrashed()
+                ->with('recipeItems.ingredient', 'recipeItems.ingredientUnit')
+                ->first();
 
-        foreach ($lines as $line) {
-            $this->deductWithBatchTrace(
-                ingredient: $line['ingredient'],
-                qtyBase: $line['quantity_in_base'],
-                fallbackUnitCost: $line['unit_cost'],
-                reference: $orderItem,
-                reason: __('ui.inventory.deduct_order', ['number' => $orderItem->order->number]),
-                storageLocationId: $storageLocationId,
-            );
-        }
+            if (! $item) {
+                // Menu item hard-gone (never happens in normal flows) —
+                // nothing to deduct; log loudly instead of a TypeError.
+                Log::warning('deductForOrderItem: menu item missing, skipping deduction', [
+                    'order_item_id' => $orderItem->id,
+                    'menu_item_id' => $orderItem->menu_item_id,
+                ]);
+
+                return;
+            }
+
+            $lines = $this->previewDeductionForItem($item, (float) $orderItem->quantity, $modifierIds);
+            $storageLocationId = $orderItem->station?->storage_location_id
+                ?: StorageLocation::default()?->id;
+
+            foreach ($lines as $line) {
+                $this->deductWithBatchTrace(
+                    ingredient: $line['ingredient'],
+                    qtyBase: $line['quantity_in_base'],
+                    fallbackUnitCost: $line['unit_cost'],
+                    reference: $orderItem,
+                    reason: __('ui.inventory.deduct_order', ['number' => $orderItem->order->number]),
+                    storageLocationId: $storageLocationId,
+                );
+            }
+        });
     }
 
     /**
@@ -338,6 +378,14 @@ class InventoryService
      */
     public function convertOrderItemToWaste(OrderItem $orderItem, string $reason, ?int $userId = null): void
     {
+        // Branch-pin (see deductForOrderItem): the original out-movements
+        // live in the ORDER's branch; under a mismatched operator context
+        // the scoped lookup found nothing and the waste silently vanished
+        // from reports.
+        $order = $orderItem->order()->withoutGlobalScopes()->firstOrFail();
+        $orderItem->setRelation('order', $order);
+
+        BranchContext::forBranch((int) $order->branch_id, function () use ($orderItem, $reason, $userId) {
         $movements = InventoryMovement::where('reference_type', OrderItem::class)
             ->where('reference_id', $orderItem->id)
             ->where('type', 'out')
@@ -404,6 +452,7 @@ class InventoryService
                 ]);
             }
         }
+        });
     }
 
     /**
@@ -411,6 +460,13 @@ class InventoryService
      */
     public function returnForOrderItem(OrderItem $orderItem): void
     {
+        // Branch-pin (see deductForOrderItem): under a mismatched operator
+        // context the scoped lookup found ZERO out-movements and the stock
+        // return silently did nothing — cancelled food never went back.
+        $order = $orderItem->order()->withoutGlobalScopes()->firstOrFail();
+        $orderItem->setRelation('order', $order);
+
+        BranchContext::forBranch((int) $order->branch_id, function () use ($orderItem) {
         $movements = InventoryMovement::where('reference_type', OrderItem::class)
             ->where('reference_id', $orderItem->id)
             ->where('type', 'out')
@@ -433,6 +489,7 @@ class InventoryService
                 storageLocationId: $mv->storage_location_id,
             );
         }
+        });
     }
 
     public function recordMovement(

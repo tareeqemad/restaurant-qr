@@ -14,7 +14,20 @@ class OrderItemStatusChanged implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public function __construct(public OrderItem $item, public string $previousStatus) {}
+    public function __construct(public OrderItem $item, public string $previousStatus)
+    {
+        // Resolve the parent order UNSCOPED and pin it on the relation:
+        // Order is branch-scoped, so when an operator on branch A touches
+        // branch B's order the lazy `$item->order` load returns null and
+        // the payload/channels below degrade with "property on null"
+        // warnings. The item already IS the authorization context here.
+        if (! $this->item->relationLoaded('order') || $this->item->getRelation('order') === null) {
+            $this->item->setRelation(
+                'order',
+                $this->item->order()->withoutGlobalScopes()->with(['table', 'tableSession'])->first()
+            );
+        }
+    }
 
     public function broadcastOn(): array
     {
