@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class Category extends Model
@@ -46,12 +47,26 @@ class Category extends Model
     public function imageUrl(): string
     {
         if (! $this->image) {
-            return asset('assets/dashtic/images/media/media-1.jpg');
+            return static::placeholderImageUrl();
         }
         if (str_starts_with($this->image, 'http')) {
+            // Remote URLs are returned as-is — liveness is handled by the
+            // client-side onerror fallback + `menu:repair-dead-images`.
             return $this->image;
+        }
+        // Local path whose file vanished from disk (e.g. an upload dir that
+        // wasn't in the deploy whitelist on a manual git-pull deploy) →
+        // placeholder instead of a broken <img>.
+        if (! Storage::disk('public')->exists($this->image)) {
+            return static::placeholderImageUrl();
         }
 
         return asset('storage/'.$this->image);
+    }
+
+    /** Same fallback used when `image` is NULL — kept in one place. */
+    public static function placeholderImageUrl(): string
+    {
+        return asset('assets/dashtic/images/media/media-1.jpg');
     }
 }

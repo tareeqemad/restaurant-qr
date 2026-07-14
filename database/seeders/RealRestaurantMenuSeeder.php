@@ -15,8 +15,11 @@ use Illuminate\Support\Facades\Schema;
  * Realistic Arabic/Jordanian restaurant menu — 7 categories × 10+ items each.
  *
  * Images: Unsplash featured URLs (stable, CDN-hosted). All URLs were hand-picked
- * to match the dish. If the network blocks external images, fall back to the
- * local placeholder via MenuItem::imageUrl().
+ * to match the dish and every single one was HEAD-verified (HTTP 200) on
+ * 2026-07-14 — Unsplash removes photos occasionally, so if a dish shows the
+ * placeholder in production run `php artisan menu:repair-dead-images`.
+ * If the network blocks external images, fall back to the local placeholder
+ * via MenuItem::imageUrl().
  *
  * Branch scope: this menu is the Khan Yunis starter set. Gaza begins empty;
  * the owner copies this menu over via the "نسخ القائمة لفرع" admin action
@@ -106,7 +109,8 @@ class RealRestaurantMenuSeeder extends Seeder
 
     /**
      * The full menu dataset.
-     * Every image URL is a stable Unsplash photo (https://images.unsplash.com/photo-XXX).
+     * Every image URL is a stable Unsplash photo (https://images.unsplash.com/photo-XXX),
+     * each HEAD-checked to return HTTP 200 on 2026-07-14.
      */
     protected function menuData(int $kitchenId, int $barId): array
     {
@@ -119,13 +123,13 @@ class RealRestaurantMenuSeeder extends Seeder
                 'station_id' => $kitchenId,
                 'items' => [
                     ['name' => 'حمص', 'name_en' => 'Hummus', 'sku' => 'APP-01', 'price' => 2.50,
-                     'image' => 'https://images.unsplash.com/photo-1590004953868-dd0c25d1c3a0?w=600&q=80',
+                     'image' => 'https://images.unsplash.com/photo-1637949385162-e416fb15b2ce?w=600&q=80',
                      'description' => 'حمص بالطحينة وزيت الزيتون', 'prep' => 5, 'calories' => 220],
                     ['name' => 'متبل', 'name_en' => 'Mutabal', 'sku' => 'APP-02', 'price' => 2.75,
-                     'image' => 'https://images.unsplash.com/photo-1590080877747-c3f28d3f0e2a?w=600&q=80',
+                     'image' => 'https://images.unsplash.com/photo-1627308595127-d9acf19107ce?w=600&q=80',
                      'description' => 'متبل باذنجان مشوي على الفحم', 'prep' => 5, 'calories' => 180],
                     ['name' => 'بابا غنوج', 'name_en' => 'Baba Ghanoush', 'sku' => 'APP-03', 'price' => 2.75,
-                     'image' => 'https://images.unsplash.com/photo-1633236557616-bfa6654ef3e8?w=600&q=80',
+                     'image' => 'https://images.unsplash.com/photo-1621880099609-68eb25395c8f?w=600&q=80',
                      'description' => 'باذنجان مدخّن بالطحينة', 'prep' => 5, 'calories' => 190],
                     ['name' => 'لبنة', 'name_en' => 'Labneh', 'sku' => 'APP-04', 'price' => 2.00,
                      'image' => 'https://images.unsplash.com/photo-1551504734-5ee1c4a1479b?w=600&q=80',
@@ -137,7 +141,7 @@ class RealRestaurantMenuSeeder extends Seeder
                      'image' => 'https://images.unsplash.com/photo-1606756790138-261d2b21cd75?w=600&q=80',
                      'description' => 'ورق عنب محشي بالأرز والخضار', 'prep' => 10, 'calories' => 240],
                     ['name' => 'محاشي كوسا', 'name_en' => 'Stuffed Zucchini', 'sku' => 'APP-07', 'price' => 3.25,
-                     'image' => 'https://images.unsplash.com/photo-1625944525533-473f1b3d9684?w=600&q=80',
+                     'image' => 'https://images.unsplash.com/photo-1649434150059-13fee33e1de4?w=600&q=80',
                      'description' => 'كوسا محشي لحمة وأرز', 'prep' => 12, 'calories' => 260],
                     ['name' => 'كبة مقلية', 'name_en' => 'Fried Kibbeh', 'sku' => 'APP-08', 'price' => 4.00,
                      'image' => 'https://images.unsplash.com/photo-1574484284002-952d92456975?w=600&q=80',
@@ -149,7 +153,7 @@ class RealRestaurantMenuSeeder extends Seeder
                      'image' => 'https://images.unsplash.com/photo-1598866594230-a7c12756260f?w=600&q=80',
                      'description' => 'مقلوبة باذنجان ولحم صغيرة', 'prep' => 10, 'calories' => 320],
                     ['name' => 'فلافل', 'name_en' => 'Falafel', 'sku' => 'APP-11', 'price' => 2.50,
-                     'image' => 'https://images.unsplash.com/photo-1593001874117-c99c800e3eb7?w=600&q=80',
+                     'image' => 'https://images.unsplash.com/photo-1547058881-aa0edd92aab3?w=600&q=80',
                      'description' => 'فلافل مقرمشة بالطحينة', 'prep' => 7, 'calories' => 300],
                 ],
             ],
@@ -162,19 +166,19 @@ class RealRestaurantMenuSeeder extends Seeder
                 'station_id' => $kitchenId,
                 'items' => [
                     ['name' => 'منسف', 'name_en' => 'Mansaf', 'sku' => 'MAIN-01', 'price' => 12.00,
-                     'image' => 'https://images.unsplash.com/photo-1625944525533-473f1b3d9684?w=600&q=80',
+                     'image' => 'https://images.unsplash.com/photo-1631515243349-e0cb75fb8d3a?w=600&q=80',
                      'description' => 'منسف أردني أصيل بلحم الخروف واللبن الجميد', 'prep' => 30, 'calories' => 850, 'featured' => true],
                     ['name' => 'مقلوبة لحم', 'name_en' => 'Meat Maqluba', 'sku' => 'MAIN-02', 'price' => 9.50,
                      'image' => 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&q=80',
                      'description' => 'مقلوبة لحم بالخضار', 'prep' => 25, 'calories' => 720],
                     ['name' => 'مقلوبة دجاج', 'name_en' => 'Chicken Maqluba', 'sku' => 'MAIN-03', 'price' => 8.00,
-                     'image' => 'https://images.unsplash.com/photo-1625944525533-473f1b3d9684?w=600&q=80',
+                     'image' => 'https://images.unsplash.com/photo-1589302168068-964664d93dc0?w=600&q=80',
                      'description' => 'مقلوبة دجاج بالقرنبيط والباذنجان', 'prep' => 25, 'calories' => 650],
                     ['name' => 'كبسة دجاج', 'name_en' => 'Chicken Kabsa', 'sku' => 'MAIN-04', 'price' => 8.50,
                      'image' => 'https://images.unsplash.com/photo-1565557623262-b51c2513a641?w=600&q=80',
                      'description' => 'أرز بسمتي بالبهارات والدجاج', 'prep' => 28, 'calories' => 700],
                     ['name' => 'مسخن', 'name_en' => 'Musakhan', 'sku' => 'MAIN-05', 'price' => 9.00,
-                     'image' => 'https://images.unsplash.com/photo-1625944525533-473f1b3d9684?w=600&q=80',
+                     'image' => 'https://images.unsplash.com/photo-1610057099431-d73a1c9d2f2f?w=600&q=80',
                      'description' => 'دجاج بالسماق والبصل على خبز الطابون', 'prep' => 25, 'calories' => 680, 'featured' => true],
                     ['name' => 'فريكة بالدجاج', 'name_en' => 'Freekeh with Chicken', 'sku' => 'MAIN-06', 'price' => 7.50,
                      'image' => 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=600&q=80',
@@ -251,7 +255,7 @@ class RealRestaurantMenuSeeder extends Seeder
                      'image' => 'https://images.unsplash.com/photo-1633321702518-7feccafb94d5?w=600&q=80',
                      'description' => 'شاورما دجاج مع ثوم ومخلل', 'prep' => 8, 'calories' => 560, 'featured' => true],
                     ['name' => 'شاورما لحم', 'name_en' => 'Meat Shawarma', 'sku' => 'SND-04', 'price' => 4.00,
-                     'image' => 'https://images.unsplash.com/photo-1561651823-34b8b89a5a44?w=600&q=80',
+                     'image' => 'https://images.unsplash.com/photo-1529006557810-274b9b2fc783?w=600&q=80',
                      'description' => 'شاورما لحم مع الطحينة', 'prep' => 8, 'calories' => 620],
                     ['name' => 'كلوب سندويتش', 'name_en' => 'Club Sandwich', 'sku' => 'SND-05', 'price' => 4.50,
                      'image' => 'https://images.unsplash.com/photo-1528735602780-2552fd46c7af?w=600&q=80',
@@ -266,10 +270,10 @@ class RealRestaurantMenuSeeder extends Seeder
                      'image' => 'https://images.unsplash.com/photo-1482049016688-2d3e1b311543?w=600&q=80',
                      'description' => 'سندويتش بيض مع الخضار', 'prep' => 6, 'calories' => 400],
                     ['name' => 'فاهيتا', 'name_en' => 'Fajita', 'sku' => 'SND-09', 'price' => 5.00,
-                     'image' => 'https://images.unsplash.com/photo-1605301325-9b4c7f6d11cb?w=600&q=80',
+                     'image' => 'https://images.unsplash.com/photo-1624300629298-e9de39c13be5?w=600&q=80',
                      'description' => 'فاهيتا دجاج بالفلفل', 'prep' => 12, 'calories' => 540],
                     ['name' => 'فلافل', 'name_en' => 'Falafel Wrap', 'sku' => 'SND-10', 'price' => 2.50,
-                     'image' => 'https://images.unsplash.com/photo-1593001874117-c99c800e3eb7?w=600&q=80',
+                     'image' => 'https://images.unsplash.com/photo-1604908816649-c8bdfc3ca68b?w=600&q=80',
                      'description' => 'لفة فلافل مع طحينة', 'prep' => 7, 'calories' => 420],
                     ['name' => 'هوت دوغ', 'name_en' => 'Hot Dog', 'sku' => 'SND-11', 'price' => 3.00,
                      'image' => 'https://images.unsplash.com/photo-1619740455993-9e612b1af08a?w=600&q=80',
@@ -340,7 +344,7 @@ class RealRestaurantMenuSeeder extends Seeder
                      'image' => 'https://images.unsplash.com/photo-1541658016709-82535e94bc69?w=600&q=80',
                      'description' => 'ميلك شيك فانيلا/شوكولاتة/فراولة', 'prep' => 4, 'calories' => 340],
                     ['name' => 'قهوة عربية', 'name_en' => 'Arabic Coffee', 'sku' => 'DRK-06', 'price' => 1.50,
-                     'image' => 'https://images.unsplash.com/photo-1511537190424-bbbab87ac5ad?w=600&q=80',
+                     'image' => 'https://images.unsplash.com/photo-1618597778480-8c5d3f2d3ba8?w=600&q=80',
                      'description' => 'قهوة عربية بالهيل', 'prep' => 4, 'calories' => 5],
                     ['name' => 'قهوة تركية', 'name_en' => 'Turkish Coffee', 'sku' => 'DRK-07', 'price' => 1.75,
                      'image' => 'https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=600&q=80',
@@ -380,7 +384,7 @@ class RealRestaurantMenuSeeder extends Seeder
                      'image' => 'https://images.unsplash.com/photo-1519915028121-7d3463d20b13?w=600&q=80',
                      'description' => 'بقلاوة بالفستق والعسل', 'prep' => 5, 'calories' => 480],
                     ['name' => 'أم علي', 'name_en' => 'Um Ali', 'sku' => 'DES-03', 'price' => 3.00,
-                     'image' => 'https://images.unsplash.com/photo-1587736906005-f31e35fcc6ea?w=600&q=80',
+                     'image' => 'https://images.unsplash.com/photo-1626256157372-17bd6f8e8d50?w=600&q=80',
                      'description' => 'أم علي ساخنة بالحليب والمكسرات', 'prep' => 12, 'calories' => 440],
                     ['name' => 'بسبوسة', 'name_en' => 'Basbousa', 'sku' => 'DES-04', 'price' => 2.50,
                      'image' => 'https://images.unsplash.com/photo-1546039907-7fa05f864c02?w=600&q=80',
@@ -389,7 +393,7 @@ class RealRestaurantMenuSeeder extends Seeder
                      'image' => 'https://images.unsplash.com/photo-1551024506-0bccd828d307?w=600&q=80',
                      'description' => 'مهلبية بالحليب وماء الورد', 'prep' => 6, 'calories' => 280],
                     ['name' => 'قطايف', 'name_en' => 'Qatayef', 'sku' => 'DES-06', 'price' => 3.00,
-                     'image' => 'https://images.unsplash.com/photo-1628191137342-208b9bb0a1f7?w=600&q=80',
+                     'image' => 'https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=600&q=80',
                      'description' => 'قطايف بالقشطة والفستق', 'prep' => 8, 'calories' => 420],
                     ['name' => 'تشيز كيك', 'name_en' => 'Cheesecake', 'sku' => 'DES-07', 'price' => 4.50,
                      'image' => 'https://images.unsplash.com/photo-1533134242443-d4fd215305ad?w=600&q=80',
@@ -398,7 +402,7 @@ class RealRestaurantMenuSeeder extends Seeder
                      'image' => 'https://images.unsplash.com/photo-1571877227200-a0d98ea607e9?w=600&q=80',
                      'description' => 'تيراميسو إيطالي', 'prep' => 5, 'calories' => 520],
                     ['name' => 'آيس كريم', 'name_en' => 'Ice Cream', 'sku' => 'DES-09', 'price' => 2.00,
-                     'image' => 'https://images.unsplash.com/photo-1566454419290-57a0589c9b51?w=600&q=80',
+                     'image' => 'https://images.unsplash.com/photo-1501443762994-82bd5dace89a?w=600&q=80',
                      'description' => 'نكهات متعددة', 'prep' => 3, 'calories' => 240],
                     ['name' => 'براوني', 'name_en' => 'Brownie', 'sku' => 'DES-10', 'price' => 3.50,
                      'image' => 'https://images.unsplash.com/photo-1606313564200-e75d5e30476c?w=600&q=80',

@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class MenuItem extends Model
@@ -194,16 +195,35 @@ class MenuItem extends Model
     public function imageUrl(): string
     {
         if (! $this->image) {
-            // SVG data URI food placeholder (gradient + utensil icon)
-            $color = urlencode('#fecaca');
-
-            return "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 225'%3E%3Crect fill='{$color}' width='300' height='225'/%3E%3Ctext x='50%25' y='55%25' text-anchor='middle' font-size='72'%3E🍽️%3C/text%3E%3C/svg%3E";
+            return static::placeholderImageUrl();
         }
         if (str_starts_with($this->image, 'http')) {
+            // Remote URLs are returned as-is — liveness is handled by the
+            // client-side onerror fallback + `menu:repair-dead-images`.
             return $this->image;
+        }
+        // Local path whose file vanished from disk (e.g. an upload dir that
+        // wasn't in the deploy whitelist on a manual git-pull deploy) →
+        // placeholder instead of a broken <img>. One file_exists per render
+        // is cheap enough for menu-sized lists.
+        if (! Storage::disk('public')->exists($this->image)) {
+            return static::placeholderImageUrl();
         }
 
         return asset('storage/'.$this->image);
+    }
+
+    /**
+     * Inline SVG food placeholder (data URI — no network, no missing-asset
+     * risk). Public + static so blades can reuse it as an <img> onerror
+     * fallback for remote URLs that die after page render.
+     */
+    public static function placeholderImageUrl(): string
+    {
+        // SVG data URI food placeholder (gradient + utensil icon)
+        $color = urlencode('#fecaca');
+
+        return "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 225'%3E%3Crect fill='{$color}' width='300' height='225'/%3E%3Ctext x='50%25' y='55%25' text-anchor='middle' font-size='72'%3E🍽️%3C/text%3E%3C/svg%3E";
     }
 
     /**

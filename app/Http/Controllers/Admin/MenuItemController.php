@@ -70,7 +70,11 @@ class MenuItemController extends Controller
         unset($data['recipe'], $data['allergens'], $data['modifier_groups']);
 
         if ($request->hasFile('image')) {
-            $data['image'] = $request->file('image')->store('menu', 'public');
+            // 'menu-items' (NOT 'menu'): it's the only dir whitelisted in
+            // storage/app/public/.gitignore, so uploads there survive the
+            // manual git-pull deploy flow. Old 'menu/...' paths in the DB
+            // keep working — imageUrl() reads the stored path as-is.
+            $data['image'] = $request->file('image')->store('menu-items', 'public');
         }
 
         DB::transaction(function () use ($data, $recipe, $allergenIds, $modifierGroupIds) {
@@ -104,7 +108,8 @@ class MenuItemController extends Controller
             if ($menuItem->image) {
                 Storage::disk('public')->delete($menuItem->image);
             }
-            $data['image'] = $request->file('image')->store('menu', 'public');
+            // See store(): 'menu-items' is the deploy-whitelisted upload dir.
+            $data['image'] = $request->file('image')->store('menu-items', 'public');
         }
 
         DB::transaction(function () use ($menuItem, $data, $recipe, $allergenIds, $modifierGroupIds) {

@@ -85,7 +85,12 @@
                         }
                     @endphp
                     <tr>
-                        <td><img src="{{ $i->imageUrl() }}" width="48" height="48" class="rounded" style="object-fit:cover"></td>
+                        {{-- data-fallback + onerror: dead remote URLs (Unsplash pulls
+                             photos) swap to the same placeholder used for NULL images.
+                             Read via dataset to dodge quote-escaping in the data URI. --}}
+                        <td><img src="{{ $i->imageUrl() }}" width="48" height="48" class="rounded" style="object-fit:cover"
+                                 data-fallback="{{ \App\Models\MenuItem::placeholderImageUrl() }}"
+                                 onerror="this.onerror=null;this.src=this.dataset.fallback;"></td>
                         <td>
                             <div class="fw-bold">{{ $i->name }}</div>
                             <small class="text-muted">{{ $i->name_en }} · {{ $i->sku }}</small>
