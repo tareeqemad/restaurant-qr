@@ -41,9 +41,18 @@ class TableSessionMiddleware
         return $next($request);
     }
 
+    /**
+     * Customer-appropriate rejection — NEVER the staff login redirect.
+     * The diner is an anonymous guest: programmatic requests (fetch from
+     * the menu JS, Livewire component calls) get a 419 JSON payload the
+     * frontend can detect, everything else gets the friendly
+     * "session expired, rescan the QR" page.
+     */
     protected function reject(Request $request, string $message): Response
     {
-        if ($request->expectsJson() || $request->ajax() || $request->isXmlHttpRequest()) {
+        // X-Livewire covers Livewire's fetch() calls, which send neither
+        // X-Requested-With nor an application/json Accept header.
+        if ($request->expectsJson() || $request->ajax() || $request->isXmlHttpRequest() || $request->hasHeader('X-Livewire')) {
             return response()->json([
                 'ok' => false,
                 'error' => 'session_expired',

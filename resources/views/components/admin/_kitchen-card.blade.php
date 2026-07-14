@@ -154,6 +154,15 @@
                                 منقضي {{ $elapsedMin < 1 ? '<1' : $elapsedMin }}د
                             </span>
                         @endif
+                        @if(is_null($it->station_id))
+                            {{-- Orphan safety net — this item resolved to NO
+                                 station at order time, so the primary board
+                                 caught it. The badge tells the chef why an
+                                 unfamiliar ticket landed on this screen. --}}
+                            <span class="kb-orphan-tag" title="صنف بلا محطة محددة — يظهر هنا حتى لا يضيع الطلب">
+                                <i class="bi bi-question-circle"></i> بدون محطة
+                            </span>
+                        @endif
                     </div>
                     @if($it->modifiers->count())
                         <div class="kb-item-mods">
@@ -294,6 +303,24 @@
         border: 1px solid #bbf7d0;
     }
     .kb-elapsed-tag i { font-size: .65rem; }
+
+    /* ─── Orphan-item badge (station_id NULL, caught by primary board) ── */
+    .kb-orphan-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        padding: 1px 7px;
+        border-radius: 99px;
+        font-size: .68rem;
+        font-weight: 700;
+        margin-inline-start: 6px;
+        white-space: nowrap;
+        line-height: 1.4;
+        background: #fdf4ff;
+        color: #86198f;
+        border: 1px solid #f0abfc;
+    }
+    .kb-orphan-tag i { font-size: .65rem; }
 
     /* Elapsed badge colors flip with the wrapping item state */
     .kb-item.kb-delay-amber .kb-elapsed-tag {

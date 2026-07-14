@@ -7,6 +7,8 @@ use App\Models\ActivityLog;
 use App\Models\Branch;
 use App\Models\Category;
 use App\Models\MenuItem;
+use App\Models\Station;
+use App\Models\StorageLocation;
 use App\Services\MenuDuplicationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -132,7 +134,16 @@ class BranchController extends Controller
         $this->authorize('create', Branch::class);
 
         $data = $this->validateData($request);
-        $branch = Branch::create($data);
+
+        // Branch + its day-zero defaults are one atomic unit: a branch that
+        // exists without a storage location dead-ends the first ingredient
+        // form (location is required), and without a station no menu item
+        // can ever reach a KDS screen.
+        $branch = DB::transaction(function () use ($data) {
+            $branch = Branch::create($data);
+            $this->provisionDefaults($branch);
+            return $branch;
+        });
 
         ActivityLog::log(
             'branch.created',
@@ -142,7 +153,65 @@ class BranchController extends Controller
 
         return redirect()
             ->route('admin.branches.index')
-            ->with('success', "تم إنشاء فرع «{$branch->name}»");
+            ->with('success', "تم إنشاء فرع «{$branch->name}» مع مخزن رئيسي ومحطة مطبخ افتراضيَّين — عدِّلهما من شاشتي المواقع والمحطات.");
+    }
+
+    /**
+     * Seed the minimum operational skeleton for a fresh branch: one default
+     * storage location («المخزن الرئيسي») and one kitchen station («المطبخ»).
+     * Guarded per-resource so the method is idempotent — a branch that
+     * already has ANY location/station (e.g. created by an import or a
+     * seeder) is left untouched.
+     */
+    protected function provisionDefaults(Branch $branch): void
+    {
+        // withoutGlobalScopes: bypass BranchScope (the admin may be "in"
+        // another branch while creating this one) AND the soft-delete scope
+        // on locations — a trashed row still occupies its globally-unique code.
+        $hasLocation = StorageLocation::withoutGlobalScopes()
+            ->where('branch_id', $branch->id)
+            ->exists();
+
+        $location = null;
+        if (! $hasLocation) {
+            // storage_locations.code is unique GLOBALLY (legacy), so derive
+            // it from the branch code; fall back to the id on the off chance
+            // a trashed location from a deleted branch still holds it.
+            $code = 'main-' . $branch->code;
+            if (StorageLocation::withoutGlobalScopes()->where('code', $code)->exists()) {
+                $code = 'main-' . $branch->id;
+            }
+
+            $location = StorageLocation::create([
+                'branch_id'     => $branch->id,
+                'code'          => $code,
+                'name'          => 'المخزن الرئيسي',
+                'icon'          => 'bi-box-seam',
+                'is_default'    => true,
+                'active'        => true,
+                'display_order' => 0,
+            ]);
+        }
+
+        $hasStation = Station::withoutGlobalScopes()
+            ->where('branch_id', $branch->id)
+            ->exists();
+
+        if (! $hasStation) {
+            // Field values mirror StationSeeder's kitchen row so a
+            // provisioned branch looks identical to a seeded one.
+            Station::create([
+                'branch_id'           => $branch->id,
+                'code'                => 'kitchen',
+                'name'                => 'المطبخ',
+                'name_en'             => 'Kitchen',
+                'color'               => '#ef4444',
+                'icon'                => 'ri-fire-fill',
+                'storage_location_id' => $location?->id,
+                'display_order'       => 1,
+                'active'              => true,
+            ]);
+        }
     }
 
     public function edit(Branch $branch)

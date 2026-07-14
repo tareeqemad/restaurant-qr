@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Enums\OrderItemStatus;
 use App\Http\Controllers\Controller;
 use App\Models\OrderItem;
 use App\Models\Station;
@@ -26,19 +25,10 @@ class KitchenDisplayController extends Controller
 
         abort_unless(auth()->user()->canAccessStation($station->code), 403);
 
-        $items = OrderItem::with(['order.table', 'modifiers'])
-            ->where('station_id', $station->id)
-            ->whereIn('status', [
-                OrderItemStatus::Approved->value,
-                OrderItemStatus::Preparing->value,
-                OrderItemStatus::Ready->value,
-            ])
-            ->whereHas('order', fn($q) => $q->whereNotIn('status', ['cancelled', 'completed']))
-            ->orderBy('approved_at')
-            ->get()
-            ->groupBy('status');
-
-        return view('admin.kitchen.display', compact('items', 'station'));
+        // No items query here — the Livewire kitchen-board component loads
+        // (and live-refreshes) its own tickets. The old duplicate query was
+        // dead weight the view never read.
+        return view('admin.kitchen.display', compact('station'));
     }
 
     public function startItem(OrderItem $item)

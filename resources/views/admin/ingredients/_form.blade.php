@@ -65,10 +65,21 @@
                             </template>
                         </select>
                         <template x-if="branches.length === 0">
-                            <small class="text-danger d-block mt-1">
-                                <i class="bi bi-exclamation-triangle-fill"></i>
-                                لا تملك صلاحية على أي فرع.
-                            </small>
+                            {{-- Zero branches means two very different things: for a user who
+                                 CAN create branches it's a fresh installation (onboarding),
+                                 for everyone else it's genuinely a permissions problem. --}}
+                            @can('create', \App\Models\Branch::class)
+                                <small class="text-warning d-block mt-1">
+                                    <i class="bi bi-signpost-2-fill"></i>
+                                    لا توجد فروع بعد — أنشئ أول فرع للبدء:
+                                    <a href="{{ route('admin.branches.create') }}" class="alert-link">إنشاء فرع جديد</a>.
+                                </small>
+                            @else
+                                <small class="text-danger d-block mt-1">
+                                    <i class="bi bi-exclamation-triangle-fill"></i>
+                                    لا تملك صلاحية على أي فرع — اطلب من مدير النظام إضافتك لفرع.
+                                </small>
+                            @endcan
                         </template>
                     </div>
 
@@ -175,15 +186,32 @@
         @endif
     </div>
 
+    @php
+        // The cost field locks once ANY stock history exists (opening
+        // stock, adjustment, or receipt batch) — the controller passes
+        // $costLocked on edit; default to locked for safety if the flag is
+        // ever missing. On create it's always editable.
+        $costLocked = $isCreate ? false : ($costLocked ?? true);
+    @endphp
     <div class="col-md-4">
         <label class="form-label">التكلفة/وحدة *</label>
         <input type="number" step="0.0001" name="cost_per_unit"
                value="{{ old('cost_per_unit', $ing?->cost_per_unit ?? 0) }}"
-               class="form-control{{ $ing ? ' bg-light' : '' }}" required
-               @if($ing) readonly tabindex="-1" title="تُدار آلياً كمتوسط مرجَّح من الاستلامات — للعرض فقط" @endif>
-        @if($ing)
+               class="form-control{{ $costLocked ? ' bg-light' : '' }}" required
+               @if($costLocked) readonly tabindex="-1" title="تُدار آلياً كمتوسط مرجَّح من الاستلامات — للعرض فقط" @endif>
+        @if($costLocked)
             <small class="text-muted d-block mt-1">
                 متوسط مرجَّح يُحدَّث تلقائياً عند استلام المشتريات — لا يُعدَّل يدوياً.
+            </small>
+        @elseif($ing)
+            <small class="text-muted d-block mt-1">
+                <i class="bi bi-unlock"></i>
+                قابلة للتعديل الآن لتصحيح تكلفة البداية — تُقفل تلقائياً بعد أول حركة مخزون (كمية افتتاحية، تسوية، أو استلام) وتصبح متوسطاً مرجَّحاً يُحسب آلياً.
+            </small>
+        @else
+            <small class="text-warning d-block mt-1">
+                <i class="bi bi-exclamation-triangle-fill"></i>
+                أدخل التكلفة الحقيقية — القيمة 0 تفسد تقارير التكلفة.
             </small>
         @endif
     </div>

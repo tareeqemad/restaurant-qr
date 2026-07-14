@@ -4,7 +4,6 @@ use App\Enums\OrderStatus;
 use App\Models\Lookup;
 use App\Models\Order;
 use App\Models\Table;
-use App\Models\TableSession;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
@@ -31,11 +30,19 @@ new class extends Component
     public function tables()
     {
         $q = Table::with([
+            // The `orders` relation below is filtered to ACTIVE statuses, but
+            // the idle-close rule needs the full picture (were all orders
+            // cancelled?) plus the invoice balance — piggyback cheap counts
+            // on the session instead of loading every historical order.
+            'activeSession' => fn ($s) => $s->withCount([
+                'orders as all_orders_count',
+                'orders as cancelled_orders_count' => fn ($o) => $o
+                    ->where('status', OrderStatus::Cancelled->value),
+            ]),
             'activeSession.assignedWaiter',
-            'activeSession.customer',
+            'activeSession.invoice',
             'activeSession.orders' => fn ($orders) => $orders
                 ->whereIn('status', OrderStatus::active())
-                ->with('items.station')
                 ->latest('created_at'),
             'zone',
             'branch:id,name',
@@ -76,12 +83,6 @@ new class extends Component
             'out_of_service' => Table::where('status', 'out_of_service')->count(),
             'pending_orders' => Order::whereNotNull('table_session_id')
                 ->where('status', OrderStatus::Pending->value)
-                ->count(),
-            'ready_orders' => Order::whereNotNull('table_session_id')
-                ->where('status', OrderStatus::Ready->value)
-                ->count(),
-            'long_sessions' => TableSession::where('status', 'active')
-                ->where('opened_at', '<=', now()->subMinutes(75))
                 ->count(),
         ];
     }
@@ -137,12 +138,169 @@ new class extends Component
 ?>
 
 <style>
-    .tb-card { position: relative; }
-    .tb-actions > .tb-transfer-form {
-        flex: 1 1 100%;
+    /* Slim hero: title on one side, ONE "مهام الجرسون" CTA on the other —
+       the counts now live only on the filter chips + the cards themselves. */
+    .tb-floor-hero {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        flex-wrap: wrap;
+        gap: .55rem !important;
+    }
+    .tb-floor-copy { margin: 0 !important; }
+    .tb-tasks-cta {
+        display: inline-flex;
+        align-items: center;
+        gap: .5rem;
+        min-height: 42px;
+        padding: .48rem .95rem;
+        border-radius: 9px;
+        background: rgb(var(--primary-rgb));
+        color: #fff;
+        font-size: .84rem;
+        font-weight: 900;
+        text-decoration: none;
+        white-space: nowrap;
+        box-shadow: 0 8px 18px rgba(var(--primary-rgb), .16);
+    }
+    .tb-tasks-cta:hover {
+        color: #fff;
+        transform: translateY(-1px);
+    }
+    .tb-tasks-cta-count {
+        min-width: 24px;
+        height: 24px;
+        padding: 0 .45rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        background: var(--accent);
+        color: #143025;
+        font-size: .78rem;
+        font-weight: 950;
+        font-variant-numeric: tabular-nums;
+    }
+
+    /* Operations-mode card: overflow must stay visible so the "..." menu
+       can escape the card box; round the statusbar corners manually since
+       the card no longer clips them. */
+    .tb-card { position: relative; overflow: visible; min-height: 0; }
+    .tb-card-statusbar {
+        border-start-start-radius: 7px;
+        border-start-end-radius: 7px;
+    }
+    .tb-card:has(.dropdown-menu.show) { z-index: 5; }
+    .tb-card-sub {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        margin-top: .32rem;
+        min-width: 0;
+        color: var(--relax-muted);
+        font-size: .74rem;
+        font-weight: 800;
+    }
+    .tb-card-sub i { color: var(--status-color); }
+    .tb-zone-mini {
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .tb-table-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .tb-attention-btn {
+        width: 100%;
+        font-family: inherit;
+        cursor: pointer;
+        justify-content: flex-start;
+        text-align: start;
+    }
+
+    /* Action footer = ONE primary decision + ONE "..." menu. */
+    .tb-actions {
+        display: flex !important;
+        align-items: stretch;
+        gap: .4rem !important;
+    }
+    .tb-actions .tb-btn-main { flex: 1 1 auto; }
+    .tb-more { flex: 0 0 auto; display: flex; position: relative; }
+    /* Alpine toggles .show directly (no Bootstrap JS/Popper on these menus),
+       so the open position must come from CSS. */
+    .tb-more-menu.show {
+        display: block;
+        position: absolute;
+        top: calc(100% + 4px);
+        inset-inline-start: 0;
+    }
+    .tb-more-btn {
+        width: 46px;
+        min-height: 36px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(var(--primary-rgb), .08);
+        border-radius: 8px;
+        background: #fff;
+        color: rgb(var(--primary-rgb));
+        font-size: 1.05rem;
+        box-shadow: 0 2px 8px rgba(var(--primary-rgb), .045);
+    }
+    .tb-more-btn:hover {
+        border-color: rgba(var(--primary-rgb), .18);
+        background: rgba(var(--primary-rgb), .07);
+    }
+    .tb-more-menu {
+        min-width: 220px;
+        padding: .4rem;
+        border: 1px solid rgba(15, 23, 42, .1);
+        border-radius: 10px;
+        box-shadow: 0 18px 38px rgba(15, 35, 27, .16);
+    }
+    .tb-more-menu .dropdown-item {
+        display: flex;
+        align-items: center;
+        gap: .55rem;
+        padding: .5rem .6rem;
+        border-radius: 8px;
+        color: #172033;
+        font-size: .82rem;
+        font-weight: 800;
+    }
+    .tb-more-menu .dropdown-item i { color: rgb(var(--primary-rgb)); }
+    .tb-more-menu .dropdown-item:hover,
+    .tb-more-menu .dropdown-item:focus {
+        background: rgba(var(--primary-rgb), .07);
+        color: #172033;
+    }
+    .tb-more-menu .tb-more-danger,
+    .tb-more-menu .tb-more-danger i { color: rgb(var(--danger-rgb)); }
+    .tb-more-menu .tb-more-danger:hover,
+    .tb-more-menu .tb-more-danger:focus {
+        background: rgba(var(--danger-rgb), .08);
+        color: rgb(var(--danger-rgb));
+    }
+    .tb-more-transfer { padding: .2rem .6rem .5rem; }
+    .tb-more-transfer-label {
+        display: flex;
+        align-items: center;
+        gap: .4rem;
+        margin-bottom: .35rem;
+        color: var(--relax-muted);
+        font-size: .74rem;
+        font-weight: 900;
+    }
+    .tb-more-transfer-row {
         display: grid;
-        grid-template-columns: minmax(130px, 1fr) auto;
-        gap: .45rem;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: .4rem;
     }
     .tb-transfer-select {
         width: 100%;
@@ -155,12 +313,17 @@ new class extends Component
         font-size: .82rem;
         font-weight: 700;
     }
-    .tb-btn-transfer {
-        color: #8a5a05;
+    .tb-transfer-go {
+        min-height: 38px;
+        padding: .4rem .7rem;
+        border: 1px solid rgba(245, 158, 11, .28);
+        border-radius: 8px;
         background: #fff8e5;
-        border-color: rgba(245, 158, 11, .28);
+        color: #8a5a05;
+        font-size: .78rem;
+        font-weight: 900;
     }
-    .tb-btn-transfer:hover {
+    .tb-transfer-go:hover {
         color: #6f4500;
         background: #ffefbd;
     }
@@ -191,9 +354,7 @@ new class extends Component
 <div class="tables-board" wire:poll.visible.15s="refreshFromBroadcast">
     @php
         $stats = $this->stats;
-        $totalTables = max((int) $stats['all'], 0);
-        $availabilityRate = $totalTables > 0 ? round(($stats['available'] / $totalTables) * 100) : 0;
-        $busyRate = $totalTables > 0 ? round(($stats['occupied'] / $totalTables) * 100) : 0;
+        $attentionMinutes = (int) config('restaurant.order.session_attention_minutes', 75);
         $statuses = [
             'all'            => ['label' => 'كل الطاولات', 'icon' => 'bi-grid-3x3-gap', 'tone' => 'all'],
             'available'      => ['label' => 'متاحة', 'icon' => 'bi-check2-circle', 'tone' => 'available'],
@@ -210,43 +371,15 @@ new class extends Component
                 الصالة الآن
             </span>
             <h2>حالة الصالة الآن</h2>
-            <p>
-                {{ $stats['available'] }} متاحة · {{ $stats['occupied'] }} مشغولة ·
-                {{ $stats['pending_orders'] }} طلب ينتظر الجرسون ·
-                {{ $stats['ready_orders'] }} جاهز للتقديم
-            </p>
         </div>
 
-        <div class="tb-floor-metrics">
-            <div class="tb-floor-metric">
-                <span>إجمالي الطاولات</span>
-                <strong>{{ $stats['all'] }}</strong>
-            </div>
-            <div class="tb-floor-metric tb-floor-metric--available">
-                <span>جاهزية الصالة</span>
-                <strong>{{ $availabilityRate }}%</strong>
-            </div>
-            <div class="tb-floor-metric tb-floor-metric--occupied">
-                <span>نسبة الانشغال</span>
-                <strong>{{ $busyRate }}%</strong>
-            </div>
-            <div class="tb-floor-metric tb-floor-metric--reserved">
-                <span>حجوزات</span>
-                <strong>{{ $stats['reserved'] }}</strong>
-            </div>
-            <div class="tb-floor-metric tb-floor-metric--pending">
-                <span>بانتظار الجرسون</span>
-                <strong>{{ $stats['pending_orders'] }}</strong>
-            </div>
-            <div class="tb-floor-metric tb-floor-metric--ready">
-                <span>جاهز للتقديم</span>
-                <strong>{{ $stats['ready_orders'] }}</strong>
-            </div>
-            <div class="tb-floor-metric tb-floor-metric--long">
-                <span>جلسات طويلة</span>
-                <strong>{{ $stats['long_sessions'] }}</strong>
-            </div>
-        </div>
+        <a href="{{ route('admin.orders.index') }}" class="tb-tasks-cta">
+            <i class="bi bi-person-check-fill"></i>
+            مهام الجرسون
+            @if($stats['pending_orders'] > 0)
+                <span class="tb-tasks-cta-count">{{ $stats['pending_orders'] }}</span>
+            @endif
+        </a>
     </section>
 
     <div class="tb-command-bar">
@@ -318,91 +451,7 @@ new class extends Component
     @php
         $tables = $this->tables;
         $availableTransferTables = $this->availableTables;
-        $priorityTables = $tables
-            ->map(function ($table) {
-                $session = $table->activeSession;
-                $orders = $session?->orders ?? collect();
-                $pending = $orders->where('status', OrderStatus::Pending->value)->count();
-                $ready = $orders->where('status', OrderStatus::Ready->value)->count();
-                $preparing = $orders->whereIn('status', [
-                    OrderStatus::Approved->value,
-                    OrderStatus::Preparing->value,
-                ])->count();
-                $openMinutes = $session?->opened_at ? (int) $session->opened_at->diffInMinutes(now()) : 0;
-                $billRequested = filled($session?->bill_requested_at);
-
-                $score = ($pending * 500) + ($ready * 420) + ($billRequested ? 380 : 0) + ($openMinutes >= 75 ? 240 : 0) + min($openMinutes, 120);
-                if (! $session || $score <= 0) {
-                    return null;
-                }
-
-                $kind = $pending > 0 ? 'pending' : ($ready > 0 ? 'ready' : ($billRequested ? 'billing' : 'long'));
-                $label = match ($kind) {
-                    'pending' => $pending.' طلب بانتظار الاعتماد',
-                    'ready' => $ready.' طلب جاهز للتقديم',
-                    'billing' => 'الزبون طلب الفاتورة',
-                    default => 'جلسة طويلة تحتاج متابعة',
-                };
-                $actionLabel = match ($kind) {
-                    'billing' => 'افتح الكاشير',
-                    default => 'افتح مهام الجرسون',
-                };
-                $actionUrl = $kind === 'billing'
-                    ? route('admin.cashier.show', $session)
-                    : route('admin.orders.index');
-
-                return [
-                    'table' => $table,
-                    'session' => $session,
-                    'kind' => $kind,
-                    'label' => $label,
-                    'action_label' => $actionLabel,
-                    'action_url' => $actionUrl,
-                    'open_minutes' => $openMinutes,
-                    'pending' => $pending,
-                    'ready' => $ready,
-                    'preparing' => $preparing,
-                    'score' => $score,
-                ];
-            })
-            ->filter()
-            ->sortByDesc('score')
-            ->take(6)
-            ->values();
     @endphp
-
-    @if($priorityTables->isNotEmpty())
-        <section class="tb-service-queue" aria-label="طابور متابعة الصالة">
-            <header class="tb-service-queue-head">
-                <div>
-                    <span><i class="bi bi-lightning-charge-fill"></i> طابور متابعة الصالة</span>
-                    <small>هذه ليست كل التفاصيل. هذه الطاولات التي تحتاج حركة الآن.</small>
-                </div>
-                <strong>{{ $priorityTables->count() }}</strong>
-            </header>
-            <div class="tb-service-queue-list">
-                @foreach($priorityTables as $task)
-                    <a href="{{ $task['action_url'] }}" class="tb-service-task tb-service-task--{{ $task['kind'] }}">
-                        <div class="tb-service-task-table">
-                            <span>طاولة</span>
-                            <strong>{{ $task['table']->number }}</strong>
-                        </div>
-                        <div class="tb-service-task-main">
-                            <strong>{{ $task['label'] }}</strong>
-                            <span>
-                                {{ $task['preparing'] }} تحت التحضير
-                                · {{ $task['open_minutes'] < 1 ? 'جلسة جديدة' : 'مفتوحة '.$task['open_minutes'].' د' }}
-                            </span>
-                        </div>
-                        <span class="tb-service-task-action">
-                            {{ $task['action_label'] }}
-                            <i class="bi bi-arrow-left"></i>
-                        </span>
-                    </a>
-                @endforeach
-            </div>
-        </section>
-    @endif
 
     @if($tables->isEmpty())
         <x-admin.empty-state
@@ -432,31 +481,60 @@ new class extends Component
                     ];
                     $meta = $statusMap[$t->status] ?? ['color' => '#6b7280', 'label' => $t->status, 'icon' => 'bi-circle'];
                     $session = $t->activeSession;
-                    $orders = $session?->orders ?? collect();
-                    $orderCount = $orders->count();
+                    $orders = $session?->orders ?? collect(); // active statuses only
+                    $activeCount = $orders->count();
                     $pendingCount = $orders->where('status', OrderStatus::Pending->value)->count();
-                    $productionCount = $orders->whereIn('status', [
-                        OrderStatus::Approved->value,
-                        OrderStatus::Preparing->value,
-                    ])->count();
                     $readyCount = $orders->where('status', OrderStatus::Ready->value)->count();
                     $openMinutes = $session?->opened_at ? (int) $session->opened_at->diffInMinutes(now()) : 0;
-                    $idleMinutes = $session?->last_activity_at ? (int) $session->last_activity_at->diffInMinutes(now()) : null;
-                    $guestName = $session?->customer?->name ?: $session?->customer_name;
+                    $lastSeenAt = $session?->last_activity_at ?? $session?->opened_at;
+                    $idleMinutes = $lastSeenAt ? (int) $lastSeenAt->diffInMinutes(now()) : null;
                     $waiterName = $session?->assignedWaiter?->name;
-                    $needsAttention = $pendingCount > 0 || $readyCount > 0 || $openMinutes >= 75;
+                    $invoice = $session?->invoice;
+                    $billRequested = filled($session?->bill_requested_at);
+                    $isLongSession = $session && $openMinutes >= $attentionMinutes;
+                    $needsAttention = $pendingCount > 0 || $readyCount > 0 || $isLongSession;
                     $statusClass = str_replace('_', '-', $t->status);
                     $zoneColor = $t->zone->color ?? '#667085';
-                @endphp
 
-                @php
+                    // Idle-close eligibility — mirrors TableController@closeSession:
+                    // the session sat idle past the attention threshold AND carries
+                    // zero financial exposure (no orders, all cancelled, or the
+                    // invoice is fully settled).
+                    $allOrdersCount = (int) ($session?->all_orders_count ?? 0);
+                    $cancelledCount = (int) ($session?->cancelled_orders_count ?? 0);
+                    $invoiceSettled = $invoice && $invoice->status !== 'cancelled' && (float) $invoice->balance <= 0;
+                    $zeroExposure = $allOrdersCount === $cancelledCount || $invoiceSettled;
+                    $canCloseIdle = $session && $idleMinutes !== null
+                        && $idleMinutes >= $attentionMinutes
+                        && $zeroExposure;
+
+                    // ONE contextual primary action — the card leads with the next
+                    // operational decision instead of a wall of equal buttons.
+                    $primaryKey = match (true) {
+                        (bool) $session && ($pendingCount > 0 || $readyCount > 0) => 'waiter',
+                        (bool) $session && ($billRequested || $invoice !== null)  => 'cashier',
+                        (bool) $session && $activeCount > 0                       => 'waiter',
+                        (bool) $session                                           => 'resume',
+                        $t->status === 'available'                                => 'start',
+                        default                                                   => null,
+                    };
+                    $primary = match ($primaryKey) {
+                        'waiter'  => ['url' => route('admin.orders.index'), 'label' => 'مهام الجرسون', 'icon' => 'bi-person-check-fill'],
+                        'cashier' => ['url' => route('admin.cashier.show', $session), 'label' => 'كاشير', 'icon' => 'bi-cash-stack'],
+                        'start'   => ['url' => route('admin.waiter-orders.create', $t), 'label' => 'تشغيل', 'icon' => 'bi-play-fill'],
+                        'resume'  => ['url' => route('admin.waiter-orders.create', $t), 'label' => 'إضافة طلب', 'icon' => 'bi-plus-lg'],
+                        default   => null,
+                    };
+
                     // Show branch tag only when the admin is in "all branches"
                     // mode — within a single branch context every card belongs
                     // to the same place, so the badge would be noise.
                     $showBranchTag = \App\Support\BranchContext::current() === null && $t->branch;
                 @endphp
+
                 <article class="tb-card tb-card--{{ $statusClass }} {{ $session ? 'is-active' : '' }} {{ $needsAttention ? 'needs-attention' : '' }} {{ $readyCount > 0 ? 'has-ready' : '' }}"
-                    style="--status-color: {{ $meta['color'] }}; --zone-color: {{ $zoneColor }};">
+                    style="--status-color: {{ $meta['color'] }}; --zone-color: {{ $zoneColor }};"
+                    wire:key="table-card-{{ $t->id }}">
                     <div class="tb-card-statusbar"></div>
 
                     @if($showBranchTag)
@@ -468,8 +546,17 @@ new class extends Component
 
                     <div class="tb-card-main">
                         <div class="tb-table-identity">
-                            <span class="tb-table-label">طاولة</span>
+                            <span class="tb-table-label">طاولة{{ $t->name ? ' · '.$t->name : '' }}</span>
                             <strong class="tb-num">{{ $t->number }}</strong>
+                            <span class="tb-card-sub">
+                                <span title="عدد المقاعد"><i class="bi bi-people"></i> {{ $t->capacity }}</span>
+                                @if($t->zone)
+                                    <span class="tb-zone-mini" title="المنطقة">
+                                        <span class="tb-zone-tag-dot" style="--zone-color: {{ $zoneColor }};"></span>
+                                        {{ $t->zone->label }}
+                                    </span>
+                                @endif
+                            </span>
                         </div>
                         <span class="tb-status-pill">
                             <i class="bi {{ $meta['icon'] }}"></i>
@@ -477,154 +564,149 @@ new class extends Component
                         </span>
                     </div>
 
-                    <div class="tb-card-subline">
-                        <span class="tb-name">{{ $t->name ?: 'بدون اسم' }}</span>
-                        @if($t->zone)
-                            <span class="tb-zone-tag" style="--zone-color: {{ $zoneColor }};">
-                                <span class="tb-zone-tag-dot"></span>
-                                {{ $t->zone->label }}
-                            </span>
-                        @else
-                            <span class="tb-zone-tag tb-zone-tag--muted">
-                                <span class="tb-zone-tag-dot"></span>
-                                بدون منطقة
-                            </span>
-                        @endif
-                    </div>
-
-                    <div class="tb-card-meta-grid">
-                        <div class="tb-meta-cell">
-                            <span>المقاعد</span>
-                            <strong><i class="bi bi-people"></i> {{ $t->capacity }}</strong>
-                        </div>
-                        <div class="tb-meta-cell">
-                            <span>نشطة</span>
-                            <strong><i class="bi bi-receipt"></i> {{ $orderCount }}</strong>
-                        </div>
-                        <div class="tb-meta-cell {{ $pendingCount > 0 ? 'is-hot' : '' }}">
-                            <span>اعتماد</span>
-                            <strong><i class="bi bi-person-check"></i> {{ $pendingCount }}</strong>
-                        </div>
-                        <div class="tb-meta-cell {{ $readyCount > 0 ? 'is-ready' : '' }}">
-                            <span>جاهز</span>
-                            <strong><i class="bi bi-bell-fill"></i> {{ $readyCount }}</strong>
-                        </div>
-                    </div>
-
-                    @if($session)
-                        <div class="tb-session-info">
-                            <span>
-                                <i class="bi bi-stopwatch"></i>
-                                جلسة مفتوحة
-                            </span>
-                            <strong>{{ $openMinutes < 1 ? 'الآن' : $openMinutes.' د' }}</strong>
-                        </div>
-
-                        <div class="tb-service-strip">
-                            <span title="الجرسون المسؤول">
-                                <i class="bi bi-person-badge"></i>
-                                {{ $waiterName ?: 'غير مخصص' }}
-                            </span>
-                            <span title="الضيف">
-                                <i class="bi {{ $session->customer_id ? 'bi-person-check-fill' : 'bi-person' }}"></i>
-                                {{ $guestName ?: 'ضيف QR' }}
-                            </span>
-                            <span title="آخر نشاط">
-                                <i class="bi bi-activity"></i>
-                                {{ is_null($idleMinutes) ? 'لا نشاط' : ($idleMinutes < 1 ? 'نشط الآن' : 'منذ '.$idleMinutes.' د') }}
-                            </span>
-                        </div>
-
-                        @if($pendingCount > 0 || $readyCount > 0 || $openMinutes >= 75)
-                            <div class="tb-attention-stack">
-                                @if($pendingCount > 0)
-                                    <a href="{{ route('admin.orders.index') }}" class="tb-attention tb-attention--pending">
-                                        <i class="bi bi-person-check"></i>
-                                        {{ $pendingCount }} طلب بانتظار الجرسون
-                                    </a>
-                                @endif
-                                @if($readyCount > 0)
-                                    <a href="{{ route('admin.orders.index') }}" class="tb-attention tb-attention--ready">
-                                        <i class="bi bi-bell-fill"></i>
-                                        {{ $readyCount }} طلب جاهز للتقديم
-                                    </a>
-                                @endif
-                                @if($openMinutes >= 75)
-                                    <span class="tb-attention tb-attention--long">
-                                        <i class="bi bi-hourglass-split"></i>
-                                        جلسة طويلة تحتاج متابعة
-                                    </span>
-                                    @if($orderCount === 0)
-                                        <form action="{{ route('admin.tables.close-session', $t) }}" method="POST"
-                                              class="m-0"
-                                              onsubmit="return confirm('إغلاق الجلسة الراكدة على طاولة {{ $t->number }}؟ (لا توجد طلبات عليها)');">
-                                            @csrf
-                                            <button type="submit" class="tb-attention tb-attention--long" style="border:0;cursor:pointer;background:transparent;width:100%;text-align:right;">
-                                                <i class="bi bi-x-circle"></i>
-                                                إغلاق الجلسة الراكدة
-                                            </button>
-                                        </form>
-                                    @endif
-                                @endif
-                            </div>
-                        @endif
-                    @endif
-
-                    <div class="tb-actions" aria-label="إجراءات الطاولة {{ $t->number }}">
-                        @if($session && ($pendingCount > 0 || $readyCount > 0 || $productionCount > 0))
-                            <a href="{{ route('admin.orders.index') }}" class="tb-btn tb-btn-primary" title="شاشة الجرسون">
-                                <i class="bi bi-person-check-fill"></i>
-                                <span>تشغيل</span>
-                            </a>
-                        @endif
-                        @can('transfer', $t)
-                            @if($session && $availableTransferTables->isNotEmpty())
-                                <form action="{{ route('admin.tables.transfer', $t) }}" method="POST"
-                                    class="tb-transfer-form"
-                                    onsubmit="return confirm('نقل جلسة طاولة {{ $t->number }} إلى الطاولة المختارة؟');">
+                    @if($billRequested || $pendingCount > 0 || $readyCount > 0 || $isLongSession || $canCloseIdle)
+                        <div class="tb-attention-stack">
+                            @if($billRequested && $invoice === null)
+                                <a href="{{ route('admin.cashier.show', $session) }}" class="tb-attention tb-attention--ready">
+                                    <i class="bi bi-receipt-cutoff"></i>
+                                    طلب الفاتورة · {{ \App\Support\Duration::since($session->bill_requested_at) }}
+                                </a>
+                            @endif
+                            @if($pendingCount > 0)
+                                <a href="{{ route('admin.orders.index') }}" class="tb-attention tb-attention--pending">
+                                    <i class="bi bi-person-check"></i>
+                                    {{ $pendingCount }} بانتظار الاعتماد
+                                </a>
+                            @endif
+                            @if($readyCount > 0)
+                                <a href="{{ route('admin.orders.index') }}" class="tb-attention tb-attention--ready">
+                                    <i class="bi bi-bell-fill"></i>
+                                    {{ $readyCount }} جاهز للتقديم
+                                </a>
+                            @endif
+                            @if($isLongSession)
+                                <span class="tb-attention tb-attention--long">
+                                    <i class="bi bi-hourglass-split"></i>
+                                    جلسة طويلة تحتاج متابعة · {{ \App\Support\Duration::short($openMinutes) }}
+                                </span>
+                            @endif
+                            @if($canCloseIdle)
+                                <form action="{{ route('admin.tables.close-session', $t) }}" method="POST"
+                                      class="m-0"
+                                      onsubmit="return confirm('إغلاق الجلسة الراكدة على طاولة {{ $t->number }}؟ (لا توجد مستحقات مفتوحة عليها)');">
                                     @csrf
-                                    <select name="target_table_id" class="tb-transfer-select" required aria-label="نقل الجلسة إلى طاولة">
-                                        <option value="">نقل إلى...</option>
-                                        @foreach($availableTransferTables as $availableTable)
-                                            <option value="{{ $availableTable->id }}">
-                                                طاولة {{ $availableTable->number }}{{ $availableTable->name ? ' - '.$availableTable->name : '' }}
-                                            </option>
-                                        @endforeach
-                                    </select>
-                                    <button type="submit" class="tb-btn tb-btn-transfer" title="نقل الجلسة">
-                                        <i class="bi bi-arrow-left-right"></i>
-                                        <span>نقل</span>
+                                    <button type="submit" class="tb-attention tb-attention--long tb-attention-btn">
+                                        <i class="bi bi-x-circle"></i>
+                                        إغلاق الجلسة الراكدة · خاملة {{ \App\Support\Duration::since($lastSeenAt) }}
                                     </button>
                                 </form>
                             @endif
-                        @endcan
-                        <a href="{{ route('admin.tables.qr-print', $t) }}" class="tb-btn" title="طباعة QR">
-                            <i class="bi bi-qr-code"></i>
-                            <span>QR</span>
-                        </a>
-                        @can('update', $t)
-                            <a href="{{ route('admin.tables.edit', $t) }}" class="tb-btn" title="تعديل الطاولة">
-                                <i class="bi bi-pencil-square"></i>
-                                <span>تعديل</span>
-                            </a>
-                        @endcan
-                        @if($session && $orderCount > 0)
-                            <a href="{{ route('admin.cashier.show', $session) }}" class="tb-btn tb-btn-primary" title="الكاشير">
-                                <i class="bi bi-cash-stack"></i>
-                                <span>كاشير</span>
+                        </div>
+                    @endif
+
+                    @if($session)
+                        <div class="tb-session-info">
+                            <span title="الجرسون المسؤول">
+                                <i class="bi bi-person-badge"></i>
+                                {{ $waiterName ?: 'بدون جرسون' }}
+                            </span>
+                            <strong title="آخر نشاط بالجلسة">{{ \App\Support\Duration::since($lastSeenAt) }}</strong>
+                        </div>
+                    @endif
+
+                    <div class="tb-actions" aria-label="إجراءات الطاولة {{ $t->number }}">
+                        @if($primary)
+                            <a href="{{ $primary['url'] }}" class="tb-btn tb-btn-primary tb-btn-main" title="{{ $primary['label'] }}">
+                                <i class="bi {{ $primary['icon'] }}"></i>
+                                <span>{{ $primary['label'] }}</span>
                             </a>
                         @endif
-                        @can('delete', $t)
-                            <form action="{{ route('admin.tables.destroy', $t) }}" method="POST"
-                                onsubmit="return confirm('تأكيد حذف الطاولة {{ $t->number }}؟')">
-                                @csrf
-                                @method('DELETE')
-                                <button type="submit" class="tb-btn tb-btn-danger" title="حذف الطاولة">
-                                    <i class="bi bi-trash"></i>
-                                    <span>حذف</span>
-                                </button>
-                            </form>
-                        @endcan
+
+                        {{-- Alpine (not Bootstrap-JS) dropdown: the board polls every
+                             15s and a Livewire morph strips Bootstrap's client-added
+                             .show class, slamming the menu shut mid-interaction.
+                             Alpine state survives morphs, so :class re-applies .show
+                             and an open transfer form stays open across refreshes. --}}
+                        <div class="dropdown tb-more" x-data="{ open: false }"
+                             @click.outside="open = false" @keydown.escape.window="open = false">
+                            <button type="button" class="tb-more-btn" @click="open = !open"
+                                :aria-expanded="open ? 'true' : 'false'"
+                                aria-label="إجراءات إضافية لطاولة {{ $t->number }}">
+                                <i class="bi bi-three-dots"></i>
+                            </button>
+                            <ul class="dropdown-menu tb-more-menu" :class="{ show: open }">
+                                @if($session && $primaryKey !== 'cashier' && ($invoice !== null || $activeCount > 0))
+                                    <li>
+                                        <a class="dropdown-item" href="{{ route('admin.cashier.show', $session) }}">
+                                            <i class="bi bi-cash-stack"></i>
+                                            كاشير
+                                        </a>
+                                    </li>
+                                @endif
+                                @if($session && $primaryKey !== 'waiter' && $activeCount > 0)
+                                    <li>
+                                        <a class="dropdown-item" href="{{ route('admin.orders.index') }}">
+                                            <i class="bi bi-person-check-fill"></i>
+                                            مهام الجرسون
+                                        </a>
+                                    </li>
+                                @endif
+                                <li>
+                                    <a class="dropdown-item" href="{{ route('admin.tables.qr-print', $t) }}">
+                                        <i class="bi bi-qr-code"></i>
+                                        طباعة QR
+                                    </a>
+                                </li>
+                                @can('update', $t)
+                                    <li>
+                                        <a class="dropdown-item" href="{{ route('admin.tables.edit', $t) }}">
+                                            <i class="bi bi-pencil-square"></i>
+                                            تعديل الطاولة
+                                        </a>
+                                    </li>
+                                @endcan
+                                @can('transfer', $t)
+                                    @if($session && $availableTransferTables->isNotEmpty())
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li class="tb-more-transfer">
+                                            <form action="{{ route('admin.tables.transfer', $t) }}" method="POST"
+                                                onsubmit="return confirm('نقل جلسة طاولة {{ $t->number }} إلى الطاولة المختارة؟');">
+                                                @csrf
+                                                <span class="tb-more-transfer-label">
+                                                    <i class="bi bi-arrow-left-right"></i>
+                                                    نقل الجلسة إلى
+                                                </span>
+                                                <div class="tb-more-transfer-row">
+                                                    <select name="target_table_id" class="tb-transfer-select" required aria-label="نقل الجلسة إلى طاولة">
+                                                        <option value="">اختر طاولة...</option>
+                                                        @foreach($availableTransferTables as $availableTable)
+                                                            <option value="{{ $availableTable->id }}">
+                                                                طاولة {{ $availableTable->number }}{{ $availableTable->name ? ' - '.$availableTable->name : '' }}
+                                                            </option>
+                                                        @endforeach
+                                                    </select>
+                                                    <button type="submit" class="tb-transfer-go">نقل</button>
+                                                </div>
+                                            </form>
+                                        </li>
+                                    @endif
+                                @endcan
+                                @can('delete', $t)
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li>
+                                        <form action="{{ route('admin.tables.destroy', $t) }}" method="POST"
+                                            onsubmit="return confirm('تأكيد حذف الطاولة {{ $t->number }}؟')">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button type="submit" class="dropdown-item tb-more-danger">
+                                                <i class="bi bi-trash"></i>
+                                                حذف الطاولة
+                                            </button>
+                                        </form>
+                                    </li>
+                                @endcan
+                            </ul>
+                        </div>
                     </div>
                 </article>
             @endforeach

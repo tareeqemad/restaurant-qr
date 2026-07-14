@@ -87,6 +87,12 @@ new class extends Component
             <a href="{{ route('customer.menu') }}" class="btn-track-primary">
                 <i class="bi bi-plus-circle-fill"></i> إضافة المزيد من الأصناف
             </a>
+            {{-- Bill entry point — mirrors the topbar "الفاتورة" chip so a
+                 diner who finished eating can request the bill from here
+                 instead of hunting for the /bill URL. --}}
+            <a href="{{ route('customer.bill') }}" class="btn-track-bill">
+                <i class="bi bi-wallet2"></i> عرض الفاتورة وطلب الحساب
+            </a>
         @endif
 
         @if($finished->count())

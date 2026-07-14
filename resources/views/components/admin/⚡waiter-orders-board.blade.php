@@ -7,6 +7,7 @@ use App\Models\OrderItem;
 use App\Models\TableSession;
 use App\Services\InventoryService;
 use App\Services\OrderService;
+use App\Support\Duration;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
@@ -21,6 +22,22 @@ new class extends Component
 
     #[Url(as: 'focus', except: 'all')]
     public string $focus = 'all';
+
+    /**
+     * One lateness definition for the whole board: a task counts as "late"
+     * once it has waited this many minutes. Shared by BOTH the hero urgent
+     * stat and the "المتأخر" focus tab so their numbers always agree (they
+     * used to disagree — the stat only counted late *pending* orders). We
+     * kept the tab's stricter definition: any task kind at 5+ minutes.
+     */
+    public const LATE_AFTER_MINUTES = 5;
+
+    /**
+     * Age stops adding priority points past this (4h). Keeps ready-first
+     * tier ordering intact while preventing one forgotten ticket from
+     * accumulating enough points to bury newer urgent work forever.
+     */
+    private const AGE_PRIORITY_CAP_MINUTES = 240;
 
     #[Computed]
     public function groups(): array
@@ -122,7 +139,12 @@ new class extends Component
 
         return [
             'pending' => $groups['pending']->count(),
-            'urgent' => $groups['pending']->filter(fn ($order) => $order->created_at->lt(now()->subMinutes(5)))->count(),
+            // Same lateness definition as the "المتأخر" focus tab — one
+            // shared threshold over every task kind, so the hero number
+            // always matches what the tab actually lists.
+            'urgent' => $this->allPeakTasks
+                ->filter(fn ($task) => $task['age_min'] >= self::LATE_AFTER_MINUTES)
+                ->count(),
             'production' => $groups['production']->count(),
             'ready_items' => $groups['ready']->sum(fn ($order) => $order->items
                 ->where('status', OrderItemStatus::Ready->value)
@@ -225,8 +247,9 @@ new class extends Component
         }
     }
 
+    /** Every actionable task (unfiltered), sorted most-important first. */
     #[Computed]
-    public function peakTasks()
+    public function allPeakTasks()
     {
         $groups = $this->groups;
         $tasks = collect();
@@ -237,9 +260,9 @@ new class extends Component
                 'kind' => 'pending',
                 'label' => 'قبول الطلب',
                 'title' => $order->table ? 'طاولة '.$order->table->number : $order->sourceLabel(),
-                'subtitle' => $ageMin >= 5 ? 'متأخر عن الاعتماد' : 'طلب جديد بانتظار الاعتماد',
+                'subtitle' => $ageMin >= self::LATE_AFTER_MINUTES ? 'متأخر عن الاعتماد' : 'طلب جديد بانتظار الاعتماد',
                 'age_min' => $ageMin,
-                'priority' => ($ageMin >= 5 ? 4000 : 1600) + $ageMin,
+                'priority' => ($ageMin >= self::LATE_AFTER_MINUTES ? 4000 : 1600) + min($ageMin, self::AGE_PRIORITY_CAP_MINUTES),
                 'order' => $order,
             ]);
         }
@@ -260,21 +283,33 @@ new class extends Component
             // Tier the ready urgency the same way the kitchen does so the
             // colour story is consistent across screens. Cold food (8+ min on
             // the pass) jumps above pending in priority — the order itself
-            // can wait, but a steak going cold can't.
+            // can wait, but a steak going cold can't. Age fine-tunes the
+            // order *within* a tier but is capped (AGE_PRIORITY_CAP_MINUTES),
+            // so the tier bases stay decisive: red (5200) always beats a late
+            // pending (4000 + capped age ≤ 4240), and one forgotten ticket
+            // can't accumulate enough points to camp at #1 forever.
             $readyUrgency = $ageMin >= 8 ? 'red' : ($ageMin >= 3 ? 'amber' : 'green');
             $priorityBase = match ($readyUrgency) {
-                'red'   => 5200,        // beats even an old pending (4000+)
+                'red'   => 5200,        // beats even an old pending (4000 + capped age)
                 'amber' => 3400,        // above fresh pending (1600), below late pending
                 default => 3000,
             };
+
+            // Name the ready plates on the card so the waiter knows what to
+            // carry without opening the order — first names then "+N".
+            $readyNames = $order->items
+                ->where('status', OrderItemStatus::Ready->value)
+                ->pluck('name_snapshot');
+            $namesLine = $readyNames->take(3)->implode('، ')
+                .($readyNames->count() > 3 ? ' +'.($readyNames->count() - 3) : '');
 
             $tasks->push([
                 'kind' => 'ready',
                 'label' => $readyUrgency === 'red' ? 'قدّم فوراً — يبرد!' : 'قدّم الآن',
                 'title' => $order->table ? 'طاولة '.$order->table->number : $order->sourceLabel(),
-                'subtitle' => $readyCount.' صنف جاهز' . ($readyUrgency === 'red' ? ' · '.$ageMin.' د على الباس' : ''),
+                'subtitle' => $namesLine.($readyUrgency === 'red' ? ' · على الباس منذ '.Duration::short($ageMin) : ''),
                 'age_min' => $ageMin,
-                'priority' => $priorityBase + $readyCount * 10 + $ageMin,
+                'priority' => $priorityBase + $readyCount * 10 + min($ageMin, self::AGE_PRIORITY_CAP_MINUTES),
                 'order' => $order,
                 'ready_count' => $readyCount,
                 'ready_urgency' => $readyUrgency,
@@ -289,14 +324,22 @@ new class extends Component
                 'title' => 'طاولة '.($session->table?->number ?? '—'),
                 'subtitle' => $session->bill_request_note ?: 'الزبون ينتظر إنهاء الحساب',
                 'age_min' => $waitMin,
-                'priority' => ($waitMin >= 5 ? 3800 : 2200) + $waitMin,
+                'priority' => ($waitMin >= self::LATE_AFTER_MINUTES ? 3800 : 2200) + min($waitMin, self::AGE_PRIORITY_CAP_MINUTES),
                 'session' => $session,
             ]);
         }
 
-        return $tasks
-            ->filter(fn ($task) => $this->focus === 'all' || $task['kind'] === $this->focus || ($this->focus === 'urgent' && $task['age_min'] >= 5))
-            ->sortByDesc('priority')
+        return $tasks->sortByDesc('priority')->values();
+    }
+
+    /** The task list after the focus-tab filter — what the board renders. */
+    #[Computed]
+    public function peakTasks()
+    {
+        return $this->allPeakTasks
+            ->filter(fn ($task) => $this->focus === 'all'
+                || $task['kind'] === $this->focus
+                || ($this->focus === 'urgent' && $task['age_min'] >= self::LATE_AFTER_MINUTES))
             ->values();
     }
 
@@ -341,7 +384,7 @@ new class extends Component
 
     private function clearComputed(): void
     {
-        unset($this->groups, $this->stats, $this->peakTasks, $this->stockReports);
+        unset($this->groups, $this->stats, $this->allPeakTasks, $this->peakTasks, $this->stockReports);
     }
 }
 ?>
@@ -459,10 +502,10 @@ new class extends Component
                 @forelse($visiblePeakTasks as $task)
                     @php
                         // Ready tasks have their own escalation (3/8 min on the pass).
-                        // Other tasks fall back to the existing 5-min hot threshold.
+                        // Other tasks fall back to the shared lateness threshold.
                         $isHot = $task['kind'] === 'ready'
                             ? ($task['ready_urgency'] ?? 'green') === 'red'
-                            : $task['age_min'] >= 5;
+                            : $task['age_min'] >= $this::LATE_AFTER_MINUTES;
                         $isWarm = $task['kind'] === 'ready'
                             && ($task['ready_urgency'] ?? 'green') === 'amber';
                     @endphp
@@ -513,7 +556,7 @@ new class extends Component
                             @endif
                         </div>
                         <span class="waiter-age {{ $isHot ? 'is-hot' : '' }} {{ $isWarm ? 'is-warm' : '' }}">
-                            {{ $task['age_min'] < 1 ? 'الآن' : $task['age_min'].' د' }}
+                            {{ \App\Support\Duration::short($task['age_min']) }}
                         </span>
                         <div class="waiter-peak-action">
                             @if($task['kind'] === 'pending')
@@ -567,14 +610,14 @@ new class extends Component
                                 $guestName = $session->customer?->name ?: $session->customer_name;
                             @endphp
 
-                            <article class="waiter-order waiter-bill-card {{ $waitMin >= 5 ? 'is-urgent' : '' }}">
+                            <article class="waiter-order waiter-bill-card {{ $waitMin >= $this::LATE_AFTER_MINUTES ? 'is-urgent' : '' }}">
                                 <div class="waiter-order-head">
                                     <div>
                                         <span class="waiter-order-number">طلب فاتورة</span>
                                         <strong>طاولة {{ $session->table?->number ?? '—' }}</strong>
                                     </div>
-                                    <span class="waiter-age {{ $waitMin >= 5 ? 'is-hot' : '' }}">
-                                        {{ $waitMin < 1 ? 'الآن' : $waitMin . ' د' }}
+                                    <span class="waiter-age {{ $waitMin >= $this::LATE_AFTER_MINUTES ? 'is-hot' : '' }}">
+                                        {{ \App\Support\Duration::short($waitMin) }}
                                     </span>
                                 </div>
 
@@ -621,7 +664,7 @@ new class extends Component
                             @php
                                 $order = $record;
                                 $ageMin = (int) $order->created_at->diffInMinutes(now());
-                                $isUrgent = $key === 'pending' && $ageMin >= 5;
+                                $isUrgent = $key === 'pending' && $ageMin >= $this::LATE_AFTER_MINUTES;
                                 $readyItemsCount = $order->items->where('status', OrderItemStatus::Ready->value)->count();
                                 $stationGroups = $order->items->groupBy(fn ($item) => $item->station?->name ?? 'بدون محطة');
                                 $session = $order->tableSession;
@@ -639,7 +682,7 @@ new class extends Component
                                         <strong>{{ $originName }}</strong>
                                     </div>
                                     <span class="waiter-age {{ $isUrgent ? 'is-hot' : '' }}">
-                                        {{ $ageMin < 1 ? 'الآن' : $ageMin . ' د' }}
+                                        {{ \App\Support\Duration::short($ageMin) }}
                                     </span>
                                 </div>
 

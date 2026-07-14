@@ -9,6 +9,20 @@
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="{{ $theme['primary'] }}">
 <meta name="csrf-token" content="{{ csrf_token() }}">
+<script>
+    // ── Dish image fallback ──────────────────────────────────────────
+    // Same SVG placeholder MenuItem::imageUrl() serves when no image is
+    // set — a dead stored/remote URL otherwise leaves the browser's
+    // broken-image icon on the card. Comparing the src (instead of
+    // nulling onerror) both breaks the retry loop AND keeps the fallback
+    // alive when Alpine swaps :src on a reused element (item sheet /
+    // cart drawer rows). Lives in <head> so it is defined before any
+    // <img onerror> below can fire.
+    window.dishImgFallback = function (img) {
+        var placeholder = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 225'%3E%3Crect fill='%23fecaca' width='300' height='225'/%3E%3Ctext x='50%25' y='55%25' text-anchor='middle' font-size='72'%3E🍽️%3C/text%3E%3C/svg%3E";
+        if (img.getAttribute('src') !== placeholder) img.src = placeholder;
+    };
+</script>
 <title>@yield('title', __('ui.customer_menu.default_title')) · {{ $brandName }}</title>
 <link rel="icon" href="{{ \App\Helpers\Brand::faviconUrl() }}">
 <link href="{{ asset($market::bootstrapCssPath()) }}" rel="stylesheet">
@@ -1214,6 +1228,13 @@ body { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
                     <i class="bi bi-receipt-cutoff"></i>
                     {{ __('ui.customer_menu.track_order') }}
                     <span class="chip-badge">{{ $activeOrdersCount }}</span>
+                </a>
+                {{-- Bill chip — the proactive "اطلب الفاتورة" entry point.
+                     Without it /bill was only reachable via the post-payment
+                     redirect, so a diner could never ASK for the bill. --}}
+                <a href="{{ route('customer.bill') }}" class="chip" title="{{ __('ui.customer_order.bill_title') }}">
+                    <i class="bi bi-wallet2"></i>
+                    {{ __('ui.customer_order.bill_title') }}
                 </a>
             @endif
         </div>

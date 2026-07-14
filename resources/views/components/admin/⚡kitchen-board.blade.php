@@ -2,6 +2,7 @@
 
 use App\Enums\OrderItemStatus;
 use App\Models\OrderItem;
+use App\Models\Station;
 use App\Services\OrderService;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
@@ -84,8 +85,9 @@ new class extends Component
         // takeaway/delivery tickets without an N+1 (`customer_name` on the
         // order itself is the canonical snapshot; the relation is the
         // fallback when the cashier didn't enter a guest record).
-        $rows = OrderItem::with(['order.table', 'order.customer', 'modifiers', 'menuItem:id,prep_time_minutes'])
-            ->where('station_id', $this->stationId)
+        $rows = $this->scopeToBoard(
+                OrderItem::with(['order.table', 'order.customer', 'modifiers', 'menuItem:id,prep_time_minutes'])
+            )
             ->whereIn('status', [
                 OrderItemStatus::Approved->value,
                 OrderItemStatus::Preparing->value,
@@ -96,8 +98,17 @@ new class extends Component
             ->get();
 
         if ($this->filterTable !== '') {
-            $filter = $this->filterTable;
-            $rows = $rows->filter(fn($it) => str_contains((string) $it->order?->table?->number, $filter));
+            // EXACT match on the table number — the old substring match meant
+            // filtering table "1" also caught tables 10-19. Numeric numbers
+            // compare as ints so "05" still matches the "5" pill; anything
+            // non-numeric falls back to a strict string compare.
+            $filter = trim($this->filterTable);
+            $rows = $rows->filter(function ($it) use ($filter) {
+                $num = trim((string) ($it->order?->table?->number ?? ''));
+                return is_numeric($num) && is_numeric($filter)
+                    ? (int) $num === (int) $filter
+                    : $num === $filter;
+            });
         }
 
         $byOrder = $rows->groupBy('order_id');
@@ -199,7 +210,7 @@ new class extends Component
 
     public function startItem(int $itemId, OrderService $service): void
     {
-        if ($item = OrderItem::whereKey($itemId)->where('station_id', $this->stationId)->first()) {
+        if ($item = $this->scopeToBoard(OrderItem::whereKey($itemId))->first()) {
             $this->ensureStationAccess($item);
             $service->startPreparing($item, auth()->id());
         }
@@ -208,7 +219,7 @@ new class extends Component
 
     public function markReady(int $itemId, OrderService $service): void
     {
-        if ($item = OrderItem::whereKey($itemId)->where('station_id', $this->stationId)->first()) {
+        if ($item = $this->scopeToBoard(OrderItem::whereKey($itemId))->first()) {
             $this->ensureStationAccess($item);
             $service->markItemReady($item);
         }
@@ -219,8 +230,7 @@ new class extends Component
     {
         $this->ensureStationAccess();
 
-        foreach (OrderItem::where('order_id', $orderId)
-            ->where('station_id', $this->stationId)
+        foreach ($this->scopeToBoard(OrderItem::where('order_id', $orderId))
             ->where('status', OrderItemStatus::Approved->value)->get() as $i) {
             $service->startPreparing($i, auth()->id());
         }
@@ -231,8 +241,7 @@ new class extends Component
     {
         $this->ensureStationAccess();
 
-        foreach (OrderItem::where('order_id', $orderId)
-            ->where('station_id', $this->stationId)
+        foreach ($this->scopeToBoard(OrderItem::where('order_id', $orderId))
             ->where('status', OrderItemStatus::Preparing->value)->get() as $i) {
             $service->markItemReady($i);
         }
@@ -249,7 +258,7 @@ new class extends Component
      */
     public function cancelItemFromKds(int $itemId, string $disposition, string $reason, OrderService $service): void
     {
-        $item = OrderItem::whereKey($itemId)->where('station_id', $this->stationId)->first();
+        $item = $this->scopeToBoard(OrderItem::whereKey($itemId))->first();
         if (! $item) return;
         $this->ensureStationAccess($item);
 
@@ -301,6 +310,74 @@ new class extends Component
 
     // ── Helpers ──────────────────────────────────────────────────────
 
+    /** Per-request memo — station config can't change mid-render. */
+    protected ?bool $primaryBoard = null;
+
+    /**
+     * Is this the branch's PRIMARY board? Convention (StationSeeder): the
+     * station coded 'kitchen' is the main food line; a branch without one
+     * (Gaza starts with zero stations, the owner adds their own) falls back
+     * to its first active station by display_order. The primary board doubles
+     * as the safety net for orphan tickets — see scopeToBoard().
+     */
+    protected function isPrimaryBoard(): bool
+    {
+        if ($this->primaryBoard !== null) {
+            return $this->primaryBoard;
+        }
+
+        if ($this->stationCode === 'kitchen') {
+            return $this->primaryBoard = true;
+        }
+
+        // Station uses BelongsToBranch, so these lookups are branch-scoped.
+        if (Station::where('code', 'kitchen')->where('active', true)->exists()) {
+            return $this->primaryBoard = false;
+        }
+
+        $firstId = Station::where('active', true)
+            ->orderBy('display_order')->orderBy('id')
+            ->value('id');
+
+        return $this->primaryBoard = ((int) $firstId === $this->stationId);
+    }
+
+    /**
+     * Constrain an OrderItem query to this board's tickets: the station's own
+     * items plus — on the PRIMARY board only — orphan items whose station_id
+     * is NULL (menu item had no station AND its category had no default, so
+     * order time stamped nothing). Without this branch those tickets would
+     * never appear on ANY screen and the customer would wait forever.
+     *
+     * Branch containment is EXPLICIT here, not left to the service layer:
+     * orphans are pinned to the station's own branch (otherwise an owner in
+     * all-branches mode would see and act on every branch's orphans), and the
+     * outer whereHas('order') applies Order's BranchScope to the station arm
+     * for branch-scoped users as defense in depth for the wire actions.
+     */
+    protected function scopeToBoard($query)
+    {
+        return $query->where(function ($q) {
+            $q->where('station_id', $this->stationId);
+            if ($this->isPrimaryBoard()) {
+                $q->orWhere(function ($orphan) {
+                    $orphan->whereNull('station_id')
+                        ->whereHas('order', fn ($o) => $o->where('branch_id', $this->stationBranchId()));
+                });
+            }
+        })->whereHas('order');
+    }
+
+    /** Per-request memo — the station's branch can't change mid-render. */
+    protected ?int $stationBranchId = null;
+
+    protected function stationBranchId(): int
+    {
+        return $this->stationBranchId ??= (int) Station::withoutGlobalScopes()
+            ->whereKey($this->stationId)
+            ->value('branch_id');
+    }
+
     protected function sortColumn($cards)
     {
         return match ($this->sortBy) {
@@ -321,7 +398,11 @@ new class extends Component
         abort_unless(auth()->user()?->canAccessStation($this->stationCode), 403);
 
         if ($item) {
-            abort_unless((int) $item->station_id === (int) $this->stationId, 404);
+            // Orphans (station_id NULL) are actionable from the primary
+            // board only — mirrors the scopeToBoard() read-side rule.
+            $ownsItem = (int) $item->station_id === (int) $this->stationId
+                || ($item->station_id === null && $this->isPrimaryBoard());
+            abort_unless($ownsItem, 404);
         }
     }
 

@@ -322,16 +322,36 @@
             </div>
             <div class="col-md-4">
                 <label class="form-label">القسم <span class="req">*</span></label>
+                @php
+                    // Disabled+selected placeholder: without it the browser
+                    // silently pre-selects the first category and `required`
+                    // never fires — a wrong non-choice the user never made.
+                    $selectedCategory = old('category_id', $item->category_id ?? '');
+                @endphp
                 <select name="category_id" class="form-select" required data-relax-choice data-choice-search-placeholder="ابحث عن قسم...">
-                    @foreach($categories as $c)<option value="{{ $c->id }}" @selected(old('category_id', $item->category_id ?? '')==$c->id)>{{ $c->name }}</option>@endforeach
+                    <option value="" disabled @selected($selectedCategory === '' || $selectedCategory === null)>— اختر القسم —</option>
+                    @foreach($categories as $c)<option value="{{ $c->id }}" @selected($selectedCategory==$c->id)>{{ $c->name }}</option>@endforeach
                 </select>
+                @if($categories->isEmpty())
+                    <small class="text-danger d-block mt-1" style="font-size: 11.5px;">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                        لا توجد أقسام بعد — <a href="{{ route('admin.categories.create') }}" target="_blank" class="alert-link">أنشئ أول قسم</a> ثم عُد لحفظ الصنف.
+                    </small>
+                @endif
             </div>
             <div class="col-md-4">
                 <label class="form-label">المحطة <small class="text-muted">(اختياري)</small></label>
+                @php $selectedStation = old('station_id', $item->station_id ?? ''); @endphp
                 <select name="station_id" class="form-select">
                     <option value="">— الافتراضية من القسم —</option>
-                    @foreach($stations as $s)<option value="{{ $s->id }}" @selected(old('station_id', $item->station_id ?? '')==$s->id)>{{ $s->name }}</option>@endforeach
+                    @foreach($stations as $s)<option value="{{ $s->id }}" @selected($selectedStation==$s->id)>{{ $s->name }}</option>@endforeach
                 </select>
+                @if($selectedStation === '' || $selectedStation === null)
+                    <small class="text-muted d-block mt-1" style="font-size: 11.5px;">
+                        <i class="bi bi-display"></i>
+                        بدون محطة يرث الصنف محطة القسم الافتراضية؛ وإن لم توجد، يظهر على الشاشة الرئيسية (المطبخ) موسوماً «بدون محطة».
+                    </small>
+                @endif
             </div>
             <div class="col-md-4">
                 <label class="form-label">SKU <small class="text-muted">(اختياري)</small></label>

@@ -68,7 +68,8 @@
      @click="onCardClick({{ \Illuminate\Support\Js::from($payload) }}, $event)"
      @endif>
     <div class="dish-img">
-        <img src="{{ $item->imageUrl() }}" alt="{{ $itemName }}" loading="lazy" data-dish-img="{{ $item->id }}">
+        <img src="{{ $item->imageUrl() }}" alt="{{ $itemName }}" loading="lazy" data-dish-img="{{ $item->id }}"
+             onerror="window.dishImgFallback && dishImgFallback(this)">
         @if($item->is_featured && $canOrder)
             <span class="badge-today">{{ __('ui.dish.available_today') }}</span>
         @endif

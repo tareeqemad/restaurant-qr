@@ -1,17 +1,49 @@
 @extends('layouts.admin')
 @section('title', $station->name)
 
+@php
+    // ── Wall mode (?tv=1) — chrome-free rendering for wall-mounted tablets.
+    //    Same layout, same route: CSS keyed off a class on <html> hides the
+    //    admin header/nav/breadcrumb/footer so ~100% of pixels are tickets.
+    $tvMode = request()->boolean('tv');
+@endphp
+
+@if($tvMode)
+    @push('head-scripts')
+        {{-- Stamp the class on <html> BEFORE first paint — adding it to
+             <body> from the scripts stack would flash the full admin chrome
+             for a beat on slow wall tablets. --}}
+        <script>document.documentElement.classList.add('kds-tv');</script>
+    @endpush
+@endif
+
 @section('content')
 <x-admin.breadcrumb
     title="شاشة {{ $station->name }}"
     icon="{{ $station->icon ?: 'ri-fire-fill' }}"
-    subtitle="عرض الطلبات الحية للمحطة — مصمم للسرعة وكثافة الطلبات" />
+    subtitle="عرض الطلبات الحية للمحطة — مصمم للسرعة وكثافة الطلبات">
+    <x-slot:actions>
+        {{-- Keeps sort/table query params so the wall screen opens in the
+             exact state the chef configured before mounting the tablet. --}}
+        <a href="{{ request()->fullUrlWithQuery(['tv' => 1]) }}" class="btn btn-primary">
+            <i class="bi bi-tv"></i> وضع الشاشة
+        </a>
+    </x-slot:actions>
+</x-admin.breadcrumb>
 
 <livewire:admin.kitchen-board
     :station-id="$station->id"
     :station-code="$station->code"
     :station-name="$station->name"
-    :station-color="$station->color ?: '#1f4733'" />
+    :station-color="$station->color ?: '#166534'" />
+
+@if($tvMode)
+    {{-- Floating exit — the only chrome left in wall mode. --}}
+    <a href="{{ request()->fullUrlWithoutQuery('tv') }}" class="kds-tv-exit" title="الخروج من وضع الشاشة">
+        <i class="bi bi-box-arrow-right"></i>
+        <span>خروج من وضع الشاشة</span>
+    </a>
+@endif
 
 @push('styles')
 {{-- ── Polished header buttons ─────────────────────────────────
@@ -147,20 +179,20 @@
        knows at a glance whether a "ready" ticket is going to a courier vs.
        a customer waiting at the counter. */
     .kb-ready-card--external {
-        border-inline-start: 4px solid var(--source-color, #b97818) !important;
+        border-inline-start: 4px solid var(--source-color, #d97706) !important;
     }
     .kb-ready-card--external .kb-ready-table {
-        background: color-mix(in srgb, var(--source-color, #b97818) 12%, white) !important;
+        background: color-mix(in srgb, var(--source-color, #d97706) 12%, white) !important;
     }
     .kb-ready-card--external .kb-ready-table small {
-        color: var(--source-color, #b97818) !important;
+        color: var(--source-color, #d97706) !important;
         font-weight: 700;
         display: inline-flex !important;
         align-items: center;
         gap: 4px;
     }
     .kb-ready-card--external .kb-ready-table strong {
-        color: var(--source-color, #b97818) !important;
+        color: var(--source-color, #d97706) !important;
         font-size: 1.1rem !important;
     }
     .kb-ready-customer {
@@ -170,6 +202,50 @@
         font-weight: 700;
         color: #475569;
     }
+
+    /* ── Wall mode (?tv=1) ───────────────────────────────────────
+       Kill every admin chrome element so a wall-mounted tablet
+       spends its pixels on tickets. Pure CSS keyed off the .kds-tv
+       class the head script stamps on <html> — no separate layout
+       file to drift out of sync with layouts/admin. */
+    .kds-tv .app-header,
+    .kds-tv .app-sidebar,
+    .kds-tv .page-header,
+    .kds-tv footer.footer,
+    .kds-tv .scrollToTop { display: none !important; }
+
+    .kds-tv .main-content.app-content {
+        margin: 0 !important;
+        padding-top: .6rem !important;
+        min-height: 100vh;
+    }
+    .kds-tv .app-content > .container-fluid {
+        max-width: 100% !important;
+        padding-inline: .6rem !important;
+    }
+
+    /* Floating exit — deliberately small and translucent so it never
+       competes with tickets, but still easy to tap. */
+    .kds-tv-exit {
+        position: fixed;
+        inset-block-end: 14px;
+        inset-inline-start: 14px;
+        z-index: 1080;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 7px 14px;
+        border-radius: 999px;
+        background: rgba(15, 23, 42, .72);
+        color: #fff !important;
+        font-size: .78rem;
+        font-weight: 700;
+        text-decoration: none;
+        opacity: .55;
+        backdrop-filter: blur(4px);
+        transition: opacity .15s ease;
+    }
+    .kds-tv-exit:hover { opacity: 1; }
 </style>
 @endpush
 

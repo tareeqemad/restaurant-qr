@@ -405,20 +405,55 @@ class IngredientController extends Controller
     public function edit(Ingredient $ingredient)
     {
         $this->authorize('manage', Ingredient::class);
-        return view('admin.ingredients.edit', array_merge($this->formData(), ['ingredient' => $ingredient]));
+        return view('admin.ingredients.edit', array_merge($this->formData(), [
+            'ingredient' => $ingredient,
+            'costLocked' => $this->costIsLocked($ingredient),
+        ]));
     }
 
     public function update(Request $request, Ingredient $ingredient)
     {
         $this->authorize('manage', Ingredient::class);
         $data = $this->valid($request);
-        // cost_per_unit is a SYSTEM-maintained weighted average (recomputed by
-        // PO receipts). Editing it here would silently revalue all stock with no
-        // matching GL entry, drifting the inventory account (1200) from reality,
-        // so it's read-only after creation — ignore any posted value.
-        unset($data['cost_per_unit']);
+        // cost_per_unit locks once any stock history exists (see
+        // costIsLocked): movements are posted to the GL at the cost they
+        // carried, so a later manual edit would silently revalue stock with
+        // no matching journal entry, drifting the inventory account (1200).
+        // BEFORE any stock history we allow the edit: it's the only way to
+        // repair a day-zero typo (e.g. the 0 default) that would otherwise
+        // poison recipe costing forever.
+        if ($this->costIsLocked($ingredient)) {
+            unset($data['cost_per_unit']);
+        }
         $ingredient->update($data);
         return redirect()->route('admin.ingredients.index')->with('success', 'تم التحديث');
+    }
+
+    /**
+     * The manual cost field locks once ANY stock history exists for this
+     * ingredient — a receipt batch OR any inventory movement (opening
+     * stock, manual adjustment…). Movements are posted to the GL at the
+     * cost they carried, so editing cost_per_unit afterwards would silently
+     * revalue on-hand stock with no matching journal entry, drifting the
+     * inventory account (1200) from reality. The unlock window is therefore
+     * exactly "no stock history yet" — enough to repair a day-zero typo,
+     * never enough to rewrite valued stock. Checked in ALL branches
+     * (cost_per_unit is a single global average); soft-deleted batches stay
+     * excluded — they were rolled back and never fed the average.
+     */
+    protected function costIsLocked(Ingredient $ingredient): bool
+    {
+        $hasBatches = \App\Models\IngredientBatch::withoutGlobalScope(\App\Models\Scopes\BranchScope::class)
+            ->where('ingredient_id', $ingredient->id)
+            ->exists();
+
+        if ($hasBatches) {
+            return true;
+        }
+
+        return \App\Models\InventoryMovement::withoutGlobalScopes()
+            ->where('ingredient_id', $ingredient->id)
+            ->exists();
     }
 
     public function destroy(Ingredient $ingredient)

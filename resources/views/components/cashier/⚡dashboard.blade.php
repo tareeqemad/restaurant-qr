@@ -1825,9 +1825,9 @@ new class extends Component
                                 <span class="cx-status-pill cx-status-bill cx-status-bill--{{ $billUrgency }}">
                                     <i class="bi {{ $billUrgency === 'red' ? 'bi-fire' : 'bi-receipt-cutoff' }}"></i>
                                     @if($billUrgency === 'red')
-                                        ينتظر {{ $waitMin }} د!
+                                        ينتظر {{ \App\Support\Duration::short($waitMin) }}!
                                     @elseif($billUrgency === 'amber')
-                                        فاتورة · {{ $waitMin }} د
+                                        فاتورة · {{ \App\Support\Duration::short($waitMin) }}
                                     @else
                                         طلب الفاتورة
                                     @endif
@@ -1841,7 +1841,7 @@ new class extends Component
                             <span>
                                 <i class="bi bi-people"></i> {{ $s->cover_count ?? 1 }}
                             </span>
-                            <span><i class="bi bi-clock"></i> {{ $openMin }} د</span>
+                            <span><i class="bi bi-clock"></i> {{ \App\Support\Duration::short($openMin) }}</span>
                             @if($s->customer)
                                 <span class="cx-loyalty-chip" title="زبون دائم — {{ $s->customer->name }}">
                                     <i class="bi bi-star-fill"></i>
@@ -2062,7 +2062,7 @@ new class extends Component
                             <span>طاولة {{ $session->table?->number }}</span>
                         </div>
                         <div class="text-muted small">
-                            {{ $session->cover_count ?? 1 }} أشخاص · منذ {{ $session->opened_at->diffForHumans() }}
+                            {{ $session->cover_count ?? 1 }} أشخاص · {{ \App\Support\Duration::since($session->opened_at) }}
                             @if($session->customer_name && ! $session->customer)
                                 · <strong>{{ $session->customer_name }}</strong>
                             @endif
@@ -2166,7 +2166,7 @@ new class extends Component
                         </div>
                         <div>
                             <strong>الزبون طلب الفاتورة</strong>
-                            <span>منذ {{ $session->bill_requested_at->diffForHumans() }}</span>
+                            <span>{{ \App\Support\Duration::since($session->bill_requested_at) }}</span>
                             @if($session->bill_request_note)
                                 <p>{{ $session->bill_request_note }}</p>
                             @endif

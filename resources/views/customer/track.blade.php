@@ -214,6 +214,22 @@
     transform: translateY(-2px);
     box-shadow: 0 12px 32px rgba(31,71,51,.45);
 }
+/* Outline sibling of .btn-track-primary — links to the /bill page. */
+.btn-track-bill {
+    background: white;
+    color: var(--brand-dark);
+    border: 2px solid var(--brand);
+    border-radius: 14px;
+    padding: 12px;
+    font-weight: 800;
+    width: 100%;
+    font-size: .95rem;
+    margin-top: 10px;
+    transition: all .2s;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    text-decoration: none;
+}
+.btn-track-bill:hover { background: var(--brand-soft); color: var(--brand-dark); }
 
 /* Cancelled state */
 .track-cancelled {

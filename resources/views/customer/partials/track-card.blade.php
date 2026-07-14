@@ -254,14 +254,67 @@
                 if (window.Livewire) {
                     window.Livewire.hook('morph.added', tickEta);
                 }
+
+                // Cancel-window watchdog — the server rejects cancel taps
+                // after customer_cancel_window_seconds, so hide the button
+                // the moment the window closes instead of letting the tap
+                // fail. The Livewire poll drops it server-side too; this
+                // just closes the gap between polls. 1s tick because the
+                // window is short (~120s) — minute granularity overshoots.
+                function tickCancelWindow() {
+                    document.querySelectorAll('[data-cancel-remaining]').forEach(el => {
+                        // Anchor the deadline to THIS device's clock on first
+                        // sight (and re-anchor after every Livewire morph,
+                        // which strips the client-added attribute and ships a
+                        // fresh server-side remaining) — immune to clock skew.
+                        if (! el.dataset.cancelDeadline) {
+                            const remaining = parseInt(el.dataset.cancelRemaining || '0', 10);
+                            el.dataset.cancelDeadline = String(Date.now() + remaining * 1000);
+                        }
+                        if (Date.now() < parseInt(el.dataset.cancelDeadline, 10)) return;
+                        if (el.classList.contains('modal')) {
+                            // The diner may be mid-decision inside the modal:
+                            // close it cleanly (so Bootstrap removes its own
+                            // backdrop before Livewire yanks the element) and
+                            // disable the confirm button as a belt-and-braces.
+                            if (window.bootstrap && el.classList.contains('show')) {
+                                window.bootstrap.Modal.getInstance(el)?.hide();
+                            }
+                            el.querySelectorAll('.btn-track-cancel').forEach(b => b.disabled = true);
+                        } else {
+                            // Re-applied every tick — a Livewire morph may
+                            // restore the node until the next poll re-render.
+                            el.style.display = 'none';
+                        }
+                    });
+                }
+                tickCancelWindow();
+                setInterval(tickCancelWindow, 1000);
             })();
         </script>
         @endpush
     @endonce
 
     {{-- Actions --}}
-    @if($order->canCancelEntireOrder())
-        <div class="track-actions">
+    @php
+        // Mirror of the guard in OrderStatusController::cancel() — same
+        // setting, same fallback, same submitted_at base. Rendering the
+        // button past the window just produced a tap that fails server-side,
+        // so we (a) don't render it once expired and (b) ship the deadline
+        // to a JS watchdog that hides it the moment the window closes
+        // between Livewire polls. A window of <= 0 disables customer
+        // cancellation entirely (the controller treats it as expired too).
+        $cancelWindow = (int) \App\Models\Setting::get('customer_cancel_window_seconds', config('restaurant.order.customer_cancel_window_seconds', 120));
+        $cancelBase   = $order->submitted_at ?? $order->created_at;
+        $cancelUntil  = ($cancelWindow > 0 && $cancelBase) ? $cancelBase->getTimestamp() + $cancelWindow : 0;
+        $canStillCancel = $order->canCancelEntireOrder() && $cancelUntil > now()->getTimestamp();
+        // Ship REMAINING seconds, not the absolute epoch: the JS watchdog
+        // anchors the deadline to the diner's own clock, so a device clock
+        // that runs fast/slow can't eat (or extend) the window.
+        $cancelRemaining = max(0, $cancelUntil - now()->getTimestamp());
+    @endphp
+    @if($canStillCancel)
+        <div class="track-actions" data-cancel-remaining="{{ $cancelRemaining }}">
             <button type="button" class="btn-track-cancel" data-bs-toggle="modal" data-bs-target="#cancel{{ $order->id }}">
                 <i class="bi bi-x-circle"></i>
                 {{ __('ui.customer_order.cancel_order') }}
@@ -269,7 +322,7 @@
         </div>
 
         {{-- Cancel modal --}}
-        <div class="modal fade" id="cancel{{ $order->id }}" tabindex="-1">
+        <div class="modal fade" id="cancel{{ $order->id }}" tabindex="-1" data-cancel-remaining="{{ $cancelRemaining }}">
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content" style="border-radius: 20px; border: 0;">
                     <form action="{{ route('customer.orders.cancel', $order) }}" method="POST">@csrf

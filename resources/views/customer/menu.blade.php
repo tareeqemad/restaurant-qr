@@ -321,7 +321,7 @@
                 <div class="sheet-body">
                     {{-- Image with price & featured tag --}}
                     <div class="item-img-wrap">
-                        <img :src="selectedItem.image" :alt="selectedItem.name">
+                        <img :src="selectedItem.image" :alt="selectedItem.name" onerror="window.dishImgFallback && dishImgFallback(this)">
                         <span class="price-tag" x-text="formatMoney(selectedItem.price)"></span>
                     </div>
 
@@ -462,7 +462,7 @@
 
                 <template x-for="row in cart" :key="row.id">
                     <div class="cart-item">
-                        <img :src="row.image" alt="">
+                        <img :src="row.image" alt="" onerror="window.dishImgFallback && dishImgFallback(this)">
                         <div class="flex-grow-1" style="min-width: 0;">
                             <div class="d-flex justify-content-between align-items-start">
                                 <strong class="d-block" x-text="row.name" style="color: var(--brand-dark);"></strong>

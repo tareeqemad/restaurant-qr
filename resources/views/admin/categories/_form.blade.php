@@ -54,7 +54,7 @@
         <span>المظهر البصري</span>
     </div>
     <div class="row g-3">
-        <div class="col-md-4">
+        <div class="col-md-8">
             <label class="form-label">صورة القسم</label>
             <div class="image-upload">
                 @if(!empty($category?->image))
@@ -73,20 +73,42 @@
         </div>
 
         <div class="col-md-4">
-            <label class="form-label">أو رابط صورة (URL)</label>
-            <input type="url" name="image_url" value="{{ old('image_url', (str_starts_with($category->image ?? '', 'http') ? $category->image : '')) }}"
-                class="form-control" dir="ltr" placeholder="https://images.unsplash.com/...">
-            <small class="text-muted">مفيد لاستخدام صور من Unsplash أو CDN</small>
+            <label class="form-label">لون</label>
+            <input type="color" name="color" value="{{ old('color', $category->color ?? '#166534') }}" class="form-control form-control-color" style="width:100%; height:50px;">
         </div>
 
-        <div class="col-md-2">
-            <label class="form-label">لون</label>
-            <input type="color" name="color" value="{{ old('color', $category->color ?? '#1f4733') }}" class="form-control form-control-color" style="width:100%; height:50px;">
-        </div>
-        <div class="col-md-2">
-            <label class="form-label">أيقونة بديلة</label>
-            <input name="icon" value="{{ old('icon', $category->icon ?? '') }}" class="form-control" dir="ltr" placeholder="bi-fire">
-            <small class="text-muted">تُستخدم لو لا توجد صورة</small>
+        {{-- Advanced options — icon class + CDN URL are developer-flavored
+             fields that scare off first-time users, so they live behind a
+             collapse. Auto-expanded when either already carries a value,
+             otherwise the user couldn't see what a colleague configured. --}}
+        @php
+            $advImageUrl = old('image_url', (str_starts_with($category->image ?? '', 'http') ? $category->image : ''));
+            $advIcon     = old('icon', $category->icon ?? '');
+            $advOpen     = ($advImageUrl !== '' && $advImageUrl !== null) || ($advIcon !== '' && $advIcon !== null);
+        @endphp
+        <div class="col-12">
+            <button class="btn btn-sm btn-light border" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#cat-advanced-options"
+                    aria-expanded="{{ $advOpen ? 'true' : 'false' }}" aria-controls="cat-advanced-options">
+                <i class="bi bi-sliders"></i>
+                خيارات متقدمة
+                <i class="bi bi-chevron-down small"></i>
+            </button>
+            <div class="collapse{{ $advOpen ? ' show' : '' }} mt-3" id="cat-advanced-options">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">أو رابط صورة (URL)</label>
+                        <input type="url" name="image_url" value="{{ $advImageUrl }}"
+                            class="form-control" dir="ltr" placeholder="https://images.unsplash.com/...">
+                        <small class="text-muted">مفيد لاستخدام صور من Unsplash أو CDN — يغني عن رفع ملف</small>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">أيقونة بديلة</label>
+                        <input name="icon" value="{{ $advIcon }}" class="form-control" dir="ltr" placeholder="bi-fire">
+                        <small class="text-muted">صنف أيقونة Bootstrap (مثل bi-fire) — تُستخدم لو لا توجد صورة</small>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>

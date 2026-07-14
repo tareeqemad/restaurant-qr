@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Branch;
 use App\Models\Ingredient;
+use App\Models\IngredientBatch;
 use App\Models\IngredientUnit;
 use App\Models\RecipeItem;
 use App\Models\Role;
@@ -15,8 +16,10 @@ use Tests\TestCase;
 
 /**
  * Guards the ingredient create/edit screens — the pages that shipped a Blade
- * ${{{ }}} syntax bug to production (500 on every open). Also locks in #22:
- * cost_per_unit is read-only on edit and update() ignores any posted value.
+ * ${{{ }}} syntax bug to production (500 on every open). Also locks in #22
+ * (day-zero refinement): cost_per_unit stays editable while NO receipt batch
+ * exists (so a 0-cost typo can be repaired before it poisons recipe costing),
+ * then becomes read-only — update() ignores any posted value from then on.
  */
 class IngredientEditTest extends TestCase
 {
@@ -97,10 +100,41 @@ class IngredientEditTest extends TestCase
             ->assertOk();
     }
 
-    /** Update persists editable fields — and #22: cost_per_unit is NOT changed. */
-    public function test_update_persists_and_ignores_cost_per_unit(): void
+    /**
+     * Day-zero window: while no receipt batch exists, update() must accept a
+     * corrected cost — this is the only way to repair the pre-filled 0 that
+     * would otherwise poison every costing report permanently.
+     */
+    public function test_update_allows_cost_correction_while_no_batch_exists(): void
+    {
+        $ing = $this->makeIngredient(['cost_per_unit' => 0]);
+
+        $this->actingAs($this->admin)
+            ->put(route('admin.ingredients.update', $ing), [
+                'name' => 'سكر', 'base_unit_id' => $this->g->id,
+                'reorder_threshold' => 0, 'cost_per_unit' => 7.5,
+                'track_stock' => 1, 'active' => 1,
+            ])
+            ->assertRedirect(route('admin.ingredients.index'));
+
+        $this->assertSame(7.5, (float) $ing->refresh()->cost_per_unit,
+            'cost_per_unit must be editable while the ingredient has no batches.');
+    }
+
+    /** Update persists editable fields — and #22: post-batch, cost_per_unit is NOT changed. */
+    public function test_update_persists_and_ignores_cost_per_unit_after_first_batch(): void
     {
         $ing = $this->makeIngredient(['cost_per_unit' => 5]);
+
+        // First receipt batch — from here on the weighted average is
+        // system-maintained and the manual field must lock.
+        IngredientBatch::create([
+            'ingredient_id' => $ing->id,
+            'received_date' => now()->toDateString(),
+            'initial_qty'   => 1000,
+            'remaining_qty' => 1000,
+            'unit_cost'     => 5,
+        ]);
 
         $this->actingAs($this->admin)
             ->put(route('admin.ingredients.update', $ing), [
@@ -114,6 +148,6 @@ class IngredientEditTest extends TestCase
         $this->assertSame('سكر بني', $ing->name);
         $this->assertSame(100.0, (float) $ing->reorder_threshold);
         $this->assertSame(5.0, (float) $ing->cost_per_unit,
-            'cost_per_unit is system-maintained and must ignore a posted value on edit.');
+            'cost_per_unit is system-maintained once a batch exists and must ignore a posted value on edit.');
     }
 }

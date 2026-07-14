@@ -28,7 +28,8 @@
         @foreach($cart as $row)
             <div class="menu-card p-3 mb-2">
                 <div class="d-flex gap-2">
-                    <img src="{{ $row['image'] }}" width="72" height="72" class="rounded" style="object-fit:cover">
+                    <img src="{{ $row['image'] }}" width="72" height="72" class="rounded" style="object-fit:cover"
+                         onerror="window.dishImgFallback && dishImgFallback(this)">
                     <div class="flex-grow-1">
                         <div class="d-flex justify-content-between">
                             <strong>{{ $row['name'] }}</strong>
