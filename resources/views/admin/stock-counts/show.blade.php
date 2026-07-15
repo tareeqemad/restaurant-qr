@@ -1,6 +1,10 @@
 @extends('layouts.admin')
 @section('title', 'جرد ' . $count->number)
 
+@push('styles')
+    <link rel="stylesheet" href="{{ asset('assets/dashtic/css/stock-count-workspace.css') }}?v={{ filemtime(public_path('assets/dashtic/css/stock-count-workspace.css')) }}">
+@endpush
+
 @php
     $statusMap = [
         'draft'     => ['label' => 'مسودة — قيد العدّ', 'icon' => 'bi-pencil-square', 'cls' => 'sc-st--draft'],

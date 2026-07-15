@@ -1,6 +1,10 @@
 @extends('layouts.admin')
 @section('title', 'التقييمات')
 
+@push('styles')
+    <link rel="stylesheet" href="{{ asset('assets/dashtic/css/reviews-board.css') }}?v={{ filemtime(public_path('assets/dashtic/css/reviews-board.css')) }}">
+@endpush
+
 @section('content')
 <x-admin.breadcrumb title="التقييمات" icon="bi-star"
     subtitle="تقييمات زبائن الفرع — أنت لا تستطيع تحرير الكلمات، لكن يمكنك إخفاء غير اللائق" />

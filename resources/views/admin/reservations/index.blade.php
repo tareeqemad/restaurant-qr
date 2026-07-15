@@ -1,6 +1,10 @@
 @extends('layouts.admin')
 @section('title', 'الحجوزات')
 
+@push('styles')
+    <link rel="stylesheet" href="{{ asset('assets/dashtic/css/reservations-board.css') }}?v={{ filemtime(public_path('assets/dashtic/css/reservations-board.css')) }}">
+@endpush
+
 @section('content')
 <x-admin.breadcrumb title="الحجوزات" icon="bi-calendar-event"
     subtitle="حجوزات الفرع الحالي — تأكيد، جلوس، إغلاق، إلغاء" />

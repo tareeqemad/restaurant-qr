@@ -1,6 +1,10 @@
 @extends('layouts.admin')
 @section('title', 'تسجيل هدر')
 
+@push('styles')
+    <link rel="stylesheet" href="{{ asset('assets/dashtic/css/waste-logger.css') }}?v={{ filemtime(public_path('assets/dashtic/css/waste-logger.css')) }}">
+@endpush
+
 {{--
     NOTE: We intentionally do NOT include public/assets/dashtic/js/relax-waste-logger.js
     here. That legacy file defines `window.wasteLogger` with the OLD shape (no
