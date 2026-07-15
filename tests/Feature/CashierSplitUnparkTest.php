@@ -103,6 +103,30 @@ class CashierSplitUnparkTest extends TestCase
         return [$invoice, $session];
     }
 
+    /**
+     * Merge backbone (Phase 0): the cashier dashboard is session-addressable
+     * via ?session=ID, so every classic money action can redirect back into
+     * the one live screen with the checkout pre-selected — including a CLOSED
+     * session's invoice (the un-park collection target).
+     */
+    public function test_dashboard_deep_links_to_a_session_checkout(): void
+    {
+        $this->actingAs($this->admin);
+        [$invoice, $session] = $this->issueMeal();
+
+        // Active session: the checkout renders in the initial Livewire paint.
+        $this->get(route('admin.cashier.index', ['session' => $session->id]))
+            ->assertOk()
+            ->assertSee($invoice->number);
+
+        // Close the session (as settle/pay would) — the checkout must still
+        // render so an un-parked balance stays collectable from the merged screen.
+        $session->update(['status' => 'closed', 'closed_at' => now()]);
+        $this->get(route('admin.cashier.index', ['session' => $session->id]))
+            ->assertOk()
+            ->assertSee($invoice->number);
+    }
+
     /** Un-park via the route lifts the flag and pulls the balance off the debt ledger. */
     public function test_unpark_route_restores_invoice_to_normal_collection(): void
     {
