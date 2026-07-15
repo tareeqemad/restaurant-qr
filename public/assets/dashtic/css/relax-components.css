@@ -3320,6 +3320,136 @@ body {
     .cx-actions .btn { width: 100%; }
 }
 
+/* ─── Cashier hardening (2026-07) ────────────────────────────────────
+   Shift banner, two-step payment confirm, change-due helper, read-only
+   splits view, cancelled-invoice recovery panel. */
+
+/* No-open-shift warning — slim amber strip above everything. Payments
+   still work (shift_id lands NULL), the strip just makes that loud. */
+.cx-shift-banner {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    padding: .55rem .9rem;
+    margin-bottom: .75rem;
+    border-radius: 10px;
+    background: rgba(245, 158, 11, .12);
+    border: 1px solid rgba(245, 158, 11, .4);
+    color: #92400e;
+    font-size: .85rem;
+    font-weight: 700;
+}
+.cx-shift-banner i { color: #d97706; font-size: 1rem; }
+.cx-shift-banner span { flex: 1; min-width: 0; }
+.cx-shift-banner a {
+    flex-shrink: 0;
+    padding: .25rem .7rem;
+    border-radius: 999px;
+    background: #d97706;
+    color: #fff;
+    font-size: .75rem;
+    text-decoration: none;
+    white-space: nowrap;
+}
+.cx-shift-banner a:hover { background: #b45309; color: #fff; }
+
+/* Two-step payment confirm — replaces the submit button once armed. */
+.cx-pay-confirm {
+    margin-top: .25rem;
+    padding: .7rem .8rem;
+    border: 1px solid rgba(var(--success-rgb), .45);
+    border-radius: 10px;
+    background: rgba(var(--success-rgb), .07);
+}
+.cx-pay-confirm-msg {
+    font-size: .9rem;
+    font-weight: 700;
+    color: rgb(var(--primary-rgb));
+    margin-bottom: .55rem;
+    text-align: center;
+}
+.cx-pay-confirm-msg strong { color: var(--accent); font-size: 1.05rem; }
+.cx-pay-confirm-actions { display: flex; gap: .5rem; }
+.cx-pay-confirm-actions .btn-light { flex: 1; }
+.cx-pay-confirm-actions .cx-btn-lg { flex: 2; margin: 0; }
+
+/* Cash change-due helper — display-only, never POSTed. */
+.cx-change-helper { margin-bottom: .5rem; }
+.cx-change-box {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: .35rem;
+    padding: .4rem .7rem;
+    border-radius: 8px;
+    background: rgba(var(--info-rgb), .1);
+    border: 1px dashed rgba(var(--info-rgb), .45);
+    font-size: .82rem;
+    color: rgb(var(--primary-rgb));
+}
+.cx-change-box strong { font-size: 1rem; color: rgb(var(--info-rgb)); }
+
+/* Split invoice — read-only parts list; collection happens on the classic
+   pay screen's per-split buttons, never through the direct form. */
+.cx-split-notice {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .6rem .8rem;
+    font-size: .84rem;
+    font-weight: 700;
+    color: #92400e;
+    background: rgba(245, 158, 11, .1);
+    border-bottom: 1px solid rgba(245, 158, 11, .3);
+}
+.cx-split-notice i { color: #d97706; }
+.cx-split-list {
+    display: flex;
+    flex-direction: column;
+    gap: .35rem;
+    padding: .6rem .8rem;
+}
+.cx-split-row {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    padding: .45rem .6rem;
+    border: 1px solid var(--cx-border);
+    border-radius: 8px;
+    background: #fff;
+    font-size: .82rem;
+}
+.cx-split-row.is-paid { background: rgba(var(--success-rgb), .06); }
+.cx-split-label { flex: 1; min-width: 0; font-weight: 600; color: rgb(var(--primary-rgb)); }
+.cx-split-manage {
+    display: block;
+    margin: 0 .8rem .7rem;
+    padding: .5rem;
+    border: 1px dashed var(--cx-border);
+    border-radius: 8px;
+    text-align: center;
+    font-size: .82rem;
+    font-weight: 700;
+    color: rgb(var(--primary-rgb));
+    text-decoration: none;
+}
+.cx-split-manage:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Cancelled invoice — honest recovery panel instead of a dead form. */
+.cx-cancelled-note {
+    display: flex;
+    align-items: flex-start;
+    gap: .5rem;
+    margin: .6rem 0;
+    padding: .6rem .8rem;
+    border-radius: 8px;
+    background: rgba(var(--danger-rgb), .07);
+    border: 1px solid rgba(var(--danger-rgb), .25);
+    color: #991b1b;
+    font-size: .82rem;
+}
+.cx-cancelled-note i { color: rgb(var(--danger-rgb)); margin-top: .1rem; }
+
 
 /* ═══════════════════════════════════════════════════════════════════════
    7c. PROFILE PAGE (admin/profile)

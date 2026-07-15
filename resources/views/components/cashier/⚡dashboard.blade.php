@@ -17,6 +17,8 @@ use App\Services\RefundService;
 use App\Support\BranchContext;
 use App\Support\PaymentMethods;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
@@ -71,6 +73,13 @@ new class extends Component
     public string $paymentReference = '';
     public string $paymentNotes = '';
 
+    /** Idempotency token for recordPayment — Livewire has no per-render form
+     *  token like the classic pay form's `_idem`, so the component carries
+     *  one. Both requests of a double-click send the SAME token; the first
+     *  Cache::add claims it, the second is bounced. Rotated after every
+     *  successful payment so the next (legitimate) payment gets a new token. */
+    public string $paymentIdem = '';
+
     // Refund form state
     public bool $refundOpen = false;
     public string $refundAmount = '';
@@ -95,6 +104,7 @@ new class extends Component
         $this->platformCommissionPct = '0';
         $this->paymentMethod = $this->defaultPaymentMethod();
         $this->refundMethod = $this->defaultRefundMethod();
+        $this->paymentIdem = (string) Str::uuid();
     }
 
     // ─── Computed (reactive) ──────────────────────────────────────────
@@ -162,7 +172,7 @@ new class extends Component
             'table',
             'customer.loyaltyCustomer',
             'orders.items.modifiers',
-            'invoice.payments', 'invoice.refunds.processor',
+            'invoice.payments', 'invoice.refunds.processor', 'invoice.splits',
         ])->find($this->selectedSessionId);
 
         // Count the linked customer's lifetime visits — one extra query, only
@@ -180,7 +190,7 @@ new class extends Component
 
         return Order::with([
             'customer', 'items.modifiers',
-            'invoice.payments', 'invoice.refunds.processor',
+            'invoice.payments', 'invoice.refunds.processor', 'invoice.splits',
         ])->find($this->selectedRemoteOrderId);
     }
 
@@ -385,6 +395,35 @@ new class extends Component
         return Refund::ACTIVE_METHODS[0] ?? 'cash';
     }
 
+    // ─── Action guard (same pattern as the kitchen board) ─────────────
+
+    /**
+     * Shared wrapper for money-touching wire actions. Workflow guards throw
+     * RuntimeException with an Arabic message — surface it as a toast instead
+     * of Livewire's full-screen English error modal. Real authorization
+     * failures (authorize/abort 403) and validation errors rethrow so their
+     * native handling (status page / inline @error) stays intact.
+     */
+    protected function guardAction(\Closure $fn): void
+    {
+        try {
+            $fn();
+        } catch (\Illuminate\Auth\Access\AuthorizationException|\Illuminate\Validation\ValidationException $e) {
+            throw $e;
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpExceptionInterface $e) {
+            // Symfony's HttpException IS a RuntimeException — rethrow before
+            // the catch below swallows a real 403/404.
+            throw $e;
+        } catch (\RuntimeException $e) {
+            $this->dispatch('toast', type: 'warning', message: $e->getMessage());
+        } catch (\Throwable $e) {
+            // QueryException & friends: report for the log, keep the screen
+            // Arabic — never paint a raw SQL message at the register.
+            report($e);
+            $this->dispatch('toast', type: 'error', message: 'حدث خطأ غير متوقع — أعد المحاولة أو حدّث الصفحة.');
+        }
+    }
+
     // ─── Actions ──────────────────────────────────────────────────────
 
     public function setViewMode(string $mode): void
@@ -417,12 +456,9 @@ new class extends Component
         $this->reset(['paymentAmount', 'paymentReference', 'paymentNotes', 'refundOpen', 'refundAmount', 'refundReason']);
         $this->paymentMethod = $this->defaultPaymentMethod();
         $this->refundMethod = $this->defaultRefundMethod();
-
-        // Pre-fill amount with balance on the next render
-        $session = $this->selectedSession;
-        if ($session?->invoice && $session->invoice->balance > 0) {
-            $this->paymentAmount = (string) number_format((float) $session->invoice->balance, 2, '.', '');
-        }
+        // NEVER pre-fill the amount: a pre-armed full-balance value plus a
+        // default cash method meant one stray tap took a full payment. The
+        // «المتبقي» preset button is the deliberate one-tap filler instead.
     }
 
     public function selectRemoteOrder(int $id): void
@@ -433,11 +469,7 @@ new class extends Component
         $this->reset(['paymentAmount', 'paymentReference', 'paymentNotes', 'refundOpen', 'refundAmount', 'refundReason']);
         $this->paymentMethod = $this->defaultPaymentMethod();
         $this->refundMethod = $this->defaultRefundMethod();
-
-        $order = $this->selectedRemoteOrder;
-        if ($order?->invoice && $order->invoice->balance > 0) {
-            $this->paymentAmount = (string) number_format((float) $order->invoice->balance, 2, '.', '');
-        }
+        // No amount pre-fill — see selectSession for the WHY.
     }
 
     public function clearSelection(): void
@@ -717,7 +749,7 @@ new class extends Component
             return;
         }
 
-        try {
+        $this->guardAction(function () use ($orders, $billing) {
             $branch = $this->activeBranch();
             $cart = $this->cartRowsForSubmit();
             $customer = null;
@@ -764,8 +796,9 @@ new class extends Component
 
             if ($this->issueInvoiceAfterCreate) {
                 $this->authorize('create', Payment::class);
-                $invoice = $billing->issueInvoiceForOrder($order, auth()->id());
-                $this->paymentAmount = (string) number_format((float) $invoice->balance, 2, '.', '');
+                // Invoice issued, amount left EMPTY on purpose — the cashier
+                // arms the payment via the «المتبقي» preset, never by default.
+                $billing->issueInvoiceForOrder($order, auth()->id());
             }
 
             $this->selectedRemoteOrderId = $order->id;
@@ -775,87 +808,102 @@ new class extends Component
             unset($this->remoteOrders, $this->selectedRemoteOrder);
 
             $this->dispatch('toast', type: 'success', message: "تم إنشاء الطلب {$order->number}");
-        } catch (\Throwable $e) {
-            $this->dispatch('toast', type: 'error', message: $e->getMessage());
-        }
+        });
     }
 
     public function issueRemoteInvoice(BillingService $billing): void
     {
-        $this->authorize('create', Payment::class);
+        $this->guardAction(function () use ($billing) {
+            $this->authorize('create', Payment::class);
 
-        $order = $this->selectedRemoteOrder;
-        if (! $order || $order->invoice) return;
+            $order = $this->selectedRemoteOrder;
+            // A cancelled invoice doesn't block re-issue — BillingService
+            // skips cancelled rows when looking for an existing invoice, and
+            // it refuses (Arabic error) when the ORDER itself is cancelled.
+            if (! $order || ($order->invoice && $order->invoice->status !== 'cancelled')) return;
 
-        try {
-            $invoice = $billing->issueInvoiceForOrder($order, auth()->id());
-            $this->paymentAmount = (string) number_format((float) $invoice->balance, 2, '.', '');
+            $billing->issueInvoiceForOrder($order, auth()->id());
             unset($this->selectedRemoteOrder, $this->remoteOrders);
             $this->dispatch('toast', type: 'success', message: 'تم إصدار الفاتورة');
-        } catch (\Throwable $e) {
-            $this->dispatch('toast', type: 'error', message: $e->getMessage());
-        }
+        });
     }
 
     public function issueInvoice(BillingService $billing): void
     {
-        $this->authorize('create', Payment::class);
+        $this->guardAction(function () use ($billing) {
+            $this->authorize('create', Payment::class);
 
-        $session = $this->selectedSession;
-        if (!$session || $session->invoice) return;
+            $session = $this->selectedSession;
+            // Same re-issue-after-cancel rule as issueRemoteInvoice above.
+            if (!$session || ($session->invoice && $session->invoice->status !== 'cancelled')) return;
 
-        try {
             $billing->issueInvoice($session, auth()->id());
             $this->dispatch('toast', type: 'success', message: 'تم إصدار الفاتورة');
-            unset($this->selectedSession);   // bust cache
-            $session = $this->selectedSession;
-            if ($session?->invoice) {
-                $this->paymentAmount = (string) number_format((float) $session->invoice->balance, 2, '.', '');
-            }
-        } catch (\Throwable $e) {
-            $this->dispatch('toast', type: 'error', message: $e->getMessage());
-        }
+            unset($this->selectedSession, $this->sessions);   // bust cache
+            // Amount stays empty — the «المتبقي» preset is the deliberate filler.
+        });
     }
 
     public function recordPayment(BillingService $billing): void
     {
-        $this->authorize('create', Payment::class);
+        $this->guardAction(function () use ($billing) {
+            $this->authorize('create', Payment::class);
 
-        $this->validate([
-            'paymentAmount' => ['required', 'numeric', 'min:0.01'],
-            'paymentMethod' => ['required', Rule::in($this->enabledPaymentMethods())],
-        ], attributes: [
-            'paymentAmount' => 'قيمة الدفعة',
-            'paymentMethod' => 'طريقة الدفع',
-        ]);
+            $this->validate([
+                'paymentAmount' => ['required', 'numeric', 'min:0.01'],
+                'paymentMethod' => ['required', Rule::in($this->enabledPaymentMethods())],
+            ], attributes: [
+                'paymentAmount' => 'قيمة الدفعة',
+                'paymentMethod' => 'طريقة الدفع',
+            ]);
 
-        $invoice = $this->activeInvoice();
-        if (!$invoice) {
-            $this->dispatch('toast', type: 'error', message: 'لم تُصدر الفاتورة بعد');
-            return;
-        }
+            $invoice = $this->activeInvoice();
+            if (!$invoice) {
+                $this->dispatch('toast', type: 'error', message: 'لم تُصدر الفاتورة بعد');
+                return;
+            }
 
-        try {
-            $billing->addPayment(
-                $invoice,
-                (float) $this->paymentAmount,
-                $this->paymentMethod,
-                auth()->id(),
-                $this->paymentReference ?: null,
-                $this->paymentNotes ?: null,
-            );
+            // Split invoices are collected ONLY via the per-split buttons on
+            // the classic page — a direct payment here would shrink the
+            // balance and strand the (now-too-large) splits as unpayable.
+            if ($invoice->splits()->exists()) {
+                $this->dispatch('toast', type: 'warning', message: 'الفاتورة مقسّمة — حصّل من أزرار الأجزاء في صفحة الجلسة.');
+                return;
+            }
+
+            // Idempotency — mirrors CashierController::pay's `_idem` guard. A
+            // genuine double-submit of ONE partial payment posts twice and
+            // neither exceeds the balance, so nothing else rejects the dupe.
+            // First request claims the token; the second bounces here.
+            $token = $this->paymentIdem;
+            if ($token !== '' && ! Cache::add('idem:pay:'.$token, true, now()->addMinutes(10))) {
+                $this->dispatch('toast', type: 'warning', message: 'تم تسجيل هذه الدفعة بالفعل — مُنع إرسال مكرر.');
+                return;
+            }
+
+            try {
+                $billing->addPayment(
+                    $invoice,
+                    (float) $this->paymentAmount,
+                    $this->paymentMethod,
+                    auth()->id(),
+                    $this->paymentReference ?: null,
+                    $this->paymentNotes ?: null,
+                );
+            } catch (\Throwable $e) {
+                // Release the claimed token so a legitimate retry after a
+                // failure (e.g. amount > balance) isn't bounced as a dupe.
+                if ($token !== '') Cache::forget('idem:pay:'.$token);
+                throw $e;
+            }
+
+            $this->paymentIdem = (string) Str::uuid();   // next payment = fresh token
             $this->dispatch('toast', type: 'success', message: "تم تسجيل دفعة بقيمة {$this->paymentAmount}");
             $this->reset(['paymentAmount', 'paymentReference', 'paymentNotes']);
             unset($this->selectedSession, $this->selectedRemoteOrder, $this->remoteOrders);
-
-            // Pre-fill with new balance (in case of partial payment, customer may pay again)
-            $invoice = $this->activeInvoice();
-            if ($invoice && (float) $invoice->balance > 0) {
-                $this->paymentAmount = (string) number_format((float) $invoice->balance, 2, '.', '');
-            }
-        } catch (\Throwable $e) {
-            $this->dispatch('toast', type: 'error', message: $e->getMessage());
-        }
+            // NO balance re-fill after a partial payment — the cashier arms
+            // the next payment deliberately via the «المتبقي» preset.
+        });
     }
 
     public function openRefund(): void
@@ -878,20 +926,26 @@ new class extends Component
 
     public function submitRefund(RefundService $refundService): void
     {
-        $this->validate([
-            'refundAmount' => ['required', 'numeric', 'min:0.01'],
-            'refundMethod' => ['required', Rule::in(Refund::ACTIVE_METHODS)],
-            'refundReason' => ['required', 'string', 'max:500'],
-        ], attributes: [
-            'refundAmount' => 'المبلغ',
-            'refundMethod' => 'طريقة الاسترداد',
-            'refundReason' => 'السبب',
-        ]);
+        $this->guardAction(function () use ($refundService) {
+            // Same gate as the controller path (RefundController::store) —
+            // this was the only refund surface without it. abort_unless is
+            // the hard fallback in case the policy mapping ever goes missing.
+            abort_unless(auth()->user()?->can('create', Refund::class), 403);
+            $this->authorize('create', Refund::class);
 
-        $invoice = $this->activeInvoice();
-        if (!$invoice) return;
+            $this->validate([
+                'refundAmount' => ['required', 'numeric', 'min:0.01'],
+                'refundMethod' => ['required', Rule::in(Refund::ACTIVE_METHODS)],
+                'refundReason' => ['required', 'string', 'max:500'],
+            ], attributes: [
+                'refundAmount' => 'المبلغ',
+                'refundMethod' => 'طريقة الاسترداد',
+                'refundReason' => 'السبب',
+            ]);
 
-        try {
+            $invoice = $this->activeInvoice();
+            if (!$invoice) return;
+
             $refundService->issue(
                 $invoice,
                 (float) $this->refundAmount,
@@ -902,9 +956,7 @@ new class extends Component
             $this->dispatch('toast', type: 'success', message: "تم تسجيل استرداد {$this->refundAmount}");
             $this->closeRefund();
             unset($this->selectedSession, $this->selectedRemoteOrder, $this->remoteOrders);
-        } catch (\Throwable $e) {
-            $this->dispatch('toast', type: 'error', message: $e->getMessage());
-        }
+        });
     }
 
     // ─── Discount (cashier-applied) ───────────────────────────────────
@@ -960,7 +1012,7 @@ new class extends Component
             'name'               => $this->discountName,
         ];
 
-        try {
+        $this->guardAction(function () use ($service, $payload) {
             if ($this->selectedRemoteOrderId) {
                 $order = $this->selectedRemoteOrder;
                 if (! $order) throw new \RuntimeException('الطلب غير محدد.');
@@ -977,16 +1029,12 @@ new class extends Component
             $this->closeDiscount();
 
             // Bust the cached computed properties so the totals refresh from
-            // the new order/invoice state on the next render.
+            // the new order/invoice state on the next render. The typed
+            // amount is cleared (NOT re-filled) — it now points at a stale
+            // balance and re-arming must stay a deliberate cashier action.
             unset($this->selectedSession, $this->selectedRemoteOrder, $this->remoteOrders);
-
-            $invoice = $this->activeInvoice();
-            if ($invoice && (float) $invoice->balance > 0) {
-                $this->paymentAmount = (string) number_format((float) $invoice->balance, 2, '.', '');
-            }
-        } catch (\Throwable $e) {
-            $this->dispatch('toast', type: 'error', message: $e->getMessage());
-        }
+            $this->paymentAmount = '';
+        });
     }
 
     public function removeDiscount(int $discountId, \App\Services\OrderDiscountService $service): void
@@ -998,18 +1046,14 @@ new class extends Component
         }
         $this->authorize('remove', $discount);
 
-        try {
+        $this->guardAction(function () use ($discount, $service) {
             $service->remove($discount, auth()->user());
             $this->dispatch('toast', type: 'success', message: 'تم إزالة الخصم');
             unset($this->selectedSession, $this->selectedRemoteOrder, $this->remoteOrders);
-
-            $invoice = $this->activeInvoice();
-            if ($invoice && (float) $invoice->balance > 0) {
-                $this->paymentAmount = (string) number_format((float) $invoice->balance, 2, '.', '');
-            }
-        } catch (\Throwable $e) {
-            $this->dispatch('toast', type: 'error', message: $e->getMessage());
-        }
+            // Clear (don't re-fill) — the balance just changed under the
+            // typed amount; see submitDiscount for the WHY.
+            $this->paymentAmount = '';
+        });
     }
 
     /**
@@ -1072,14 +1116,12 @@ new class extends Component
         $session = $this->selectedSession;
         if (! $session) return;
 
-        try {
+        $this->guardAction(function () use ($billing, $session) {
             $billing->closeSessionWithoutBilling($session, auth()->id(), 'إغلاق من الكاشير');
             $this->dispatch('toast', type: 'success', message: 'تم إغلاق الجلسة وتحرير الطاولة');
             $this->clearSelection();
             unset($this->sessions, $this->selectedSession);
-        } catch (\Throwable $e) {
-            $this->dispatch('toast', type: 'error', message: $e->getMessage());
-        }
+        });
     }
 
     /**
@@ -1117,7 +1159,7 @@ new class extends Component
     #[On('echo-private:waiters,.table.status_changed')]
     public function refreshFromBroadcast(): void
     {
-        unset($this->sessions, $this->selectedSession, $this->billStats, $this->pendingTransfersCount);
+        unset($this->sessions, $this->selectedSession, $this->billStats, $this->pendingTransfersCount, $this->hasOpenShift);
     }
 
     /**
@@ -1148,7 +1190,7 @@ new class extends Component
             return;
         }
 
-        try {
+        $this->guardAction(function () use ($session) {
             $existing = Customer::findForLogin($session->customer_phone);
             if ($existing) {
                 $session->update(['customer_id' => $existing->id]);
@@ -1172,9 +1214,7 @@ new class extends Component
             }
 
             $this->refreshFromBroadcast();
-        } catch (Throwable $e) {
-            $this->dispatch('toast', type: 'error', message: 'تعذّر إنشاء الحساب: '.$e->getMessage());
-        }
+        });
     }
 
     public function dismissPinAlert(): void
@@ -1228,6 +1268,27 @@ new class extends Component
     {
         return \App\Models\PendingTransfer::where('status', 'pending')->count();
     }
+
+    /**
+     * True when the current user has an open shift to attribute payments to.
+     * Mirrors the exact lookup BillingService::addPayment stamps shift_id
+     * with. Display-only: payments stay allowed without a shift (they land
+     * with shift_id = NULL and never show in any drawer/X-report), the
+     * banner just makes that consequence loud before the money moves.
+     */
+    #[Computed]
+    public function hasOpenShift(): bool
+    {
+        // User-keyed and UNSCOPED — a cashier has at most one open drawer
+        // anywhere, and BillingService::addPayment resolves that shift the
+        // same way. A branch-scoped check here would flash "no open shift"
+        // while the operator's drawer (opened under another branch context)
+        // silently absorbs the payment — the two must agree.
+        return \App\Models\Shift::withoutGlobalScope(\App\Models\Scopes\BranchScope::class)
+            ->where('user_id', auth()->id())
+            ->where('status', 'open')
+            ->exists();
+    }
 }
 ?>
 
@@ -1243,6 +1304,17 @@ new class extends Component
      data-bill-red="{{ $billStats['red'] }}"
      data-remote-unpaid="{{ $billStats['remote_unpaid'] }}"
      data-pending-transfers="{{ $this->pendingTransfersCount }}">
+    {{-- Shift-awareness banner — a payment recorded with no open shift gets
+         shift_id = NULL and silently vanishes from every drawer/X-report.
+         Warn loudly but DON'T block: emergency collection beats bookkeeping
+         (blocking is a policy decision, out of scope here). --}}
+    @unless($this->hasOpenShift)
+        <div class="cx-shift-banner">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            <span>لا توجد وردية مفتوحة — الدفعات لن تُنسب لأي درج.</span>
+            <a href="{{ route('admin.shifts.index') }}">افتح وردية الآن ←</a>
+        </div>
+    @endunless
     {{-- Bank-transfer alert strip — customer/waiter-claimed transfers waiting
          for the cashier to confirm against the bank. Links straight to the
          verification queue so the cashier isn't left hunting for it. --}}
@@ -1756,6 +1828,7 @@ new class extends Component
                             $identity = $order->customer_name ?: $order->customer?->name ?: $order->customer_phone ?: $order->external_reference ?: 'زبون غير محدد';
                         @endphp
                         <button type="button"
+                            wire:key="cx-remote-card-{{ $order->id }}"
                             wire:click="selectRemoteOrder({{ $order->id }})"
                             class="cx-session-card {{ $selectedRemoteOrderId === $order->id ? 'is-active' : '' }} {{ $invoice ? 'has-invoice' : '' }}">
                             <div class="cx-session-head">
@@ -1804,6 +1877,7 @@ new class extends Component
                         $openMin = (int) $s->opened_at->diffInMinutes(now());
                     @endphp
                     <button type="button"
+                        wire:key="cx-session-card-{{ $s->id }}"
                         wire:click="selectSession({{ $s->id }})"
                         class="cx-session-card {{ $selectedSessionId === $s->id ? 'is-active' : '' }} {{ $invoice ? 'has-invoice' : '' }} {{ $billRequested ? 'has-bill-request' : '' }} {{ $billUrgency ? 'cx-urg-'.$billUrgency : '' }}">
                         <div class="cx-session-head">
@@ -1892,7 +1966,7 @@ new class extends Component
                                 @endif
                             </div>
                         </div>
-                        <button wire:click="clearSelection" class="btn btn-sm btn-light">
+                        <button type="button" wire:click="clearSelection" class="btn btn-sm btn-light">
                             <i class="bi bi-x-lg"></i>
                         </button>
                     </div>
@@ -1920,7 +1994,7 @@ new class extends Component
                                             <span class="badge bg-{{ $remoteOrder->statusColor() }}">{{ $remoteOrder->statusLabel() }}</span>
                                         </div>
                                         @foreach($remoteOrder->items as $it)
-                                            <div class="cx-item {{ $it->status==='cancelled' ? 'is-cancelled' : '' }}">
+                                            <div class="cx-item {{ $it->status==='cancelled' ? 'is-cancelled' : '' }}" wire:key="cx-ritem-{{ $it->id }}">
                                                 <span class="cx-item-qty">×{{ $it->quantity }}</span>
                                                 <span class="cx-item-name">{{ $it->name_snapshot }}</span>
                                                 @if($it->modifiers->count())
@@ -1947,7 +2021,7 @@ new class extends Component
                                             <strong>{{ \App\Helpers\Money::format($remoteOrder->total) }}</strong>
                                         </div>
                                     </div>
-                                    <button wire:click="issueRemoteInvoice" wire:loading.attr="disabled" class="cx-btn-lg cx-btn-primary">
+                                    <button type="button" wire:click="issueRemoteInvoice" wire:loading.attr="disabled" class="cx-btn-lg cx-btn-primary">
                                         <i class="bi bi-receipt"></i>
                                         <span wire:loading.remove wire:target="issueRemoteInvoice">إصدار الفاتورة</span>
                                         <span wire:loading wire:target="issueRemoteInvoice">جاري...</span>
@@ -1955,6 +2029,38 @@ new class extends Component
                                 </div>
 
                                 @include('components.cashier._discount-panel')
+                            @elseif($invoice->status === 'cancelled')
+                                {{-- Cancelled invoice — used to be a dead panel. Re-issue is
+                                     legal while the ORDER is alive (BillingService skips
+                                     cancelled invoices); a cancelled order can't be re-billed,
+                                     so say that honestly instead of showing a broken button. --}}
+                                <div class="cx-section">
+                                    <div class="cx-invoice-head">
+                                        <div>
+                                            <small class="text-muted">رقم الفاتورة</small>
+                                            <div class="fw-bold" style="font-family: 'Courier New', monospace;">{{ $invoice->number }}</div>
+                                        </div>
+                                        <span class="badge bg-{{ $invoice->statusColor() }}">{{ $invoice->statusLabel() }}</span>
+                                    </div>
+                                    @if($remoteOrder->status === \App\Enums\OrderStatus::Cancelled->value)
+                                        <div class="cx-cancelled-note">
+                                            <i class="bi bi-slash-circle"></i>
+                                            الطلب والفاتورة ملغيان — لا يمكن إعادة إصدار فاتورة لطلب ملغي. أنشئ طلباً جديداً إذا رجع الزبون.
+                                        </div>
+                                    @else
+                                        <div class="cx-cancelled-note">
+                                            <i class="bi bi-slash-circle"></i>
+                                            هذه الفاتورة ملغاة — أصدر فاتورة جديدة لمتابعة التحصيل.
+                                        </div>
+                                        <button type="button" wire:click="issueRemoteInvoice"
+                                                wire:confirm="إعادة إصدار فاتورة جديدة لهذا الطلب؟"
+                                                wire:loading.attr="disabled" class="cx-btn-lg cx-btn-primary">
+                                            <i class="bi bi-arrow-repeat"></i>
+                                            <span wire:loading.remove wire:target="issueRemoteInvoice">إعادة إصدار الفاتورة</span>
+                                            <span wire:loading wire:target="issueRemoteInvoice">جاري...</span>
+                                        </button>
+                                    @endif
+                                </div>
                             @else
                                 <div class="cx-section">
                                     <div class="cx-invoice-head">
@@ -1990,7 +2096,34 @@ new class extends Component
                                 @include('components.cashier._discount-panel')
 
                                 @if($invoice->balance > 0)
-                                    <div class="cx-section">
+                                    @if($invoice->splits->isNotEmpty())
+                                        {{-- Split invoice — a direct payment here shrinks the balance
+                                             and strands the (now-too-large) splits as unpayable, so the
+                                             form is replaced by a read-only splits view (same rule as
+                                             the classic pay screen). --}}
+                                        <div class="cx-section">
+                                            <div class="cx-split-notice">
+                                                <i class="bi bi-diagram-3-fill"></i>
+                                                الفاتورة مقسّمة — حصّل من أزرار الأجزاء.
+                                            </div>
+                                            <div class="cx-split-list">
+                                                @foreach($invoice->splits as $split)
+                                                    <div class="cx-split-row {{ $split->paid ? 'is-paid' : '' }}" wire:key="cx-rsplit-{{ $split->id }}">
+                                                        <span class="cx-split-label">{{ $split->label ?: 'جزء' }}</span>
+                                                        <strong>{{ \App\Helpers\Money::format($split->amount) }}</strong>
+                                                        @if($split->paid)
+                                                            <span class="cx-status-pill cx-status-paid"><i class="bi bi-check-circle-fill"></i> مدفوع</span>
+                                                        @else
+                                                            <span class="cx-status-pill cx-status-due">غير مدفوع</span>
+                                                        @endif
+                                                    </div>
+                                                @endforeach
+                                            </div>
+                                        </div>
+                                    @else
+                                    <div class="cx-section"
+                                         wire:key="cx-rpayzone-{{ $invoice->id }}-{{ number_format((float) $invoice->balance, 2, '.', '') }}"
+                                         x-data="cxPayConfirm({ balance: {{ (float) $invoice->balance }} })">
                                         <div class="cx-section-head"><strong><i class="bi bi-cash-stack"></i> تسجيل دفعة</strong></div>
                                         <div class="cx-presets">
                                             <button type="button" wire:click="setAmount('{{ number_format((float) $invoice->balance, 2, '.', '') }}')" class="cx-preset cx-preset-primary">
@@ -1999,9 +2132,15 @@ new class extends Component
                                             </button>
                                         </div>
                                         <div class="cx-amount-wrap">
-                                            <input type="number" step="0.01" min="0.01" wire:model.blur="paymentAmount" class="cx-amount-input" placeholder="0.00" autocomplete="off">
+                                            <input type="number" step="0.01" min="0.01"
+                                                   wire:model.blur="paymentAmount"
+                                                   x-ref="amt"
+                                                   @input="amtLive = $event.target.value"
+                                                   @keydown.enter.prevent="arm()"
+                                                   class="cx-amount-input" placeholder="0.00" autocomplete="off">
                                             <span class="cx-amount-symbol">{{ \App\Models\Setting::get('currency_symbol', config('restaurant.currency_symbol')) }}</span>
                                         </div>
+                                        @error('paymentAmount') <small class="text-danger d-block mb-2">{{ $message }}</small> @enderror
                                         <div class="cx-methods">
                                             @foreach($this->paymentMethods as $m => $meta)
                                                 <button type="button" wire:click="setMethod('{{ $m }}')" class="cx-method {{ $paymentMethod === $m ? 'is-active' : '' }}">
@@ -2011,20 +2150,48 @@ new class extends Component
                                         </div>
                                         @if($paymentMethod !== 'cash')
                                             <input type="text" wire:model.blur="paymentReference" placeholder="رقم المرجع (اختياري)" class="form-control mb-2">
+                                        @else
+                                            {{-- Cash tendered → change-due. Display-only: no wire:model,
+                                                 never POSTed (same helper as the classic pay screen). --}}
+                                            <div class="cx-change-helper">
+                                                <input type="number" step="0.01" min="0" inputmode="decimal"
+                                                       x-model="tendered" @keydown.enter.prevent="arm()"
+                                                       class="form-control" placeholder="المبلغ المستلم نقداً (لحساب الباقي)">
+                                                <div class="cx-change-box" x-show="changeDue() > 0" x-cloak>
+                                                    <span>الباقي (فكة)</span>
+                                                    <strong x-text="changeDue().toFixed(2)"></strong>
+                                                </div>
+                                            </div>
                                         @endif
-                                        <button wire:click="recordPayment" wire:loading.attr="disabled" class="cx-btn-lg cx-btn-success">
+                                        {{-- Two-step confirm: this button only ARMS. The payment fires
+                                             from the explicit تأكيد below — kills the armed-gun failure
+                                             mode where one stray tap took a full cash payment. --}}
+                                        <button type="button" x-show="!confirming" @click="arm()" class="cx-btn-lg cx-btn-success">
                                             <i class="bi bi-check-circle-fill"></i>
-                                            <span wire:loading.remove wire:target="recordPayment">تأكيد الدفعة</span>
-                                            <span wire:loading wire:target="recordPayment">جاري التسجيل...</span>
+                                            <span>تأكيد الدفعة</span>
                                         </button>
+                                        <div class="cx-pay-confirm" x-show="confirming" x-cloak>
+                                            <div class="cx-pay-confirm-msg">
+                                                تأكيد قبض <strong x-text="fmtAmt()"></strong> {{ $this->paymentMethods[$paymentMethod]['label'] ?? $paymentMethod }}؟
+                                            </div>
+                                            <div class="cx-pay-confirm-actions">
+                                                <button type="button" @click="confirming = false" class="btn btn-light">إلغاء</button>
+                                                <button type="button" wire:click="recordPayment" wire:loading.attr="disabled" wire:target="recordPayment" class="cx-btn-lg cx-btn-success">
+                                                    <i class="bi bi-check-circle-fill"></i>
+                                                    <span wire:loading.remove wire:target="recordPayment">تأكيد</span>
+                                                    <span wire:loading wire:target="recordPayment">جاري التسجيل...</span>
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
+                                    @endif
                                 @endif
 
                                 @if($invoice->payments->count())
                                     <div class="cx-section">
                                         <div class="cx-section-head"><strong><i class="bi bi-clock-history"></i> سجل الدفعات</strong></div>
                                         @foreach($invoice->payments as $p)
-                                            <div class="cx-payment-row">
+                                            <div class="cx-payment-row" wire:key="cx-rpay-{{ $p->id }}">
                                                 <strong>{{ \App\Helpers\Money::format($p->amount) }}</strong>
                                                 <small class="text-muted">{{ \App\Support\PaymentMethods::label($p->method) }} · {{ $p->paid_at?->format('H:i') ?? $p->created_at->format('H:i') }}</small>
                                             </div>
@@ -2068,7 +2235,7 @@ new class extends Component
                             @endif
                         </div>
                     </div>
-                    <button wire:click="clearSelection" class="btn btn-sm btn-light">
+                    <button type="button" wire:click="clearSelection" class="btn btn-sm btn-light">
                         <i class="bi bi-x-lg"></i>
                     </button>
                 </div>
@@ -2183,13 +2350,13 @@ new class extends Component
                             </div>
                             <div class="cx-orders">
                                 @foreach($session->orders as $order)
-                                    <div class="cx-order">
+                                    <div class="cx-order" wire:key="cx-order-{{ $order->id }}">
                                         <div class="cx-order-head">
                                             <strong>{{ $order->number }}</strong>
                                             <span class="badge bg-{{ $order->statusColor() }}">{{ $order->statusLabel() }}</span>
                                         </div>
                                         @foreach($order->items as $it)
-                                            <div class="cx-item {{ $it->status==='cancelled' ? 'is-cancelled' : '' }}">
+                                            <div class="cx-item {{ $it->status==='cancelled' ? 'is-cancelled' : '' }}" wire:key="cx-item-{{ $it->id }}">
                                                 <span class="cx-item-qty">×{{ $it->quantity }}</span>
                                                 <span class="cx-item-name">{{ $it->name_snapshot }}</span>
                                                 @if($it->modifiers->count())
@@ -2248,7 +2415,7 @@ new class extends Component
                                         <span wire:loading wire:target="closeSessionWithoutBilling">جارٍ الإغلاق…</span>
                                     </button>
                                 @else
-                                    <button wire:click="issueInvoice" wire:loading.attr="disabled" class="cx-btn-lg cx-btn-primary">
+                                    <button type="button" wire:click="issueInvoice" wire:loading.attr="disabled" class="cx-btn-lg cx-btn-primary">
                                         <i class="bi bi-receipt"></i>
                                         <span wire:loading.remove>إصدار الفاتورة</span>
                                         <span wire:loading>جارٍ...</span>
@@ -2259,6 +2426,30 @@ new class extends Component
                             @unless($this->canCloseWithoutBilling)
                                 @include('components.cashier._discount-panel')
                             @endunless
+                        @elseif($invoice->status === 'cancelled')
+                            {{-- Cancelled invoice — used to be a dead panel. issueInvoice
+                                 permits re-issue: BillingService skips cancelled rows when
+                                 looking for the session's existing invoice. --}}
+                            <div class="cx-section">
+                                <div class="cx-invoice-head">
+                                    <div>
+                                        <small class="text-muted">رقم الفاتورة</small>
+                                        <div class="fw-bold" style="font-family: 'Courier New', monospace;">{{ $invoice->number }}</div>
+                                    </div>
+                                    <span class="badge bg-{{ $invoice->statusColor() }}">{{ $invoice->statusLabel() }}</span>
+                                </div>
+                                <div class="cx-cancelled-note">
+                                    <i class="bi bi-slash-circle"></i>
+                                    هذه الفاتورة ملغاة — أصدر فاتورة جديدة لمتابعة التحصيل.
+                                </div>
+                                <button type="button" wire:click="issueInvoice"
+                                        wire:confirm="إعادة إصدار فاتورة جديدة لهذه الجلسة؟"
+                                        wire:loading.attr="disabled" class="cx-btn-lg cx-btn-primary">
+                                    <i class="bi bi-arrow-repeat"></i>
+                                    <span wire:loading.remove wire:target="issueInvoice">إعادة إصدار الفاتورة</span>
+                                    <span wire:loading wire:target="issueInvoice">جارٍ...</span>
+                                </button>
+                            </div>
                         @else
                             {{-- Invoice totals + payment --}}
                             <div class="cx-section">
@@ -2306,7 +2497,37 @@ new class extends Component
 
                             {{-- Payment keypad --}}
                             @if($invoice->balance > 0)
-                                <div class="cx-section">
+                                @if($invoice->splits->isNotEmpty())
+                                    {{-- Split invoice — same rule as the classic pay screen: a
+                                         direct payment shrinks the balance and strands the
+                                         (now-too-large) splits as unpayable. Read-only view +
+                                         handoff link; split management stays on the classic page. --}}
+                                    <div class="cx-section">
+                                        <div class="cx-split-notice">
+                                            <i class="bi bi-diagram-3-fill"></i>
+                                            الفاتورة مقسّمة — حصّل من أزرار الأجزاء.
+                                        </div>
+                                        <div class="cx-split-list">
+                                            @foreach($invoice->splits as $split)
+                                                <div class="cx-split-row {{ $split->paid ? 'is-paid' : '' }}" wire:key="cx-split-{{ $split->id }}">
+                                                    <span class="cx-split-label">{{ $split->label ?: 'جزء' }}</span>
+                                                    <strong>{{ \App\Helpers\Money::format($split->amount) }}</strong>
+                                                    @if($split->paid)
+                                                        <span class="cx-status-pill cx-status-paid"><i class="bi bi-check-circle-fill"></i> مدفوع</span>
+                                                    @else
+                                                        <span class="cx-status-pill cx-status-due">غير مدفوع</span>
+                                                    @endif
+                                                </div>
+                                            @endforeach
+                                        </div>
+                                        <a href="{{ route('admin.cashier.show', $session) }}" class="cx-split-manage">
+                                            <i class="bi bi-sliders"></i> إدارة التقسيم
+                                        </a>
+                                    </div>
+                                @else
+                                <div class="cx-section"
+                                     wire:key="cx-payzone-{{ $invoice->id }}-{{ number_format((float) $invoice->balance, 2, '.', '') }}"
+                                     x-data="cxPayConfirm({ balance: {{ (float) $invoice->balance }} })">
                                     <div class="cx-section-head"><strong><i class="bi bi-cash-stack"></i> تسجيل دفعة</strong></div>
 
                                     {{-- Quick amount presets --}}
@@ -2326,11 +2547,14 @@ new class extends Component
                                     </div>
 
                                     {{-- Amount input — wire:model.blur so digits don't trigger
-                                         per-keystroke server round-trips. The "تأكيد الدفعة" click
-                                         still commits the latest value automatically. --}}
+                                         per-keystroke server round-trips. Enter ARMS the confirm
+                                         step (never submits directly). --}}
                                     <div class="cx-amount-wrap">
                                         <input type="number" step="0.01" min="0.01"
                                             wire:model.blur="paymentAmount"
+                                            x-ref="amt"
+                                            @input="amtLive = $event.target.value"
+                                            @keydown.enter.prevent="arm()"
                                             class="cx-amount-input"
                                             placeholder="0.00"
                                             autocomplete="off">
@@ -2354,16 +2578,42 @@ new class extends Component
                                         <input type="text" wire:model.blur="paymentReference"
                                             placeholder="رقم المرجع (اختياري)"
                                             class="form-control mb-2">
+                                    @else
+                                        {{-- Cash tendered → change-due. Display-only: no wire:model,
+                                             never POSTed (same helper as the classic pay screen). --}}
+                                        <div class="cx-change-helper">
+                                            <input type="number" step="0.01" min="0" inputmode="decimal"
+                                                   x-model="tendered" @keydown.enter.prevent="arm()"
+                                                   class="form-control" placeholder="المبلغ المستلم نقداً (لحساب الباقي)">
+                                            <div class="cx-change-box" x-show="changeDue() > 0" x-cloak>
+                                                <span>الباقي (فكة)</span>
+                                                <strong x-text="changeDue().toFixed(2)"></strong>
+                                            </div>
+                                        </div>
                                     @endif
 
-                                    {{-- Submit --}}
-                                    <button wire:click="recordPayment" wire:loading.attr="disabled"
-                                        class="cx-btn-lg cx-btn-success">
+                                    {{-- Two-step confirm: this button only ARMS. The payment fires
+                                         from the explicit تأكيد below — kills the armed-gun failure
+                                         mode where one stray tap took a full cash payment. --}}
+                                    <button type="button" x-show="!confirming" @click="arm()" class="cx-btn-lg cx-btn-success">
                                         <i class="bi bi-check-circle-fill"></i>
-                                        <span wire:loading.remove>تأكيد الدفعة</span>
-                                        <span wire:loading>جارٍ التسجيل...</span>
+                                        <span>تأكيد الدفعة</span>
                                     </button>
+                                    <div class="cx-pay-confirm" x-show="confirming" x-cloak>
+                                        <div class="cx-pay-confirm-msg">
+                                            تأكيد قبض <strong x-text="fmtAmt()"></strong> {{ $this->paymentMethods[$paymentMethod]['label'] ?? $paymentMethod }}؟
+                                        </div>
+                                        <div class="cx-pay-confirm-actions">
+                                            <button type="button" @click="confirming = false" class="btn btn-light">إلغاء</button>
+                                            <button type="button" wire:click="recordPayment" wire:loading.attr="disabled" wire:target="recordPayment" class="cx-btn-lg cx-btn-success">
+                                                <i class="bi bi-check-circle-fill"></i>
+                                                <span wire:loading.remove wire:target="recordPayment">تأكيد</span>
+                                                <span wire:loading wire:target="recordPayment">جارٍ التسجيل...</span>
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
+                                @endif
                             @endif
 
                             {{-- Payment history --}}
@@ -2371,7 +2621,7 @@ new class extends Component
                                 <div class="cx-section">
                                     <div class="cx-section-head"><strong><i class="bi bi-clock-history"></i> سجل الدفعات</strong></div>
                                     @foreach($invoice->payments as $p)
-                                        <div class="cx-payment-row">
+                                        <div class="cx-payment-row" wire:key="cx-pay-{{ $p->id }}">
                                             <div>
                                                 <strong>{{ \App\Helpers\Money::format($p->amount) }}</strong>
                                                 <span class="badge bg-secondary ms-1">{{ \App\Support\PaymentMethods::label($p->method) }}</span>
@@ -2398,50 +2648,63 @@ new class extends Component
                                 @endif
                             </div>
 
-                            {{-- Refund modal --}}
-                            @if($refundOpen)
-                                <div class="cx-modal-overlay" wire:click.self="closeRefund">
-                                    <div class="cx-modal">
-                                        <div class="cx-modal-head">
-                                            <strong>استرداد مبلغ</strong>
-                                            <button wire:click="closeRefund" class="btn-close"></button>
-                                        </div>
-                                        <div class="p-3">
-                                            <div class="mb-2">
-                                                <label class="form-label small">المبلغ</label>
-                                                <input type="number" step="0.01" min="0.01"
-                                                    wire:model="refundAmount" class="form-control">
-                                                @error('refundAmount') <small class="text-danger">{{ $message }}</small> @enderror
-                                            </div>
-                                            <div class="mb-2">
-                                                <label class="form-label small">الطريقة</label>
-                                                <select wire:model="refundMethod" class="form-select">
-                                                    @foreach($this->refundMethods as $method => $label)
-                                                        <option value="{{ $method }}">{{ $label }}</option>
-                                                    @endforeach
-                                                </select>
-                                            </div>
-                                            <div class="mb-2">
-                                                <label class="form-label small">السبب</label>
-                                                <textarea wire:model="refundReason" class="form-control" rows="2" placeholder="سبب الاسترداد..."></textarea>
-                                                @error('refundReason') <small class="text-danger">{{ $message }}</small> @enderror
-                                            </div>
-                                            <div class="d-flex gap-2 mt-3">
-                                                <button wire:click="closeRefund" class="btn btn-light flex-grow-1">تراجع</button>
-                                                <button wire:click="submitRefund" class="btn btn-danger flex-grow-2" style="flex: 2;">
-                                                    <i class="bi bi-arrow-counterclockwise"></i> تأكيد الاسترداد
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            @endif
                         @endif
                     </div>
                 </div>
             @endif
         </main>
     </div>
+    @endif
+
+    {{-- Refund modal — component-root level so it works from BOTH the session
+         and the remote-order detail (it used to live inside the session branch
+         only, leaving the remote «استرداد» button a dead end). --}}
+    @if($refundOpen)
+        <div class="cx-modal-overlay" wire:click.self="closeRefund">
+            <div class="cx-modal">
+                <div class="cx-modal-head">
+                    <strong>استرداد مبلغ</strong>
+                    <button type="button" wire:click="closeRefund" class="btn-close"></button>
+                </div>
+                <div class="p-3">
+                    <div class="mb-2">
+                        <label class="form-label small">المبلغ</label>
+                        <input type="number" step="0.01" min="0.01"
+                            wire:model="refundAmount" class="form-control">
+                        @error('refundAmount') <small class="text-danger">{{ $message }}</small> @enderror
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">الطريقة</label>
+                        <select wire:model="refundMethod" class="form-select">
+                            @foreach($this->refundMethods as $method => $label)
+                                <option value="{{ $method }}">{{ $label }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">السبب</label>
+                        <textarea wire:model="refundReason" class="form-control" rows="2" placeholder="سبب الاسترداد..."></textarea>
+                        @error('refundReason') <small class="text-danger">{{ $message }}</small> @enderror
+                    </div>
+                    <div class="d-flex gap-2 mt-3">
+                        <button type="button" wire:click="closeRefund" class="btn btn-light flex-grow-1">تراجع</button>
+                        {{-- Double-submit: Alpine one-shot covers the gap before
+                             Livewire flips wire:loading; the 2.5s auto-release keeps
+                             a failed validation retryable. Server idempotency is the
+                             service layer's job — this is the client half only. --}}
+                        <button type="button"
+                                x-data="{ armed: false }"
+                                @click="if (armed) return; armed = true; setTimeout(() => armed = false, 2500); $wire.submitRefund()"
+                                wire:loading.attr="disabled" wire:target="submitRefund"
+                                class="btn btn-danger flex-grow-2" style="flex: 2;">
+                            <i class="bi bi-arrow-counterclockwise"></i>
+                            <span wire:loading.remove wire:target="submitRefund">تأكيد الاسترداد</span>
+                            <span wire:loading wire:target="submitRefund">جارٍ...</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
     @endif
 
     {{-- Toast --}}
@@ -2612,6 +2875,59 @@ window.cashierCartLine = function (config) {
             const v = Math.max(1, Number(this.qty) || 1);
             this.qty = v;
             this.$wire.set(`newOrderItems.${this.wireIdx}.quantity`, v);
+        },
+    };
+};
+</script>
+
+{{--
+    cxPayConfirm() — payment-zone Alpine helper (two-step confirm + change-due)
+
+    The section's wire:key embeds the invoice BALANCE, so any server-side
+    balance change (payment landed, discount applied) replaces the element
+    and re-inits this component — confirming/tendered reset for free and
+    `balance` is never stale.
+
+    Reads the amount from the DOM input (not a mirrored model) because the
+    «المتبقي» preset updates the input via a Livewire morph that fires no
+    input event — the DOM value is the single source of truth. `amtLive`
+    exists only to give Alpine a reactive dependency while typing.
+--}}
+<script>
+window.cxPayConfirm = function (config) {
+    return {
+        confirming: false,
+        amtLive: '',
+        tendered: '',
+        balance: Number(config.balance) || 0,
+
+        init() {
+            this.amtLive = this.$refs.amt?.value ?? '';
+        },
+
+        /** Arm the confirm step — never records anything by itself. */
+        arm() {
+            const v = parseFloat(this.$refs.amt?.value);
+            if (!isFinite(v) || v < 0.01) { this.$refs.amt?.focus(); return; }
+            this.amtLive = this.$refs.amt.value;
+            this.confirming = true;
+        },
+
+        /** Amount shown inside «تأكيد قبض …؟» — the raw typed value (the
+         *  server re-validates against the balance anyway). */
+        fmtAmt() {
+            const v = parseFloat(this.amtLive);
+            return isFinite(v) ? v.toFixed(2) : '0.00';
+        },
+
+        /** Cash change = tendered − applied, where applied is capped at the
+         *  balance (same math as the classic pay screen). Display-only. */
+        changeDue() {
+            this.amtLive; // reactive dep so the box follows amount edits
+            const t = parseFloat(this.tendered);
+            const applied = Math.min(parseFloat(this.$refs.amt?.value) || 0, this.balance);
+            if (!isFinite(t) || applied <= 0 || t <= applied) return 0;
+            return t - applied;
         },
     };
 };

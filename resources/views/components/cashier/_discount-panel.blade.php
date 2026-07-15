@@ -45,7 +45,7 @@
     @if($discounts->count())
         <div class="cx-discount-list">
             @foreach($discounts as $d)
-                <div class="cx-discount-row">
+                <div class="cx-discount-row" wire:key="cx-disc-{{ $d->id }}">
                     <div class="cx-discount-row__main">
                         <div class="d-flex align-items-center gap-2">
                             <span class="cx-discount-pill">
