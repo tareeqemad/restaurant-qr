@@ -2608,34 +2608,108 @@ new class extends Component
 
                             @include('components.cashier._discount-panel')
 
-                            {{-- Payment keypad --}}
+                            @php
+                                // ── Split lifecycle (Group C) — the dashboard now OWNS splits;
+                                //    the classic «إدارة التقسيم» handoff is gone. Computed once and
+                                //    shared by the manager rows, the create/edit triggers, and the
+                                //    builder modal. NO money logic lives here: every mutation is a
+                                //    native <form> POST to the SAME hardened routes (split /
+                                //    split.pay / split.clear), each carrying return_session.
+                                $splitPaidCount = $invoice->splits->where('paid', true)->count();
+                                // Regroup / clear only while NOTHING is paid — a paid split is anchored
+                                // to a committed payment (the controller 422s a late edit; splitInvoice
+                                // refuses once any payment exists). Both controls vanish once a part pays.
+                                $splitsEditable = $invoice->splits->isNotEmpty()
+                                    && $splitPaidCount === 0
+                                    && $invoice->payments->isEmpty();
+                                // The builder modal is shared by CREATE (no splits yet) and EDIT
+                                // (unpaid splits, pre-filled). Hidden the moment any part is paid.
+                                $splitBuilderOpen = $invoice->splits->isEmpty() || $splitsEditable;
+                                $splitExistingRows = $invoice->splits
+                                    ->map(fn ($sp) => ['label' => $sp->label, 'amount' => (float) $sp->amount, 'method' => $sp->method])
+                                    ->values();
+                                // paySplit stamps «دفعة جزء: {label}» on its payment note — match on
+                                // that + amount to surface the reference back on the paid row (there is
+                                // no schema link split→payment). Same lookup as the classic page.
+                                $splitRefFor = fn ($sp) => $invoice->payments
+                                    ->first(fn ($p) => $p->notes === 'دفعة جزء: '.$sp->label
+                                        && abs((float) $p->amount - (float) $sp->amount) < 0.005)
+                                    ?->reference;
+                                $splitMethods = collect($this->paymentMethods)
+                                    ->map(fn ($meta, $code) => ['code' => $code, 'label' => $meta['label']])
+                                    ->values();
+                                $splitDefaultMethod = $splitMethods->first()['code'] ?? 'cash';
+                                $canManageSplits = (bool) auth()->user()?->can('create', \App\Models\Payment::class);
+                            @endphp
+
+                            {{-- Payment keypad XOR split manager (Group C — mutually exclusive) --}}
                             @if($invoice->balance > 0)
                                 @if($invoice->splits->isNotEmpty())
-                                    {{-- Split invoice — same rule as the classic pay screen: a
-                                         direct payment shrinks the balance and strands the
-                                         (now-too-large) splits as unpayable. Read-only view +
-                                         handoff link; split management stays on the classic page. --}}
-                                    <div class="cx-section">
-                                        <div class="cx-split-notice">
-                                            <i class="bi bi-diagram-3-fill"></i>
-                                            الفاتورة مقسّمة — حصّل من أزرار الأجزاء.
+                                    {{-- ═══════ Split manager (Group C) ═══════
+                                         Mutual exclusion with the single-pay keypad is preserved: while
+                                         splits exist the direct-pay form (the @else below) stays hidden
+                                         and collection happens ONLY through the per-split pay forms here —
+                                         a direct payment would shrink the balance and strand the (now
+                                         too-large) splits as unpayable. Each pay form POSTs to the SAME
+                                         paySplit route so its «دفعة جزء: {label}» note stamp — the mark
+                                         voidPayment matches to un-mark a split — is still produced. --}}
+                                    <div class="cx-section" wire:key="cx-splitmgr-{{ $session->id }}-{{ $invoice->id }}">
+                                        <div class="cx-section-head d-flex justify-content-between align-items-center">
+                                            <strong><i class="bi bi-diagram-3-fill"></i> تقسيم الفاتورة</strong>
+                                            <span class="small text-muted">مدفوع {{ $splitPaidCount }}/{{ $invoice->splits->count() }}</span>
                                         </div>
                                         <div class="cx-split-list">
                                             @foreach($invoice->splits as $split)
                                                 <div class="cx-split-row {{ $split->paid ? 'is-paid' : '' }}" wire:key="cx-split-{{ $split->id }}">
+                                                    {{-- Label auto-escaped by Blade {{ }} — stored-XSS safe. --}}
                                                     <span class="cx-split-label">{{ $split->label ?: 'جزء' }}</span>
-                                                    <strong>{{ \App\Helpers\Money::format($split->amount) }}</strong>
-                                                    @if($split->paid)
-                                                        <span class="cx-status-pill cx-status-paid"><i class="bi bi-check-circle-fill"></i> مدفوع</span>
-                                                    @else
-                                                        <span class="cx-status-pill cx-status-due">غير مدفوع</span>
-                                                    @endif
+                                                    <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end">
+                                                        <span class="badge bg-light text-dark border">{{ \App\Support\PaymentMethods::label($split->method) }}</span>
+                                                        <strong>{{ \App\Helpers\Money::format($split->amount) }}</strong>
+                                                        @if($split->paid)
+                                                            <span class="cx-status-pill cx-status-paid"><i class="bi bi-check-circle-fill"></i> مدفوع</span>
+                                                            @if($paidRef = $splitRefFor($split))
+                                                                <span class="badge bg-light text-dark border" dir="ltr" title="رقم المرجع">#{{ $paidRef }}</span>
+                                                            @endif
+                                                        @elseif($canManageSplits)
+                                                            {{-- Inline pay → the SAME paySplit route; @csrf + return_session.
+                                                                 Reference input only for traceable methods (cash has no slip). --}}
+                                                            <form method="POST"
+                                                                  action="{{ route('admin.cashier.split.pay', ['invoice' => $invoice, 'split' => $split]) }}"
+                                                                  class="d-inline-flex align-items-center gap-1 m-0">
+                                                                @csrf
+                                                                <input type="hidden" name="return_session" value="{{ $session->id }}">
+                                                                @if(in_array($split->method, ['card', 'transfer'], true))
+                                                                    <input name="reference" maxlength="255" class="form-control form-control-sm"
+                                                                           style="width:128px" placeholder="رقم المرجع (اختياري)">
+                                                                @endif
+                                                                <button class="btn btn-sm btn-success"><i class="bi bi-check-lg"></i> دفع</button>
+                                                            </form>
+                                                        @else
+                                                            <span class="cx-status-pill cx-status-due">غير مدفوع</span>
+                                                        @endif
+                                                    </div>
                                                 </div>
                                             @endforeach
                                         </div>
-                                        <a href="{{ route('admin.cashier.show', $session) }}" class="cx-split-manage">
-                                            <i class="bi bi-sliders"></i> إدارة التقسيم
-                                        </a>
+
+                                        @if($splitsEditable && $canManageSplits)
+                                            {{-- Regroup + clear — only while nothing is paid (mirrors the
+                                                 controller's 422 guard; both vanish once a part is paid). --}}
+                                            <div class="d-flex gap-2 mt-2">
+                                                <button type="button" class="btn btn-sm btn-outline-primary flex-fill"
+                                                        data-bs-toggle="modal" data-bs-target="#splitModal{{ $session->id }}">
+                                                    <i class="bi bi-pencil"></i> تعديل التقسيم
+                                                </button>
+                                                <form method="POST" action="{{ route('admin.cashier.split.clear', $invoice) }}"
+                                                      class="flex-fill m-0"
+                                                      onsubmit="return confirm('إزالة التقسيم بالكامل؟')">
+                                                    @csrf @method('DELETE')
+                                                    <input type="hidden" name="return_session" value="{{ $session->id }}">
+                                                    <button class="btn btn-sm btn-outline-secondary w-100"><i class="bi bi-x-lg"></i> إزالة التقسيم</button>
+                                                </form>
+                                            </div>
+                                        @endif
                                     </div>
                                 @else
                                 <div class="cx-section"
@@ -2726,6 +2800,119 @@ new class extends Component
                                         </div>
                                     </div>
                                 </div>
+
+                                @if($canManageSplits)
+                                    {{-- Split the bill — opens the SAME builder modal used for editing.
+                                         Offered only while no splits exist yet (this @else branch); once
+                                         splits exist the manager above replaces this whole keypad. --}}
+                                    <button type="button" class="btn btn-outline-primary w-100 mt-2"
+                                            data-bs-toggle="modal" data-bs-target="#splitModal{{ $session->id }}">
+                                        <i class="bi bi-diagram-3"></i> تقسيم الفاتورة على عدة أشخاص
+                                    </button>
+                                @endif
+                                @endif
+
+                                {{-- Split builder modal — shared by CREATE (no splits) + EDIT (unpaid,
+                                     pre-filled). Bootstrap modal (already loaded), session-scoped id, and
+                                     wire:ignore.self so a wire:poll morph doesn't slam it shut mid-edit.
+                                     The dynamic rows sit in a wire:ignore container so a morph can't wipe
+                                     typed rows. Submit is a native POST to admin.cashier.split (create OR
+                                     replace) — the service enforces an EXACT sum (no 0.01 tolerance), which
+                                     the builder's floor-share + remainder-on-last-row math reproduces. --}}
+                                @if($splitBuilderOpen && $canManageSplits)
+                                    <div class="modal fade" id="splitModal{{ $session->id }}" tabindex="-1"
+                                         wire:ignore.self wire:key="cx-splitmodal-{{ $session->id }}">
+                                        <div class="modal-dialog modal-lg"><div class="modal-content">
+                                            <form method="POST" action="{{ route('admin.cashier.split', $invoice) }}"
+                                                  x-data="cxSplitBuilder({ total: {{ number_format((float) $invoice->total, 2, '.', '') }}, existing: @js($splitExistingRows), defaultMethod: @js($splitDefaultMethod) })">
+                                                @csrf
+                                                <input type="hidden" name="return_session" value="{{ $session->id }}">
+                                                <div class="modal-header">
+                                                    <h5 class="mb-0">
+                                                        <i class="bi bi-diagram-3-fill"></i>
+                                                        {{ $splitsEditable ? 'تعديل تقسيم الفاتورة' : 'تقسيم الفاتورة' }}
+                                                        — {{ \App\Helpers\Money::format($invoice->total) }}
+                                                    </h5>
+                                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                </div>
+                                                <div class="modal-body">
+                                                    @if($splitsEditable)
+                                                        <div class="alert alert-warning small py-2 mb-2">
+                                                            <i class="bi bi-exclamation-triangle"></i>
+                                                            الحفظ يستبدل التقسيم الحالي بالكامل (لا يوجد جزء مدفوع بعد).
+                                                        </div>
+                                                    @endif
+
+                                                    {{-- One-tap equal presets + add a row --}}
+                                                    <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
+                                                        <span class="small text-muted">بالتساوي:</span>
+                                                        @foreach([2, 3, 4] as $n)
+                                                            <button type="button" class="btn btn-sm btn-light border" @click="equal({{ $n }})">×{{ $n }}</button>
+                                                        @endforeach
+                                                        <button type="button" class="btn btn-sm btn-light border ms-auto" @click="addRow()">
+                                                            <i class="bi bi-plus"></i> إضافة جزء
+                                                        </button>
+                                                    </div>
+
+                                                    {{-- Dynamic rows — wire:ignore so a poll morph mid-edit can't
+                                                         wipe typed rows. Labels bind via Alpine x-model (the value
+                                                         property, never innerHTML) so a «"><script>»-style label
+                                                         can't inject markup — the stored-XSS protection is preserved. --}}
+                                                    <div class="table-responsive" wire:ignore>
+                                                        <table class="table table-sm align-middle mb-2">
+                                                            <thead>
+                                                                <tr>
+                                                                    <th style="min-width:110px">التسمية</th>
+                                                                    <th style="width:120px">المبلغ</th>
+                                                                    <th style="width:130px">الدفع</th>
+                                                                    <th style="width:40px"></th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                <template x-for="(row, i) in rows" :key="i">
+                                                                    <tr>
+                                                                        <td><input type="text" maxlength="255" class="form-control form-control-sm"
+                                                                                   x-model="row.label" :name="`splits[${i}][label]`"></td>
+                                                                        <td><input type="number" step="0.01" min="0.01" class="form-control form-control-sm text-end"
+                                                                                   x-model="row.amount" :name="`splits[${i}][amount]`"></td>
+                                                                        <td>
+                                                                            <select class="form-select form-select-sm" x-model="row.method" :name="`splits[${i}][method]`">
+                                                                                @foreach($splitMethods as $m)
+                                                                                    <option value="{{ $m['code'] }}">{{ $m['label'] }}</option>
+                                                                                @endforeach
+                                                                            </select>
+                                                                        </td>
+                                                                        <td><button type="button" class="btn btn-sm btn-outline-danger"
+                                                                                    @click="removeRow(i)" :disabled="rows.length <= 2"><i class="bi bi-x"></i></button></td>
+                                                                    </tr>
+                                                                </template>
+                                                            </tbody>
+                                                            <tfoot>
+                                                                <tr>
+                                                                    <th>الإجمالي</th>
+                                                                    <th colspan="3">
+                                                                        <span x-text="sum().toFixed(2)" :class="balanced() ? 'text-success fw-bold' : 'text-danger fw-bold'"></span>
+                                                                        / <strong>{{ number_format((float) $invoice->total, 2, '.', '') }}</strong>
+                                                                    </th>
+                                                                </tr>
+                                                            </tfoot>
+                                                        </table>
+                                                    </div>
+                                                    <div class="small text-danger" x-show="!balanced()" x-cloak>
+                                                        <i class="bi bi-exclamation-circle"></i>
+                                                        يجب أن يساوي مجموع الأجزاء إجمالي الفاتورة تماماً قبل الحفظ.
+                                                    </div>
+                                                </div>
+                                                <div class="modal-footer">
+                                                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">تراجع</button>
+                                                    <button type="submit" class="btn btn-primary" :disabled="!balanced()">
+                                                        <i class="bi bi-scissors"></i>
+                                                        {{ $splitsEditable ? 'استبدال التقسيم' : 'حفظ التقسيم' }}
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        </div></div>
+                                    </div>
                                 @endif
                             @endif
 
@@ -3245,6 +3432,88 @@ window.cxPayConfirm = function (config) {
             const applied = Math.min(parseFloat(this.$refs.amt?.value) || 0, this.balance);
             if (!isFinite(t) || applied <= 0 || t <= applied) return 0;
             return t - applied;
+        },
+    };
+};
+</script>
+
+{{--
+    cxSplitBuilder() — split-modal Alpine helper (Group C)
+
+    Lifted from the classic show.blade.php split module (splitEqual /
+    addSplitRow / updateSplitSum), rewritten as a scoped Alpine component so
+    multiple session morphs never collide on global function names or element
+    ids. Defined ONCE on window (like cxPayConfirm) so a wire:poll morph never
+    re-declares it; each modal instantiates its own state via x-data.
+
+    The equal-split math is IDENTICAL to the classic: a floor-share to every
+    row with the rounding remainder dropped on the LAST row, so the shares sum
+    to the invoice total EXACTLY — BillingService::splitInvoice rejects any
+    mismatch with NO 0.01 tolerance.
+
+    Labels are bound through x-model (the input's value property) and never
+    interpolated into innerHTML, so the classic escapeHtml stored-XSS fix is
+    preserved structurally — there is no HTML sink to inject into.
+--}}
+<script>
+window.cxSplitBuilder = function (config) {
+    return {
+        total: Number(config.total) || 0,
+        defaultMethod: config.defaultMethod || 'cash',
+        rows: [],
+
+        init() {
+            const existing = Array.isArray(config.existing) ? config.existing : [];
+            if (existing.length) {
+                // EDIT mode — open pre-filled with the current grouping.
+                this.rows = existing.map((r) => ({
+                    label: r.label ?? '',
+                    amount: Number(r.amount).toFixed(2),
+                    method: r.method || this.defaultMethod,
+                }));
+            } else {
+                // CREATE mode — start on an equal 2-way split, ready to save.
+                this.equal(2);
+            }
+        },
+
+        addRow() {
+            this.rows.push({ label: 'الشخص ' + (this.rows.length + 1), amount: '', method: this.defaultMethod });
+        },
+
+        removeRow(i) {
+            // The controller requires at least 2 shares — never drop below.
+            if (this.rows.length <= 2) return;
+            this.rows.splice(i, 1);
+        },
+
+        /**
+         * Equal split — floor-share to every row, remainder on the LAST, so the
+         * sum equals the total EXACTLY (the service enforces this, no tolerance).
+         * Identical math to the classic splitEqual().
+         */
+        equal(n) {
+            n = parseInt(n) || 2;
+            const share = Math.floor((this.total / n) * 100) / 100;
+            const remainder = +(this.total - share * n).toFixed(2);
+            const built = [];
+            for (let k = 0; k < n; k++) {
+                built.push({
+                    label: 'الشخص ' + (k + 1),
+                    amount: (k === n - 1 ? share + remainder : share).toFixed(2),
+                    method: this.defaultMethod,
+                });
+            }
+            this.rows = built;
+        },
+
+        sum() {
+            return this.rows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+        },
+
+        /** Save is armed only when the shares add up to the total (±0.005). */
+        balanced() {
+            return Math.abs(this.sum() - this.total) < 0.005;
         },
     };
 };

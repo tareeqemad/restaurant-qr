@@ -280,7 +280,12 @@ class CashierController extends Controller
 
         try {
             $this->billing->splitInvoice($invoice, $data['splits']);
-            return back()->with('success', 'تم تقسيم الفاتورة');
+
+            return $this->redirectAfterInvoiceAction(
+                $request,
+                'تم تقسيم الفاتورة',
+                fn () => back()->with('success', 'تم تقسيم الفاتورة'),
+            );
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
         }
@@ -295,13 +300,18 @@ class CashierController extends Controller
         $data = $request->validate(['reference' => ['nullable', 'string', 'max:255']]);
         try {
             $this->billing->paySplit($split, auth()->id(), $data['reference'] ?? null);
-            return back()->with('success', "تم دفع جزء {$split->label}");
+
+            return $this->redirectAfterInvoiceAction(
+                $request,
+                "تم دفع جزء {$split->label}",
+                fn () => back()->with('success', "تم دفع جزء {$split->label}"),
+            );
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
         }
     }
 
-    public function clearSplits(Invoice $invoice)
+    public function clearSplits(Request $request, Invoice $invoice)
     {
         $this->authorize('create', Payment::class);
         // Lock + re-check inside a transaction: a bare exists()-then-delete
@@ -318,7 +328,12 @@ class CashierController extends Controller
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
         }
-        return back()->with('success', 'تم إلغاء التقسيم');
+
+        return $this->redirectAfterInvoiceAction(
+            $request,
+            'تم إلغاء التقسيم',
+            fn () => back()->with('success', 'تم إلغاء التقسيم'),
+        );
     }
 
     public function applyDiscountToOrder(Request $request, Order $order, OrderDiscountService $service)
