@@ -13,8 +13,10 @@ use App\Models\Invoice;
 use App\Models\InvoiceSplit;
 use App\Models\Order;
 use App\Models\Payment;
+use App\Models\Scopes\BranchScope;
 use App\Models\TableSession;
 use App\Services\Accounting\AccountingService;
+use App\Support\BranchContext;
 use Illuminate\Support\Facades\DB;
 
 class BillingService
@@ -69,266 +71,306 @@ class BillingService
     public function issueInvoice(TableSession $session, int $userId): Invoice
     {
         return DB::transaction(function () use ($session, $userId) {
-            $session = TableSession::whereKey($session->id)
+            // Resolve by exact id WITHOUT the viewer's BranchScope, then pin
+            // every inner read/write to the SESSION's branch. An operator
+            // switched into another branch used to miss the existing-invoice
+            // check below (the scoped query found nothing) and issue a
+            // duplicate invoice over the same orders.
+            $session = TableSession::withoutGlobalScope(BranchScope::class)
+                ->whereKey($session->id)
                 ->with('table')
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $existingInvoice = $session->invoice()
-                ->where('status', '!=', 'cancelled')
-                ->latest()
-                ->first();
+            return BranchContext::forBranch($session->branch_id, function () use ($session, $userId) {
+                $existingInvoice = $session->invoice()
+                    ->where('status', '!=', 'cancelled')
+                    ->latest()
+                    ->first();
 
-            if ($existingInvoice) {
-                return $existingInvoice;
-            }
+                if ($existingInvoice) {
+                    return $existingInvoice;
+                }
 
-            $pendingOrders = $session->orders()
-                ->where('status', OrderStatus::Pending->value)
-                ->get();
-            $this->approvePendingOrders($pendingOrders, $userId);
+                $pendingOrders = $session->orders()
+                    ->where('status', OrderStatus::Pending->value)
+                    ->get();
+                $this->approvePendingOrders($pendingOrders, $userId);
 
-            $orders = $session->orders()
-                ->where('status', '!=', OrderStatus::Cancelled->value)
-                ->with('items')
-                ->get();
+                $orders = $session->orders()
+                    ->where('status', '!=', OrderStatus::Cancelled->value)
+                    ->with('items')
+                    ->get();
 
-            if ($orders->isEmpty()) {
-                throw new \RuntimeException('لا توجد طلبات نشطة للفوترة');
-            }
+                if ($orders->isEmpty()) {
+                    throw new \RuntimeException('لا توجد طلبات نشطة للفوترة');
+                }
 
-            $this->settleStockForOrders($orders);
+                $this->settleStockForOrders($orders);
 
-            $subtotal = (float) $orders->sum('subtotal');
-            $discountTotal = (float) $orders->sum('discount_total');
-            $taxTotal = (float) $orders->sum('tax_total');
-            $serviceTotal = (float) $orders->sum('service_total');
-            $deliveryFee = (float) $orders->sum('delivery_fee');
-            $tip = (float) $orders->sum('tip');
-            $total = (float) $orders->sum('total');
+                $subtotal = (float) $orders->sum('subtotal');
+                $discountTotal = (float) $orders->sum('discount_total');
+                $taxTotal = (float) $orders->sum('tax_total');
+                $serviceTotal = (float) $orders->sum('service_total');
+                $deliveryFee = (float) $orders->sum('delivery_fee');
+                $tip = (float) $orders->sum('tip');
+                $total = (float) $orders->sum('total');
 
-            $invoice = Invoice::create([
-                'branch_id' => $session->branch_id,
-                'table_session_id' => $session->id,
-                'customer_id' => $session->customer_id,
-                'issued_by_user_id' => $userId,
-                'subtotal' => Money::round($subtotal),
-                'discount_total' => Money::round($discountTotal),
-                'tax_total' => Money::round($taxTotal),
-                'service_total' => Money::round($serviceTotal),
-                'delivery_fee' => Money::round($deliveryFee),
-                'tip' => Money::round($tip),
-                'total' => Money::round($total),
-                'balance' => Money::round($total),
-                'status' => 'issued',
-                'customer_name' => $session->customer_name,
-                'customer_phone' => $session->customer_phone,
-                'issued_at' => now(),
-            ]);
-
-            $session->update([
-                'bill_requested_at' => null,
-                'bill_request_note' => null,
-            ]);
-
-            ActivityLog::log('invoice.issued', "إصدار فاتورة {$invoice->number} للطاولة {$session->table->number}", $invoice, [
-                'total' => (float) $invoice->total,
-                'orders_count' => $orders->count(),
-            ]);
-
-            app(AccountingService::class)->recordInvoiceIssued($invoice);
-
-            // Zero-total invoice (fully comped / discounted) — nothing to
-            // collect. Auto-mark paid + close the session so the table is
-            // freed and the cashier doesn't get stuck on a $0 invoice that
-            // the payment form refuses to accept (min amount 0.01).
-            if (Money::round($total) <= 0.001) {
-                $invoice->update([
-                    'status' => 'paid',
-                    'paid_total' => 0,
-                    'balance' => 0,
-                    'paid_at' => now(),
+                $invoice = Invoice::create([
+                    'branch_id' => $session->branch_id,
+                    'table_session_id' => $session->id,
+                    'customer_id' => $session->customer_id,
+                    'issued_by_user_id' => $userId,
+                    'subtotal' => Money::round($subtotal),
+                    'discount_total' => Money::round($discountTotal),
+                    'tax_total' => Money::round($taxTotal),
+                    'service_total' => Money::round($serviceTotal),
+                    'delivery_fee' => Money::round($deliveryFee),
+                    'tip' => Money::round($tip),
+                    'total' => Money::round($total),
+                    'balance' => Money::round($total),
+                    'status' => 'issued',
+                    'customer_name' => $session->customer_name,
+                    'customer_phone' => $session->customer_phone,
+                    'issued_at' => now(),
                 ]);
-                $this->closeOrdersAndSession($invoice);
-                SafeBroadcast::dispatch(new InvoicePaid($invoice->refresh()->load('tableSession.table')));
-                ActivityLog::log('invoice.zero_auto_closed', "إغلاق تلقائي لفاتورة صفرية {$invoice->number}", $invoice);
-            }
 
-            return $invoice;
+                $session->update([
+                    'bill_requested_at' => null,
+                    'bill_request_note' => null,
+                ]);
+
+                ActivityLog::log('invoice.issued', "إصدار فاتورة {$invoice->number} للطاولة {$session->table->number}", $invoice, [
+                    'total' => (float) $invoice->total,
+                    'orders_count' => $orders->count(),
+                ]);
+
+                app(AccountingService::class)->recordInvoiceIssued($invoice);
+
+                // Zero-total invoice (fully comped / discounted) — nothing to
+                // collect. Auto-mark paid + close the session so the table is
+                // freed and the cashier doesn't get stuck on a $0 invoice that
+                // the payment form refuses to accept (min amount 0.01).
+                if (Money::round($total) <= 0.001) {
+                    $invoice->update([
+                        'status' => 'paid',
+                        'paid_total' => 0,
+                        'balance' => 0,
+                        'paid_at' => now(),
+                    ]);
+                    $this->closeOrdersAndSession($invoice);
+                    SafeBroadcast::dispatch(new InvoicePaid($invoice->refresh()->load('tableSession.table')));
+                    ActivityLog::log('invoice.zero_auto_closed', "إغلاق تلقائي لفاتورة صفرية {$invoice->number}", $invoice);
+                }
+
+                return $invoice;
+            });
         });
     }
 
     public function issueInvoiceForOrder(Order $order, int $userId): Invoice
     {
         return DB::transaction(function () use ($order, $userId) {
-            $order = Order::whereKey($order->id)
+            // Same cross-branch pin as issueInvoice(): exact-id resolve
+            // without the viewer scope, then run on the ORDER's branch so
+            // the duplicate-invoice check can't no-op from another branch.
+            $order = Order::withoutGlobalScope(BranchScope::class)
+                ->whereKey($order->id)
                 ->with(['customer', 'items'])
                 ->lockForUpdate()
                 ->firstOrFail();
 
             if ($order->table_session_id) {
-                return $this->issueInvoice($order->tableSession, $userId);
+                // Resolve the session unscoped too — the scoped relation
+                // returns null cross-branch and would nullpointer here.
+                $session = $order->tableSession()
+                    ->withoutGlobalScope(BranchScope::class)
+                    ->firstOrFail();
+                return $this->issueInvoice($session, $userId);
             }
 
-            $existingInvoice = $order->invoice()
-                ->where('status', '!=', 'cancelled')
-                ->latest()
-                ->first();
+            return BranchContext::forBranch($order->branch_id, function () use ($order, $userId) {
+                $existingInvoice = $order->invoice()
+                    ->where('status', '!=', 'cancelled')
+                    ->latest()
+                    ->first();
 
-            if ($existingInvoice) {
-                return $existingInvoice;
-            }
+                if ($existingInvoice) {
+                    return $existingInvoice;
+                }
 
-            if ($order->status === OrderStatus::Cancelled->value) {
-                throw new \RuntimeException('لا يمكن إصدار فاتورة لطلب ملغي.');
-            }
+                if ($order->status === OrderStatus::Cancelled->value) {
+                    throw new \RuntimeException('لا يمكن إصدار فاتورة لطلب ملغي.');
+                }
 
-            if ($order->items->isEmpty()) {
-                throw new \RuntimeException('لا توجد أصناف داخل هذا الطلب.');
-            }
+                if ($order->items->isEmpty()) {
+                    throw new \RuntimeException('لا توجد أصناف داخل هذا الطلب.');
+                }
 
-            if ($order->status === OrderStatus::Pending->value) {
-                $this->approvePendingOrders(collect([$order]), $userId);
-                $order = $order->refresh()->load('items');
-            }
+                if ($order->status === OrderStatus::Pending->value) {
+                    $this->approvePendingOrders(collect([$order]), $userId);
+                    $order = $order->refresh()->load('items');
+                }
 
-            $this->settleStockForOrders([$order]);
+                $this->settleStockForOrders([$order]);
 
-            $invoice = Invoice::create([
-                'branch_id' => $order->branch_id,
-                'table_session_id' => null,
-                'order_id' => $order->id,
-                'customer_id' => $order->customer_id,
-                'issued_by_user_id' => $userId,
-                'subtotal' => Money::round((float) $order->subtotal),
-                'discount_total' => Money::round((float) $order->discount_total),
-                'tax_total' => Money::round((float) $order->tax_total),
-                'service_total' => Money::round((float) $order->service_total),
-                'delivery_fee' => Money::round((float) $order->delivery_fee),
-                'tip' => Money::round((float) $order->tip),
-                'total' => Money::round((float) $order->total),
-                'balance' => Money::round((float) $order->total),
-                'status' => 'issued',
-                'customer_name' => $order->customer_name ?: $order->customer?->name,
-                'customer_phone' => $order->customer_phone ?: $order->customer?->phone,
-                'notes' => trim(implode("\n", array_filter([
-                    $order->sourceLabel().' / '.$order->order_type,
-                    $order->external_reference ? 'مرجع خارجي: '.$order->external_reference : null,
-                ]))),
-                'issued_at' => now(),
-            ]);
-
-            ActivityLog::log('invoice.issued', "إصدار فاتورة {$invoice->number} للطلب {$order->number}", $invoice, [
-                'total' => (float) $invoice->total,
-                'order_id' => $order->id,
-                'source' => $order->order_source,
-            ]);
-
-            app(AccountingService::class)->recordInvoiceIssued($invoice);
-
-            if (Money::round((float) $order->total) <= 0.001) {
-                $invoice->update([
-                    'status' => 'paid',
-                    'paid_total' => 0,
-                    'balance' => 0,
-                    'paid_at' => now(),
+                $invoice = Invoice::create([
+                    'branch_id' => $order->branch_id,
+                    'table_session_id' => null,
+                    'order_id' => $order->id,
+                    'customer_id' => $order->customer_id,
+                    'issued_by_user_id' => $userId,
+                    'subtotal' => Money::round((float) $order->subtotal),
+                    'discount_total' => Money::round((float) $order->discount_total),
+                    'tax_total' => Money::round((float) $order->tax_total),
+                    'service_total' => Money::round((float) $order->service_total),
+                    'delivery_fee' => Money::round((float) $order->delivery_fee),
+                    'tip' => Money::round((float) $order->tip),
+                    'total' => Money::round((float) $order->total),
+                    'balance' => Money::round((float) $order->total),
+                    'status' => 'issued',
+                    'customer_name' => $order->customer_name ?: $order->customer?->name,
+                    'customer_phone' => $order->customer_phone ?: $order->customer?->phone,
+                    'notes' => trim(implode("\n", array_filter([
+                        $order->sourceLabel().' / '.$order->order_type,
+                        $order->external_reference ? 'مرجع خارجي: '.$order->external_reference : null,
+                    ]))),
+                    'issued_at' => now(),
                 ]);
-                SafeBroadcast::dispatch(new InvoicePaid($invoice->refresh()->load('order')));
-            }
 
-            return $invoice;
+                ActivityLog::log('invoice.issued', "إصدار فاتورة {$invoice->number} للطلب {$order->number}", $invoice, [
+                    'total' => (float) $invoice->total,
+                    'order_id' => $order->id,
+                    'source' => $order->order_source,
+                ]);
+
+                app(AccountingService::class)->recordInvoiceIssued($invoice);
+
+                if (Money::round((float) $order->total) <= 0.001) {
+                    $invoice->update([
+                        'status' => 'paid',
+                        'paid_total' => 0,
+                        'balance' => 0,
+                        'paid_at' => now(),
+                    ]);
+                    SafeBroadcast::dispatch(new InvoicePaid($invoice->refresh()->load('order')));
+                }
+
+                return $invoice;
+            });
         });
     }
 
     public function addPayment(Invoice $invoice, float $amount, string $method, int $userId, ?string $reference = null, ?string $notes = null): Payment
     {
         return DB::transaction(function () use ($invoice, $amount, $method, $userId, $reference, $notes) {
-            $invoice = Invoice::whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            // Exact-id resolve without the viewer scope, then pin to the
+            // INVOICE's branch: the payments sum and order lookup below are
+            // invoice-keyed and must see the invoice's own rows even when the
+            // payer stands on another branch (FIFO debt collection routes
+            // cross-branch invoices through this exact path).
+            $invoice = Invoice::withoutGlobalScope(BranchScope::class)
+                ->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
 
-            if (in_array($invoice->status, ['paid', 'cancelled', 'unpaid_writeoff'], true)) {
-                throw new \RuntimeException('لا يمكن تسجيل دفعة على فاتورة مغلقة أو ملغاة.');
-            }
-
-            $amount = Money::round($amount);
-            $balanceBeforePayment = Money::round((float) $invoice->balance);
-            if ($balanceBeforePayment <= 0.001) {
-                throw new \RuntimeException('لا يوجد مبلغ متبقٍ على هذه الفاتورة.');
-            }
-
-            if ($amount - $balanceBeforePayment > 0.01) {
-                throw new \RuntimeException('قيمة الدفعة أكبر من المتبقي. سجّل فقط المبلغ المستحق على الفاتورة.');
-            }
-
-            $shift = \App\Models\Shift::where('user_id', $userId)->where('status', 'open')->latest('opened_at')->first();
-
-            $payment = Payment::create([
-                // Stamp branch_id from the invoice itself, NOT from
-                // BranchContext. Payments arrive from contexts where the
-                // active branch may differ (queue jobs, customer portal
-                // paying for takeaway, owner-level user in "all branches"
-                // mode). The invoice always has the canonical branch.
-                'branch_id' => $invoice->branch_id,
-                'invoice_id' => $invoice->id,
-                'method' => $method,
-                'amount' => $amount,
-                'reference' => $reference,
-                'received_by_user_id' => $userId,
-                'shift_id' => $shift?->id,
-                'notes' => $notes,
-                'paid_at' => now(),
-            ]);
-
-            $paidTotal = (float) $invoice->payments()->sum('amount');
-
-            // Balance is measured against NET payments (gross paid − refunded),
-            // exactly like Invoice::recomputeBalanceAfterRefund. The old formula
-            // used paid_total alone and ignored refunded_total, so after any
-            // partial refund an invoice could close as "paid" while the net cash
-            // collected was still below the total — a silent shortfall. The two
-            // formulas must agree or the same column drifts between the payment
-            // path and the refund path.
-            $netPaid = $paidTotal - (float) $invoice->refunded_total;
-            $balance = max(0, round((float) $invoice->total - $netPaid, 2));
-
-            $status = match (true) {
-                $balance <= 0.001 && $netPaid > 0 => 'paid',
-                $netPaid > 0                      => 'partially_paid',
-                default                           => 'issued',
-            };
-
-            $invoice->update([
-                'paid_total' => Money::round($paidTotal),
-                'balance' => Money::round($balance),
-                'status' => $status,
-                'paid_at' => $status === 'paid' ? now() : null,
-            ]);
-
-            if ($status === 'paid') {
-                if ($invoice->table_session_id) {
-                    $this->closeOrdersAndSession($invoice);
-                } elseif ($invoice->order_id) {
-                    // Portal-flow invoice (takeaway / delivery) — settles a
-                    // single order directly. Mark it completed so the diner
-                    // sees "مكتمل" in their history instead of "تم التسليم"
-                    // hanging forever after they've already paid.
-                    $order = $invoice->order;
-                    if ($order && ! in_array($order->status, [OrderStatus::Cancelled->value, OrderStatus::Completed->value])) {
-                        $order->update([
-                            'status' => OrderStatus::Completed->value,
-                            'completed_at' => now(),
-                        ]);
-                    }
+            return BranchContext::forBranch($invoice->branch_id, function () use ($invoice, $amount, $method, $userId, $reference, $notes) {
+                if (in_array($invoice->status, ['paid', 'cancelled', 'unpaid_writeoff'], true)) {
+                    throw new \RuntimeException('لا يمكن تسجيل دفعة على فاتورة مغلقة أو ملغاة.');
                 }
-                SafeBroadcast::dispatch(new InvoicePaid($invoice->refresh()->load('tableSession.table', 'order')));
-            }
 
-            ActivityLog::log('payment.received', "دفعة {$payment->amount} على الفاتورة {$invoice->number}", $payment, [
-                'method' => $method,
-            ]);
+                $amount = Money::round($amount);
+                $balanceBeforePayment = Money::round((float) $invoice->balance);
+                if ($balanceBeforePayment <= 0.001) {
+                    throw new \RuntimeException('لا يوجد مبلغ متبقٍ على هذه الفاتورة.');
+                }
 
-            app(AccountingService::class)->recordPaymentReceived($payment);
+                if ($amount - $balanceBeforePayment > 0.01) {
+                    throw new \RuntimeException('قيمة الدفعة أكبر من المتبقي. سجّل فقط المبلغ المستحق على الفاتورة.');
+                }
 
-            return $payment;
+                // The drawer is keyed by USER, never by branch — a user has at
+                // most one open shift anywhere (ShiftController::store guards it
+                // unscoped). The scoped lookup bound money taken by a multi-branch
+                // operator to shift_id NULL, so it vanished from the drawer count
+                // at close. Unscoped is also required because we're pinned to the
+                // INVOICE's branch here while the drawer may live on another.
+                $shift = \App\Models\Shift::withoutGlobalScope(BranchScope::class)
+                    ->where('user_id', $userId)->where('status', 'open')->latest('opened_at')->first();
+
+                $payment = Payment::create([
+                    // Stamp branch_id from the invoice itself, NOT from
+                    // BranchContext. Payments arrive from contexts where the
+                    // active branch may differ (queue jobs, customer portal
+                    // paying for takeaway, owner-level user in "all branches"
+                    // mode). The invoice always has the canonical branch.
+                    'branch_id' => $invoice->branch_id,
+                    'invoice_id' => $invoice->id,
+                    'method' => $method,
+                    'amount' => $amount,
+                    'reference' => $reference,
+                    'received_by_user_id' => $userId,
+                    'shift_id' => $shift?->id,
+                    'notes' => $notes,
+                    'paid_at' => now(),
+                ]);
+
+                $paidTotal = (float) $invoice->payments()->sum('amount');
+
+                // Balance is measured against NET payments (gross paid − refunded),
+                // exactly like Invoice::recomputeBalanceAfterRefund. The old formula
+                // used paid_total alone and ignored refunded_total, so after any
+                // partial refund an invoice could close as "paid" while the net cash
+                // collected was still below the total — a silent shortfall. The two
+                // formulas must agree or the same column drifts between the payment
+                // path and the refund path.
+                $netPaid = $paidTotal - (float) $invoice->refunded_total;
+                $balance = max(0, round((float) $invoice->total - $netPaid, 2));
+
+                $status = match (true) {
+                    $balance <= 0.001 && $netPaid > 0 => 'paid',
+                    $netPaid > 0                      => 'partially_paid',
+                    default                           => 'issued',
+                };
+
+                $invoice->update([
+                    'paid_total' => Money::round($paidTotal),
+                    'balance' => Money::round($balance),
+                    'status' => $status,
+                    'paid_at' => $status === 'paid' ? now() : null,
+                ]);
+
+                if ($status === 'paid') {
+                    if ($invoice->table_session_id) {
+                        $this->closeOrdersAndSession($invoice);
+                    } elseif ($invoice->order_id) {
+                        // Portal-flow invoice (takeaway / delivery) — settles a
+                        // single order directly. Payment settles the MONEY, not
+                        // the food: completing any paid order here yanked a
+                        // prepaid-but-uncooked ticket off the KDS/waiter boards
+                        // before the kitchen ever fired it. Only an order already
+                        // handed over (delivered) closes with the payment;
+                        // anything earlier keeps its kitchen lifecycle and
+                        // auto-completes at serve time instead
+                        // (OrderService::completeIfPrepaid). The invoice is
+                        // marked paid either way.
+                        $order = $invoice->order;
+                        if ($order && $order->status === OrderStatus::Delivered->value) {
+                            $order->update([
+                                'status' => OrderStatus::Completed->value,
+                                'completed_at' => now(),
+                            ]);
+                        }
+                    }
+                    SafeBroadcast::dispatch(new InvoicePaid($invoice->refresh()->load('tableSession.table', 'order')));
+                }
+
+                ActivityLog::log('payment.received', "دفعة {$payment->amount} على الفاتورة {$invoice->number}", $payment, [
+                    'method' => $method,
+                ]);
+
+                app(AccountingService::class)->recordPaymentReceived($payment);
+
+                return $payment;
+            });
         });
     }
 
@@ -345,77 +387,126 @@ class BillingService
      * reads the payments table directly, so a lingering "voided" row would need
      * filtering in a dozen places — removing it keeps them all correct for free.
      *
-     * Refuses when the payment has a refund against it, or the invoice is
-     * cancelled or parked as customer debt (those go through their own flows).
+     * Refuses when the payment has a refund against it, the invoice is
+     * cancelled or parked as customer debt (those go through their own flows),
+     * or the payment's shift already CLOSED — the stored Z-report and the
+     * shift_cash_variance GL entry froze with this payment counted in, so
+     * deleting it afterwards would desync both. Late corrections take the
+     * refund door instead.
      */
     public function voidPayment(Payment $payment, int $userId, string $reason): void
     {
         DB::transaction(function () use ($payment, $userId, $reason) {
-            $payment = Payment::whereKey($payment->id)->lockForUpdate()->firstOrFail();
-            $invoice = Invoice::whereKey($payment->invoice_id)->lockForUpdate()->firstOrFail();
+            // Exact-id resolves without the viewer scope + pin to the
+            // invoice's branch: the refund-existence guard and the split
+            // lookup below are invoice-keyed and silently no-op'd for an
+            // operator standing on another branch.
+            $payment = Payment::withoutGlobalScope(BranchScope::class)
+                ->whereKey($payment->id)->lockForUpdate()->firstOrFail();
+            $invoice = Invoice::withoutGlobalScope(BranchScope::class)
+                ->whereKey($payment->invoice_id)->lockForUpdate()->firstOrFail();
 
-            if ($invoice->status === 'cancelled') {
-                throw new \RuntimeException('لا يمكن إلغاء دفعة على فاتورة ملغاة.');
-            }
-            if ($invoice->settled_on_account_at) {
-                throw new \RuntimeException('الفاتورة مؤجّلة كدين — عالج المتبقي من سجل الديون بدل إلغاء الدفعة.');
-            }
-            // Block if the invoice has ANY completed refund — voiding a payment
-            // that (partly) funded a refund would leave refunded > paid and a
-            // corrupt balance. Reverse the refund first, then void.
-            if (\App\Models\Refund::where('invoice_id', $invoice->id)->where('status', 'completed')->exists()) {
-                throw new \RuntimeException('على هذه الفاتورة استرداد — لا يمكن إلغاء الدفعة. عالج الاسترداد أولاً.');
-            }
+            BranchContext::forBranch($invoice->branch_id, function () use ($payment, $invoice, $userId, $reason) {
+                if ($invoice->status === 'cancelled') {
+                    throw new \RuntimeException('لا يمكن إلغاء دفعة على فاتورة ملغاة.');
+                }
+                if ($invoice->settled_on_account_at) {
+                    throw new \RuntimeException('الفاتورة مؤجّلة كدين — عالج المتبقي من سجل الديون بدل إلغاء الدفعة.');
+                }
+                // Block if the invoice has ANY completed refund — voiding a payment
+                // that (partly) funded a refund would leave refunded > paid and a
+                // corrupt balance. Reverse the refund first, then void.
+                if (\App\Models\Refund::where('invoice_id', $invoice->id)->where('status', 'completed')->exists()) {
+                    throw new \RuntimeException('على هذه الفاتورة استرداد — لا يمكن إلغاء الدفعة. عالج الاسترداد أولاً.');
+                }
+                // Z-report integrity: once the receiving drawer closed, its
+                // stored cash_sales/expected_cash (and any posted variance entry)
+                // already counted this payment. Deleting the row now would make
+                // the frozen Z-report and the GL disagree with the payments table
+                // forever. Unscoped by exact id — the drawer may belong to
+                // another branch than the invoice.
+                if ($payment->shift_id) {
+                    $paymentShift = \App\Models\Shift::withoutGlobalScope(BranchScope::class)
+                        ->find($payment->shift_id);
+                    if ($paymentShift && $paymentShift->status !== 'open') {
+                        throw new \RuntimeException('شفت هذه الدفعة أُغلق وتقريره مُسجّل — لا يمكن إلغاء الدفعة. استخدم الاسترداد لإرجاع المبلغ.');
+                    }
+                }
 
-            // Reverse the payment's live (un-reversed) GL posting, if any.
-            $entries = \App\Models\JournalEntry::where('source_type', Payment::class)
-                ->where('source_id', $payment->id)
-                ->orderBy('id')
-                ->get();
-            $reversedIds = $entries
-                ->map(fn ($e) => (int) ($e->metadata['reverses_entry_id'] ?? 0))
-                ->filter()
-                ->all();
-            $live = $entries
-                ->firstWhere(fn ($e) => $e->event_type === 'payment_received'
-                    && ! in_array((int) $e->id, $reversedIds, true));
-            if ($live) {
-                app(AccountingService::class)->reverseEntry(
-                    original: $live,
-                    eventType: 'payment_voided_'.$payment->id,
-                    postedOn: now(),
-                    description: "عكس دفعة ملغاة على فاتورة {$invoice->number}",
-                    createdBy: $userId,
+                // Reverse the payment's live (un-reversed) GL posting, if any.
+                $entries = \App\Models\JournalEntry::where('source_type', Payment::class)
+                    ->where('source_id', $payment->id)
+                    ->orderBy('id')
+                    ->get();
+                $reversedIds = $entries
+                    ->map(fn ($e) => (int) ($e->metadata['reverses_entry_id'] ?? 0))
+                    ->filter()
+                    ->all();
+                $live = $entries
+                    ->firstWhere(fn ($e) => $e->event_type === 'payment_received'
+                        && ! in_array((int) $e->id, $reversedIds, true));
+                if ($live) {
+                    app(AccountingService::class)->reverseEntry(
+                        original: $live,
+                        eventType: 'payment_voided_'.$payment->id,
+                        postedOn: now(),
+                        description: "عكس دفعة ملغاة على فاتورة {$invoice->number}",
+                        createdBy: $userId,
+                    );
+                }
+
+                // ── Split-tab bookkeeping: a payment created by paySplit()
+                // settled exactly one split, and the only link between them is
+                // the note stamp «دفعة جزء: {label}» (no FK column). Deleting the
+                // payment must un-mark that split, or it reads «مدفوع» forever
+                // over money that no longer exists and the tab can never be
+                // re-collected. Matched by label + amount on paid splits of THIS
+                // invoice; first match wins (paySplit refuses to double-pay a
+                // split, so at most one paid row fits).
+                $unmarkedSplitId = null;
+                if (is_string($payment->notes) && str_starts_with($payment->notes, 'دفعة جزء: ')) {
+                    $splitLabel = trim(mb_substr($payment->notes, mb_strlen('دفعة جزء: ')));
+                    $paidSplit = InvoiceSplit::withoutGlobalScope(BranchScope::class)
+                        ->where('invoice_id', $invoice->id)
+                        ->where('paid', true)
+                        ->where('label', $splitLabel)
+                        ->where('amount', $payment->amount)
+                        ->orderBy('id')
+                        ->first();
+                    if ($paidSplit) {
+                        $paidSplit->update(['paid' => false, 'paid_at' => null]);
+                        $unmarkedSplitId = $paidSplit->id;
+                    }
+                }
+
+                $amount = (float) $payment->amount;
+                $method = $payment->method;
+                ActivityLog::log(
+                    'payment.voided',
+                    "إلغاء دفعة ".number_format($amount, 2)." ({$method}) على فاتورة {$invoice->number} — {$reason}",
+                    $invoice,
+                    ['payment_id' => $payment->id, 'amount' => $amount, 'method' => $method, 'reason' => $reason, 'unmarked_split_id' => $unmarkedSplitId]
                 );
-            }
 
-            $amount = (float) $payment->amount;
-            $method = $payment->method;
-            ActivityLog::log(
-                'payment.voided',
-                "إلغاء دفعة ".number_format($amount, 2)." ({$method}) على فاتورة {$invoice->number} — {$reason}",
-                $invoice,
-                ['payment_id' => $payment->id, 'amount' => $amount, 'method' => $method, 'reason' => $reason]
-            );
+                $payment->delete();
 
-            $payment->delete();
-
-            // Recompute from the REMAINING payments (net of refunds), mirroring
-            // addPayment's status/balance logic so the invoice reopens correctly.
-            $paidTotal = (float) $invoice->payments()->sum('amount');
-            $netPaid   = $paidTotal - (float) $invoice->refunded_total;
-            $balance   = max(0, round((float) $invoice->total - $netPaid, 2));
-            $status = match (true) {
-                $balance <= 0.001 && $netPaid > 0 => 'paid',
-                $netPaid > 0                      => 'partially_paid',
-                default                           => 'issued',
-            };
-            $invoice->update([
-                'paid_total' => Money::round($paidTotal),
-                'balance'    => Money::round($balance),
-                'status'     => $status,
-                'paid_at'    => $status === 'paid' ? ($invoice->paid_at ?? now()) : null,
-            ]);
+                // Recompute from the REMAINING payments (net of refunds), mirroring
+                // addPayment's status/balance logic so the invoice reopens correctly.
+                $paidTotal = (float) $invoice->payments()->sum('amount');
+                $netPaid   = $paidTotal - (float) $invoice->refunded_total;
+                $balance   = max(0, round((float) $invoice->total - $netPaid, 2));
+                $status = match (true) {
+                    $balance <= 0.001 && $netPaid > 0 => 'paid',
+                    $netPaid > 0                      => 'partially_paid',
+                    default                           => 'issued',
+                };
+                $invoice->update([
+                    'paid_total' => Money::round($paidTotal),
+                    'balance'    => Money::round($balance),
+                    'status'     => $status,
+                    'paid_at'    => $status === 'paid' ? ($invoice->paid_at ?? now()) : null,
+                ]);
+            });
         });
     }
 
@@ -441,77 +532,172 @@ class BillingService
     public function settleOnAccount(Invoice $invoice, int $userId, ?string $notes = null): Invoice
     {
         $invoice = DB::transaction(function () use ($invoice, $userId, $notes) {
-            $invoice = Invoice::whereKey($invoice->id)
+            // Cross-branch pin (same pattern as addPayment): the payments sum
+            // and session close below are invoice-keyed and must not run
+            // under the viewer's branch.
+            $invoice = Invoice::withoutGlobalScope(BranchScope::class)
+                ->whereKey($invoice->id)
                 ->with('customer')
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if (in_array($invoice->status, ['paid', 'cancelled', 'unpaid_writeoff'], true)) {
-                throw new \RuntimeException('لا يمكن تأجيل فاتورة مغلقة أو ملغاة.');
-            }
+            return BranchContext::forBranch($invoice->branch_id, function () use ($invoice, $userId, $notes) {
+                if (in_array($invoice->status, ['paid', 'cancelled', 'unpaid_writeoff'], true)) {
+                    throw new \RuntimeException('لا يمكن تأجيل فاتورة مغلقة أو ملغاة.');
+                }
 
-            // Idempotency: a settled invoice stays 'partially_paid' with the
-            // flag set (it IS the debt record), so nothing above blocks a
-            // re-POST. On a second call outstandingDebt() already counts THIS
-            // invoice, so the credit-limit math double-counts its balance, and
-            // the session-close / notes / notifications all fire again.
-            if ($invoice->settled_on_account_at) {
-                throw new \RuntimeException('الفاتورة مؤجّلة كدين مسبقاً.');
-            }
+                // Idempotency: a settled invoice stays 'partially_paid' with the
+                // flag set (it IS the debt record), so nothing above blocks a
+                // re-POST. On a second call outstandingDebt() already counts THIS
+                // invoice, so the credit-limit math double-counts its balance, and
+                // the session-close / notes / notifications all fire again.
+                if ($invoice->settled_on_account_at) {
+                    throw new \RuntimeException('الفاتورة مؤجّلة كدين مسبقاً.');
+                }
 
-            if (! $invoice->customer_id) {
-                throw new \RuntimeException('لا يمكن تسجيل دين بدون زبون مرتبط بالفاتورة. اربط زبوناً للجلسة أولاً.');
-            }
+                if (! $invoice->customer_id) {
+                    throw new \RuntimeException('لا يمكن تسجيل دين بدون زبون مرتبط بالفاتورة. اربط زبوناً للجلسة أولاً.');
+                }
 
-            $balance = Money::round((float) $invoice->balance);
-            if ($balance <= 0.001) {
-                throw new \RuntimeException('لا يوجد رصيد متبقٍ ليُسجَّل كدين على هذه الفاتورة.');
-            }
+                $balance = Money::round((float) $invoice->balance);
+                if ($balance <= 0.001) {
+                    throw new \RuntimeException('لا يوجد رصيد متبقٍ ليُسجَّل كدين على هذه الفاتورة.');
+                }
 
-            $paidTotal = (float) $invoice->payments()->sum('amount');
-            if ($paidTotal <= 0.001) {
-                throw new \RuntimeException('لا يمكن تأجيل الفاتورة كاملة كدين — سجّل أولاً ولو دفعة جزئية، أو استخدم شطب الفاتورة (write-off).');
-            }
+                $paidTotal = (float) $invoice->payments()->sum('amount');
+                if ($paidTotal <= 0.001) {
+                    throw new \RuntimeException('لا يمكن تأجيل الفاتورة كاملة كدين — سجّل أولاً ولو دفعة جزئية، أو استخدم شطب الفاتورة (write-off).');
+                }
 
-            $customer = $invoice->customer;
-            $existingDebt = $customer->outstandingDebt();      // excludes this invoice (still no flag)
-            $newTotal = $existingDebt + $balance;
-            if ($customer->credit_limit !== null && $newTotal - (float) $customer->credit_limit > 0.01) {
-                throw new \RuntimeException(sprintf(
-                    'تجاوز الحد الائتماني للزبون. الحد %s، الدين بعد هذه الفاتورة %s.',
-                    number_format((float) $customer->credit_limit, 2),
-                    number_format($newTotal, 2),
-                ));
-            }
+                $customer = $invoice->customer;
+                // Debt is a CUSTOMER-level figure: the ledger spans branches and
+                // credit_limit is global, so the ceiling check must see every
+                // branch's parked invoices (customer_id is the exact key —
+                // nothing foreign can leak in). Scoped, a debtor maxed out at
+                // branch A kept borrowing at branch B. Excludes this invoice
+                // (still no flag).
+                $existingDebt = BranchContext::unscoped(fn () => $customer->outstandingDebt());
+                $newTotal = $existingDebt + $balance;
+                if ($customer->credit_limit !== null && $newTotal - (float) $customer->credit_limit > 0.01) {
+                    throw new \RuntimeException(sprintf(
+                        'تجاوز الحد الائتماني للزبون. الحد %s، الدين بعد هذه الفاتورة %s.',
+                        number_format((float) $customer->credit_limit, 2),
+                        number_format($newTotal, 2),
+                    ));
+                }
 
-            $invoice->update([
-                'settled_on_account_at'         => now(),
-                'settled_on_account_by_user_id' => $userId,
-                'notes' => trim(($invoice->notes ?? '')
-                          . ($notes ? "\n[on-account] {$notes}" : "\n[on-account] " . 'حُوِّل المتبقي إلى دين الزبون')),
-            ]);
+                $invoice->update([
+                    'settled_on_account_at'         => now(),
+                    'settled_on_account_by_user_id' => $userId,
+                    'notes' => trim(($invoice->notes ?? '')
+                              . ($notes ? "\n[on-account] {$notes}" : "\n[on-account] " . 'حُوِّل المتبقي إلى دين الزبون')),
+                ]);
 
-            if ($invoice->table_session_id) {
-                $this->closeOrdersAndSession($invoice);
-            }
+                if ($invoice->table_session_id) {
+                    $this->closeOrdersAndSession($invoice);
+                }
 
-            ActivityLog::log(
-                'invoice.settled_on_account',
-                "تأجيل دين فاتورة {$invoice->number} على الزبون {$customer->name} بمبلغ ".number_format($balance, 2),
-                $invoice,
-                [
-                    'customer_id'     => $customer->id,
-                    'balance_carried' => (float) $balance,
-                    'new_total_debt'  => $newTotal,
-                    'credit_limit'    => $customer->credit_limit,
-                ],
-            );
+                ActivityLog::log(
+                    'invoice.settled_on_account',
+                    "تأجيل دين فاتورة {$invoice->number} على الزبون {$customer->name} بمبلغ ".number_format($balance, 2),
+                    $invoice,
+                    [
+                        'customer_id'     => $customer->id,
+                        'balance_carried' => (float) $balance,
+                        'new_total_debt'  => $newTotal,
+                        'credit_limit'    => $customer->credit_limit,
+                    ],
+                );
 
-            return $invoice->refresh();
+                return $invoice->refresh();
+            });
         });
 
         // Manager notification after commit — separate to keep
         // the transaction lean and to avoid orphan toasts if it rolls back.
+        $customer = $invoice->customer()->first();
+        if ($customer) {
+            app(NotifyService::class)->customerDebtChanged($customer, $invoice);
+        }
+
+        return $invoice;
+    }
+
+    /**
+     * Reverse a mistaken settle-on-account — the "un-park".
+     *
+     * FLAG-ONLY by design: parking posts NO journal entries (the issuance
+     * entry already carries the A/R; `settled_on_account_at` merely marks
+     * the invoice as a real debt vs. a checkout in progress), so clearing
+     * the flag posts none either. The invoice keeps its balance/status and
+     * simply drops off the customer's debt ledger, back to being a normal
+     * open partially-paid invoice the cashier can collect.
+     *
+     * Allowed ONLY while the parked debt is untouched:
+     *   - the invoice actually carries the flag,
+     *   - it wasn't cancelled or written off meanwhile,
+     *   - NO payment landed after parking (a collected debt is history —
+     *     rewriting it would orphan the FIFO allocations already logged).
+     *
+     * Deliberately does NOT reopen the table session parking closed — the
+     * table was freed and possibly reseated; the invoice remains payable
+     * without a session.
+     */
+    public function unparkSettleOnAccount(Invoice $invoice, int $userId): Invoice
+    {
+        $invoice = DB::transaction(function () use ($invoice, $userId) {
+            // Same cross-branch pin as settleOnAccount.
+            $invoice = Invoice::withoutGlobalScope(BranchScope::class)
+                ->whereKey($invoice->id)
+                ->with('customer')
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            return BranchContext::forBranch($invoice->branch_id, function () use ($invoice, $userId) {
+                if (! $invoice->settled_on_account_at) {
+                    throw new \RuntimeException('الفاتورة ليست مؤجّلة كدين — لا يوجد تأجيل لإلغائه.');
+                }
+
+                if (in_array($invoice->status, ['cancelled', 'unpaid_writeoff'], true)) {
+                    throw new \RuntimeException('الفاتورة ملغاة أو مشطوبة — لا يمكن إلغاء تأجيل الدين عليها.');
+                }
+
+                // Any payment AFTER the parking moment means the debt entered
+                // collection (FIFO allocations reference it) — unscoped by
+                // exact invoice_id since debt payments may come from any branch.
+                $collectedAfterParking = Payment::withoutGlobalScope(BranchScope::class)
+                    ->where('invoice_id', $invoice->id)
+                    ->where('paid_at', '>', $invoice->settled_on_account_at)
+                    ->exists();
+                if ($collectedAfterParking) {
+                    throw new \RuntimeException('سُدِّدت دفعات على هذا الدين بعد تأجيله — لا يمكن إلغاء التأجيل. عالجه من سجل ديون الزبون.');
+                }
+
+                $parkedAt = $invoice->settled_on_account_at;
+                $invoice->update([
+                    'settled_on_account_at'         => null,
+                    'settled_on_account_by_user_id' => null,
+                    'notes' => trim(($invoice->notes ?? '')."\n[unpark] أُلغي تأجيل الدين وعادت الفاتورة للتحصيل المباشر"),
+                ]);
+
+                ActivityLog::log(
+                    'invoice.unparked_on_account',
+                    "إلغاء تأجيل دين فاتورة {$invoice->number} — عادت للتحصيل المباشر بمبلغ ".number_format((float) $invoice->balance, 2),
+                    $invoice,
+                    [
+                        'customer_id'      => $invoice->customer_id,
+                        'balance_restored' => (float) $invoice->balance,
+                        'parked_at'        => (string) $parkedAt,
+                        'by_user_id'       => $userId,
+                    ],
+                );
+
+                return $invoice->refresh();
+            });
+        });
+
+        // Mirror settleOnAccount: the customer's outstanding debt just
+        // changed, tell the managers AFTER commit.
         $customer = $invoice->customer()->first();
         if ($customer) {
             app(NotifyService::class)->customerDebtChanged($customer, $invoice);
@@ -560,7 +746,14 @@ class BillingService
             // visit) invoice. Lock each invoice row so concurrent cashier
             // sessions can't both apply the same payment dollar (the lock now
             // holds until this outer transaction commits).
+            //
+            // Unscoped by design: the debt ledger is CUSTOMER-keyed and spans
+            // branches (matching the credit-limit check in settleOnAccount).
+            // Under the viewer's BranchScope, a debt parked at branch A was
+            // invisible at branch B — FIFO skipped it and the customer's
+            // oldest debt never got collected.
             $debtInvoices = $customer->invoices()
+                ->withoutGlobalScope(BranchScope::class)
                 ->whereNotNull('settled_on_account_at')
                 ->where('balance', '>', 0)
                 ->whereNotIn('status', ['cancelled', 'unpaid_writeoff'])
@@ -583,7 +776,9 @@ class BillingService
             // whole transaction rolls back and nothing is posted.
             $collectable = 0.0;
             foreach ($queue as $invoiceId) {
-                $inv = Invoice::find($invoiceId);
+                // Exact ids from the unscoped queue above — resolve them
+                // unscoped too or the cross-branch ones silently drop here.
+                $inv = Invoice::withoutGlobalScope(BranchScope::class)->find($invoiceId);
                 if (! $inv || in_array($inv->status, ['paid', 'cancelled', 'unpaid_writeoff'], true)) continue;
                 $collectable += max(0, (float) $inv->balance);
             }
@@ -601,7 +796,8 @@ class BillingService
             foreach ($queue as $invoiceId) {
                 if ($remaining <= 0.001) break;
 
-                $inv = Invoice::whereKey($invoiceId)->lockForUpdate()->first();
+                $inv = Invoice::withoutGlobalScope(BranchScope::class)
+                    ->whereKey($invoiceId)->lockForUpdate()->first();
                 if (! $inv) continue;
                 if (in_array($inv->status, ['paid', 'cancelled', 'unpaid_writeoff'], true)) continue;
 

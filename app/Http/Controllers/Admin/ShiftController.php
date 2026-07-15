@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\Payment;
+use App\Models\Scopes\BranchScope;
 use App\Models\Shift;
 use App\Services\Accounting\AccountingService;
+use App\Support\BranchContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -18,7 +20,15 @@ class ShiftController extends Controller
         $this->authorize('viewAny', Shift::class);
 
         $shifts = Shift::with('user')->latest('opened_at')->paginate(20);
-        $activeShift = auth()->user()->activeShift;
+        // The drawer is keyed by USER, not by viewing branch — store() guards
+        // "one open shift anywhere" unscoped, so resolve it the same way here.
+        // The scoped relation hid a drawer opened on another branch and the
+        // page then offered to open a second one (which store() now refuses).
+        $activeShift = Shift::withoutGlobalScope(BranchScope::class)
+            ->where('user_id', auth()->id())
+            ->where('status', 'open')
+            ->latest('opened_at')
+            ->first();
         // The last drawer close on this branch's till — shown as the expected
         // opening count so a cashier taking over can spot a hand-off mismatch.
         $lastClosedShift = Shift::with('user')->where('status', 'closed')->latest('closed_at')->first();
@@ -44,7 +54,13 @@ class ShiftController extends Controller
                 // sees the first's open shift and bails out.
                 \App\Models\User::whereKey($userId)->lockForUpdate()->first();
 
-                if (Shift::where('user_id', $userId)->where('status', 'open')->exists()) {
+                // Unscoped on purpose: a user has at most ONE open drawer
+                // ANYWHERE. Under the viewer's BranchScope a multi-branch
+                // operator switched into another branch couldn't see their
+                // open shift and would open a second one, splitting the
+                // day's payments across two drawers.
+                if (Shift::withoutGlobalScope(BranchScope::class)
+                    ->where('user_id', $userId)->where('status', 'open')->exists()) {
                     throw new \RuntimeException('لديك شفت مفتوح بالفعل');
                 }
 
@@ -109,51 +125,58 @@ class ShiftController extends Controller
             DB::transaction(function () use ($shift, $data) {
                 // Re-fetch under lock to get the canonical state. Anything
                 // querying this shift (a payment crediting cash_sales) waits
-                // until close commits.
-                $shift = Shift::whereKey($shift->id)->lockForUpdate()->firstOrFail();
+                // until close commits. Resolved WITHOUT the viewer's
+                // BranchScope and pinned to the SHIFT's branch below — an
+                // owner closing from "all branches" mode (or another active
+                // branch) used to aggregate zero payments and post the whole
+                // drawer to the GL as a phantom variance.
+                $shift = Shift::withoutGlobalScope(BranchScope::class)
+                    ->whereKey($shift->id)->lockForUpdate()->firstOrFail();
 
                 if ($shift->status !== 'open') {
                     throw new \RuntimeException('الشفت مغلق مسبقاً.');
                 }
 
-                // Same live-aggregate math the mid-shift X-report uses — one
-                // source of truth so the two can never drift.
-                $b = $this->computeExpectedCash($shift);
-                $variance = (float) $data['cash_closing'] - $b['expected_cash'];
+                BranchContext::forBranch($shift->branch_id, function () use ($shift, $data) {
+                    // Same live-aggregate math the mid-shift X-report uses — one
+                    // source of truth so the two can never drift.
+                    $b = $this->computeExpectedCash($shift);
+                    $variance = (float) $data['cash_closing'] - $b['expected_cash'];
 
-                $shift->update([
-                    'cash_closing'   => $data['cash_closing'],
-                    'cash_sales'     => $b['cash_sales'],
-                    'card_sales'     => $b['card_sales'],
-                    'other_sales'    => $b['other_sales'],
-                    'total_sales'    => $b['total_sales'],
-                    'expected_cash'  => $b['expected_cash'],
-                    'cash_variance'  => $variance,
-                    'status'         => 'closed',
-                    'closed_at'      => now(),
-                    'notes'          => $data['notes'] ?? null,
-                ]);
+                    $shift->update([
+                        'cash_closing'   => $data['cash_closing'],
+                        'cash_sales'     => $b['cash_sales'],
+                        'card_sales'     => $b['card_sales'],
+                        'other_sales'    => $b['other_sales'],
+                        'total_sales'    => $b['total_sales'],
+                        'expected_cash'  => $b['expected_cash'],
+                        'cash_variance'  => $variance,
+                        'status'         => 'closed',
+                        'closed_at'      => now(),
+                        'notes'          => $data['notes'] ?? null,
+                    ]);
 
-                ActivityLog::log(
-                    'shift.closed',
-                    "إغلاق شفت — فرق الكاش: " . number_format($variance, 2),
-                    $shift,
-                    [
-                        'cash_opening'  => $b['cash_opening'],
-                        'cash_closing'  => (float) $data['cash_closing'],
-                        'cash_sales'    => $b['cash_sales'],
-                        'card_sales'    => $b['card_sales'],
-                        'other_sales'   => $b['other_sales'],
-                        'cash_refunds'  => $b['cash_refunds'],
-                        'cash_pay_ins'  => $b['cash_pay_ins'],
-                        'cash_pay_outs' => $b['cash_pay_outs'],
-                        'supplier_cash_payments' => $b['supplier_cash_payments'],
-                        'expected_cash' => $b['expected_cash'],
-                        'cash_variance' => $variance,
-                    ]
-                );
+                    ActivityLog::log(
+                        'shift.closed',
+                        "إغلاق شفت — فرق الكاش: " . number_format($variance, 2),
+                        $shift,
+                        [
+                            'cash_opening'  => $b['cash_opening'],
+                            'cash_closing'  => (float) $data['cash_closing'],
+                            'cash_sales'    => $b['cash_sales'],
+                            'card_sales'    => $b['card_sales'],
+                            'other_sales'   => $b['other_sales'],
+                            'cash_refunds'  => $b['cash_refunds'],
+                            'cash_pay_ins'  => $b['cash_pay_ins'],
+                            'cash_pay_outs' => $b['cash_pay_outs'],
+                            'supplier_cash_payments' => $b['supplier_cash_payments'],
+                            'expected_cash' => $b['expected_cash'],
+                            'cash_variance' => $variance,
+                        ]
+                    );
 
-                app(AccountingService::class)->recordShiftClosed($shift->fresh());
+                    app(AccountingService::class)->recordShiftClosed($shift->fresh());
+                });
             });
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
@@ -177,7 +200,13 @@ class ShiftController extends Controller
     public function xReport(Shift $shift)
     {
         $this->authorize('view', $shift);
-        $breakdown = $this->computeExpectedCash($shift);
+        // Pin to the SHIFT's branch (same reasoning as close()) so an owner
+        // spot-checking from "all branches" mode or another active branch
+        // reads the same numbers the close will write.
+        $breakdown = BranchContext::forBranch(
+            $shift->branch_id,
+            fn () => $this->computeExpectedCash($shift)
+        );
         return view('admin.shifts.x-report', compact('shift', 'breakdown'));
     }
 
@@ -231,7 +260,15 @@ class ShiftController extends Controller
      */
     protected function computeExpectedCash(Shift $shift): array
     {
-        $payments  = Payment::where('shift_id', $shift->id)->get();
+        // shift_id is an EXACT key, so every sum below runs WITHOUT the
+        // viewer's BranchScope. Payments/refunds carry the INVOICE's branch
+        // (a multi-branch operator can take branch-B money into this drawer),
+        // so filtering by the viewing branch dropped real rows out of the
+        // X/Z-report and the missing cash then hit the GL as a phantom
+        // shift_cash_variance. Nothing can leak across drawers — the key is
+        // the shift itself.
+        $payments  = Payment::withoutGlobalScope(BranchScope::class)
+            ->where('shift_id', $shift->id)->get();
         $cashSales = (float) $payments->where('method', 'cash')->sum('amount');
         $cardSales = (float) $payments->where('method', 'card')->sum('amount');
         $other     = (float) $payments->whereNotIn('method', ['cash', 'card'])->sum('amount');
@@ -239,14 +276,19 @@ class ShiftController extends Controller
         // Only COMPLETED cash refunds actually left the drawer; pending/cancelled
         // move no cash. Refund::method tracks how the money left, not the
         // original payment method.
-        $cashRefunds = (float) \App\Models\Refund::where('shift_id', $shift->id)
+        $cashRefunds = (float) \App\Models\Refund::withoutGlobalScope(BranchScope::class)
+            ->where('shift_id', $shift->id)
             ->where('method', 'cash')
             ->where('status', 'completed')
             ->sum('amount');
 
-        $cashPayIns  = (float) $shift->cashMovements()->where('type', 'pay_in')->sum('amount');
-        $cashPayOuts = (float) $shift->cashMovements()->where('type', 'pay_out')->sum('amount');
+        $cashPayIns  = (float) \App\Models\CashMovement::withoutGlobalScope(BranchScope::class)
+            ->where('shift_id', $shift->id)->where('type', 'pay_in')->sum('amount');
+        $cashPayOuts = (float) \App\Models\CashMovement::withoutGlobalScope(BranchScope::class)
+            ->where('shift_id', $shift->id)->where('type', 'pay_out')->sum('amount');
 
+        // SupplierPayment carries no BranchScope — plain shift_id filter is
+        // already exact.
         $supplierCashPayments = (float) \App\Models\SupplierPayment::where('shift_id', $shift->id)
             ->where('method', 'cash')
             ->sum('amount');

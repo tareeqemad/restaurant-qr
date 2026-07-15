@@ -14,12 +14,14 @@ use App\Models\ActivityLog;
 use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\InventoryMovement;
+use App\Models\Invoice;
 use App\Models\MenuItem;
 use App\Models\MenuPromotion;
 use App\Models\Modifier;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderItemModifier;
+use App\Models\Scopes\BranchScope;
 use App\Models\Setting;
 use App\Models\TableSession;
 use App\Support\BranchContext;
@@ -822,6 +824,14 @@ class OrderService
                 } => now(),
             ]);
 
+            // Prepaid takeaway/delivery whose money already landed in full:
+            // handing it over was the LAST milestone, close the ticket now
+            // (payment no longer completes undelivered orders — see
+            // BillingService::addPayment).
+            if ($target === OrderStatus::Delivered->value) {
+                $this->completeIfPrepaid($order);
+            }
+
             ActivityLog::log("order.{$target}", "تحديث حالة الطلب {$order->number} إلى {$target}", $order);
             $order = $order->refresh()->load('items.station', 'table', 'tableSession');
             SafeBroadcast::dispatch(new OrderStatusChanged($order, $previous));
@@ -1187,6 +1197,14 @@ class OrderService
         if ($active->every(fn ($i) => $i->status === OrderItemStatus::Served->value)) {
             $order->update(['status' => OrderStatus::Delivered->value, 'delivered_at' => now()]);
             $newStatus = OrderStatus::Delivered->value;
+            // Prepaid takeaway/delivery: the money was collected in full
+            // BEFORE the kitchen finished (addPayment leaves the ticket on
+            // its kitchen lifecycle instead of completing it). Serving the
+            // last line was the final milestone — close the ticket so the
+            // diner sees «مكتمل» and the boards drop it.
+            if ($this->completeIfPrepaid($order)) {
+                $newStatus = OrderStatus::Completed->value;
+            }
         } elseif ($active->every(fn ($i) => in_array($i->status, [OrderItemStatus::Ready->value, OrderItemStatus::Served->value]))) {
             $order->update(['status' => OrderStatus::Ready->value, 'ready_at' => $order->ready_at ?? now()]);
             $newStatus = OrderStatus::Ready->value;
@@ -1230,6 +1248,53 @@ class OrderService
             $order = $order->load('items.station', 'table', 'tableSession');
             SafeBroadcast::dispatch(new OrderStatusChanged($order, $previous));
         }
+    }
+
+    /**
+     * Close a fully-delivered STANDALONE order whose invoice is already
+     * settled (prepaid takeaway/delivery, or a fully-comped zero-total
+     * ticket). Payment deliberately no longer completes an undelivered
+     * order (BillingService::addPayment gates on Delivered — completing a
+     * paid-but-uncooked ticket made it vanish from the KDS/waiter boards),
+     * so the serve-side transitions call this to finish the job once the
+     * food is actually handed over.
+     *
+     * Dine-in session orders are excluded on purpose — their completion is
+     * closeOrdersAndSession's job at settle time.
+     *
+     * Returns TRUE when the order was promoted to Completed.
+     */
+    protected function completeIfPrepaid(Order $order): bool
+    {
+        if ($order->table_session_id) {
+            return false;
+        }
+
+        // Unscoped on purpose: the invoice carries the ORDER's branch and
+        // the serving tap may come from an operator pinned to another
+        // branch (order_id is an exact key, nothing can leak across orders).
+        // 'unpaid_writeoff' counts as settled — a manager already decided
+        // nothing more will be collected, same as assertOrderCanTransitionTo.
+        $settled = Invoice::withoutGlobalScope(BranchScope::class)
+            ->where('order_id', $order->id)
+            ->whereIn('status', ['paid', 'unpaid_writeoff'])
+            ->exists();
+        if (! $settled) {
+            return false;
+        }
+
+        $order->update([
+            'status' => OrderStatus::Completed->value,
+            'completed_at' => now(),
+        ]);
+
+        ActivityLog::log(
+            'order.completed',
+            "اكتمال الطلب {$order->number} تلقائياً — مدفوع مسبقاً وسُلِّم بالكامل",
+            $order,
+        );
+
+        return true;
     }
 
     protected function assertInvoiceCanStillChange(Order $order): void

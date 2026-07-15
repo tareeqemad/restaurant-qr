@@ -2,7 +2,9 @@
 
 namespace App\Policies;
 
+use App\Models\Order;
 use App\Models\OrderDiscount;
+use App\Models\TableSession;
 use App\Models\User;
 
 /**
@@ -14,9 +16,22 @@ use App\Models\User;
  */
 class OrderDiscountPolicy extends BasePolicy
 {
-    public function apply(User $user): bool
+    /**
+     * `$target` is the Order or TableSession being discounted. Class-level
+     * checks (`authorize('apply', OrderDiscount::class)` from controllers /
+     * Volt gates) pass no target and stay permission-only — they gate the UI
+     * affordance before a target exists. OrderDiscountService passes the
+     * resolved target, adding the branch wall (mirrors OrderPolicy's
+     * inUserBranch): a cashier must belong to the ORDER's branch, otherwise
+     * a multi-branch viewer could comp tickets on tills they don't work.
+     */
+    public function apply(User $user, Order|TableSession|null $target = null): bool
     {
-        return $user->hasPermission('discounts.apply');
+        if (! $user->hasPermission('discounts.apply')) {
+            return false;
+        }
+
+        return $target === null || $this->inUserBranch($user, $target);
     }
 
     public function remove(User $user, OrderDiscount $discount): bool

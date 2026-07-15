@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\Invoice;
+use App\Models\Scopes\BranchScope;
 use App\Services\BillingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -40,7 +41,12 @@ class CustomerDebtController extends Controller
         // into PHP just to sum them. Group by customer, then re-attach
         // customer details via a single IN query so the view has access
         // to the name + credit_limit without an N+1.
+        // Unscoped: the debt board is a business-wide ledger keyed by
+        // customer (credit ceiling is global, collection is global). A
+        // branch-scoped board would hide debtors who owe only at another
+        // branch and understate per-customer totals.
         $aggQuery = Invoice::query()
+            ->withoutGlobalScope(BranchScope::class)
             ->select([
                 'customer_id',
                 DB::raw('SUM(balance) as debt_total'),
@@ -70,8 +76,9 @@ class CustomerDebtController extends Controller
         $customers = Customer::whereIn('id', $rows->pluck('customer_id'))
             ->get()->keyBy('id');
 
-        // Headline numbers for the stat rail
+        // Headline numbers for the stat rail — same global scope as the board.
         $totals = Invoice::query()
+            ->withoutGlobalScope(BranchScope::class)
             ->whereNotNull('settled_on_account_at')
             ->whereNotNull('customer_id')
             ->where('balance', '>', 0)
@@ -104,7 +111,11 @@ class CustomerDebtController extends Controller
     {
         $this->authorize('view', $customer);
 
+        // Unscoped: a customer's debt spans branches (see Customer::
+        // outstandingDebt), and FIFO collection drains it globally — the rows
+        // shown here must match what the total counts and the collector pays.
         $openInvoices = $customer->invoices()
+            ->withoutGlobalScope(BranchScope::class)
             ->whereNotNull('settled_on_account_at')
             ->where('balance', '>', 0)
             ->whereNotIn('status', ['cancelled', 'unpaid_writeoff'])
@@ -212,6 +223,7 @@ class CustomerDebtController extends Controller
         }
 
         $openInvoices = $customer->invoices()
+            ->withoutGlobalScope(BranchScope::class)
             ->whereNotNull('settled_on_account_at')
             ->where('balance', '>', 0)
             ->whereNotIn('status', ['cancelled', 'unpaid_writeoff'])

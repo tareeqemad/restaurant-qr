@@ -10,8 +10,10 @@ use App\Models\JournalEntry;
 use App\Models\Lookup;
 use App\Models\Order;
 use App\Models\OrderDiscount;
+use App\Models\Scopes\BranchScope;
 use App\Models\TableSession;
 use App\Models\User;
+use App\Support\BranchContext;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -43,46 +45,55 @@ class OrderDiscountService
     public function applyToOrder(Order $order, array $data, User $user): OrderDiscount
     {
         return DB::transaction(function () use ($order, $data, $user) {
-            $order = Order::whereKey($order->id)->lockForUpdate()->firstOrFail();
-            $this->guardOrderMutable($order);
+            // Exact-id resolve without the viewer scope + pin to the ORDER's
+            // branch: the paid-invoice guard and the cumulative-cap sum below
+            // are order-keyed and silently no-op'd for an operator standing
+            // on another branch.
+            $order = Order::withoutGlobalScope(BranchScope::class)
+                ->whereKey($order->id)->lockForUpdate()->firstOrFail();
 
-            $existingDiscount = (float) OrderDiscount::where('order_id', $order->id)->sum('amount');
-            $payload = $this->validateAndPrepare($data, $user, (float) $order->subtotal, $existingDiscount);
+            return BranchContext::forBranch($order->branch_id, function () use ($order, $data, $user) {
+                $this->authorizeBranchTarget($user, $order);
+                $this->guardOrderMutable($order);
 
-            $discount = OrderDiscount::create([
-                // Branch from the order — discount belongs to wherever the
-                // order was placed, regardless of where the cashier is now.
-                'branch_id'          => $order->branch_id,
-                'order_id'           => $order->id,
-                'discount_id'        => null,
-                'name_snapshot'      => $payload['name'],
-                'type'               => $payload['type'],
-                'value'              => $payload['value'],
-                'amount'             => $payload['amount'],
-                'category_lookup_id' => $payload['category_lookup_id'],
-                'reason'             => $payload['reason'],
-                'applied_by_user_id' => $user->id,
-            ]);
+                $existingDiscount = (float) OrderDiscount::where('order_id', $order->id)->sum('amount');
+                $payload = $this->validateAndPrepare($data, $user, (float) $order->subtotal, $existingDiscount);
 
-            $this->orders->recalculateTotals($order);
-            $this->syncInvoiceFromOrder($order->refresh());
-
-            ActivityLog::log(
-                'order.discount_applied',
-                "خصم {$payload['name']} على الطلب {$order->number} بقيمة ".
-                Money::format($payload['amount']),
-                $discount,
-                [
+                $discount = OrderDiscount::create([
+                    // Branch from the order — discount belongs to wherever the
+                    // order was placed, regardless of where the cashier is now.
+                    'branch_id'          => $order->branch_id,
                     'order_id'           => $order->id,
+                    'discount_id'        => null,
+                    'name_snapshot'      => $payload['name'],
                     'type'               => $payload['type'],
                     'value'              => $payload['value'],
                     'amount'             => $payload['amount'],
                     'category_lookup_id' => $payload['category_lookup_id'],
                     'reason'             => $payload['reason'],
-                ]
-            );
+                    'applied_by_user_id' => $user->id,
+                ]);
 
-            return $discount->refresh();
+                $this->orders->recalculateTotals($order);
+                $this->syncInvoiceFromOrder($order->refresh());
+
+                ActivityLog::log(
+                    'order.discount_applied',
+                    "خصم {$payload['name']} على الطلب {$order->number} بقيمة ".
+                    Money::format($payload['amount']),
+                    $discount,
+                    [
+                        'order_id'           => $order->id,
+                        'type'               => $payload['type'],
+                        'value'              => $payload['value'],
+                        'amount'             => $payload['amount'],
+                        'category_lookup_id' => $payload['category_lookup_id'],
+                        'reason'             => $payload['reason'],
+                    ]
+                );
+
+                return $discount->refresh();
+            });
         });
     }
 
@@ -97,81 +108,92 @@ class OrderDiscountService
     public function applyToSession(TableSession $session, array $data, User $user): array
     {
         return DB::transaction(function () use ($session, $data, $user) {
-            $session->loadMissing('orders');
+            // Re-fetch unscoped + pin to the SESSION's branch: the orders
+            // relation, the paid-invoice guard, and the cumulative-cap sum
+            // are all session-keyed — under the viewer's scope a cross-branch
+            // session either saw no orders or (worse) skipped the closed-
+            // invoice check entirely.
+            $session = TableSession::withoutGlobalScope(BranchScope::class)
+                ->whereKey($session->id)->firstOrFail();
 
-            // Block discount changes once the session invoice is closed.
-            // applyToSession never went through guardOrderMutable, so without
-            // this the order rows get mutated (recalculateTotals) and only
-            // syncInvoiceFromSession later no-ops on the closed invoice —
-            // desyncing order totals from a paid invoice with no ledger repost.
-            $sessionInvoice = $session->invoice()->where('status', '!=', 'cancelled')->latest()->first();
-            if ($sessionInvoice && in_array($sessionInvoice->status, ['paid', 'unpaid_writeoff'], true)) {
-                throw ValidationException::withMessages([
-                    'value' => 'الفاتورة مغلقة. لتعديل الخصم اعمل استرداد ثم أعد الإصدار.',
-                ]);
-            }
+            return BranchContext::forBranch($session->branch_id, function () use ($session, $data, $user) {
+                $this->authorizeBranchTarget($user, $session);
+                $session->loadMissing('orders');
 
-            $billable = $session->orders
-                ->where('status', '!=', OrderStatus::Cancelled->value)
-                ->filter(fn (Order $o) => (float) $o->subtotal > 0)
-                ->values();
-
-            if ($billable->isEmpty()) {
-                throw ValidationException::withMessages([
-                    'value' => 'لا توجد طلبات قابلة للخصم في هذه الجلسة.',
-                ]);
-            }
-
-            $sessionSubtotal = (float) $billable->sum('subtotal');
-            $existingDiscount = (float) OrderDiscount::whereIn('order_id', $billable->pluck('id'))->sum('amount');
-            $payload = $this->validateAndPrepare($data, $user, $sessionSubtotal, $existingDiscount);
-
-            $created = [];
-
-            if ($payload['type'] === 'percent') {
-                foreach ($billable as $order) {
-                    $amount = Money::round((float) $order->subtotal * (float) $payload['value'] / 100);
-                    $created[] = $this->writeAndRecalc($order, $payload, $amount, $user);
+                // Block discount changes once the session invoice is closed.
+                // applyToSession never went through guardOrderMutable, so without
+                // this the order rows get mutated (recalculateTotals) and only
+                // syncInvoiceFromSession later no-ops on the closed invoice —
+                // desyncing order totals from a paid invoice with no ledger repost.
+                $sessionInvoice = $session->invoice()->where('status', '!=', 'cancelled')->latest()->first();
+                if ($sessionInvoice && in_array($sessionInvoice->status, ['paid', 'unpaid_writeoff'], true)) {
+                    throw ValidationException::withMessages([
+                        'value' => 'الفاتورة مغلقة. لتعديل الخصم اعمل استرداد ثم أعد الإصدار.',
+                    ]);
                 }
-            } else {
-                // Fixed: prorate by subtotal. Walk all-but-last with rounded
-                // shares; final order takes whatever's left so the sum is
-                // exact to the cent.
-                $remaining = (float) $payload['amount'];
-                $count = $billable->count();
-                foreach ($billable as $i => $order) {
-                    if ($i === $count - 1) {
-                        $share = Money::round($remaining);
-                    } else {
-                        $share = Money::round((float) $payload['amount'] * ((float) $order->subtotal / $sessionSubtotal));
-                        $remaining -= $share;
+
+                $billable = $session->orders
+                    ->where('status', '!=', OrderStatus::Cancelled->value)
+                    ->filter(fn (Order $o) => (float) $o->subtotal > 0)
+                    ->values();
+
+                if ($billable->isEmpty()) {
+                    throw ValidationException::withMessages([
+                        'value' => 'لا توجد طلبات قابلة للخصم في هذه الجلسة.',
+                    ]);
+                }
+
+                $sessionSubtotal = (float) $billable->sum('subtotal');
+                $existingDiscount = (float) OrderDiscount::whereIn('order_id', $billable->pluck('id'))->sum('amount');
+                $payload = $this->validateAndPrepare($data, $user, $sessionSubtotal, $existingDiscount);
+
+                $created = [];
+
+                if ($payload['type'] === 'percent') {
+                    foreach ($billable as $order) {
+                        $amount = Money::round((float) $order->subtotal * (float) $payload['value'] / 100);
+                        $created[] = $this->writeAndRecalc($order, $payload, $amount, $user);
                     }
-                    $created[] = $this->writeAndRecalc($order, $payload, $share, $user);
+                } else {
+                    // Fixed: prorate by subtotal. Walk all-but-last with rounded
+                    // shares; final order takes whatever's left so the sum is
+                    // exact to the cent.
+                    $remaining = (float) $payload['amount'];
+                    $count = $billable->count();
+                    foreach ($billable as $i => $order) {
+                        if ($i === $count - 1) {
+                            $share = Money::round($remaining);
+                        } else {
+                            $share = Money::round((float) $payload['amount'] * ((float) $order->subtotal / $sessionSubtotal));
+                            $remaining -= $share;
+                        }
+                        $created[] = $this->writeAndRecalc($order, $payload, $share, $user);
+                    }
                 }
-            }
 
-            $invoice = $session->invoice()->where('status', '!=', 'cancelled')->latest()->first();
-            if ($invoice) {
-                $this->syncInvoiceFromSession($invoice->refresh(), $session);
-            }
+                $invoice = $session->invoice()->where('status', '!=', 'cancelled')->latest()->first();
+                if ($invoice) {
+                    $this->syncInvoiceFromSession($invoice->refresh(), $session);
+                }
 
-            ActivityLog::log(
-                'session.discount_applied',
-                "خصم {$payload['name']} على جلسة الطاولة {$session->table?->number} بقيمة ".
-                Money::format($payload['amount']),
-                $session,
-                [
-                    'session_id'         => $session->id,
-                    'type'               => $payload['type'],
-                    'value'              => $payload['value'],
-                    'amount'             => $payload['amount'],
-                    'category_lookup_id' => $payload['category_lookup_id'],
-                    'reason'             => $payload['reason'],
-                    'orders'             => $billable->pluck('number')->all(),
-                ]
-            );
+                ActivityLog::log(
+                    'session.discount_applied',
+                    "خصم {$payload['name']} على جلسة الطاولة {$session->table?->number} بقيمة ".
+                    Money::format($payload['amount']),
+                    $session,
+                    [
+                        'session_id'         => $session->id,
+                        'type'               => $payload['type'],
+                        'value'              => $payload['value'],
+                        'amount'             => $payload['amount'],
+                        'category_lookup_id' => $payload['category_lookup_id'],
+                        'reason'             => $payload['reason'],
+                        'orders'             => $billable->pluck('number')->all(),
+                    ]
+                );
 
-            return $created;
+                return $created;
+            });
         });
     }
 
@@ -183,27 +205,35 @@ class OrderDiscountService
     public function remove(OrderDiscount $discount, User $user): void
     {
         DB::transaction(function () use ($discount, $user) {
-            $order = $discount->order()->lockForUpdate()->firstOrFail();
-            $this->guardOrderMutable($order);
+            // Same cross-branch pin as applyToOrder — the paid-invoice guard
+            // resolves the governing invoice by exact keys and must not
+            // no-op under the viewer's scope.
+            $order = $discount->order()
+                ->withoutGlobalScope(BranchScope::class)
+                ->lockForUpdate()->firstOrFail();
 
-            $snapshot = [
-                'name'   => $discount->name_snapshot,
-                'amount' => (float) $discount->amount,
-                'order'  => $order->number,
-            ];
+            BranchContext::forBranch($order->branch_id, function () use ($discount, $order, $user) {
+                $this->guardOrderMutable($order);
 
-            $discount->delete();
+                $snapshot = [
+                    'name'   => $discount->name_snapshot,
+                    'amount' => (float) $discount->amount,
+                    'order'  => $order->number,
+                ];
 
-            $this->orders->recalculateTotals($order);
-            $this->syncInvoiceFromOrder($order->refresh());
+                $discount->delete();
 
-            ActivityLog::log(
-                'order.discount_removed',
-                "إزالة خصم {$snapshot['name']} عن الطلب {$snapshot['order']} (".
-                Money::format($snapshot['amount']).')',
-                $order,
-                ['order_id' => $order->id, 'removed_by' => $user->id] + $snapshot
-            );
+                $this->orders->recalculateTotals($order);
+                $this->syncInvoiceFromOrder($order->refresh());
+
+                ActivityLog::log(
+                    'order.discount_removed',
+                    "إزالة خصم {$snapshot['name']} عن الطلب {$snapshot['order']} (".
+                    Money::format($snapshot['amount']).')',
+                    $order,
+                    ['order_id' => $order->id, 'removed_by' => $user->id] + $snapshot
+                );
+            });
         });
     }
 
@@ -239,6 +269,28 @@ class OrderDiscountService
     }
 
     // ─── internals ───────────────────────────────────────────────────────
+
+    /**
+     * Branch wall for the resolved target (mirrors OrderPolicy's
+     * inUserBranch): the caps answer "how much may this role give away" —
+     * this answers "may this user discount THIS order/session at all".
+     * Controllers and the Volt dashboard gate the `discounts.apply`
+     * PERMISSION class-level (no target resolved yet); the service is the
+     * single choke point that sees the target, so the branch check lives
+     * here. Deliberately branch-only — re-imposing the permission would
+     * double-gate trusted internal callers.
+     */
+    protected function authorizeBranchTarget(User $user, Order|TableSession $target): void
+    {
+        if ($user->isOwnerLevel()) {
+            return;
+        }
+        if (! $user->belongsToBranch((int) $target->branch_id)) {
+            throw ValidationException::withMessages([
+                'value' => 'لا تملك صلاحية تطبيق خصم على طلبات هذا الفرع.',
+            ]);
+        }
+    }
 
     protected function writeAndRecalc(Order $order, array $payload, float $amount, User $user): OrderDiscount
     {
@@ -381,11 +433,24 @@ class OrderDiscountService
      */
     protected function invoiceFor(Order $order): ?Invoice
     {
-        if ($order->invoice) {
-            return $order->invoice;
+        // Exact-key lookups (order_id / table_session_id) WITHOUT the viewer
+        // BranchScope: under a different active branch both used to resolve
+        // null, silently disarming the paid-invoice guard — a cross-branch
+        // discount edit on a paid, closed invoice slipped straight through
+        // with no ledger repost. Queried straight off the invoices table
+        // (not the `invoice()` relation) because latestOfMany's one-of-many
+        // subquery re-applies the global scope even when the outer query
+        // drops it. latest('id') mirrors latestOfMany's pick.
+        $direct = Invoice::withoutGlobalScope(BranchScope::class)
+            ->where('order_id', $order->id)
+            ->latest('id')
+            ->first();
+        if ($direct) {
+            return $direct;
         }
         if ($order->table_session_id) {
-            return Invoice::where('table_session_id', $order->table_session_id)
+            return Invoice::withoutGlobalScope(BranchScope::class)
+                ->where('table_session_id', $order->table_session_id)
                 ->where('status', '!=', 'cancelled')
                 ->latest()
                 ->first();

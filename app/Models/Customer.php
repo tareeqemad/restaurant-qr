@@ -165,7 +165,15 @@ class Customer extends Authenticatable
      */
     public function outstandingDebt(): float
     {
+        // A customer's debt is GLOBAL to the business, not per-branch: the
+        // credit ceiling is one column on this row and collection (FIFO in
+        // BillingService::payCustomerDebt) drains debts across every branch.
+        // Unscope BranchScope so the ceiling check, the debt board, and the
+        // settle-on-account preview all read the same total the collector
+        // actually settles — otherwise a debt at another branch is invisible
+        // to the cashier while their payment silently lands on it.
         return (float) $this->invoices()
+            ->withoutGlobalScope(\App\Models\Scopes\BranchScope::class)
             ->whereNotNull('settled_on_account_at')
             ->where('balance', '>', 0)
             ->whereNotIn('status', ['cancelled', 'unpaid_writeoff'])
