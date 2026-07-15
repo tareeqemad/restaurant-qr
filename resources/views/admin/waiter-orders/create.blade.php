@@ -1,6 +1,14 @@
 @extends('layouts.admin')
 @section('title', 'طلب جديد — طاولة '.$table->number)
 
+{{-- POS styles in the <head> so the tile grid + cart paint styled on the
+     first render — no flash of unstyled content (a component-body <style>
+     applied late). --}}
+@push('styles')
+    <link rel="stylesheet"
+          href="{{ asset('assets/dashtic/css/waiter-pos.css') }}?v={{ filemtime(public_path('assets/dashtic/css/waiter-pos.css')) }}">
+@endpush
+
 @section('content')
 <x-admin.breadcrumb
     :title="'طلب جديد — طاولة '.$table->number"
