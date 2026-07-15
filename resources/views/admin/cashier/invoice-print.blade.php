@@ -35,6 +35,34 @@ hr { border: 0; border-top: 1px dashed #333; margin: .5rem 0; }
     $taxNumber = \App\Models\Setting::get('tax_number');
     $currencySymbol = \App\Models\Setting::get('currency_symbol', config('restaurant.currency_symbol'));
     $receiptFooter = \App\Models\Setting::get('receipt_footer', 'شكراً لزيارتكم');
+
+    // Same qty format as the KDS/cashier screens: «×2» whole, «×1.5» fractional.
+    $fmtQty = function ($qty): string {
+        $qty = (float) $qty;
+        return $qty == floor($qty)
+            ? (string) (int) $qty
+            : rtrim(rtrim(number_format($qty, 2, '.', ''), '0'), '.');
+    };
+
+    // ─── Which items does the invoice snapshot actually cover? ─────────
+    // issueInvoice froze the totals at issued_at and nothing recomputes
+    // them when an order/item lands later (only a discount resync does).
+    // Printing late items inside the billed list next to the OLD totals
+    // is a lie — so they go under a separate «طلبات غير مفوترة» section.
+    // Self-heal: if all items reconcile with the invoice subtotal, a
+    // later resync absorbed them, and everything prints as billed —
+    // mirroring exactly what the screen totals say, never inventing.
+    $issuedAt = $invoice->issued_at ?? $invoice->created_at;
+    $activeItems = $invoiceOrders->flatMap(fn ($o) => $o->items)->filter(fn ($it) => $it->status !== 'cancelled')->values();
+    $unbilledItems = $activeItems->filter(fn ($it) => $issuedAt && $it->created_at && $it->created_at->gt($issuedAt))->values();
+    if ($unbilledItems->isNotEmpty()
+        && abs($activeItems->sum(fn ($it) => (float) $it->subtotal) - (float) $invoice->subtotal) <= 0.011) {
+        $unbilledItems = collect();
+    }
+    $billedItems = $activeItems->reject(fn ($it) => $unbilledItems->contains(fn ($u) => $u->id === $it->id))->values();
+
+    // Split-payment label lives in the payment notes («دفعة جزء: …»).
+    $splitNotePrefix = 'دفعة جزء: ';
 @endphp
 <div class="center">
     <h1>{{ $siteName }}</h1>
@@ -52,9 +80,7 @@ hr { border: 0; border-top: 1px dashed #333; margin: .5rem 0; }
 <table class="tbl-items">
 <thead><tr><th>الصنف</th><th>كم</th><th>سعر</th><th>إجمالي</th></tr></thead>
 <tbody>
-@foreach($invoiceOrders as $order)
-    @foreach($order->items as $it)
-        @if($it->status !== 'cancelled')
+@foreach($billedItems as $it)
         <tr>
             <td>{{ $it->name_snapshot }}
                 @if($it->modifiers->count())<br><small>{{ $it->modifiers->pluck('name_snapshot')->join('، ') }}</small>@endif
@@ -65,12 +91,10 @@ hr { border: 0; border-top: 1px dashed #333; margin: .5rem 0; }
                     </small>
                 @endif
             </td>
-            <td>{{ $it->quantity }}</td>
+            <td>×{{ $fmtQty($it->quantity) }}</td>
             <td>{{ number_format($it->unit_price + $it->modifiers_total, 2) }}</td>
             <td>{{ number_format($it->subtotal, 2) }}</td>
         </tr>
-        @endif
-    @endforeach
 @endforeach
 </tbody></table>
 <hr>
@@ -82,12 +106,54 @@ hr { border: 0; border-top: 1px dashed #333; margin: .5rem 0; }
 @if($invoice->delivery_fee > 0)<tr><td class="lbl">رسوم التوصيل:</td><td class="val">{{ number_format($invoice->delivery_fee, 2) }}</td></tr>@endif
 @if($invoice->tip > 0)<tr><td class="lbl">إكرامية:</td><td class="val">{{ number_format($invoice->tip, 2) }}</td></tr>@endif
 <tr class="grand"><td class="lbl">الإجمالي:</td><td class="val">{{ number_format($invoice->total, 2) }} {{ $currencySymbol }}</td></tr>
+{{-- Money trail — a debt or refund customer walking off with a paper that
+     shows only «الإجمالي» thinks they're square. Only printed once money
+     actually moved (a plain pre-payment bill stays uncluttered). --}}
+@if($invoice->payments->count() || (float) ($invoice->refunded_total ?? 0) > 0 || $invoice->settled_on_account_at)
+<tr><td class="lbl">المدفوع:</td><td class="val">{{ number_format((float) $invoice->paid_total, 2) }}</td></tr>
+@if((float) ($invoice->refunded_total ?? 0) > 0)<tr><td class="lbl">المسترد:</td><td class="val">−{{ number_format((float) $invoice->refunded_total, 2) }}</td></tr>@endif
+<tr><td class="lbl">المتبقي:</td><td class="val">{{ number_format((float) $invoice->balance, 2) }}</td></tr>
+@endif
 </table>
+@if($invoice->settled_on_account_at && (float) $invoice->balance > 0.001)
+<div class="center" style="border:1px dashed #333; padding:4px; margin:.4rem 0;">
+    المتبقي مُؤجَّل كدين على حساب الزبون بتاريخ {{ $invoice->settled_on_account_at->format('Y-m-d') }}
+</div>
+@endif
+
+{{-- Items keyed in AFTER the invoice was issued — the totals above don't
+     include them, so they must never sit silently in the billed list. --}}
+@if($unbilledItems->isNotEmpty())
+<hr>
+<div><strong>طلبات غير مفوترة</strong> <small>(أُضيفت بعد إصدار الفاتورة)</small></div>
+<table class="tbl-items">
+<tbody>
+@foreach($unbilledItems as $it)
+        <tr>
+            <td>{{ $it->name_snapshot }}
+                @if($it->modifiers->count())<br><small>{{ $it->modifiers->pluck('name_snapshot')->join('، ') }}</small>@endif
+            </td>
+            <td>×{{ $fmtQty($it->quantity) }}</td>
+            <td>{{ number_format($it->unit_price + $it->modifiers_total, 2) }}</td>
+            <td>{{ number_format($it->subtotal, 2) }}</td>
+        </tr>
+@endforeach
+</tbody></table>
+<div><small>غير مشمولة في الإجمالي أعلاه — تُحصَّل على حدة.</small></div>
+@endif
 @if($invoice->payments->count())
 <hr>
 <div>الدفعات:</div>
 @foreach($invoice->payments as $p)
-    <div>{{ $p->method }} — {{ number_format($p->amount, 2) }}</div>
+    @php
+        $splitLabel = str_starts_with((string) $p->notes, $splitNotePrefix)
+            ? trim(mb_substr($p->notes, mb_strlen($splitNotePrefix)))
+            : null;
+    @endphp
+    <div>
+        {{ \App\Support\PaymentMethods::label($p->method) }}@if($splitLabel) ({{ $splitLabel }})@endif
+        — {{ number_format($p->amount, 2) }}@if($p->reference) <span dir="ltr">[{{ $p->reference }}]</span>@endif
+    </div>
 @endforeach
 @endif
 @if($receiptFooter)

@@ -15,6 +15,7 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class CashierController extends Controller
 {
@@ -165,6 +166,39 @@ class CashierController extends Controller
         }
     }
 
+    /**
+     * Reverse a settle-on-account — lift the parked-debt flag so the
+     * invoice goes back to being a live checkout (wrong customer picked,
+     * accidental park, diner came back to the till two minutes later).
+     * All the guards (not parked / already collected / closed statuses)
+     * live in BillingService::unparkSettleOnAccount; whatever Arabic
+     * error it throws is flashed as-is. Same ability as settle-on-account
+     * — parking and un-parking are two sides of the same drawer decision.
+     */
+    public function unpark(Invoice $invoice)
+    {
+        $this->authorize('create', Payment::class);
+        try {
+            $this->billing->unparkSettleOnAccount($invoice, auth()->id());
+        } catch (\Throwable $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        // Land the cashier on the invoice's own checkout, not back on the
+        // debts page. Un-parking clears settled_on_account_at, so the invoice
+        // drops off the debt ledger; its dine-in session is already closed,
+        // so it's off the active-sessions dashboard too. cashier.show renders
+        // any session (closed included) with its invoice, so the restored
+        // balance stays collectable. Session-less invoices fall back to back().
+        if ($invoice->table_session_id) {
+            return redirect()
+                ->route('admin.cashier.show', $invoice->table_session_id)
+                ->with('success', 'تم إلغاء تأجيل الدين — حصّل المتبقي من هنا.');
+        }
+
+        return back()->with('success', 'تم إلغاء تأجيل الدين — عادت الفاتورة إلى التحصيل العادي.');
+    }
+
     public function cancel(Request $request, Invoice $invoice)
     {
         $this->authorize('create', Payment::class);
@@ -179,6 +213,10 @@ class CashierController extends Controller
 
     public function pdf(Invoice $invoice)
     {
+        // Same ability as the cashier show page — a receipt carries the
+        // customer's name/phone and the full money trail, so it must not
+        // be an unguarded GET for anyone who guesses an invoice id.
+        $this->authorize('viewAny', Payment::class);
         $invoice->load(['tableSession.table', 'tableSession.orders.items.modifiers', 'order.items.modifiers', 'payments']);
         $pdf = Pdf::loadView('admin.cashier.invoice-pdf', compact('invoice'));
         return $pdf->download($invoice->number.'.pdf');
@@ -186,10 +224,18 @@ class CashierController extends Controller
 
     public function print(Invoice $invoice)
     {
+        // Mirrors pdf() — see the WHY there.
+        $this->authorize('viewAny', Payment::class);
         $invoice->load(['tableSession.table', 'tableSession.orders.items.modifiers', 'order.items.modifiers', 'payments']);
         return view('admin.cashier.invoice-print', compact('invoice'));
     }
 
+    /**
+     * Create OR replace the invoice's splits. «تعديل التقسيم» re-posts
+     * through this same action — BillingService::splitInvoice clears and
+     * recreates the rows atomically, which is exactly the regroup we want
+     * while nothing is paid yet.
+     */
     public function split(Request $request, Invoice $invoice)
     {
         $this->authorize('create', Payment::class);
@@ -199,6 +245,18 @@ class CashierController extends Controller
             'splits.*.amount' => ['required', 'numeric', 'min:0.01'],
             'splits.*.method' => ['required', \App\Support\PaymentMethods::inRule()],
         ]);
+
+        // Regroup guard: a paid split is anchored to a committed payment,
+        // so replacing it is refund territory, not an edit. The service
+        // would also refuse (any payment blocks splitInvoice), but we make
+        // it a 422 with a precise message here so the modal's error isn't
+        // the generic "invoice has payments" one.
+        if ($invoice->splits()->where('paid', true)->exists()) {
+            throw ValidationException::withMessages([
+                'splits' => 'لا يمكن تعديل التقسيم بعد دفع أحد الأجزاء — ألغِ دفعة الجزء أولاً (عبر إلغاء الدفعة) أو أكمل تحصيل بقية الأجزاء.',
+            ]);
+        }
+
         try {
             $this->billing->splitInvoice($invoice, $data['splits']);
             return back()->with('success', 'تم تقسيم الفاتورة');
@@ -211,8 +269,11 @@ class CashierController extends Controller
     {
         $this->authorize('create', Payment::class);
         abort_unless($split->invoice_id === $invoice->id, 404);
+        // Optional per-split reference (card slip / bank transfer number) —
+        // flows into payments.reference like the single-payment form.
+        $data = $request->validate(['reference' => ['nullable', 'string', 'max:255']]);
         try {
-            $this->billing->paySplit($split, auth()->id(), $request->input('reference'));
+            $this->billing->paySplit($split, auth()->id(), $data['reference'] ?? null);
             return back()->with('success', "تم دفع جزء {$split->label}");
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());

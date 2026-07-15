@@ -6,6 +6,15 @@
     $splitPaymentMethods = $enabledPaymentMethods
         ->map(fn (array $meta, string $code) => ['code' => $code, 'label' => $meta['label']])
         ->values();
+
+    // Same qty format as the KDS boards («×2» for whole, «×1.5» for
+    // fractional) so the cashier never reads «2.00» here and «×2» there.
+    $fmtQty = function ($qty): string {
+        $qty = (float) $qty;
+        return $qty == floor($qty)
+            ? (string) (int) $qty
+            : rtrim(rtrim(number_format($qty, 2, '.', ''), '0'), '.');
+    };
 @endphp
 <x-admin.breadcrumb
     title="طاولة {{ $session->table?->number }}"
@@ -105,7 +114,7 @@
                             <td>{{ $it->name_snapshot }}
                                 @if($it->modifiers->count())<small class="text-muted d-block">{{ $it->modifiers->pluck('name_snapshot')->join('، ') }}</small>@endif
                             </td>
-                            <td>{{ $it->quantity }}</td>
+                            <td>×{{ $fmtQty($it->quantity) }}</td>
                             <td>{{ \App\Helpers\Money::format($it->unit_price + $it->modifiers_total) }}</td>
                             <td>{{ \App\Helpers\Money::format($it->subtotal) }}</td>
                         </tr>
@@ -188,11 +197,36 @@
                 {{-- Loud residual-balance flag — a short-paid transfer (cashier
                      confirmed less than the balance) leaves the table OPEN. This
                      draws the eye so the diner isn't waved off on a half-paid bill. --}}
-                @if($inv->status === 'partially_paid' && (float)$inv->balance > 0.001)
+                @if($inv->status === 'partially_paid' && (float)$inv->balance > 0.001 && ! $inv->settled_on_account_at)
                     <div class="alert alert-danger d-flex align-items-center gap-2 mt-2 mb-0 py-2 px-2 small">
                         <i class="bi bi-exclamation-triangle-fill fs-6"></i>
                         <span>الطاولة <strong>غير مغلقة</strong> — متبقٍ
                             <strong>{{ \App\Helpers\Money::format($inv->balance) }}</strong>. حصّله أو أجّله كدين.</span>
+                    </div>
+                @endif
+
+                {{-- Parked-debt banner + un-park. A settled-on-account invoice
+                     stays partially_paid with balance > 0 (the balance IS the
+                     ledger), so without this banner it looks like a live
+                     half-paid checkout. Un-park reverses an accidental park —
+                     guards live in BillingService::unparkSettleOnAccount. --}}
+                @if($inv->settled_on_account_at)
+                    <div class="alert alert-warning mt-2 mb-0 py-2 px-2 small">
+                        <i class="bi bi-journal-text"></i>
+                        مؤجّلة <strong>كدين على الزبون</strong> منذ {{ $inv->settled_on_account_at->format('Y-m-d H:i') }}
+                        — المتبقي <strong>{{ \App\Helpers\Money::format($inv->balance) }}</strong> يظهر في سجل ديونه،
+                        وأي دفعة هنا تسدد منه مباشرة.
+                        @can('create', \App\Models\Payment::class)
+                            @if((float) $inv->balance > 0.001)
+                                <form method="POST" action="{{ route('admin.cashier.unpark', $inv) }}" class="mt-2 mb-0"
+                                      onsubmit="return confirm('إلغاء تأجيل هذا الدين؟ سترجع الفاتورة إلى التحصيل العادي وتُحذف من سجل ديون الزبون.')">
+                                    @csrf
+                                    <button class="btn btn-sm btn-outline-dark w-100">
+                                        <i class="bi bi-arrow-counterclockwise"></i> إلغاء التأجيل
+                                    </button>
+                                </form>
+                            @endif
+                        @endcan
                     </div>
                 @endif
 
@@ -250,8 +284,25 @@
                     </script>
                     @endpush
                     @else
-                    <div class="alert alert-info small mb-2 py-2 mb-0">
-                        <i class="bi bi-info-circle"></i> الفاتورة مقسّمة — حصّل الدفعات من أزرار الأجزاء بالأسفل، أو أزل التقسيم أولاً.
+                    {{-- Compact splits summary AT the payment area — the split
+                         card sits below the fold, so without this the cashier
+                         scrolls to learn who still owes what. --}}
+                    @php $paidSplits = $inv->splits->where('paid', true); @endphp
+                    <div class="alert alert-info small py-2 px-2 mb-0">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span><i class="bi bi-scissors"></i> مقسّمة إلى {{ $inv->splits->count() }} أجزاء</span>
+                            <strong>مدفوع {{ $paidSplits->count() }}/{{ $inv->splits->count() }}
+                                ({{ \App\Helpers\Money::format($paidSplits->sum('amount')) }})</strong>
+                        </div>
+                        <div class="d-flex flex-wrap gap-1 mt-1">
+                            @foreach($inv->splits as $sp)
+                                <span class="badge {{ $sp->paid ? 'bg-success' : 'bg-white text-dark border' }}">
+                                    <i class="bi {{ $sp->paid ? 'bi-check2' : 'bi-hourglass' }}"></i>
+                                    {{ $sp->label }} · {{ \App\Helpers\Money::format($sp->amount) }}
+                                </span>
+                            @endforeach
+                        </div>
+                        <div class="mt-1 text-muted">حصّل من أزرار الأجزاء في بطاقة التقسيم بالأسفل.</div>
                     </div>
                     @endif
 
@@ -261,7 +312,9 @@
                          and at least one payment has been recorded
                          (BillingService::settleOnAccount enforces both;
                          the UI mirrors that to avoid a useless button). --}}
-                    @if($inv->customer_id && (float) $inv->paid_total > 0.001)
+                    {{-- Already-parked invoices skip the button: a second settle
+                         would only bounce off the service's idempotency guard. --}}
+                    @if($inv->customer_id && (float) $inv->paid_total > 0.001 && ! $inv->settled_on_account_at)
                         <button type="button" class="btn btn-warning w-100 mt-2"
                                 data-bs-toggle="modal" data-bs-target="#settleOnAccount">
                             <i class="bi bi-journal-text"></i>
@@ -274,20 +327,28 @@
                                     <button class="btn-close" data-bs-dismiss="modal"></button>
                                 </div>
                                 <div class="modal-body">
+                                    @php
+                                        // Preview math: at render time the invoice is NOT flagged
+                                        // yet, so outstandingDebt() is already "debt from OTHER
+                                        // invoices" (settleOnAccount computes the exact same way).
+                                        // The old preview subtracted this balance from it as if the
+                                        // flag were set, understating every number by one invoice.
+                                        $settleOtherDebt = $inv->customer?->outstandingDebt() ?? 0.0;
+                                        $settleResulting = $settleOtherDebt + (float) $inv->balance;
+                                    @endphp
                                     <div class="alert alert-info small">
                                         <strong>الزبون:</strong> {{ $inv->customer->name ?? '—' }}<br>
-                                        <strong>المبلغ المؤجل:</strong> {{ \App\Helpers\Money::format($inv->balance) }}<br>
-                                        <strong>دينه السابق:</strong>
-                                        @php $prev = $inv->customer ? ($inv->customer->outstandingDebt() - (float)$inv->balance) : 0; @endphp
-                                        {{ \App\Helpers\Money::format(max(0, $prev)) }}<br>
+                                        <strong>دينه الحالي (فواتير أخرى):</strong> {{ \App\Helpers\Money::format($settleOtherDebt) }}<br>
+                                        <strong>المبلغ المؤجل من هذه الفاتورة:</strong> {{ \App\Helpers\Money::format($inv->balance) }}<br>
                                         <strong>إجمالي الدين بعد التأجيل:</strong>
-                                        <span class="text-danger">{{ \App\Helpers\Money::format($inv->customer ? $inv->customer->outstandingDebt() + (float)$inv->balance - max(0, $prev) : (float)$inv->balance) }}</span>
+                                        <span class="text-danger">{{ \App\Helpers\Money::format($settleResulting) }}</span>
                                     </div>
                                     @if($inv->customer && $inv->customer->credit_limit !== null)
                                         @php
                                             $limit = (float) $inv->customer->credit_limit;
-                                            $newTotal = ($inv->customer->outstandingDebt() - (float)$inv->balance) + (float)$inv->balance;
-                                            $wouldExceed = $newTotal - $limit > 0.01;
+                                            // Same tolerance as the service guard (0.01) so the
+                                            // modal never promises what settleOnAccount will refuse.
+                                            $wouldExceed = $settleResulting - $limit > 0.01;
                                         @endphp
                                         <div class="alert {{ $wouldExceed ? 'alert-danger' : 'alert-light' }} small">
                                             <strong>الحد الائتماني:</strong> {{ \App\Helpers\Money::format($limit) }}
@@ -309,9 +370,16 @@
                             </form>
                         </div></div></div>
                     @elseif((float) $inv->paid_total <= 0.001 && (float) $inv->balance > 0 && $inv->customer_id)
+                        {{-- Zero-paid parking is refused by BillingService::settleOnAccount
+                             itself (a full ticket on credit with no cash collected is the
+                             write-off path, not a debt) — so the button stays hidden and
+                             this hint explains the service's rule instead of teasing an
+                             action that would only bounce with an error. --}}
                         <div class="alert alert-light border mt-2 small mb-0">
                             <i class="bi bi-info-circle"></i>
-                            لتأجيل المتبقي كدين، سجّل أولاً ولو دفعة جزئية. لشطب الفاتورة بالكامل استخدم زر "شطب".
+                            <strong>لماذا لا يظهر زر التأجيل؟</strong>
+                            النظام يرفض تأجيل فاتورة <u>بدون أي دفعة</u> كدين — سجّل ولو دفعة جزئية
+                            رمزية أولاً (إثبات نية السداد)، أو استخدم زر "شطب" إن كان الزبون لن يدفع إطلاقاً.
                         </div>
                     @elseif((float) $inv->balance > 0 && ! $inv->customer_id)
                         <div class="alert alert-light border mt-2 small mb-0">
@@ -440,7 +508,17 @@
                 <ul class="list-group list-group-flush">
                 @foreach($inv->payments as $p)
                     <li class="list-group-item d-flex justify-content-between align-items-center">
-                        <div><span class="badge bg-secondary">{{ $p->method }}</span> {{ $p->paid_at->format('H:i') }}</div>
+                        <div>
+                            <span class="badge bg-secondary">{{ \App\Support\PaymentMethods::label($p->method) }}</span> {{ $p->paid_at->format('H:i') }}
+                            {{-- Split label ("دفعة جزء: …") + reference so the cashier can
+                                 eyeball which person/slip a line belongs to without receipts. --}}
+                            @if($p->notes && str_starts_with($p->notes, 'دفعة جزء: '))
+                                <small class="text-muted d-block">{{ $p->notes }}</small>
+                            @endif
+                            @if($p->reference)
+                                <small class="text-muted d-block" dir="ltr">#{{ $p->reference }}</small>
+                            @endif
+                        </div>
                         <div class="d-flex align-items-center gap-2">
                             <strong>{{ \App\Helpers\Money::format($p->amount) }}</strong>
                             {{-- Void a mistaken payment (wrong method/amount) — reverses its
@@ -463,6 +541,24 @@
 
             {{-- ========= Split Bill ========= --}}
             @if($inv->status !== 'paid' && $inv->status !== 'cancelled')
+                @php
+                    // Rows can be regrouped only while NOTHING is paid — a paid
+                    // split is anchored to a committed payment, so «تعديل» after
+                    // that is refund territory (the controller 422s it too).
+                    $splitsEditable = $inv->splits->count() > 0
+                        && $inv->splits->where('paid', true)->isEmpty()
+                        && ! $inv->payments->count();
+                    $existingSplitRows = $inv->splits
+                        ->map(fn ($sp) => ['label' => $sp->label, 'amount' => (float) $sp->amount, 'method' => $sp->method])
+                        ->values();
+                    // paySplit stamps its payment notes with «دفعة جزء: {label}» —
+                    // match on that + the amount to surface the payment reference
+                    // back on the paid row (no schema link split→payment exists).
+                    $splitRef = fn ($sp) => $inv->payments
+                        ->first(fn ($p) => $p->notes === 'دفعة جزء: '.$sp->label
+                            && abs((float) $p->amount - (float) $sp->amount) < 0.005)
+                        ?->reference;
+                @endphp
                 <div class="card mt-3"><div class="card-header d-flex justify-content-between align-items-center">
                     <strong><i class="bi bi-scissors"></i> تقسيم الفاتورة</strong>
                     @if($inv->splits->count() && ! $inv->payments->count())
@@ -474,10 +570,66 @@
                 <div class="card-body">
                     @if($inv->splits->count() === 0)
                         <button class="btn btn-outline-primary w-100" data-bs-toggle="modal" data-bs-target="#splitModal"><i class="bi bi-people"></i> تقسيم الفاتورة</button>
+                        {{-- One-tap equal presets — build the rows AND open the
+                             modal pre-populated, instead of open → type count →
+                             press «تقسيم بالتساوي» → save (the ~10-tap side door). --}}
+                        <div class="d-flex gap-2 mt-2">
+                            @foreach([2, 3, 4] as $n)
+                                <button type="button" class="btn btn-sm btn-light border flex-fill" onclick="openSplitPreset({{ $n }})">
+                                    بالتساوي ×{{ $n }}
+                                </button>
+                            @endforeach
+                        </div>
+                    @else
+                        <ul class="list-group list-group-flush mb-2">
+                            @foreach($inv->splits as $sp)
+                                <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2">
+                                    <div><strong>{{ $sp->label }}</strong> <span class="badge bg-light text-dark">{{ \App\Support\PaymentMethods::label($sp->method) }}</span></div>
+                                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                                        <strong>{{ \App\Helpers\Money::format($sp->amount) }}</strong>
+                                        @if($sp->paid)
+                                            <span class="badge bg-success"><i class="bi bi-check2"></i> مدفوع</span>
+                                            @if($ref = $splitRef($sp))
+                                                <span class="badge bg-light text-dark border" title="رقم المرجع" dir="ltr">#{{ $ref }}</span>
+                                            @endif
+                                        @else
+                                            <form action="{{ route('admin.cashier.split.pay', ['invoice' => $inv, 'split' => $sp]) }}" method="POST" class="d-inline-flex align-items-center gap-1">@csrf
+                                                {{-- Reference only makes sense for traceable methods —
+                                                     cash has no slip number to key in. --}}
+                                                @if(in_array($sp->method, ['card', 'transfer'], true))
+                                                    <input name="reference" maxlength="255" class="form-control form-control-sm" style="width:135px" placeholder="رقم المرجع (اختياري)">
+                                                @endif
+                                                <button class="btn btn-sm btn-success">تأكيد الدفع</button>
+                                            </form>
+                                        @endif
+                                    </div>
+                                </li>
+                            @endforeach
+                        </ul>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <small class="text-muted">مدفوع: {{ $inv->splits->where('paid', true)->count() }} / {{ $inv->splits->count() }}</small>
+                            @if($splitsEditable)
+                                <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#splitModal">
+                                    <i class="bi bi-pencil"></i> تعديل التقسيم
+                                </button>
+                            @endif
+                        </div>
+                    @endif
+                </div></div>
+
+                {{-- Split modal + script — shared by CREATE (no splits yet) and
+                     EDIT (unpaid splits, pre-filled rows, save replaces all). --}}
+                @if($inv->splits->count() === 0 || $splitsEditable)
                         <div class="modal fade" id="splitModal"><div class="modal-dialog modal-lg"><div class="modal-content">
                             <form action="{{ route('admin.cashier.split', $inv) }}" method="POST">@csrf
-                                <div class="modal-header"><h5>تقسيم فاتورة {{ \App\Helpers\Money::format($inv->total) }}</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+                                <div class="modal-header"><h5>{{ $splitsEditable ? 'تعديل تقسيم فاتورة' : 'تقسيم فاتورة' }} {{ \App\Helpers\Money::format($inv->total) }}</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
                                 <div class="modal-body">
+                                    @if($splitsEditable)
+                                        <div class="alert alert-warning small py-2">
+                                            <i class="bi bi-exclamation-triangle"></i>
+                                            الحفظ يستبدل التقسيم الحالي بالكامل (لا يوجد جزء مدفوع بعد).
+                                        </div>
+                                    @endif
                                     <div class="mb-3 d-flex gap-2 align-items-end">
                                         <div><label class="form-label">عدد الأشخاص</label>
                                             <input type="number" min="2" max="20" value="2" id="splitCount" class="form-control" style="width:100px;"></div>
@@ -490,7 +642,7 @@
                                     </table>
                                     <button type="button" class="btn btn-sm btn-light" onclick="addSplitRow()"><i class="bi bi-plus"></i> إضافة جزء</button>
                                 </div>
-                                <div class="modal-footer"><button class="btn btn-primary">حفظ التقسيم</button></div>
+                                <div class="modal-footer"><button class="btn btn-primary">{{ $splitsEditable ? 'استبدال التقسيم' : 'حفظ التقسيم' }}</button></div>
                             </form>
                         </div></div></div>
 
@@ -498,6 +650,9 @@
                         <script>
                         let splitIdx = 0;
                         const splitPaymentMethods = @json($splitPaymentMethods);
+                        // Edit mode: the current rows, so the modal opens pre-filled
+                        // with what the cashier is regrouping (empty on create).
+                        const existingSplits = @json($existingSplitRows);
                         function escapeHtml(value) {
                             return String(value).replace(/[&<>"']/g, char => ({
                                 '&': '&amp;',
@@ -507,17 +662,17 @@
                                 "'": '&#039;',
                             }[char]));
                         }
-                        function splitMethodOptions() {
+                        function splitMethodOptions(selected = null) {
                             return splitPaymentMethods
-                                .map(method => `<option value="${escapeHtml(method.code)}">${escapeHtml(method.label)}</option>`)
+                                .map(method => `<option value="${escapeHtml(method.code)}"${method.code === selected ? ' selected' : ''}>${escapeHtml(method.label)}</option>`)
                                 .join('');
                         }
-                        function addSplitRow(label = null, amount = '') {
+                        function addSplitRow(label = null, amount = '', method = null) {
                             const i = splitIdx++;
                             const row = `<tr>
-                                <td><input name="splits[${i}][label]" class="form-control" value="${label ?? ('الشخص '+(i+1))}"></td>
+                                <td><input name="splits[${i}][label]" class="form-control" value="${escapeHtml(label ?? ('الشخص '+(i+1)))}"></td>
                                 <td><input type="number" step="0.01" min="0.01" name="splits[${i}][amount]" class="form-control split-amt" value="${amount}" onchange="updateSplitSum()"></td>
-                                <td><select name="splits[${i}][method]" class="form-select">${splitMethodOptions()}</select></td>
+                                <td><select name="splits[${i}][method]" class="form-select">${splitMethodOptions(method)}</select></td>
                                 <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove(); updateSplitSum();"><i class="bi bi-x"></i></button></td>
                             </tr>`;
                             document.getElementById('splitRows').insertAdjacentHTML('beforeend', row);
@@ -537,35 +692,30 @@
                                 addSplitRow('الشخص '+(k+1), amt);
                             }
                         }
+                        function loadExistingSplits() {
+                            document.getElementById('splitRows').innerHTML = ''; splitIdx = 0;
+                            existingSplits.forEach(s => addSplitRow(s.label, Number(s.amount).toFixed(2), s.method));
+                        }
+                        // One-tap preset: set the count, build the equal rows,
+                        // THEN open the modal — it appears ready to save.
+                        function openSplitPreset(n) {
+                            document.getElementById('splitCount').value = n;
+                            splitEqual({{ $inv->total }});
+                            bootstrap.Modal.getOrCreateInstance(document.getElementById('splitModal')).show();
+                        }
                         document.addEventListener('DOMContentLoaded', () => {
                             const modal = document.getElementById('splitModal');
                             if (modal) modal.addEventListener('shown.bs.modal', () => {
-                                if (document.querySelectorAll('#splitRows tr').length === 0) splitEqual({{ $inv->total }});
+                                if (document.querySelectorAll('#splitRows tr').length) return;
+                                // Edit mode starts from the saved rows; create mode
+                                // from an equal split of the current count.
+                                if (existingSplits.length) loadExistingSplits();
+                                else splitEqual({{ $inv->total }});
                             });
                         });
                         </script>
                         @endpush
-                    @else
-                        <ul class="list-group list-group-flush mb-2">
-                            @foreach($inv->splits as $sp)
-                                <li class="list-group-item d-flex justify-content-between align-items-center">
-                                    <div><strong>{{ $sp->label }}</strong> <span class="badge bg-light text-dark">{{ \App\Support\PaymentMethods::label($sp->method) }}</span></div>
-                                    <div>
-                                        <strong>{{ \App\Helpers\Money::format($sp->amount) }}</strong>
-                                        @if($sp->paid)
-                                            <span class="badge bg-success ms-2"><i class="bi bi-check2"></i> مدفوع</span>
-                                        @else
-                                            <form action="{{ route('admin.cashier.split.pay', ['invoice' => $inv, 'split' => $sp]) }}" method="POST" class="d-inline ms-2">@csrf
-                                                <button class="btn btn-sm btn-success">تأكيد الدفع</button>
-                                            </form>
-                                        @endif
-                                    </div>
-                                </li>
-                            @endforeach
-                        </ul>
-                        <small class="text-muted">مدفوع: {{ $inv->splits->where('paid', true)->count() }} / {{ $inv->splits->count() }}</small>
-                    @endif
-                </div></div>
+                @endif
             @endif
         @endif
     </div>

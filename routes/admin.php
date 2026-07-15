@@ -300,6 +300,7 @@ Route::middleware(['auth', 'setup.complete', 'admin', 'branch', 'license'])->gro
     Route::post('cashier/invoice/{invoice}/writeoff', [Admin\CashierController::class, 'writeoff'])->name('cashier.writeoff');
     Route::post('cashier/invoice/{invoice}/cancel', [Admin\CashierController::class, 'cancel'])->name('cashier.cancel');
     Route::post('cashier/invoice/{invoice}/settle-on-account', [Admin\CashierController::class, 'settleOnAccount'])->name('cashier.settle_on_account');
+    Route::post('cashier/invoice/{invoice}/unpark', [Admin\CashierController::class, 'unpark'])->name('cashier.unpark');
     Route::post('cashier/invoice/{invoice}/split', [Admin\CashierController::class, 'split'])->name('cashier.split');
     Route::post('cashier/invoice/{invoice}/split/{split}/pay', [Admin\CashierController::class, 'paySplit'])->name('cashier.split.pay');
     Route::delete('cashier/invoice/{invoice}/splits', [Admin\CashierController::class, 'clearSplits'])->name('cashier.split.clear');

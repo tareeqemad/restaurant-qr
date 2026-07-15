@@ -119,6 +119,9 @@
                         <th class="text-end">متبقّي</th>
                         <th class="text-center">تاريخ التأجيل</th>
                         <th class="text-center">العمر</th>
+                        @can('create', \App\Models\Payment::class)
+                            <th class="text-center">إجراء</th>
+                        @endcan
                     </tr>
                 </thead>
                 <tbody>
@@ -137,6 +140,21 @@
                                     {{ (int) $ageDays }} يوم
                                 </span>
                             </td>
+                            @can('create', \App\Models\Payment::class)
+                                <td class="text-center">
+                                    {{-- Un-park an accidental settle-on-account: pulls the
+                                         invoice OUT of the debt ledger and back into normal
+                                         collection. Guards + Arabic errors come from
+                                         BillingService::unparkSettleOnAccount via flash. --}}
+                                    <form method="POST" action="{{ route('admin.cashier.unpark', $inv) }}" class="d-inline"
+                                          onsubmit="return confirm('إلغاء تأجيل الفاتورة {{ $inv->number }}؟ ستُحذف من سجل ديون الزبون وترجع إلى التحصيل العادي.')">
+                                        @csrf
+                                        <button class="btn btn-sm btn-outline-warning">
+                                            <i class="bi bi-arrow-counterclockwise"></i> إلغاء التأجيل
+                                        </button>
+                                    </form>
+                                </td>
+                            @endcan
                         </tr>
                     @endforeach
                 </tbody>
