@@ -2668,6 +2668,35 @@ new class extends Component
                                         </div>
                                     @endif
                                 </div>
+
+                                {{-- Short-paid + not parked = the table is NOT closed. The
+                                     status badge + red balance already hint it, but a loud
+                                     collect-or-defer line stops a cashier letting the diner
+                                     walk on a half-paid bill (parity with the classic page). --}}
+                                @if($invoice->status === 'partially_paid' && (float) $invoice->balance > 0.001 && ! $invoice->settled_on_account_at)
+                                    <div class="alert alert-danger mt-2 mb-0 py-2 px-2 small" wire:key="cx-residual-{{ $session->id }}">
+                                        <i class="bi bi-exclamation-triangle-fill"></i>
+                                        الطاولة غير مغلقة — عليها متبقٍ {{ \App\Helpers\Money::format($invoice->balance) }}.
+                                        حصّله أو أجّله كدين قبل تحرير الطاولة.
+                                    </div>
+                                @endif
+
+                                {{-- Per-refund history (parity with the classic page): the
+                                     totals show only the aggregate «مسترد −X»; this lists each
+                                     refund's number + status so the cashier sees pending vs
+                                     completed without leaving for the refunds index. --}}
+                                @if($invoice->refunds->isNotEmpty())
+                                    <div class="cx-refund-history mt-2" wire:key="cx-refunds-{{ $session->id }}">
+                                        <div class="text-muted small mb-1"><i class="bi bi-arrow-counterclockwise"></i> استردادات سابقة</div>
+                                        @foreach($invoice->refunds as $ref)
+                                            <div class="d-flex justify-content-between align-items-center small py-1" style="border-top:1px solid rgba(15,23,42,.06);">
+                                                <span style="font-family:'Courier New',monospace;">{{ $ref->number }}</span>
+                                                <span class="badge bg-{{ $ref->statusColor() }}">{{ $ref->statusLabel() }}</span>
+                                                <strong style="color:#b91c1c;">−{{ \App\Helpers\Money::format($ref->amount) }}</strong>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                @endif
                             </div>
 
                             @include('components.cashier._discount-panel')
@@ -3596,10 +3625,35 @@ window.cxSplitBuilder = function (config) {
             return this.rows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
         },
 
-        /** Save is armed only when the shares add up to the total (±0.005). */
+        /**
+         * Save is armed only when the shares add up to the total within the
+         * SERVER's tolerance (BillingService::splitInvoice rejects abs > 0.001).
+         * Matching it here means the modal never offers a Save the service then
+         * refuses — the equal() presets are always exact; this guards manual
+         * sub-cent entry (e.g. 3×33.334 vs a 100.00 total).
+         */
         balanced() {
-            return Math.abs(this.sum() - this.total) < 0.005;
+            return Math.abs(this.sum() - this.total) <= 0.001;
         },
     };
 };
+
+/* ── Orphaned-backdrop cleanup ────────────────────────────────────────
+   These Bootstrap modals live inside the wire:poll dashboard and some are
+   rendered under a Blade conditional (settle/cancel). If that guard flips
+   server-side while a modal is open (e.g. another cashier settles the invoice
+   during the 10s poll), the morph removes the modal element but leaves
+   Bootstrap's <body>-level .modal-backdrop + .modal-open scroll-lock
+   stuck. After every Livewire morph, if no visible modal remains, strip
+   the orphaned backdrop and unlock the body. */
+document.addEventListener('livewire:init', () => {
+    Livewire.hook('morph.updated', () => {
+        if (!document.querySelector('.modal.show')) {
+            document.querySelectorAll('.modal-backdrop').forEach((b) => b.remove());
+            document.body.classList.remove('modal-open');
+            document.body.style.removeProperty('overflow');
+            document.body.style.removeProperty('padding-right');
+        }
+    });
+});
 </script>
