@@ -259,8 +259,15 @@ class RestaurantCriticalWorkflowTest extends TestCase
 
         $invoice = app(BillingService::class)->issueInvoice($session, $this->cashier->id);
 
+        // The classic pay page was retired; its route is now a permanent
+        // redirect alias into the merged dashboard with the session selected.
         $this->actingAs($this->cashier)
             ->get(route('admin.cashier.show', $session))
+            ->assertRedirect(route('admin.cashier.index', ['session' => $session->id]));
+
+        // The merged screen renders the enabled payment methods on the checkout.
+        $this->actingAs($this->cashier)
+            ->get(route('admin.cashier.index', ['session' => $session->id]))
             ->assertOk()
             ->assertSee(__('admin.payment_methods.app'), false)
             ->assertSee(__('admin.payment_methods.credit'), false);

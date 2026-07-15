@@ -54,21 +54,20 @@ class CashierController extends Controller
         return view('admin.cashier.index', compact('activeSessions', 'recentInvoices', 'stats'));
     }
 
+    /**
+     * Permanent redirect alias for the retired classic cashier page.
+     *
+     * The server-rendered pay screen was merged into the live Volt dashboard
+     * (one screen does everything now: pay, discount, refund, settle, un-park,
+     * cancel, write-off, void, splits, pending transfers). This route survives
+     * so the waiter/tables-board «كاشير» deep-links and any old bookmarks land
+     * on the merged screen with the session pre-selected — zero board churn.
+     */
     public function show(TableSession $session)
     {
         $this->authorize('viewAny', Payment::class);
-        $session->load(['table', 'orders.items.modifiers', 'invoice.payments', 'invoice.refunds.processor']);
 
-        // Any bank transfer the diner/waiter claimed for THIS table — shown at the
-        // top of the pay screen with inline verify/reject so the cashier acts
-        // without leaving the payment flow.
-        $pendingTransfers = \App\Models\PendingTransfer::with('recordedBy')
-            ->where('table_session_id', $session->id)
-            ->pending()
-            ->latest()
-            ->get();
-
-        return view('admin.cashier.show', compact('session', 'pendingTransfers'));
+        return redirect()->route('admin.cashier.index', ['session' => $session->id]);
     }
 
     public function issue(TableSession $session)
@@ -76,7 +75,7 @@ class CashierController extends Controller
         $this->authorize('create', Payment::class);
         try {
             $invoice = $this->billing->issueInvoice($session, auth()->id());
-            return redirect()->route('admin.cashier.show', $session)->with('success', "تم إصدار الفاتورة {$invoice->number}");
+            return redirect()->route('admin.cashier.index', ['session' => $session->id])->with('success', "تم إصدار الفاتورة {$invoice->number}");
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
         }
@@ -201,12 +200,13 @@ class CashierController extends Controller
                 // Land the cashier on the invoice's own checkout, not back on the
                 // debts page. Un-parking clears settled_on_account_at, so the invoice
                 // drops off the debt ledger; its dine-in session is already closed,
-                // so it's off the active-sessions dashboard too. cashier.show renders
-                // any session (closed included) with its invoice, so the restored
-                // balance stays collectable. Session-less invoices fall back to back().
+                // so it's off the active-sessions dashboard too. The merged
+                // dashboard renders any session (closed included) with its invoice
+                // via ?session=ID, so the restored balance stays collectable.
+                // Session-less invoices fall back to back().
                 if ($invoice->table_session_id) {
                     return redirect()
-                        ->route('admin.cashier.show', $invoice->table_session_id)
+                        ->route('admin.cashier.index', ['session' => $invoice->table_session_id])
                         ->with('success', 'تم إلغاء تأجيل الدين — حصّل المتبقي من هنا.');
                 }
 
