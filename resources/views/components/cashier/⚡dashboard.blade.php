@@ -85,6 +85,11 @@ new class extends Component
     public string $refundAmount = '';
     public string $refundMethod = 'cash';
     public string $refundReason = '';
+    // Parity with the classic refund form: a reference (bank/card slip number —
+    // the refunds index searches by it) and free-text notes, both forwarded to
+    // RefundService::issue via its opts array (same keys as RefundController::store).
+    public string $refundReference = '';
+    public string $refundNotes = '';
 
     // Discount form state — driven from the totals card. Open/close flips a
     // local panel (no Bootstrap modal, no nested form) so it morphs cleanly
@@ -433,7 +438,7 @@ new class extends Component
         }
 
         $this->viewMode = $mode;
-        $this->reset(['search', 'paymentAmount', 'paymentReference', 'paymentNotes', 'refundOpen', 'refundAmount', 'refundReason']);
+        $this->reset(['search', 'paymentAmount', 'paymentReference', 'paymentNotes', 'refundOpen', 'refundAmount', 'refundReason', 'refundReference', 'refundNotes']);
         $this->paymentMethod = $this->defaultPaymentMethod();
         $this->refundMethod = $this->defaultRefundMethod();
 
@@ -453,7 +458,7 @@ new class extends Component
         $this->viewMode = 'tables';
         $this->selectedSessionId = $id;
         $this->selectedRemoteOrderId = null;
-        $this->reset(['paymentAmount', 'paymentReference', 'paymentNotes', 'refundOpen', 'refundAmount', 'refundReason']);
+        $this->reset(['paymentAmount', 'paymentReference', 'paymentNotes', 'refundOpen', 'refundAmount', 'refundReason', 'refundReference', 'refundNotes']);
         $this->paymentMethod = $this->defaultPaymentMethod();
         $this->refundMethod = $this->defaultRefundMethod();
         // NEVER pre-fill the amount: a pre-armed full-balance value plus a
@@ -466,7 +471,7 @@ new class extends Component
         $this->viewMode = 'remote';
         $this->selectedRemoteOrderId = $id;
         $this->selectedSessionId = null;
-        $this->reset(['paymentAmount', 'paymentReference', 'paymentNotes', 'refundOpen', 'refundAmount', 'refundReason']);
+        $this->reset(['paymentAmount', 'paymentReference', 'paymentNotes', 'refundOpen', 'refundAmount', 'refundReason', 'refundReference', 'refundNotes']);
         $this->paymentMethod = $this->defaultPaymentMethod();
         $this->refundMethod = $this->defaultRefundMethod();
         // No amount pre-fill — see selectSession for the WHY.
@@ -916,12 +921,16 @@ new class extends Component
         $this->refundAmount = (string) number_format($refundable, 2, '.', '');
         $this->refundMethod = $this->defaultRefundMethod();
         $this->refundReason = '';
+        // Fresh slip/notes every time the panel opens — never inherit a prior
+        // refund's reference (would mis-tag this refund in the refunds index).
+        $this->refundReference = '';
+        $this->refundNotes = '';
     }
 
     public function closeRefund(): void
     {
         $this->refundOpen = false;
-        $this->reset(['refundAmount', 'refundMethod', 'refundReason']);
+        $this->reset(['refundAmount', 'refundMethod', 'refundReason', 'refundReference', 'refundNotes']);
     }
 
     public function submitRefund(RefundService $refundService): void
@@ -937,10 +946,16 @@ new class extends Component
                 'refundAmount' => ['required', 'numeric', 'min:0.01'],
                 'refundMethod' => ['required', Rule::in(Refund::ACTIVE_METHODS)],
                 'refundReason' => ['required', 'string', 'max:500'],
+                // Same bounds as RefundController::store so the two refund
+                // surfaces stay interchangeable.
+                'refundReference' => ['nullable', 'string', 'max:100'],
+                'refundNotes' => ['nullable', 'string', 'max:1000'],
             ], attributes: [
                 'refundAmount' => 'المبلغ',
                 'refundMethod' => 'طريقة الاسترداد',
                 'refundReason' => 'السبب',
+                'refundReference' => 'رقم المرجع',
+                'refundNotes' => 'ملاحظات',
             ]);
 
             $invoice = $this->activeInvoice();
@@ -952,6 +967,13 @@ new class extends Component
                 $this->refundMethod,
                 $this->refundReason,
                 auth()->id(),
+                // Reproduce RefundController::store's opts keys exactly so the
+                // slip reference (searchable in the refunds index) and notes
+                // land on the Refund row the same way the classic page wrote them.
+                opts: [
+                    'reference' => trim($this->refundReference) ?: null,
+                    'notes'     => trim($this->refundNotes) ?: null,
+                ],
             );
             $this->dispatch('toast', type: 'success', message: "تم تسجيل استرداد {$this->refundAmount}");
             $this->closeRefund();
@@ -2227,9 +2249,11 @@ new class extends Component
                                     <a href="{{ route('admin.cashier.print', $invoice) }}" target="_blank" class="btn btn-light btn-sm"><i class="bi bi-printer"></i> طباعة</a>
                                     <a href="{{ route('admin.cashier.pdf', $invoice) }}" class="btn btn-light btn-sm"><i class="bi bi-file-pdf"></i> PDF</a>
                                     @if((float) $invoice->paid_total > (float) ($invoice->refunded_total ?? 0))
-                                        <button type="button" wire:click="openRefund" class="btn btn-sm" style="background:rgba(185,28,28,.1); color:#b91c1c; border:1px solid rgba(185,28,28,.3);">
-                                            <i class="bi bi-arrow-counterclockwise"></i> استرداد
-                                        </button>
+                                        @can('create', \App\Models\Refund::class)
+                                            <button type="button" wire:click="openRefund" class="btn btn-sm" style="background:rgba(185,28,28,.1); color:#b91c1c; border:1px solid rgba(185,28,28,.3);">
+                                                <i class="bi bi-arrow-counterclockwise"></i> استرداد
+                                            </button>
+                                        @endcan
                                     @endif
                                 </div>
                             @endif
@@ -2350,6 +2374,23 @@ new class extends Component
                     </div>
                 @endif
 
+                {{-- Customer link / search / create / unlink (parity restore).
+                     The classic pay page embedded this panel; the merge orphaned
+                     it, leaving a phone-less walk-in unable to attach a customer
+                     — which permanently blocked settle-on-account (needs
+                     invoice->customer_id) and left a mis-link undetachable.
+
+                     It is a NESTED Livewire component living INSIDE this
+                     wire:poll.visible.10s dashboard, so it MUST carry a stable
+                     :key — otherwise every 10s poll morph re-inits it and drops
+                     the cashier's typed search/create state mid-entry. Rendered
+                     unconditionally (both linked + unlinked): the component's own
+                     markup switches between the linked banner + unlink button and
+                     the search/create form. --}}
+                <div class="cx-section cx-cxlink" wire:key="cx-cxlink-wrap-{{ $session->id }}">
+                    <livewire:admin.cashier-customer-link :session-id="$session->id" :key="'cxlink-'.$session->id" />
+                </div>
+
                 @if($session->bill_requested_at && ! $invoice)
                     <div class="cx-bill-request-alert">
                         <div class="cx-bill-request-alert__icon">
@@ -2397,6 +2438,29 @@ new class extends Component
 
                     {{-- Right column: invoice + payment --}}
                     <div class="col-xl-5">
+                        {{-- Prior-visit debt reminder (parity restore). When the linked
+                             customer already owes money from earlier invoices, prompt the
+                             cashier to collect it while the diner is still at the till.
+                             outstandingDebt() is branch-global and excludes the current
+                             live invoice, so it reads "debt from OTHER visits" — the link
+                             opens the customer's debt ledger to settle it. Sits ABOVE the
+                             payment section exactly like the classic page. --}}
+                        @if($session->customer && $session->customer->outstandingDebt() > 0.001)
+                            <div class="alert alert-warning d-flex align-items-start gap-2 mb-3 py-2 px-2 small"
+                                 wire:key="cx-olddebt-{{ $session->id }}">
+                                <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+                                <div class="flex-grow-1">
+                                    على <strong>{{ $session->customer->name }}</strong> دين سابق قدره
+                                    <strong>{{ \App\Helpers\Money::format($session->customer->outstandingDebt()) }}</strong>
+                                    من زيارات سابقة — ذكّر الزبون بالتحصيل الآن.
+                                    <a href="{{ route('admin.customers.debts.show', $session->customer) }}"
+                                       target="_blank" class="alert-link d-inline-block mt-1">
+                                        <i class="bi bi-journal-text"></i> فتح سجل ديون الزبون
+                                    </a>
+                                </div>
+                            </div>
+                        @endif
+
                         {{-- ═══════ Pending bank transfers (merged from the classic page) ═══════
                              Sits ABOVE the payment section so a claimed transfer is confirmed
                              BEFORE the cashier arms a duplicate cash/card payment. Verify /
@@ -2970,9 +3034,11 @@ new class extends Component
                                     <i class="bi bi-file-pdf"></i> PDF
                                 </a>
                                 @if((float) $invoice->paid_total > (float) ($invoice->refunded_total ?? 0))
-                                    <button type="button" wire:click="openRefund" class="btn btn-sm" style="background:rgba(185,28,28,.1); color:#b91c1c; border:1px solid rgba(185,28,28,.3);">
-                                        <i class="bi bi-arrow-counterclockwise"></i> استرداد
-                                    </button>
+                                    @can('create', \App\Models\Refund::class)
+                                        <button type="button" wire:click="openRefund" class="btn btn-sm" style="background:rgba(185,28,28,.1); color:#b91c1c; border:1px solid rgba(185,28,28,.3);">
+                                            <i class="bi bi-arrow-counterclockwise"></i> استرداد
+                                        </button>
+                                    @endcan
                                 @endif
                             </div>
 
@@ -3089,7 +3155,7 @@ new class extends Component
                                 @elseif((float) $invoice->balance > 0 && ! $invoice->customer_id)
                                     <div class="alert alert-light border mt-2 small mb-0" wire:key="cx-settle-hint-nocustomer-{{ $session->id }}">
                                         <i class="bi bi-info-circle"></i>
-                                        لتأجيل المتبقي كدين، اربط زبوناً بالجلسة أولاً (من اللوحة فوق).
+                                        لتأجيل المتبقي كدين، اربط زبوناً بالجلسة أولاً من لوحة «ربط زبون» أعلى هذه الشاشة.
                                     </div>
                                 @endif
                             @endif
@@ -3179,16 +3245,35 @@ new class extends Component
                     </div>
                     <div class="mb-2">
                         <label class="form-label small">الطريقة</label>
-                        <select wire:model="refundMethod" class="form-select">
+                        {{-- .live so the reference field's x-show below flips as soon as
+                             the method changes (cash has no slip to record). --}}
+                        <select wire:model.live="refundMethod" class="form-select">
                             @foreach($this->refundMethods as $method => $label)
                                 <option value="{{ $method }}">{{ $label }}</option>
                             @endforeach
                         </select>
                     </div>
+                    {{-- Reference (bank/card slip) — parity restore. Shown only for
+                         non-cash methods, mirroring the classic refund form + the
+                         split-pay reference input. The refunds index searches by it.
+                         x-show reads the client-side $wire value so it reacts instantly. --}}
+                    <div class="mb-2" x-data x-show="$wire.refundMethod !== 'cash'" x-cloak>
+                        <label class="form-label small">رقم المرجع (إيصال البنك/البطاقة)</label>
+                        <input type="text" maxlength="100" wire:model="refundReference"
+                               class="form-control" dir="ltr" placeholder="رقم إيصال التحويل أو البطاقة">
+                        @error('refundReference') <small class="text-danger">{{ $message }}</small> @enderror
+                    </div>
                     <div class="mb-2">
                         <label class="form-label small">السبب</label>
                         <textarea wire:model="refundReason" class="form-control" rows="2" placeholder="سبب الاسترداد..."></textarea>
                         @error('refundReason') <small class="text-danger">{{ $message }}</small> @enderror
+                    </div>
+                    {{-- Notes (parity restore) — free-text stored on refund.notes. --}}
+                    <div class="mb-2">
+                        <label class="form-label small">ملاحظات (اختياري)</label>
+                        <textarea wire:model="refundNotes" maxlength="1000" class="form-control" rows="2"
+                                  placeholder="ملاحظات داخلية على الاسترداد..."></textarea>
+                        @error('refundNotes') <small class="text-danger">{{ $message }}</small> @enderror
                     </div>
                     <div class="d-flex gap-2 mt-3">
                         <button type="button" wire:click="closeRefund" class="btn btn-light flex-grow-1">تراجع</button>

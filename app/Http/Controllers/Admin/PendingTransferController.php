@@ -36,6 +36,25 @@ class PendingTransferController extends Controller
     ) {}
 
     /**
+     * When the action was fired from the merged cashier dashboard it carries
+     * a hidden `return_session`; land back on that session's checkout
+     * (?session=ID, route rebuilt server-side from the validated integer id)
+     * so a card-selected session isn't lost by a bare back(). The waiter
+     * board posts these same routes WITHOUT return_session — there the
+     * caller's own back() stands.
+     */
+    protected function backToCashier(Request $request, string $status, string $message)
+    {
+        $sessionId = $request->integer('return_session');
+
+        if ($sessionId > 0 && TableSession::whereKey($sessionId)->exists()) {
+            return redirect()->route('admin.cashier.index', ['session' => $sessionId])->with($status, $message);
+        }
+
+        return back()->with($status, $message);
+    }
+
+    /**
      * Waiter records a claimed bank transfer for a table session.
      *
      * The amount typically matches what the diner says they wired —
@@ -78,10 +97,10 @@ class PendingTransferController extends Controller
             // A pending claim already exists for this table (customer declared
             // it, or another staffer just recorded it). Don't stack a second
             // verifiable row — point the cashier at the one that's there.
-            return back()->with('info', 'يوجد تحويل معلّق لهذه الطاولة بالفعل — أكّده أو ارفضه أولاً.');
+            return $this->backToCashier($request, 'info', 'يوجد تحويل معلّق لهذه الطاولة بالفعل — أكّده أو ارفضه أولاً.');
         }
 
-        return back()->with('success', 'تم تسجيل التحويل. الكاشير سيتأكد من البنك ويغلق الطلب.');
+        return $this->backToCashier($request, 'success', 'تم تسجيل التحويل. الكاشير سيتأكد من البنك ويغلق الطلب.');
     }
 
     /**
@@ -239,13 +258,13 @@ class PendingTransferController extends Controller
         // NOT closed. Say so loudly — otherwise the cashier reads the plain
         // success toast and lets the diner walk on a half-paid bill.
         if ($remainingBalance > 0.001) {
-            return back()->with('warning',
+            return $this->backToCashier($request, 'warning',
                 'تم تأكيد التحويل بمبلغ '.\App\Helpers\Money::format($verifiedAmount).'. لا يزال متبقٍ '
                 .\App\Helpers\Money::format($remainingBalance).' على الفاتورة '.$invoiceNumber
                 .' — حصّله أو أجّله كدين قبل إغلاق الطاولة.');
         }
 
-        return back()->with('success', 'تم تأكيد التحويل وتسجيله كدفعة.');
+        return $this->backToCashier($request, 'success', 'تم تأكيد التحويل وتسجيله كدفعة.');
     }
 
     /**
@@ -315,7 +334,7 @@ class PendingTransferController extends Controller
         );
 
         SidebarBadges::bust();
-        return back()->with('success', 'تم رفض التحويل وتسجيل السبب.');
+        return $this->backToCashier($request, 'success', 'تم رفض التحويل وتسجيل السبب.');
     }
 
     /**

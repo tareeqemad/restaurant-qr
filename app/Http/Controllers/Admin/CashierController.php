@@ -120,7 +120,12 @@ class CashierController extends Controller
         $data = $request->validate(['reason' => ['required', 'string', 'max:255']]);
         try {
             $this->billing->voidPayment($payment, auth()->id(), $data['reason']);
-            return back()->with('success', 'تم إلغاء الدفعة وعكس قيدها.');
+
+            return $this->redirectAfterInvoiceAction(
+                $request,
+                'تم إلغاء الدفعة وعكس قيدها.',
+                fn () => back()->with('success', 'تم إلغاء الدفعة وعكس قيدها.'),
+            );
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
         }
