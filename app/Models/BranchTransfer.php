@@ -63,11 +63,31 @@ class BranchTransfer extends Model
 
     public static function generateNumber(): string
     {
-        $prefix = 'BT-' . now()->format('Ymd') . '-';
-        $last = self::where('number', 'like', $prefix . '%')
-            ->orderByDesc('id')
-            ->value('number');
+        $today = now()->format('Ymd');
+
+        // The unique index on `number` is GLOBAL. This model has no
+        // BranchScope (transfers span two branches), but SoftDeletes hides
+        // tombstoned rows from the default query — a soft-deleted transfer
+        // still occupies its number, so the lookup must be trashed-inclusive
+        // or the next transfer reissues it and hits the unique index. MAX
+        // beats last-id+1; fixed-width zero padding makes the lexicographic
+        // MAX also the numeric max.
+        $last = self::withTrashed()
+            ->where('number', 'like', "BT-{$today}-%")
+            ->max('number');
+
         $seq = $last ? ((int) substr($last, -4)) + 1 : 1;
-        return $prefix . str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
+
+        // Belt-and-braces against a concurrent insert grabbing the same
+        // sequence between MAX and INSERT: bump past any number that
+        // appeared in the meantime. Not a full race-proof lock, but it
+        // shrinks the window to same-millisecond inserts.
+        while (self::withTrashed()
+            ->where('number', sprintf('BT-%s-%04d', $today, $seq))
+            ->exists()) {
+            $seq++;
+        }
+
+        return sprintf('BT-%s-%04d', $today, $seq);
     }
 }

@@ -174,9 +174,30 @@ class PurchaseOrder extends Model
      */
     public static function generateNumber(): string
     {
-        $prefix = 'PO-'.now()->format('Ymd').'-';
-        $last = self::where('number', 'like', $prefix.'%')->orderByDesc('id')->value('number');
+        $today = now()->format('Ymd');
+
+        // The unique index on `number` is GLOBAL, so the sequence must be
+        // computed globally too: unscoped (BranchScope would restart every
+        // branch at 0001 and collide) and trashed-inclusive (a soft-deleted
+        // PO still occupies its number). MAX beats last-id+1 — deletions
+        // never make it reissue a taken number. Fixed-width zero padding
+        // makes the lexicographic MAX also the numeric max.
+        $last = self::withoutGlobalScopes()->withTrashed()
+            ->where('number', 'like', "PO-{$today}-%")
+            ->max('number');
+
         $seq = $last ? ((int) substr($last, -4)) + 1 : 1;
-        return $prefix.str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
+
+        // Belt-and-braces against a concurrent insert grabbing the same
+        // sequence between MAX and INSERT: bump past any number that
+        // appeared in the meantime. Not a full race-proof lock, but it
+        // shrinks the window to same-millisecond inserts.
+        while (self::withoutGlobalScopes()->withTrashed()
+            ->where('number', sprintf('PO-%s-%04d', $today, $seq))
+            ->exists()) {
+            $seq++;
+        }
+
+        return sprintf('PO-%s-%04d', $today, $seq);
     }
 }

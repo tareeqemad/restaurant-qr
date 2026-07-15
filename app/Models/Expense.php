@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToBranch;
-use App\Support\BranchContext;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -18,8 +17,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  *                    → rejected (with reason)
  *
  * The static `nextNumber()` helper produces EXP-YYYYMMDD-NNNN sequences
- * unique within the active branch, so cashiers can reference them by
- * voice/SMS.
+ * that are GLOBAL per expense date (the DB unique index on
+ * `expense_number` spans all branches), so cashiers can reference them
+ * by voice/SMS without two branches ever minting the same number.
  */
 class Expense extends Model
 {
@@ -54,33 +54,46 @@ class Expense extends Model
 
     /**
      * Auto-generate expense_number on create. Format: EXP-YYYYMMDD-NNNN
-     * with NNNN = sequence within (branch, date). Branch context is
-     * already stamped by BelongsToBranch::creating, so we read it here.
+     * with NNNN = GLOBAL sequence within the expense date.
      */
     protected static function booted(): void
     {
         static::creating(function (Expense $expense) {
             if (empty($expense->expense_number)) {
-                $expense->expense_number = static::nextNumber($expense->branch_id, $expense->expense_date);
+                $expense->expense_number = static::nextNumber($expense->expense_date);
             }
         });
     }
 
-    public static function nextNumber($branchId, $date): string
+    public static function nextNumber($date): string
     {
         $date = $date instanceof \DateTimeInterface ? $date : \Carbon\Carbon::parse($date);
-        $prefix = 'EXP-' . $date->format('Ymd');
+        $prefix = 'EXP-'.$date->format('Ymd');
 
-        // Use BranchContext::unscoped so the count covers the whole branch
-        // — we don't want sequence gaps just because BranchScope is on.
-        $count = BranchContext::unscoped(fn () =>
-            static::withTrashed()
-                ->where('branch_id', $branchId)
-                ->whereDate('expense_date', $date)
-                ->count()
-        );
+        // The unique index on `expense_number` is GLOBAL, so the sequence
+        // must be computed globally too: unscoped (a per-branch sequence
+        // collides the moment two branches book an expense on the same
+        // date) and trashed-inclusive (a soft-deleted expense still
+        // occupies its number). MAX beats COUNT+1 — deletions never make
+        // it reissue a taken number. Fixed-width zero padding makes the
+        // lexicographic MAX also the numeric max.
+        $last = static::withoutGlobalScopes()->withTrashed()
+            ->where('expense_number', 'like', "{$prefix}-%")
+            ->max('expense_number');
 
-        return sprintf('%s-%04d', $prefix, $count + 1);
+        $seq = $last ? ((int) substr($last, -4)) + 1 : 1;
+
+        // Belt-and-braces against a concurrent insert grabbing the same
+        // sequence between MAX and INSERT: bump past any number that
+        // appeared in the meantime. Not a full race-proof lock, but it
+        // shrinks the window to same-millisecond inserts.
+        while (static::withoutGlobalScopes()->withTrashed()
+            ->where('expense_number', sprintf('%s-%04d', $prefix, $seq))
+            ->exists()) {
+            $seq++;
+        }
+
+        return sprintf('%s-%04d', $prefix, $seq);
     }
 
     // ─── Relations ─────────────────────────────────────────────────
