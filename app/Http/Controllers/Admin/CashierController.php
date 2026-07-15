@@ -133,7 +133,12 @@ class CashierController extends Controller
         $data = $request->validate(['reason' => ['required', 'string']]);
         try {
             $this->billing->writeOffInvoice($invoice, auth()->id(), $data['reason']);
-            return back()->with('success', 'تم شطب الفاتورة');
+
+            return $this->redirectAfterInvoiceAction(
+                $request,
+                'تم شطب الفاتورة',
+                fn () => back()->with('success', 'تم شطب الفاتورة'),
+            );
         } catch (\Throwable $e) {
             // writeOffInvoice throws on an already-closed / zero-balance invoice
             // (e.g. a stale second submit) — show it, don't 500.
@@ -159,8 +164,13 @@ class CashierController extends Controller
 
         try {
             $this->billing->settleOnAccount($invoice, auth()->id(), $data['notes'] ?? null);
-            return redirect()->route('admin.cashier.index')
-                ->with('success', "تم تأجيل المتبقي كدين على الزبون. أُغلقت الجلسة.");
+            $message = 'تم تأجيل المتبقي كدين على الزبون. أُغلقت الجلسة.';
+
+            return $this->redirectAfterInvoiceAction(
+                $request,
+                $message,
+                fn () => redirect()->route('admin.cashier.index')->with('success', $message),
+            );
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
         }
@@ -175,7 +185,7 @@ class CashierController extends Controller
      * error it throws is flashed as-is. Same ability as settle-on-account
      * — parking and un-parking are two sides of the same drawer decision.
      */
-    public function unpark(Invoice $invoice)
+    public function unpark(Request $request, Invoice $invoice)
     {
         $this->authorize('create', Payment::class);
         try {
@@ -184,19 +194,25 @@ class CashierController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
-        // Land the cashier on the invoice's own checkout, not back on the
-        // debts page. Un-parking clears settled_on_account_at, so the invoice
-        // drops off the debt ledger; its dine-in session is already closed,
-        // so it's off the active-sessions dashboard too. cashier.show renders
-        // any session (closed included) with its invoice, so the restored
-        // balance stays collectable. Session-less invoices fall back to back().
-        if ($invoice->table_session_id) {
-            return redirect()
-                ->route('admin.cashier.show', $invoice->table_session_id)
-                ->with('success', 'تم إلغاء تأجيل الدين — حصّل المتبقي من هنا.');
-        }
+        return $this->redirectAfterInvoiceAction(
+            $request,
+            'تم إلغاء تأجيل الدين — حصّل المتبقي من هنا.',
+            function () use ($invoice) {
+                // Land the cashier on the invoice's own checkout, not back on the
+                // debts page. Un-parking clears settled_on_account_at, so the invoice
+                // drops off the debt ledger; its dine-in session is already closed,
+                // so it's off the active-sessions dashboard too. cashier.show renders
+                // any session (closed included) with its invoice, so the restored
+                // balance stays collectable. Session-less invoices fall back to back().
+                if ($invoice->table_session_id) {
+                    return redirect()
+                        ->route('admin.cashier.show', $invoice->table_session_id)
+                        ->with('success', 'تم إلغاء تأجيل الدين — حصّل المتبقي من هنا.');
+                }
 
-        return back()->with('success', 'تم إلغاء تأجيل الدين — عادت الفاتورة إلى التحصيل العادي.');
+                return back()->with('success', 'تم إلغاء تأجيل الدين — عادت الفاتورة إلى التحصيل العادي.');
+            },
+        );
     }
 
     public function cancel(Request $request, Invoice $invoice)
@@ -205,7 +221,12 @@ class CashierController extends Controller
         $data = $request->validate(['reason' => ['required', 'string']]);
         try {
             $this->billing->cancelInvoice($invoice, auth()->id(), $data['reason']);
-            return back()->with('success', 'تم إلغاء الفاتورة');
+
+            return $this->redirectAfterInvoiceAction(
+                $request,
+                'تم إلغاء الفاتورة',
+                fn () => back()->with('success', 'تم إلغاء الفاتورة'),
+            );
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
         }
@@ -353,5 +374,33 @@ class CashierController extends Controller
             'value.required'  => 'أدخل قيمة الخصم.',
             'reason.required' => 'سبب الخصم إلزامي.',
         ]);
+    }
+
+    /**
+     * Where to land the cashier after a deliberate money action (settle /
+     * unpark / cancel / write-off).
+     *
+     * The live Volt dashboard posts these classic forms with a hidden
+     * `return_session` (a TableSession id). When it's present AND resolves to
+     * a real session, bounce back to the ONE merged screen with that session's
+     * checkout pre-selected (?session=ID) — the route is rebuilt server-side
+     * from the integer id ALONE, so a raw/forged URL in the form is never
+     * trusted or followed.
+     *
+     * With no (or an unknown) `return_session` — the classic show page keeps
+     * POSTing these same forms — the caller's own redirect stands via
+     * `$fallback`, so the old page keeps working exactly as before.
+     */
+    protected function redirectAfterInvoiceAction(Request $request, string $successMessage, \Closure $fallback): \Illuminate\Http\RedirectResponse
+    {
+        $sessionId = $request->integer('return_session');
+
+        if ($sessionId > 0 && TableSession::whereKey($sessionId)->exists()) {
+            return redirect()
+                ->route('admin.cashier.index', ['session' => $sessionId])
+                ->with('success', $successMessage);
+        }
+
+        return $fallback();
     }
 }

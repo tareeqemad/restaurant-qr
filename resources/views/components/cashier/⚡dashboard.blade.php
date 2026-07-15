@@ -2648,6 +2648,182 @@ new class extends Component
                                 @endif
                             </div>
 
+                            {{-- ═══════ Deliberate money actions (merged from the classic page) ═══════
+                                 Native <form> POSTs to the SAME already-hardened CashierController
+                                 routes — NO new money logic lives in this component. Each carries a
+                                 hidden `return_session` so the controller redirects back to THIS
+                                 session's checkout (?session=ID) after the full reload. Visibility
+                                 rules mirror admin/cashier/show.blade.php exactly. Bootstrap modals
+                                 (already loaded) get session-scoped ids so wire:poll morphs never
+                                 collide across sessions; wire:ignore.self keeps an open modal from
+                                 being reverted by a poll morph mid-typing. --}}
+
+                            {{-- Parked-debt banner + un-park. A settled-on-account invoice stays
+                                 partially_paid with balance > 0 (the balance IS the ledger), so
+                                 without this it reads like a live half-paid checkout. Un-park
+                                 reverses an accidental park — guards live in
+                                 BillingService::unparkSettleOnAccount. --}}
+                            @if($invoice->settled_on_account_at)
+                                <div class="alert alert-warning mt-2 mb-0 py-2 px-2 small" wire:key="cx-parked-{{ $session->id }}">
+                                    <i class="bi bi-journal-text"></i>
+                                    مؤجّلة <strong>كدين على الزبون</strong> منذ {{ $invoice->settled_on_account_at->format('Y-m-d H:i') }}
+                                    — المتبقي <strong>{{ \App\Helpers\Money::format($invoice->balance) }}</strong> يظهر في سجل ديونه،
+                                    وأي دفعة هنا تسدد منه مباشرة.
+                                    @can('create', \App\Models\Payment::class)
+                                        @if((float) $invoice->balance > 0.001)
+                                            <form method="POST" action="{{ route('admin.cashier.unpark', $invoice) }}" class="mt-2 mb-0"
+                                                  onsubmit="return confirm('إلغاء تأجيل هذا الدين؟ سترجع الفاتورة إلى التحصيل العادي وتُحذف من سجل ديون الزبون.')">
+                                                @csrf
+                                                <input type="hidden" name="return_session" value="{{ $session->id }}">
+                                                <button class="btn btn-sm btn-outline-dark w-100">
+                                                    <i class="bi bi-arrow-counterclockwise"></i> إلغاء التأجيل
+                                                </button>
+                                            </form>
+                                        @endif
+                                    @endcan
+                                </div>
+                            @endif
+
+                            {{-- Settle on account — parks the remaining balance on the customer's
+                                 ledger and closes the session. Only when a customer is linked and
+                                 at least one payment exists (BillingService::settleOnAccount enforces
+                                 both; the UI mirrors that to avoid a button that only bounces). The
+                                 whole chain sits inside balance > 0, exactly like the classic page. --}}
+                            @if($invoice->balance > 0)
+                                @if($invoice->customer_id && (float) $invoice->paid_total > 0.001 && ! $invoice->settled_on_account_at)
+                                    <div wire:key="cx-settle-{{ $session->id }}">
+                                        <button type="button" class="btn btn-warning w-100 mt-2"
+                                                data-bs-toggle="modal" data-bs-target="#settleModal{{ $session->id }}">
+                                            <i class="bi bi-journal-text"></i>
+                                            تأجيل المتبقي ({{ \App\Helpers\Money::format($invoice->balance) }}) كدين
+                                        </button>
+                                        <div class="modal fade" id="settleModal{{ $session->id }}" tabindex="-1" wire:ignore.self>
+                                            <div class="modal-dialog"><div class="modal-content">
+                                                <form action="{{ route('admin.cashier.settle_on_account', $invoice) }}" method="POST">@csrf
+                                                    <input type="hidden" name="return_session" value="{{ $session->id }}">
+                                                    <div class="modal-header">
+                                                        <h5 class="mb-0"><i class="bi bi-journal-text"></i> تأجيل المتبقي كدين</h5>
+                                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                    </div>
+                                                    <div class="modal-body">
+                                                        @php
+                                                            // Preview math: at render time the invoice is NOT flagged yet,
+                                                            // so outstandingDebt() is already "debt from OTHER invoices"
+                                                            // (settleOnAccount computes the exact same way).
+                                                            $settleOtherDebt = $invoice->customer?->outstandingDebt() ?? 0.0;
+                                                            $settleResulting = $settleOtherDebt + (float) $invoice->balance;
+                                                        @endphp
+                                                        <div class="alert alert-info small">
+                                                            <strong>الزبون:</strong> {{ $invoice->customer->name ?? '—' }}<br>
+                                                            <strong>دينه الحالي (فواتير أخرى):</strong> {{ \App\Helpers\Money::format($settleOtherDebt) }}<br>
+                                                            <strong>المبلغ المؤجل من هذه الفاتورة:</strong> {{ \App\Helpers\Money::format($invoice->balance) }}<br>
+                                                            <strong>إجمالي الدين بعد التأجيل:</strong>
+                                                            <span class="text-danger">{{ \App\Helpers\Money::format($settleResulting) }}</span>
+                                                        </div>
+                                                        @if($invoice->customer && $invoice->customer->credit_limit !== null)
+                                                            @php
+                                                                $limit = (float) $invoice->customer->credit_limit;
+                                                                // Same 0.01 tolerance as the service guard so the modal never
+                                                                // promises what settleOnAccount will refuse.
+                                                                $wouldExceed = $settleResulting - $limit > 0.01;
+                                                            @endphp
+                                                            <div class="alert {{ $wouldExceed ? 'alert-danger' : 'alert-light' }} small">
+                                                                <strong>الحد الائتماني:</strong> {{ \App\Helpers\Money::format($limit) }}
+                                                                @if($wouldExceed)
+                                                                    <br><i class="bi bi-x-octagon-fill"></i> يتجاوز الحد — لن تُقبل العملية. ارفع الحد أولاً أو حصّل نقداً.
+                                                                @endif
+                                                            </div>
+                                                        @endif
+                                                        <label class="form-label">ملاحظة (اختياري)</label>
+                                                        <textarea name="notes" class="form-control" rows="2" maxlength="500"
+                                                                  placeholder="مثلاً: وعد الزبون بالتسديد الأسبوع القادم"></textarea>
+                                                    </div>
+                                                    <div class="modal-footer">
+                                                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">تراجع</button>
+                                                        <button class="btn btn-warning">
+                                                            <i class="bi bi-check2"></i> تأكيد تأجيل المتبقي
+                                                        </button>
+                                                    </div>
+                                                </form>
+                                            </div></div>
+                                        </div>
+                                    </div>
+                                @elseif((float) $invoice->paid_total <= 0.001 && (float) $invoice->balance > 0 && $invoice->customer_id)
+                                    {{-- Zero-paid parking is refused by the service (a full ticket on
+                                         credit with no cash collected is the write-off path) — hide the
+                                         button and explain the rule instead of teasing a bouncing action. --}}
+                                    <div class="alert alert-light border mt-2 small mb-0" wire:key="cx-settle-hint-zeropaid-{{ $session->id }}">
+                                        <i class="bi bi-info-circle"></i>
+                                        <strong>لماذا لا يظهر زر التأجيل؟</strong>
+                                        النظام يرفض تأجيل فاتورة <u>بدون أي دفعة</u> كدين — سجّل ولو دفعة جزئية
+                                        رمزية أولاً (إثبات نية السداد)، أو استخدم زر "شطب" إن كان الزبون لن يدفع إطلاقاً.
+                                    </div>
+                                @elseif((float) $invoice->balance > 0 && ! $invoice->customer_id)
+                                    <div class="alert alert-light border mt-2 small mb-0" wire:key="cx-settle-hint-nocustomer-{{ $session->id }}">
+                                        <i class="bi bi-info-circle"></i>
+                                        لتأجيل المتبقي كدين، اربط زبوناً بالجلسة أولاً (من اللوحة فوق).
+                                    </div>
+                                @endif
+                            @endif
+
+                            {{-- Cancel invoice — only while issued and no payments taken (the
+                                 service refuses once any payment exists). --}}
+                            @if($invoice->status === 'issued')
+                                <div wire:key="cx-cancel-{{ $session->id }}">
+                                    <button type="button" class="btn btn-sm btn-outline-danger w-100 mt-2"
+                                            data-bs-toggle="modal" data-bs-target="#cancelModal{{ $session->id }}">
+                                        إلغاء الفاتورة
+                                    </button>
+                                    <div class="modal fade" id="cancelModal{{ $session->id }}" tabindex="-1" wire:ignore.self>
+                                        <div class="modal-dialog"><div class="modal-content">
+                                            <form action="{{ route('admin.cashier.cancel', $invoice) }}" method="POST">@csrf
+                                                <input type="hidden" name="return_session" value="{{ $session->id }}">
+                                                <div class="modal-header">
+                                                    <h5 class="mb-0">إلغاء فاتورة</h5>
+                                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                </div>
+                                                <div class="modal-body">
+                                                    <textarea name="reason" class="form-control" rows="2" placeholder="السبب" required></textarea>
+                                                </div>
+                                                <div class="modal-footer">
+                                                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">تراجع</button>
+                                                    <button class="btn btn-danger">تأكيد</button>
+                                                </div>
+                                            </form>
+                                        </div></div>
+                                    </div>
+                                </div>
+                            @endif
+
+                            {{-- Write off — the customer isn't going to pay. issued OR
+                                 partially_paid (mirrors the classic condition). --}}
+                            @if(in_array($invoice->status, ['issued', 'partially_paid'], true))
+                                <div wire:key="cx-writeoff-{{ $session->id }}">
+                                    <button type="button" class="btn btn-sm btn-outline-dark w-100 mt-2"
+                                            data-bs-toggle="modal" data-bs-target="#writeoffModal{{ $session->id }}">
+                                        شطب (الزبون ما دفع)
+                                    </button>
+                                    <div class="modal fade" id="writeoffModal{{ $session->id }}" tabindex="-1" wire:ignore.self>
+                                        <div class="modal-dialog"><div class="modal-content">
+                                            <form action="{{ route('admin.cashier.writeoff', $invoice) }}" method="POST">@csrf
+                                                <input type="hidden" name="return_session" value="{{ $session->id }}">
+                                                <div class="modal-header">
+                                                    <h5 class="mb-0">شطب فاتورة</h5>
+                                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                </div>
+                                                <div class="modal-body">
+                                                    <textarea name="reason" class="form-control" rows="2" placeholder="السبب" required></textarea>
+                                                </div>
+                                                <div class="modal-footer">
+                                                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">تراجع</button>
+                                                    <button class="btn btn-dark">تأكيد</button>
+                                                </div>
+                                            </form>
+                                        </div></div>
+                                    </div>
+                                </div>
+                            @endif
+
                         @endif
                     </div>
                 </div>
