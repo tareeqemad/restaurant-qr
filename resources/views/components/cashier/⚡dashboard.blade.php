@@ -172,7 +172,7 @@ new class extends Component
             'table',
             'customer.loyaltyCustomer',
             'orders.items.modifiers',
-            'invoice.payments', 'invoice.refunds.processor', 'invoice.splits',
+            'invoice.payments.receiver', 'invoice.refunds.processor', 'invoice.splits',
         ])->find($this->selectedSessionId);
 
         // Count the linked customer's lifetime visits — one extra query, only
@@ -1159,7 +1159,7 @@ new class extends Component
     #[On('echo-private:waiters,.table.status_changed')]
     public function refreshFromBroadcast(): void
     {
-        unset($this->sessions, $this->selectedSession, $this->billStats, $this->pendingTransfersCount, $this->hasOpenShift);
+        unset($this->sessions, $this->selectedSession, $this->billStats, $this->pendingTransfersCount, $this->pendingTransfers, $this->hasOpenShift);
     }
 
     /**
@@ -1267,6 +1267,30 @@ new class extends Component
     public function pendingTransfersCount(): int
     {
         return \App\Models\PendingTransfer::where('status', 'pending')->count();
+    }
+
+    /**
+     * Pending bank-transfer claims for the CURRENTLY selected session — the
+     * verify/reject queue rendered above the checkout's payment section.
+     * Mirrors pendingTransfersCount()'s query (branch-scoped via the
+     * PendingTransfer BelongsToBranch global scope) but pinned to the one
+     * session so the cashier only confirms transfers for the table in hand.
+     * Read-only surface: all three actions (verify/reject/manual-record) are
+     * native <form> POSTs to the existing PendingTransferController routes —
+     * NO transfer logic lives in this component.
+     */
+    #[Computed]
+    public function pendingTransfers()
+    {
+        if (! $this->selectedSessionId) {
+            return collect();
+        }
+
+        return \App\Models\PendingTransfer::with('recordedBy')
+            ->where('table_session_id', $this->selectedSessionId)
+            ->pending()
+            ->latest()
+            ->get();
     }
 
     /**
@@ -2373,6 +2397,95 @@ new class extends Component
 
                     {{-- Right column: invoice + payment --}}
                     <div class="col-xl-5">
+                        {{-- ═══════ Pending bank transfers (merged from the classic page) ═══════
+                             Sits ABOVE the payment section so a claimed transfer is confirmed
+                             BEFORE the cashier arms a duplicate cash/card payment. Verify /
+                             reject / manual-record are native <form> POSTs to the SAME
+                             PendingTransferController routes — NO transfer logic lives here.
+                             Each carries a hidden `return_session`; the controllers redirect
+                             via back() to this ?session=ID screen after the full reload. The
+                             manual-record collapse gets a session-scoped id + wire:ignore.self
+                             so a wire:poll morph never collapses it mid-typing. --}}
+                        @if($this->pendingTransfers->isNotEmpty())
+                            <div class="card border-warning mb-3" wire:key="cx-transfers-{{ $session->id }}">
+                                <div class="card-header d-flex align-items-center gap-2" style="background:#f8f0de">
+                                    <i class="bi bi-bank2 text-warning"></i>
+                                    <strong>تحويلات بنكية بانتظار تأكيدك ({{ $this->pendingTransfers->count() }})</strong>
+                                </div>
+                                <div class="card-body">
+                                    @foreach($this->pendingTransfers as $t)
+                                        <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 {{ ! $loop->last ? 'border-bottom pb-3 mb-3' : '' }}"
+                                             wire:key="cx-transfer-{{ $t->id }}">
+                                            <div>
+                                                <div class="fw-bold fs-5">{{ \App\Helpers\Money::format($t->amount) }}</div>
+                                                <small class="text-muted">
+                                                    المُرسِل: <strong>{{ $t->sender_name }}</strong>
+                                                    · سُجّل بواسطة: {{ $t->recorded_by_user_id ? ($t->recordedBy?->name ?? 'الطاقم') : 'الزبون من التطبيق' }}
+                                                    @if($t->notes) · {{ $t->notes }} @endif
+                                                </small>
+                                            </div>
+                                            <div class="d-flex gap-2 align-items-end">
+                                                <form method="POST" action="{{ route('admin.cashier.transfers.verify', $t) }}" class="d-flex gap-1 align-items-end">
+                                                    @csrf
+                                                    <input type="hidden" name="return_session" value="{{ $session->id }}">
+                                                    <div>
+                                                        <label class="form-label small mb-0">المبلغ المؤكد</label>
+                                                        <input type="number" step="0.01" min="0.01" name="verified_amount"
+                                                               value="{{ number_format((float) $t->amount, 2, '.', '') }}"
+                                                               class="form-control form-control-sm text-end" style="width:110px">
+                                                    </div>
+                                                    <button class="btn btn-success btn-sm"><i class="bi bi-check-circle-fill"></i> تأكيد</button>
+                                                </form>
+                                                <form method="POST" action="{{ route('admin.cashier.transfers.reject', $t) }}"
+                                                      onsubmit="return (this.reason.value = prompt('سبب رفض التحويل؟') || '') !== ''">
+                                                    @csrf
+                                                    <input type="hidden" name="return_session" value="{{ $session->id }}">
+                                                    <input type="hidden" name="reason">
+                                                    <button class="btn btn-outline-danger btn-sm"><i class="bi bi-x-circle"></i> رفض</button>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    @endforeach
+                                    <div class="small text-muted mt-2">
+                                        <i class="bi bi-info-circle"></i> تأكّد من وصول المبلغ في تطبيق البنك قبل التأكيد. المبلغ الأقل يترك رصيداً متبقياً على الفاتورة.
+                                    </div>
+                                </div>
+                            </div>
+                        @endif
+
+                        {{-- Cashier records a transfer claim manually (customer told them
+                             directly). Always available to payment-creating staff, mirroring
+                             the classic page — not gated on an existing pending row. --}}
+                        @if(auth()->user()?->can('create', \App\Models\Payment::class))
+                            <div class="mb-3" wire:key="cx-transfer-record-{{ $session->id }}">
+                                <a class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" href="#cxRecordTransfer{{ $session->id }}" role="button">
+                                    <i class="bi bi-plus-circle"></i> تسجيل تحويل بنكي يدوياً
+                                </a>
+                                <div class="collapse mt-2" id="cxRecordTransfer{{ $session->id }}" wire:ignore.self>
+                                    <form method="POST" action="{{ route('admin.cashier.transfers.store', $session) }}"
+                                          class="card card-body row g-2 align-items-end">
+                                        @csrf
+                                        <input type="hidden" name="return_session" value="{{ $session->id }}">
+                                        <div class="col-md-6">
+                                            <label class="form-label small">اسم المُرسِل *</label>
+                                            <input type="text" name="sender_name" maxlength="120" required class="form-control form-control-sm">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label small">المبلغ *</label>
+                                            <input type="number" step="0.01" min="0.01" max="99999999.99" name="amount" required class="form-control form-control-sm text-end">
+                                        </div>
+                                        <div class="col-md-8">
+                                            <label class="form-label small">هاتف الزبون (اختياري)</label>
+                                            <input type="text" name="customer_phone" maxlength="32" class="form-control form-control-sm">
+                                        </div>
+                                        <div class="col-md-4">
+                                            <button class="btn btn-primary btn-sm w-100"><i class="bi bi-save"></i> حفظ</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        @endif
+
                         @if(!$invoice)
                             {{-- No invoice yet → issue button OR close-without-billing if there's nothing to invoice --}}
                             <div class="cx-section">
@@ -2616,8 +2729,16 @@ new class extends Component
                                 @endif
                             @endif
 
-                            {{-- Payment history --}}
+                            {{-- Payment history + per-payment void (Group B). Void reverses a
+                                 mistaken entry (wrong method / fat-fingered amount / double
+                                 tap) and REOPENS the invoice — it is NOT a refund. Native
+                                 <form> POST to the existing admin.cashier.payments.void route
+                                 with @csrf + a hidden return_session so the controller lands
+                                 back on THIS ?session=ID screen after the full reload. The
+                                 reason is captured via the same prompt() pattern as the classic
+                                 page; visibility mirrors it too (hidden once cancelled). --}}
                             @if($invoice->payments->count())
+                                @php $canVoidPayment = $invoice->status !== 'cancelled' && auth()->user()?->can('create', \App\Models\Payment::class); @endphp
                                 <div class="cx-section">
                                     <div class="cx-section-head"><strong><i class="bi bi-clock-history"></i> سجل الدفعات</strong></div>
                                     @foreach($invoice->payments as $p)
@@ -2625,11 +2746,31 @@ new class extends Component
                                             <div>
                                                 <strong>{{ \App\Helpers\Money::format($p->amount) }}</strong>
                                                 <span class="badge bg-secondary ms-1">{{ \App\Support\PaymentMethods::label($p->method) }}</span>
-                                                @if($p->reference)<small class="text-muted">#{{ $p->reference }}</small>@endif
+                                                @if($p->reference)<small class="text-muted" dir="ltr">#{{ $p->reference }}</small>@endif
+                                                @if($p->receiver)<small class="text-muted d-block">استلمها: {{ $p->receiver->name }}</small>@endif
                                             </div>
-                                            <small class="text-muted">{{ $p->paid_at?->format('H:i') ?? $p->created_at->format('H:i') }}</small>
+                                            <div class="d-flex align-items-center gap-2">
+                                                <small class="text-muted">{{ $p->paid_at?->format('H:i') ?? $p->created_at->format('H:i') }}</small>
+                                                @if($canVoidPayment)
+                                                    <form method="POST" action="{{ route('admin.cashier.payments.void', $p) }}"
+                                                          onsubmit="return (this.reason.value = prompt('سبب إلغاء الدفعة؟ (خطأ في المبلغ أو طريقة الدفع…)') || '') !== ''">
+                                                        @csrf
+                                                        <input type="hidden" name="return_session" value="{{ $session->id }}">
+                                                        <input type="hidden" name="reason">
+                                                        <button class="btn btn-sm btn-outline-danger py-0 px-1" title="إلغاء الدفعة (عكس القيد)">
+                                                            <i class="bi bi-x-lg"></i>
+                                                        </button>
+                                                    </form>
+                                                @endif
+                                            </div>
                                         </div>
                                     @endforeach
+                                    @if($canVoidPayment)
+                                        <div class="small text-muted mt-2">
+                                            <i class="bi bi-info-circle"></i>
+                                            «إلغاء الدفعة» يعكس القيد لتصحيح خطأ (طريقة أو مبلغ خاطئ) — لإرجاع المال فعلياً للزبون استخدم «الاسترداد».
+                                        </div>
+                                    @endif
                                 </div>
                             @endif
 
