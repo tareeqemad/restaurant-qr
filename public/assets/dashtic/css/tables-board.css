@@ -484,3 +484,31 @@
     font-weight: 900;
     font-variant-numeric: tabular-nums;
 }
+
+/* ── Touch targets ───────────────────────────────────────────────────────
+   Measured on a real waiter's tablet (845×604): the feed's action buttons
+   rendered at 38px and the ⋯ trigger at 28px wide. Both are under the 44px
+   minimum every touch guideline agrees on — and this is a man tapping with a
+   wet finger, at speed, while carrying plates. A missed tap here is a plate
+   going cold, so this is not a style preference. */
+.tb-feed-btn {
+    min-height: 44px;
+    padding-inline: 1.1rem;
+}
+.ta-more-btn {
+    width: 44px;
+    height: 44px;
+    font-size: 1rem;
+}
+/* The tile's ⋯ can't be 44px — the tile is only 78px wide and the number has
+   to stay readable. Keep the glyph small but grow the hit area past it. */
+.tb-tile .ta-more-btn {
+    width: 30px;
+    height: 30px;
+    position: relative;
+}
+.tb-tile .ta-more-btn::after {
+    content: '';
+    position: absolute;
+    inset: -8px;   /* → 46px of hittable area around a 30px glyph */
+}
