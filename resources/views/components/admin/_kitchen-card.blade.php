@@ -13,7 +13,11 @@
   at that index next.
 --}}
 
-<article class="kb-card kb-urg-{{ $urgency }} {{ $order->isExternal() ? 'kb-card--external' : 'kb-card--dinein' }} {{ ($items->min('approved_at')?->gt(now()->subSeconds(15))) ? 'kb-card--flash' : '' }}"
+{{-- kb-card--{waiting|cooking}: the state class that never existed. Colour has
+     only ever encoded URGENCY here, so an un-fired ticket and one already on the
+     stove looked identical at a similar age — measured: 15 cards, 4 looks, all
+     urgency. This is the difference between "what do I make next" and a wall. --}}
+<article class="kb-card kb-urg-{{ $urgency }} kb-card--{{ $column }} {{ $order->isExternal() ? 'kb-card--external' : 'kb-card--dinein' }} {{ ($items->min('approved_at')?->gt(now()->subSeconds(15))) ? 'kb-card--flash' : '' }}"
          wire:key="card-{{ $order->id }}"
          @if($order->isExternal()) style="--source-color: {{ $order->sourceColor() }};" @endif>
     @php

@@ -9825,3 +9825,43 @@ html[dir="ltr"] select.tb-transfer-select:not([multiple]):not([size]) {
     .cx-shift-open { width: 100%; margin-inline-start: 0; }
     .cx-shift-open input { flex: 1; width: auto; }
 }
+
+/* ── KDS: name the two groups the board already had ──────────────────────
+   merge() has always put every un-fired ticket above every cooking one, and
+   firing the top card drops it below — the queue feeds itself. Nothing said
+   so, so the cook scrolled hunting for an order already in front of him.
+   Full-width rows INSIDE the existing grid: no layout change, no re-split. */
+.kb-group-head {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .3rem .1rem;
+    margin-top: .25rem;
+    border-bottom: 2px solid #e2e8f0;
+}
+.kb-group-head h4 { margin: 0; font-size: 1rem; font-weight: 900; color: #1e293b; }
+.kb-group-head i { font-size: 1.05rem; color: #64748b; }
+.kb-group-head small { font-size: .74rem; font-weight: 700; color: #94a3b8; margin-inline-start: auto; }
+.kb-group-count {
+    min-width: 26px; height: 24px; padding: 0 .45rem;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 999px;
+    background: #f1f5f9; color: #475569;
+    font-size: .82rem; font-weight: 900;
+    font-variant-numeric: tabular-nums;
+}
+/* The fire queue is the one the cook acts on — give it the weight. */
+.kb-group-head--fire { border-bottom-color: rgb(var(--primary-rgb)); }
+.kb-group-head--fire i { color: #ea580c; }
+.kb-group-head--fire .kb-group-count {
+    background: rgb(var(--primary-rgb));
+    color: #fff;
+}
+
+/* State, not urgency. Colour already encodes how late a ticket is; this says
+   whether anyone has started it. A cooking card recedes — it is not a task. */
+.kb-card--cooking { opacity: .82; }
+.kb-card--cooking .kb-table-ribbon { filter: saturate(.55); }
+.kb-card--waiting { border-width: 2px; }
+.kb-card--waiting .kb-card-foot { background: color-mix(in srgb, rgb(var(--primary-rgb)) 8%, #fff); }

@@ -563,7 +563,17 @@ new class extends Component
 @php
     $load = $this->loadStats;
     $tickets = $this->ordersByColumn;
-    $active = $tickets['waiting']->merge($tickets['cooking']);
+
+    // The fire queue was ALREADY here and nothing said so: merge() preserves
+    // order, so every un-fired ticket has always sat above every cooking one,
+    // and firing the top card drops it below — the board feeds itself. But no
+    // class distinguished the two states (15 cards rendered only 4 looks, all
+    // urgency), so the cook read a wall of near-identical cards and scrolled
+    // hunting for an order that was already in front of him. Naming the two
+    // groups is the whole fix.
+    $waiting = $tickets['waiting'];
+    $cooking = $tickets['cooking'];
+    $active = $waiting->merge($cooking);   // all-day + follow-up still span both
     $ready = $tickets['ready'];
 
     // Shared qty formatter — used by card rows, the ready strip AND the
@@ -791,19 +801,48 @@ new class extends Component
     {{-- Main ticket grid — auto-fit so we get 1/2/3/4 columns based on screen
          width. Tickets stay put; only their internal items change state.
          Sorted by urgency-then-age so red ones bubble up. --}}
+    {{-- ONE grid still: the headers span it with grid-column 1/-1 rather than
+         splitting it in two, so cards keep flowing and reflowing exactly as
+         before. Nothing about the layout changes — the structure that was
+         always there just becomes visible. --}}
     <div class="kb-tickets">
-        @forelse($active as $card)
-            @include('components.admin._kitchen-card', $card + [
-                'column'    => $card['items']->contains(fn($i) => $i->status === 'preparing') ? 'cooking' : 'waiting',
-                'follow_up' => $card['table_num'] && in_array($card['table_num'], $followUpTables, true),
-            ])
-        @empty
+        @if($active->isEmpty())
             <div class="kb-empty kb-empty--big">
                 <i class="bi bi-cup-straw"></i>
                 <span>لا طلبات نشطة الآن</span>
                 <small>التذكرة الجديدة ستظهر هنا تلقائياً مع صوت تنبيه</small>
             </div>
-        @endforelse
+        @endif
+
+        @if($waiting->isNotEmpty())
+            <div class="kb-group-head kb-group-head--fire">
+                <i class="bi bi-fire"></i>
+                <h4>للتحضير</h4>
+                <span class="kb-group-count">{{ $waiting->count() }}</span>
+                <small>ابدأ من هون</small>
+            </div>
+            @foreach($waiting as $card)
+                @include('components.admin._kitchen-card', $card + [
+                    'column'    => 'waiting',
+                    'follow_up' => $card['table_num'] && in_array($card['table_num'], $followUpTables, true),
+                ])
+            @endforeach
+        @endif
+
+        @if($cooking->isNotEmpty())
+            <div class="kb-group-head">
+                <i class="bi bi-hourglass-split"></i>
+                <h4>عالنار</h4>
+                <span class="kb-group-count">{{ $cooking->count() }}</span>
+                <small>شغّالة — راقب الوقت</small>
+            </div>
+            @foreach($cooking as $card)
+                @include('components.admin._kitchen-card', $card + [
+                    'column'    => 'cooking',
+                    'follow_up' => $card['table_num'] && in_array($card['table_num'], $followUpTables, true),
+                ])
+            @endforeach
+        @endif
     </div>
 
     <script>
