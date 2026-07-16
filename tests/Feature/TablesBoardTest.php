@@ -479,6 +479,55 @@ class TablesBoardTest extends TestCase
         $this->assertStringContainsString('table_id=', $row['triage']['action']['url'], 'the fallback carries the table');
     }
 
+    /**
+     * Housekeeping must never bury the one thing a guest is waiting on.
+     *
+     * On the real 40-table floor this buried the feed 4-to-1: a single pending
+     * order under four day-old zombie sessions nobody had closed — reproducing
+     * the exact wall of noise the board exists to kill.
+     */
+    public function test_stale_sessions_stay_out_of_the_feed_and_live_behind_a_lens(): void
+    {
+        // One real action...
+        $live = $this->table('50');
+        $this->openSession($live, $this->waiter->id, now()->subMinutes(20));
+
+        // ...and three day-old sessions nobody closed.
+        foreach (['51', '52', '53'] as $n) {
+            $this->openSession($this->table($n), $this->waiter->id, now()->subDay());
+        }
+
+        $board = Livewire::actingAs($this->waiter)->test('admin.tables-board');
+
+        $this->assertSame(1, $board->instance()->triage->count(), 'the feed carries only what someone waits on');
+        $this->assertSame('no_order', $board->instance()->triage->first()['triage']['type']);
+        $this->assertSame(3, $board->instance()->staleCount, 'housekeeping is counted, not shown');
+
+        $board->call('toggleLens', 'stale');
+
+        $this->assertSame(3, $board->instance()->triage->count(), 'the lens brings it back on request');
+
+        // idle (close-eligible) and long are both housekeeping — the lens keys
+        // on the grey tier, not on which flavour of stale it is.
+        $this->assertSame(
+            ['grey'],
+            $board->instance()->triage->pluck('triage.urgency')->unique()->values()->all()
+        );
+    }
+
+    /** The lens toggles off again. */
+    public function test_the_stale_lens_toggles_back(): void
+    {
+        $this->openSession($this->table('54'), $this->waiter->id, now()->subDay());
+
+        $board = Livewire::actingAs($this->waiter)->test('admin.tables-board')
+            ->call('toggleLens', 'stale')
+            ->call('toggleLens', 'stale');
+
+        $this->assertSame('', $board->get('lens'));
+        $this->assertSame(0, $board->instance()->triage->count());
+    }
+
     /** A table nobody wiped down surfaces as its own tier with a "cleaned" action. */
     public function test_a_dirty_table_asks_to_be_cleaned(): void
     {

@@ -50,6 +50,16 @@ new class extends Component
     #[Url(as: 'view', except: '')]
     public string $view = '';
 
+    /**
+     * '' = the feed shows what a guest is waiting on. 'stale' = show the
+     * housekeeping pile instead. Only ONE lens exists on purpose: available and
+     * occupied are already the map's whole job, and everything actionable is
+     * already IN the feed — so a row of five filter chips would be decoration
+     * competing with the strip for the one screen a waiter actually reads.
+     */
+    #[Url(as: 'lens', except: '')]
+    public string $lens = '';
+
     public function mount(): void
     {
         if ($this->view === '') {
@@ -345,12 +355,36 @@ new class extends Component
         ];
     }
 
+    /**
+     * Housekeeping (a long-running or idle session) is NOT urgency.
+     *
+     * On a real floor these are day-old zombie sessions nobody closed, and they
+     * buried the feed 4-to-1 under a single actual action — reproducing the
+     * exact wall of noise this board exists to kill. They're still worth
+     * clearing, so they get a lens of their own instead of the hero strip.
+     */
+    protected function isHousekeeping(array $row): bool
+    {
+        return ($row['triage']['urgency'] ?? null) === 'grey';
+    }
+
+    #[Computed]
+    public function staleCount(): int
+    {
+        return $this->rows->filter(fn ($r) => $r['triage'] && $this->isHousekeeping($r))->count();
+    }
+
     /** The feed: actionable tables only, most-urgent first, longest-waiting first within a tier. */
     #[Computed]
     public function triage()
     {
         return $this->rows
             ->filter(fn ($r) => $r['triage'] !== null)
+            // The lens flips the feed to housekeeping — the ONLY tier that has
+            // to be asked for, because it's the only one no guest is waiting on.
+            ->filter(fn ($r) => $this->lens === 'stale'
+                ? $this->isHousekeeping($r)
+                : ! $this->isHousekeeping($r))
             ->sort(function ($a, $b) {
                 $rank = $b['triage']['rank'] <=> $a['triage']['rank'];
                 if ($rank !== 0) {
@@ -531,6 +565,11 @@ new class extends Component
         $this->view = ($v === 'mine' || $v === 'all' || ctype_digit($v)) ? $v : 'all';
     }
 
+    public function toggleLens(string $l): void
+    {
+        $this->lens = ($this->lens === $l || $l !== 'stale') ? '' : $l;
+    }
+
     /** My rostered sections — drives the "قسمي" tab's sub-label. */
     #[Computed]
     public function myZoneLabels(): array
@@ -573,7 +612,7 @@ new class extends Component
     {
         unset($this->rows, $this->triage, $this->floorSections, $this->sections,
               $this->mineCount, $this->allCount, $this->availableTables,
-              $this->myZoneLabels, $this->showsMineTab, $this->needsRosterNudge);
+              $this->myZoneLabels, $this->showsMineTab, $this->needsRosterNudge, $this->staleCount);
     }
 }
 ?>
@@ -671,9 +710,22 @@ new class extends Component
     {{-- ── Priority feed: the hero. Short, urgency-sorted, one action each. ── --}}
     <section class="tb-feed" aria-label="شريط المتابعة">
         <header class="tb-feed-head">
-            <i class="bi bi-lightning-charge-fill"></i>
-            <h3>شريط المتابعة</h3>
-            <span class="tb-feed-sub">مرتّب حسب الإلحاح</span>
+            <i class="bi {{ $lens === 'stale' ? 'bi-hourglass-bottom' : 'bi-lightning-charge-fill' }}"></i>
+            <h3>{{ $lens === 'stale' ? 'الجلسات الراكدة' : 'شريط المتابعة' }}</h3>
+            <span class="tb-feed-sub">{{ $lens === 'stale' ? 'تدبير — ما حدا مستني عليها' : 'مرتّب حسب الإلحاح' }}</span>
+
+            {{-- The one lens. Housekeeping is the only tier kept OUT of the feed
+                 (no guest is waiting on it), so it's the only one that needs a
+                 way back in. --}}
+            @if($this->staleCount > 0 || $lens === 'stale')
+                <button type="button" wire:click="toggleLens('stale')"
+                    class="tb-lens {{ $lens === 'stale' ? 'is-active' : '' }}"
+                    aria-pressed="{{ $lens === 'stale' ? 'true' : 'false' }}">
+                    <i class="bi {{ $lens === 'stale' ? 'bi-arrow-right' : 'bi-hourglass-bottom' }}"></i>
+                    {{ $lens === 'stale' ? 'رجوع للمتابعة' : 'راكدة' }}
+                    @if($lens !== 'stale')<span class="tb-lens-count">{{ $this->staleCount }}</span>@endif
+                </button>
+            @endif
         </header>
 
         @forelse($triage as $r)
