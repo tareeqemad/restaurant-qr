@@ -9759,3 +9759,69 @@ html[dir="ltr"] select.tb-transfer-select:not([multiple]):not([size]) {
 }
 .cx-decision.is-on .cx-decision-body b { color: rgb(var(--primary-rgb)); }
 .cx-decision-body small { font-size: .72rem; color: #64748b; font-weight: 600; line-height: 1.35; }
+
+/* ── Cashier: open the drawer in place ───────────────────────────────────
+   The banner used to be a link to /admin/shifts — abandon the till, open a
+   drawer elsewhere, find your way back. Now the whole action is one field
+   and one button, right where the blocker is. */
+.cx-shift-banner { flex-wrap: wrap; }
+.cx-shift-open {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    margin-inline-start: auto;
+}
+.cx-shift-open label {
+    font-size: .78rem;
+    font-weight: 800;
+    color: #92400e;
+    margin: 0;
+    white-space: nowrap;
+}
+.cx-shift-open input {
+    width: 96px;
+    height: 38px;
+    padding: 0 .55rem;
+    border: 1px solid rgba(245, 158, 11, .55);
+    border-radius: 9px;
+    background: #fff;
+    font-size: .88rem;
+    font-weight: 800;
+    color: #1e293b;
+    font-variant-numeric: tabular-nums;
+}
+.cx-shift-open input:focus {
+    outline: 0;
+    border-color: rgb(var(--primary-rgb));
+    box-shadow: 0 0 0 3px rgba(var(--primary-rgb), .14);
+}
+.cx-shift-open button {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    height: 38px;
+    padding: 0 1rem;
+    border: 0;
+    border-radius: 9px;
+    background: rgb(var(--primary-rgb));
+    color: #fff;
+    font-size: .84rem;
+    font-weight: 800;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.cx-shift-open button:hover { filter: brightness(.95); }
+.cx-shift-open button i { color: #fff !important; font-size: .85rem !important; }
+.cx-shift-more {
+    font-size: .78rem;
+    font-weight: 700;
+    color: #92400e;
+    text-decoration: underline;
+    white-space: nowrap;
+}
+.cx-shift-more:hover { color: #78350f; }
+
+@media (max-width: 640px) {
+    .cx-shift-open { width: 100%; margin-inline-start: 0; }
+    .cx-shift-open input { flex: 1; width: auto; }
+}

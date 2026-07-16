@@ -1369,7 +1369,29 @@ new class extends Component
         <div class="cx-shift-banner">
             <i class="bi bi-exclamation-triangle-fill"></i>
             <span>لا توجد وردية مفتوحة — الدفعات لن تُنسب لأي درج.</span>
-            <a href="{{ route('admin.shifts.index') }}">افتح وردية الآن ←</a>
+
+            {{-- Open the drawer WITHOUT leaving the cashier. This used to be a
+                 link to /admin/shifts: the cashier had to abandon the till mid
+                 rush, open a drawer on another screen, and find their way back.
+
+                 It POSTs straight to the untouched ShiftController@store, which
+                 serialises concurrent opens on a row lock, enforces one open
+                 drawer ANYWHERE (unscoped — a multi-branch operator must not
+                 end up with two), and audits a hand-off variance against the
+                 last closing count. None of that is reimplemented here —
+                 duplicated guards are exactly how the required-modifier hole
+                 happened. store() already returns back(), so the cashier lands
+                 right back on this screen with its success/warning flash. --}}
+            <form method="POST" action="{{ route('admin.shifts.store') }}" class="cx-shift-open">
+                @csrf
+                <label for="cx-open-amount">الرصيد الافتتاحي</label>
+                <input id="cx-open-amount" type="number" name="cash_opening"
+                       step="0.01" min="0" value="0" required inputmode="decimal"
+                       aria-label="الرصيد الافتتاحي للدرج">
+                <button type="submit"><i class="bi bi-unlock-fill"></i> افتح الوردية</button>
+            </form>
+
+            <a href="{{ route('admin.shifts.index') }}" class="cx-shift-more">إدارة الورديات ←</a>
         </div>
     @endunless
     {{-- Bank-transfer alert strip — customer/waiter-claimed transfers waiting
