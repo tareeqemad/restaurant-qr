@@ -588,6 +588,13 @@ new class extends Component
         return $this->myZoneIds() !== [];
     }
 
+    /** Template-visible copy of the roster — the tab strip needs it to dedupe. */
+    #[Computed]
+    public function myZoneIdList(): array
+    {
+        return $this->myZoneIds();
+    }
+
     /** A waiter nobody rostered today: say so instead of faking a section. */
     #[Computed]
     public function needsRosterNudge(): bool
@@ -612,7 +619,8 @@ new class extends Component
     {
         unset($this->rows, $this->triage, $this->floorSections, $this->sections,
               $this->mineCount, $this->allCount, $this->availableTables,
-              $this->myZoneLabels, $this->showsMineTab, $this->needsRosterNudge, $this->staleCount);
+              $this->myZoneLabels, $this->showsMineTab, $this->needsRosterNudge,
+              $this->staleCount, $this->myZoneIdList);
     }
 }
 ?>
@@ -653,6 +661,11 @@ new class extends Component
         @endif
 
         @foreach($this->sections as $z)
+            {{-- Skip the section that IS "قسمي". A waiter rostered to one
+                 section was handed two tabs showing the identical 15 tables —
+                 "قسمي · داخلي" and "داخلي" — which is just a choice with no
+                 difference, burned into the scarcest space on his screen. --}}
+            @continue($this->showsMineTab && $this->myZoneIdList === [(int) $z->id])
             <button type="button" role="tab" wire:click="setView('{{ $z->id }}')"
                 aria-selected="{{ $view === (string) $z->id ? 'true' : 'false' }}"
                 class="tb-tab {{ $view === (string) $z->id ? 'is-active' : '' }}"
