@@ -4,6 +4,7 @@ namespace App\Services\Licensing;
 
 use App\Models\LocalLicenseState;
 use Carbon\CarbonInterface;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Throwable;
 
@@ -35,11 +36,20 @@ class LicenseManager
         $state = $this->state();
         $hours = max(1, (int) config('license.refresh_hours', 12));
 
-        if (! $state->last_checked_at || $state->last_checked_at->lt(now()->subHours($hours))) {
-            return $this->refresh();
+        if ($state->last_checked_at && $state->last_checked_at->gte(now()->subHours($hours))) {
+            return $state;
         }
 
-        return $state;
+        // Cold or stale cache: only ONE caller refreshes from the cloud. This
+        // short lock stops a burst of concurrent callers — e.g. right after a
+        // deploy, when last_checked_at is null — from all stampeding the license
+        // API at once and each blocking on the HTTP timeout. Losers serve the
+        // (still-signed) local state.
+        if (! Cache::add('license:refresh-lock', 1, now()->addMinutes(2))) {
+            return $state;
+        }
+
+        return $this->refresh();
     }
 
     public function refresh(): LocalLicenseState
@@ -72,7 +82,8 @@ class LicenseManager
         }
 
         try {
-            $response = Http::timeout((int) config('license.timeout', 8))
+            $response = Http::connectTimeout((int) config('license.connect_timeout', 3))
+                ->timeout((int) config('license.timeout', 8))
                 ->acceptJson()
                 ->post($cloudUrl.'/api/license/check', [
                     'license_key' => $licenseKey,
