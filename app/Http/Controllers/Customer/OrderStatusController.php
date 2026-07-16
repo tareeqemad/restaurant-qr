@@ -3,11 +3,15 @@
 namespace App\Http\Controllers\Customer;
 
 use App\Enums\OrderStatus;
+use App\Events\TableStatusChanged;
+use App\Helpers\SafeBroadcast;
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\Customer;
 use App\Models\Order;
 use App\Models\Setting;
 use App\Services\OrderService;
+use App\Support\BranchContext;
 use Illuminate\Http\Request;
 
 class OrderStatusController extends Controller
@@ -109,6 +113,52 @@ class OrderStatusController extends Controller
         $session->update(array_filter($data, fn ($v) => $v !== null));
 
         return back();
+    }
+
+    /**
+     * "I need the waiter." The twin of BillController@requestBill — the floor
+     * could already hear "I want to pay" but had no way to hear "I need you".
+     *
+     * Rate-limited the same way: a diner tapping twice shouldn't re-fire the
+     * clock, or the waiter's card would keep resetting to "asked 0 minutes ago"
+     * and never look urgent.
+     */
+    public function requestHelp(Request $request)
+    {
+        $session = $request->attributes->get('table_session');
+        $session->loadMissing('table');
+
+        $data = $request->validate([
+            'note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        if ($session->help_requested_at && $session->help_requested_at->gt(now()->subMinutes(2))) {
+            return back()->with('info', 'طلبك وصل — الجرسون جاي.');
+        }
+
+        $session->update([
+            'help_requested_at' => now(),
+            'help_request_note' => $data['note'] ?? null,
+            'help_ack_by_user_id' => null,
+        ]);
+        $session->touch();
+
+        ActivityLog::log(
+            'session.help_requested',
+            'طلب مساعدة من طاولة '.($session->table?->number ?? '—'),
+            $session,
+            ['note' => $data['note'] ?? null]
+        );
+
+        // Customer requests run outside the admin BranchContext, so pin the
+        // session's branch before broadcasting to the floor.
+        BranchContext::forBranch($session->branch_id, function () use ($session) {
+            if ($session->table) {
+                SafeBroadcast::dispatch(new TableStatusChanged($session->table->refresh(), $session->table->status));
+            }
+        });
+
+        return back()->with('success', 'وصل طلبك — الجرسون جاي.');
     }
 
     public function cancel(Request $request, Order $order)

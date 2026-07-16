@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use App\Services\Licensing\LicenseManager;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Symfony\Component\HttpFoundation\Response;
 
 class EnsureValidLicense
@@ -19,7 +20,16 @@ class EnsureValidLicense
         $manager->refreshIfStale();
 
         if (! $manager->allowsOperation()) {
-            $manager->refresh();
+            // A blocked local state could be a genuine block or a remote change
+            // we haven't pulled yet. Re-verify against the cloud — but at most
+            // once per short window (cache lock). Without this guard a slow or
+            // unreachable license server turns EVERY write request into a
+            // multi-second HTTP stall, since this branch fires on each POST while
+            // the state stays non-allowing. Losers of the lock decide from the
+            // local state and continue instantly.
+            if (Cache::add('license:recheck-lock', 1, now()->addMinutes(2))) {
+                $manager->refresh();
+            }
         }
 
         $summary = $manager->summary();

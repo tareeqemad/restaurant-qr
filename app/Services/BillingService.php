@@ -997,19 +997,36 @@ class BillingService
                 }
             }
 
+            $this->logUnansweredHelp($session);
+
             $session->update([
                 'status' => 'closed',
                 'closed_at' => now(),
                 'bill_requested_at' => null,
                 'bill_request_note' => null,
+                // The help twin must be cleared with the bill pair. The board
+                // reads a raised hand off the ACTIVE session, so leaving it
+                // stamped both mutes it silently and poisons any "who answered"
+                // reporting with a request nobody ever acked.
+                'help_requested_at' => null,
+                'help_request_note' => null,
             ]);
 
-            if ($session->table && $session->table->status === 'occupied') {
+            if ($session->table) {
+                // The party left: this table needs wiping regardless of what
+                // its status is allowed to become. Bussing is orthogonal to the
+                // status guard below — a table flipped to reserved mid-service
+                // still ends up with dirty plates on it.
+                $previousStatus = $session->table->status;
+                $freeing = $previousStatus === 'occupied';
+
+                $session->table->update([
+                    'needs_cleaning_since' => now(),
+                ] + ($freeing ? ['status' => 'available'] : []));
                 // Only free tables the session itself occupied — a table the
                 // manager flipped to reserved/out_of_service mid-session must
                 // keep that status (the cron sweep runs this silently).
-                $previousStatus = $session->table->status;
-                $session->table->update(['status' => 'available']);
+
                 SafeBroadcast::dispatch(new TableStatusChanged($session->table->refresh(), $previousStatus));
             }
 
@@ -1128,19 +1145,54 @@ class BillingService
                 $order->update(['status' => OrderStatus::Completed->value, 'completed_at' => now()]);
             }
         }
+        $this->logUnansweredHelp($session);
+
         $session->update([
             'status' => 'closed',
             'closed_at' => now(),
             'bill_requested_at' => null,
             'bill_request_note' => null,
+            'help_requested_at' => null,     // see closeSessionWithoutBilling
+            'help_request_note' => null,
         ]);
-        if ($session->table && $session->table->status === 'occupied') {
+        if ($session->table) {
             // Same guard as closeSessionWithoutBilling: don't yank a table
             // out of reserved/out_of_service just because its old session
-            // finished (the idle-close cron reaches this path too).
+            // finished (the idle-close cron reaches this path too) — but the
+            // bussing debt is stamped either way.
             $previousStatus = $session->table->status;
-            $session->table->update(['status' => 'available']);
+            $freeing = $previousStatus === 'occupied';
+
+            $session->table->update([
+                'needs_cleaning_since' => now(),
+            ] + ($freeing ? ['status' => 'available'] : []));
+
             SafeBroadcast::dispatch(new TableStatusChanged($session->table->refresh(), $previousStatus));
         }
+    }
+
+    /**
+     * A guest had their hand up when the session closed and nobody ever went.
+     *
+     * Closing has to mute the request — the board reads it off the active
+     * session — but silently erasing it would destroy the one signal worth
+     * having: that the floor missed someone. Record it before it goes.
+     */
+    protected function logUnansweredHelp(TableSession $session): void
+    {
+        if (! $session->help_requested_at || $session->help_ack_by_user_id) {
+            return;
+        }
+
+        ActivityLog::log(
+            'session.help_unanswered',
+            'أُغلقت جلسة طاولة '.($session->table?->number ?? '—').' وطلب المساعدة ما حدا ردّ عليه',
+            $session,
+            [
+                'requested_at' => $session->help_requested_at->toIso8601String(),
+                'waited_minutes' => (int) abs($session->help_requested_at->diffInMinutes(now())),
+                'note' => $session->help_request_note,
+            ]
+        );
     }
 }

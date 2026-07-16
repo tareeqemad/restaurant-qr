@@ -15,11 +15,21 @@ class Table extends Model
 {
     use BelongsToBranch, HasFactory, SoftDeletes;
 
-    protected $fillable = ['number', 'name', 'qr_token', 'capacity', 'zone_lookup_id', 'status', 'active'];
+    protected $fillable = [
+        'number', 'name', 'qr_token', 'capacity', 'zone_lookup_id',
+        'status', 'needs_cleaning_since', 'active',
+    ];
 
     protected $casts = [
         'active' => 'boolean',
+        'needs_cleaning_since' => 'datetime',
     ];
+
+    /** The party left but nobody has wiped it down yet. */
+    public function needsCleaning(): bool
+    {
+        return $this->needs_cleaning_since !== null;
+    }
 
     protected static function booted(): void
     {

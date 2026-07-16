@@ -19,6 +19,7 @@ class TableSession extends Model
         'customer_name', 'customer_phone', 'opened_by_user_id', 'assigned_waiter_id',
         'opened_at', 'closed_at', 'last_activity_at',
         'bill_requested_at', 'bill_request_note',
+        'help_requested_at', 'help_request_note', 'help_ack_by_user_id',
     ];
 
     protected $casts = [
@@ -26,6 +27,7 @@ class TableSession extends Model
         'closed_at' => 'datetime',
         'last_activity_at' => 'datetime',
         'bill_requested_at' => 'datetime',
+        'help_requested_at' => 'datetime',
     ];
 
     protected static function booted(): void
@@ -45,6 +47,26 @@ class TableSession extends Model
             if (empty($m->table_number_snapshot) && $m->table_id) {
                 $m->table_number_snapshot = Table::withTrashed()->find($m->table_id)?->number;
             }
+        });
+
+        // Seating a new party ends any bussing debt on that table — either it
+        // got wiped down or nobody is tracking it. This is the safety valve
+        // that stops needs_cleaning_since from getting stuck on a floor that
+        // ignores the feature, and it covers every path that OPENS a session
+        // (QR scan, waiter POS) without each having to remember.
+        //
+        // Transfer is deliberately NOT covered here: it moves a session by
+        // updating table_id, so nothing is created and this never fires.
+        // TableSessionTransferService clears the target explicitly instead.
+        static::created(function (self $m) {
+            if (! $m->table_id) {
+                return;
+            }
+
+            Table::withoutGlobalScopes()
+                ->whereKey($m->table_id)
+                ->whereNotNull('needs_cleaning_since')
+                ->update(['needs_cleaning_since' => null]);
         });
     }
 

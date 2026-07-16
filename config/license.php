@@ -36,6 +36,7 @@ return [
     'signing_secret' => env('LICENSE_SIGNING_SECRET', env('APP_KEY')),
 
     'timeout' => (int) env('LICENSE_TIMEOUT', 8),
+    'connect_timeout' => (int) env('LICENSE_CONNECT_TIMEOUT', 3),
     'warning_days' => (int) env('LICENSE_WARNING_DAYS', 30),
     'grace_days' => (int) env('LICENSE_GRACE_DAYS', 14),
     'refresh_hours' => (int) env('LICENSE_REFRESH_HOURS', 12),

@@ -9709,3 +9709,53 @@ html[dir="ltr"] select.tb-transfer-select:not([multiple]):not([size]) {
     padding-inline-start: .85rem !important;
     padding-inline-end: 2.15rem !important;
 }
+
+/* ── Cashier: empty-cart teaching state ──────────────────────────────────
+   Replaces the wall of zeros an empty order used to render. It exists to
+   answer the one question the screen was silently failing: "what do I do
+   first?" — because the flow was already one tap and nothing said so. */
+.cx-cart-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: .35rem;
+    padding: 1.4rem .9rem;
+    border: 1.5px dashed #d7e0da;
+    border-radius: 12px;
+    background: #f8fbf9;
+}
+.cx-cart-empty i { font-size: 1.5rem; color: rgb(var(--primary-rgb)); }
+.cx-cart-empty strong { font-size: .92rem; font-weight: 900; color: #1e293b; }
+.cx-cart-empty small { font-size: .74rem; color: #64748b; font-weight: 600; }
+.cx-cart-empty small b { color: rgb(var(--primary-rgb)); font-weight: 800; }
+
+/* ── Cashier: execution decisions ────────────────────────────────────────
+   Not settings — one decides whether a cook starts cooking, the other
+   whether the guest owes money. Each states its live consequence. */
+.cx-decision {
+    display: flex;
+    align-items: flex-start;
+    gap: .6rem;
+    padding: .6rem .7rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #fff;
+    cursor: pointer;
+    margin-bottom: .45rem;
+}
+.cx-decision:hover { border-color: #cbd5e1; }
+.cx-decision.is-on {
+    border-color: rgb(var(--primary-rgb));
+    background: color-mix(in srgb, rgb(var(--primary-rgb)) 6%, #fff);
+}
+.cx-decision input[type="checkbox"] {
+    width: 18px; height: 18px; margin-top: .15rem; flex-shrink: 0; cursor: pointer;
+}
+.cx-decision-body { display: flex; flex-direction: column; gap: .1rem; }
+.cx-decision-body b {
+    font-size: .84rem; font-weight: 800; color: #1e293b;
+    display: inline-flex; align-items: center; gap: .35rem;
+}
+.cx-decision.is-on .cx-decision-body b { color: rgb(var(--primary-rgb)); }
+.cx-decision-body small { font-size: .72rem; color: #64748b; font-weight: 600; line-height: 1.35; }

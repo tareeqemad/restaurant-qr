@@ -1,214 +1,447 @@
-/* Tables board (floor ops) — loaded in <head> via admin/tables/index.blade.php
-   @push('styles') so cards paint styled on first frame (no FOUC — a
-   component-body <style> applied after the unstyled cards painted). */
-    /* Slim hero: title on one side, ONE "مهام الجرسون" CTA on the other —
-       the counts now live only on the filter chips + the cards themselves. */
-    .tb-floor-hero {
-        display: flex !important;
-        align-items: center !important;
-        justify-content: space-between !important;
-        flex-wrap: wrap;
-        gap: .55rem !important;
-    }
-    .tb-floor-copy { margin: 0 !important; }
-    .tb-tasks-cta {
-        display: inline-flex;
-        align-items: center;
-        gap: .5rem;
-        min-height: 42px;
-        padding: .48rem .95rem;
-        border-radius: 9px;
-        background: rgb(var(--primary-rgb));
-        color: #fff;
-        font-size: .84rem;
-        font-weight: 900;
-        text-decoration: none;
-        white-space: nowrap;
-        box-shadow: 0 8px 18px rgba(var(--primary-rgb), .16);
-    }
-    .tb-tasks-cta:hover {
-        color: #fff;
-        transform: translateY(-1px);
-    }
-    .tb-tasks-cta-count {
-        min-width: 24px;
-        height: 24px;
-        padding: 0 .45rem;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 999px;
-        background: var(--accent);
-        color: #143025;
-        font-size: .78rem;
-        font-weight: 950;
-        font-variant-numeric: tabular-nums;
-    }
+/* Tables board v3 — the waiter's triage board.
+   Loaded in <head> via admin/tables/index.blade.php @push('styles') so the
+   board paints styled on the first frame (no FOUC). RTL admin context. */
 
-    /* Operations-mode card: overflow must stay visible so the "..." menu
-       can escape the card box; round the statusbar corners manually since
-       the card no longer clips them. */
-    .tb-card { position: relative; overflow: visible; min-height: 0; }
-    .tb-card-statusbar {
-        border-start-start-radius: 7px;
-        border-start-end-radius: 7px;
-    }
-    .tb-card:has(.dropdown-menu.show) { z-index: 5; }
-    .tb-card-sub {
-        display: flex;
-        align-items: center;
-        gap: .5rem;
-        margin-top: .32rem;
-        min-width: 0;
-        color: var(--relax-muted);
-        font-size: .74rem;
-        font-weight: 800;
-    }
-    .tb-card-sub i { color: var(--status-color); }
-    .tb-zone-mini {
-        display: inline-flex;
-        align-items: center;
-        gap: .3rem;
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-    .tb-table-label {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-    .tb-attention-btn {
-        width: 100%;
-        font-family: inherit;
-        cursor: pointer;
-        justify-content: flex-start;
-        text-align: start;
-    }
+.tables-board {
+    --u: #64748b; --u-bg: #f1f5f9; --u-tx: #475569;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
 
-    /* Action footer = ONE primary decision + ONE "..." menu. */
-    .tb-actions {
-        display: flex !important;
-        align-items: stretch;
-        gap: .4rem !important;
+/* ── Section tabs: the one navigation control ─────────────────────────────
+   Sized for a thumb on a tablet, not a mouse on a desktop — 48px min height,
+   and the strip scrolls sideways rather than wrapping into a wall of buttons
+   once a floor has 5-6 sections. */
+.tb-tabs {
+    display: flex;
+    align-items: stretch;
+    gap: .4rem;
+    overflow-x: auto;
+    padding-bottom: .2rem;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+}
+.tb-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+    min-height: 48px;
+    padding: .5rem .95rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: #fff;
+    color: #475569;
+    font-size: .88rem;
+    font-weight: 800;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: border-color .12s, background .12s, color .12s;
+}
+.tb-tab:hover { border-color: #cbd5e1; color: #1e293b; }
+.tb-tab.is-active {
+    background: rgb(var(--primary-rgb));
+    border-color: rgb(var(--primary-rgb));
+    color: #fff;
+}
+.tb-tab-label { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.15; }
+.tb-tab-label small { font-size: .66rem; font-weight: 700; opacity: .75; }
+.tb-tab-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--sec-color, #94a3b8); flex-shrink: 0; }
+.tb-tab.is-active .tb-tab-dot { background: #fff; }
+.tb-tab-count {
+    min-width: 24px; height: 22px; padding: 0 .4rem;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 999px;
+    background: rgba(15, 42, 34, .08);
+    font-size: .74rem; font-weight: 900;
+    font-variant-numeric: tabular-nums;
+}
+.tb-tab.is-active .tb-tab-count { background: rgba(255, 255, 255, .22); color: #fff; }
+.tb-tab--mine.is-active { box-shadow: 0 4px 12px rgba(var(--primary-rgb), .22); }
+
+.tb-tabs-manage {
+    display: inline-flex; align-items: center; gap: .35rem;
+    align-self: center;
+    margin-inline-start: auto;
+    padding: 0 .6rem;
+    font-size: .78rem; font-weight: 800; color: #64748b; text-decoration: none;
+    white-space: nowrap; flex-shrink: 0;
+}
+.tb-tabs-manage:hover { color: rgb(var(--primary-rgb)); }
+
+.tb-nudge {
+    display: flex; align-items: center; gap: .55rem;
+    padding: .7rem .95rem;
+    border: 1px dashed #fcd9a4;
+    border-radius: 12px;
+    background: #fffbeb;
+    color: #92400e;
+    font-size: .84rem; font-weight: 700;
+}
+.tb-nudge i { font-size: 1rem; flex-shrink: 0; }
+
+/* ── Command bar ─────────────────────────────────────────────────────────── */
+.tb-command {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    flex-wrap: wrap;
+}
+
+.tb-load {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    padding: .5rem .85rem;
+    border-radius: 999px;
+    background: #ecfdf5;
+    color: #0f7050;
+    font-size: .82rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+.tb-load.is-hot {
+    background: #fef2f2;
+    color: #b91c1c;
+}
+.tb-load.is-hot i { animation: tb-pulse 1.4s ease-in-out infinite; }
+
+.tb-search-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    margin-inline-start: auto;
+    min-width: 210px;
+    flex: 1 1 210px;
+    max-width: 320px;
+}
+.tb-search-wrap > .bi-search {
+    position: absolute;
+    inset-inline-start: .7rem;
+    color: #94a3b8;
+    font-size: .9rem;
+    pointer-events: none;
+}
+.tb-search {
+    width: 100%;
+    height: 42px;
+    padding: 0 2rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #fff;
+    font-size: .85rem;
+    color: #1e293b;
+}
+.tb-search:focus {
+    outline: 0;
+    border-color: rgb(var(--primary-rgb));
+    box-shadow: 0 0 0 3px rgba(var(--primary-rgb), .12);
+}
+.tb-search-clear {
+    position: absolute;
+    inset-inline-end: .5rem;
+    border: 0;
+    background: transparent;
+    color: #94a3b8;
+    cursor: pointer;
+    font-size: .8rem;
+}
+
+/* ── Section chips ───────────────────────────────────────────────────────── */
+.tb-section-chips {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .4rem;
+}
+.tb-section-ico { color: #94a3b8; font-size: .85rem; }
+.tb-section-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    color: #475569;
+    font-size: .8rem;
+    font-weight: 700;
+    padding: .38rem .75rem;
+    border-radius: 999px;
+    cursor: pointer;
+}
+.tb-section-chip.is-active {
+    border-color: var(--sec-color, rgb(var(--primary-rgb)));
+    background: color-mix(in srgb, var(--sec-color, #16845f) 12%, #fff);
+    color: #1e293b;
+}
+.tb-section-dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--sec-color, #94a3b8);
+}
+.tb-section-cnt {
+    font-size: .72rem; font-weight: 900; color: #64748b;
+    font-variant-numeric: tabular-nums;
+}
+.tb-section-clear {
+    border: 0; background: transparent; color: #94a3b8; cursor: pointer; font-size: .8rem;
+}
+
+/* ── Priority feed ───────────────────────────────────────────────────────── */
+.tb-feed {
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+}
+.tb-feed-head {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    margin-bottom: .1rem;
+}
+.tb-feed-head i { color: rgb(var(--primary-rgb)); }
+.tb-feed-head h3 { margin: 0; font-size: .95rem; font-weight: 900; color: #1e293b; }
+.tb-feed-sub { font-size: .76rem; color: #94a3b8; font-weight: 700; }
+
+.tb-feed-card {
+    --u: #64748b; --u-bg: #f1f5f9; --u-tx: #475569;
+    display: flex;
+    align-items: center;
+    gap: .85rem;
+    background: #fff;
+    border: 1px solid #edf1f5;
+    border-inline-start: 4px solid var(--u);
+    border-radius: 12px;
+    padding: .7rem .85rem;
+}
+.tb-urg-red   { --u: #dc2626; --u-bg: #fef2f2; --u-tx: #991b1b; }
+.tb-urg-amber { --u: #d97706; --u-bg: #fffbeb; --u-tx: #92400e; }
+.tb-urg-bill  { --u: #2563eb; --u-bg: #eff6ff; --u-tx: #1e40af; }
+.tb-urg-grey  { --u: #64748b; --u-bg: #f1f5f9; --u-tx: #475569; }
+.tb-feed-card.tb-urg-red { box-shadow: 0 0 0 1px rgba(220, 38, 38, .12); animation: tb-glow 2s ease-in-out infinite; }
+
+.tb-feed-num {
+    flex-shrink: 0;
+    width: 52px; height: 52px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    border-radius: 11px;
+    background: var(--u-bg);
+    line-height: 1;
+}
+.tb-feed-num small { font-size: .62rem; font-weight: 700; color: var(--u-tx); opacity: .85; }
+.tb-feed-num strong { font-size: 1.4rem; font-weight: 900; color: var(--u-tx); font-variant-numeric: tabular-nums; }
+
+.tb-feed-body { flex: 1; min-width: 0; }
+.tb-feed-label {
+    font-size: .92rem; font-weight: 800; color: #1e293b;
+    display: flex; align-items: center; gap: .4rem;
+}
+.tb-feed-label i { color: var(--u); }
+.tb-feed-meta {
+    display: flex; flex-wrap: wrap; gap: .1rem .8rem;
+    margin-top: .25rem;
+    font-size: .76rem; color: #64748b; font-weight: 600;
+}
+.tb-feed-meta > span { display: inline-flex; align-items: center; gap: .28rem; }
+.tb-zdot { width: 8px; height: 8px; border-radius: 50%; background: var(--sec-color, #94a3b8); }
+
+.tb-feed-actions { display: flex; align-items: center; gap: .4rem; flex-shrink: 0; }
+.tb-feed-btn {
+    display: inline-flex; align-items: center; gap: .4rem;
+    padding: .5rem .95rem;
+    border-radius: 9px;
+    border: 1.5px solid var(--u);
+    background: var(--u);
+    color: #fff;
+    font-size: .82rem; font-weight: 800;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.tb-feed-btn:hover { color: #fff; filter: brightness(.95); }
+
+.tb-feed-empty {
+    display: flex; align-items: center; justify-content: center;
+    gap: .55rem;
+    padding: 1.4rem;
+    border: 1.5px dashed #d7e0da;
+    border-radius: 12px;
+    color: #0f7050;
+    background: #f6fbf8;
+    font-size: .88rem; font-weight: 700;
+}
+.tb-feed-empty i { font-size: 1.1rem; }
+
+/* ── Floor map ───────────────────────────────────────────────────────────── */
+.tb-map { display: flex; flex-direction: column; gap: .7rem; }
+.tb-map-head { display: flex; align-items: center; gap: .5rem; }
+.tb-map-head i { color: #64748b; }
+.tb-map-head h3 { margin: 0; font-size: .95rem; font-weight: 900; color: #1e293b; }
+
+.tb-map-section-label {
+    display: flex; align-items: center; gap: .45rem;
+    font-size: .78rem; font-weight: 800; color: #94a3b8;
+    margin-bottom: .4rem;
+}
+.tb-map-section-label span {
+    font-size: .7rem; font-weight: 900; color: #64748b;
+    background: #f1f5f9; padding: .05rem .4rem; border-radius: 999px;
+}
+.tb-map-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+    gap: .5rem;
+}
+.tb-map-section { margin-bottom: .3rem; }
+
+.tb-tile {
+    --t: #64748b; --t-bg: #f8fafc;
+    position: relative;
+    border: 1px solid #e8edf1;
+    background: var(--t-bg);
+    border-radius: 10px;
+    padding: .4rem .5rem .35rem;
+    min-height: 60px;
+    display: flex; flex-direction: column; justify-content: space-between;
+}
+.tb-tile--available { --t: #16845f; --t-bg: #ecfdf5; }
+.tb-tile--occupied  { --t: #64748b; --t-bg: #f8fafc; }
+.tb-tile--attention { --t: #d97706; --t-bg: #fffbeb; }
+.tb-tile--cleaning  { --t: #0891b2; --t-bg: #ecfeff; }
+.tb-tile--stale     { --t: #7c6f5a; --t-bg: #faf8f3; }
+.tb-tile--urgent    { --t: #dc2626; --t-bg: #fef2f2; }
+.tb-tile--bill      { --t: #2563eb; --t-bg: #eff6ff; }
+.tb-tile--reserved  { --t: #7c3aed; --t-bg: #f5f3ff; }
+.tb-tile--oos       { --t: #94a3b8; --t-bg: #f1f5f9; }
+.tb-tile { border-color: color-mix(in srgb, var(--t) 22%, #e8edf1); }
+.tb-tile--urgent { animation: tb-glow 2s ease-in-out infinite; }
+
+.tb-tile-top { display: flex; align-items: flex-start; justify-content: space-between; gap: .2rem; }
+.tb-tile-num { font-size: 1.05rem; font-weight: 900; color: var(--t); font-variant-numeric: tabular-nums; line-height: 1; }
+/* One line, always: the old Duration::since() text ("منذ يوم و22 ساعات")
+   wrapped to three lines and blew the tile height open. */
+.tb-tile-foot {
+    display: flex; align-items: center; gap: .3rem;
+    font-size: .68rem; font-weight: 700; color: var(--t);
+    opacity: .9;
+    white-space: nowrap; overflow: hidden;
+}
+.tb-tile-foot i { font-size: .7rem; flex-shrink: 0; }
+.tb-tile-foot span { overflow: hidden; text-overflow: ellipsis; }
+
+/* ── Legend ──────────────────────────────────────────────────────────────── */
+.tb-legend {
+    display: flex; flex-wrap: wrap; gap: .3rem 1.1rem;
+    padding-top: .6rem;
+    border-top: 1px solid #eef2f5;
+    font-size: .76rem; color: #64748b; font-weight: 700;
+}
+.tb-legend > span { display: inline-flex; align-items: center; gap: .4rem; }
+.tb-lg {
+    width: 18px; height: 18px; border-radius: 5px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: .62rem;
+}
+.tb-lg--available { background: #ecfdf5; border: 1px solid #16845f; color: #16845f; }
+.tb-lg--occupied  { background: #f8fafc; border: 1px solid #94a3b8; color: #64748b; }
+.tb-lg--attention { background: #fffbeb; border: 1px solid #d97706; color: #d97706; }
+.tb-lg--cleaning  { background: #ecfeff; border: 1px solid #0891b2; color: #0891b2; }
+.tb-lg--stale     { background: #faf8f3; border: 1px solid #7c6f5a; color: #7c6f5a; }
+.tb-lg--urgent    { background: #fef2f2; border: 1px solid #dc2626; color: #dc2626; }
+.tb-lg--bill      { background: #eff6ff; border: 1px solid #2563eb; color: #2563eb; }
+
+.tb-section-manage {
+    display: inline-flex; align-items: center; gap: .3rem;
+    margin-inline-start: auto;
+    font-size: .76rem; font-weight: 700; color: #64748b; text-decoration: none;
+}
+.tb-section-manage:hover { color: rgb(var(--primary-rgb)); }
+
+/* ── Per-table action menu (shared partial) ──────────────────────────────── */
+.ta-more { position: relative; }
+.ta-more-btn {
+    border: 0; background: rgba(15, 42, 34, .05);
+    color: #64748b; cursor: pointer;
+    width: 28px; height: 28px; border-radius: 8px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: .85rem;
+}
+.ta-more-btn:hover { background: rgba(15, 42, 34, .1); color: #1e293b; }
+/* The popover must be able to escape the tile — a 78px tile can't contain a
+   210px menu, and any overflow:hidden up the chain scissors it in half. */
+.tb-map, .tb-map-section, .tb-map-grid, .tb-feed { overflow: visible; }
+
+.ta-more-menu {
+    display: none;
+    position: absolute;
+    inset-inline-end: 0;
+    top: calc(100% + 4px);
+    min-width: 210px;
+    max-width: min(240px, 78vw);
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 12px 30px rgba(15, 42, 34, .14);
+    padding: .35rem;
+    z-index: 60;
+    list-style: none;
+    margin: 0;
+}
+.ta-more-menu.show { display: block; }
+/* Edge tiles: the menu would run off-screen on the side it normally opens
+   toward, so Alpine measures on open and flips it to the other side. */
+.ta-more-menu.is-flipped { inset-inline-end: auto; inset-inline-start: 0; }
+.tb-tile .ta-more-menu { min-width: 190px; }
+.ta-more-menu .dropdown-item {
+    display: flex; align-items: center; gap: .5rem;
+    padding: .5rem .6rem;
+    border-radius: 8px;
+    font-size: .82rem; font-weight: 700; color: #334155;
+    width: 100%; border: 0; background: transparent; cursor: pointer;
+    text-decoration: none;
+}
+.ta-more-menu .dropdown-item:hover { background: #f1f5f9; }
+.ta-more-menu .dropdown-divider { margin: .3rem .2rem; border-top: 1px solid #edf1f5; }
+.ta-more-danger { color: #dc2626 !important; }
+.ta-more-danger:hover { background: #fef2f2 !important; }
+.ta-more-transfer { padding: .35rem .5rem; }
+.ta-more-transfer-label {
+    display: flex; align-items: center; gap: .4rem;
+    font-size: .74rem; font-weight: 800; color: #64748b; margin-bottom: .35rem;
+}
+.ta-more-transfer-row { display: flex; gap: .35rem; }
+.ta-transfer-select {
+    flex: 1; min-width: 0; height: 34px;
+    border: 1px solid #e2e8f0; border-radius: 8px;
+    font-size: .78rem; padding: 0 .4rem; background: #fff;
+}
+.ta-transfer-go {
+    border: 0; background: rgb(var(--primary-rgb)); color: #fff;
+    border-radius: 8px; padding: 0 .7rem; font-size: .78rem; font-weight: 800; cursor: pointer;
+}
+
+@keyframes tb-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+@keyframes tb-glow {
+    0%, 100% { box-shadow: 0 0 0 1px rgba(220, 38, 38, .1); }
+    50% { box-shadow: 0 0 0 3px rgba(220, 38, 38, .18); }
+}
+
+/* The urgent glow is an attention device, not decoration — but it must never
+   be forced on someone with a vestibular disorder (WCAG 2.3.3). Colour, icon
+   and feed position already carry the meaning without it. */
+@media (prefers-reduced-motion: reduce) {
+    .tb-feed-card.tb-urg-red,
+    .tb-tile--urgent,
+    .tb-load.is-hot i {
+        animation: none;
     }
-    .tb-actions .tb-btn-main { flex: 1 1 auto; }
-    .tb-more { flex: 0 0 auto; display: flex; position: relative; }
-    /* Alpine toggles .show directly (no Bootstrap JS/Popper on these menus),
-       so the open position must come from CSS. */
-    .tb-more-menu.show {
-        display: block;
-        position: absolute;
-        top: calc(100% + 4px);
-        inset-inline-start: 0;
-    }
-    .tb-more-btn {
-        width: 46px;
-        min-height: 36px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        border: 1px solid rgba(var(--primary-rgb), .08);
-        border-radius: 8px;
-        background: #fff;
-        color: rgb(var(--primary-rgb));
-        font-size: 1.05rem;
-        box-shadow: 0 2px 8px rgba(var(--primary-rgb), .045);
-    }
-    .tb-more-btn:hover {
-        border-color: rgba(var(--primary-rgb), .18);
-        background: rgba(var(--primary-rgb), .07);
-    }
-    .tb-more-menu {
-        min-width: 220px;
-        padding: .4rem;
-        border: 1px solid rgba(15, 23, 42, .1);
-        border-radius: 10px;
-        box-shadow: 0 18px 38px rgba(15, 35, 27, .16);
-    }
-    .tb-more-menu .dropdown-item {
-        display: flex;
-        align-items: center;
-        gap: .55rem;
-        padding: .5rem .6rem;
-        border-radius: 8px;
-        color: #172033;
-        font-size: .82rem;
-        font-weight: 800;
-    }
-    .tb-more-menu .dropdown-item i { color: rgb(var(--primary-rgb)); }
-    .tb-more-menu .dropdown-item:hover,
-    .tb-more-menu .dropdown-item:focus {
-        background: rgba(var(--primary-rgb), .07);
-        color: #172033;
-    }
-    .tb-more-menu .tb-more-danger,
-    .tb-more-menu .tb-more-danger i { color: rgb(var(--danger-rgb)); }
-    .tb-more-menu .tb-more-danger:hover,
-    .tb-more-menu .tb-more-danger:focus {
-        background: rgba(var(--danger-rgb), .08);
-        color: rgb(var(--danger-rgb));
-    }
-    .tb-more-transfer { padding: .2rem .6rem .5rem; }
-    .tb-more-transfer-label {
-        display: flex;
-        align-items: center;
-        gap: .4rem;
-        margin-bottom: .35rem;
-        color: var(--relax-muted);
-        font-size: .74rem;
-        font-weight: 900;
-    }
-    .tb-more-transfer-row {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: .4rem;
-    }
-    .tb-transfer-select {
-        width: 100%;
-        min-height: 38px;
-        border: 1px solid rgba(15, 23, 42, .12);
-        border-radius: 8px;
-        padding: .45rem .65rem;
-        background: #fff;
-        color: #172033;
-        font-size: .82rem;
-        font-weight: 700;
-    }
-    .tb-transfer-go {
-        min-height: 38px;
-        padding: .4rem .7rem;
-        border: 1px solid rgba(245, 158, 11, .28);
-        border-radius: 8px;
-        background: #fff8e5;
-        color: #8a5a05;
-        font-size: .78rem;
-        font-weight: 900;
-    }
-    .tb-transfer-go:hover {
-        color: #6f4500;
-        background: #ffefbd;
-    }
-    .tb-branch-tag {
-        position: absolute;
-        top: .55rem;
-        inset-inline-start: .55rem;
-        z-index: 2;
-        display: inline-flex;
-        align-items: center;
-        gap: .3rem;
-        padding: .2rem .55rem;
-        background: rgba(15, 71, 49, .92);
-        color: #fff;
-        font-size: 11px;
-        font-weight: 700;
-        border-radius: 999px;
-        backdrop-filter: blur(4px);
-        max-width: 60%;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, .12);
-    }
-    .tb-branch-tag i { font-size: 10px; flex-shrink: 0; }
+    .tb-feed-card.tb-urg-red { box-shadow: 0 0 0 2px rgba(220, 38, 38, .22); }
+}
+
+@media (max-width: 600px) {
+    .tb-command { gap: .5rem; }
+    .tb-search-wrap { order: 3; max-width: none; margin-inline-start: 0; }
+    .tb-feed-card { flex-wrap: wrap; }
+    .tb-feed-actions { width: 100%; justify-content: flex-end; }
+    .tb-map-grid { grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); }
+}

@@ -74,8 +74,23 @@ class TableSessionTransferService
                 'updated_at' => now(),
             ]);
 
-            $source->update(['status' => 'available']);
-            $target->update(['status' => 'occupied']);
+            // Bussing across a move. Transfer is rejected once an invoice
+            // exists, so the party still has live orders — they have been
+            // eating at $source and physically got up. It is the strongest
+            // dirty-table case there is, and without this the board would
+            // advertise a table of used plates as clean and seatable.
+            $source->update([
+                'status' => 'available',
+                'needs_cleaning_since' => now(),
+            ]);
+
+            // ...and $target inherits a party, so any bussing debt on it is
+            // settled. TableSession's `created` valve can't do this for us:
+            // a transfer UPDATEs table_id, it doesn't create a session.
+            $target->update([
+                'status' => 'occupied',
+                'needs_cleaning_since' => null,
+            ]);
 
             ActivityLog::log(
                 'table_session.transferred',

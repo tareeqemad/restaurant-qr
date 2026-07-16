@@ -5,7 +5,7 @@ use App\Models\PurchaseOrder;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware(['auth', 'setup.complete', 'admin', 'branch', 'license'])->group(function () {
+Route::middleware(['auth', 'setup.complete', 'admin', 'branch'])->group(function () {
     // Dashboard
     Route::get('/', [Admin\DashboardController::class, 'index'])->name('dashboard');
 
@@ -124,6 +124,11 @@ Route::middleware(['auth', 'setup.complete', 'admin', 'branch', 'license'])->gro
     Route::get('tables/{table}/qr-print', [Admin\TableController::class, 'qrPrint'])->name('tables.qr-print');
     Route::post('tables/{table}/close-session', [Admin\TableController::class, 'closeSession'])->name('tables.close-session');
     Route::post('tables/{table}/transfer-session', [Admin\TableController::class, 'transferSession'])->name('tables.transfer');
+    Route::post('tables/{table}/mark-clean', [Admin\TableController::class, 'markClean'])->name('tables.mark-clean');
+
+    // Section roster — who covers which part of the floor today. The Volt
+    // component guards the admin|manager role itself.
+    Route::view('section-assignments', 'admin.section-assignments.index')->name('section-assignments.index');
 
     // Zones — merged into the unified Lookups admin (group='zones').
     // Old /admin/zones routes removed; see admin.lookups.* routes below.
