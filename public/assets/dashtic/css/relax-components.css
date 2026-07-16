@@ -9865,3 +9865,15 @@ html[dir="ltr"] select.tb-transfer-select:not([multiple]):not([size]) {
 .kb-card--cooking .kb-table-ribbon { filter: saturate(.55); }
 .kb-card--waiting { border-width: 2px; }
 .kb-card--waiting .kb-card-foot { background: color-mix(in srgb, rgb(var(--primary-rgb)) 8%, #fff); }
+
+/* ── KDS: let the cancel popover out of the card ─────────────────────────
+   .kb-card had overflow:hidden, so .kb-cancel-menu — absolutely positioned
+   BELOW its button — was scissored at the card edge: the «بدأ التحضير» option
+   rendered cut in half and unclickable. The clip was only ever doing the
+   ribbon/foot corners for the 12px radius, so round those by hand and let the
+   popover escape. Exactly the fix the tables board's ⋯ menu needed. */
+.kb-card { overflow: visible; }
+.kb-card > .kb-table-ribbon { border-radius: 11px 11px 0 0; }
+.kb-card > .kb-card-foot { border-radius: 0 0 11px 11px; }
+/* Nothing up the chain may re-clip it on its way out. */
+.kb-tickets { overflow: visible; }
