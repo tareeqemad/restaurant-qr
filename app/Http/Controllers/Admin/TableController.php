@@ -147,6 +147,31 @@ class TableController extends Controller
         return back()->with('success', "تم إغلاق الجلسة الراكدة لطاولة {$table->number}.");
     }
 
+    /**
+     * "Cleaned" — clears the bussing debt left when the party's session closed.
+     *
+     * Gated on `view`, NOT `update`: wiping a table down is floor work every
+     * waiter does, while TablePolicy::update is admin|manager (it guards
+     * renaming/reconfiguring the table). Using `update` here would 403 exactly
+     * the people the button exists for.
+     */
+    public function markClean(Table $table)
+    {
+        $this->authorize('view', $table);
+
+        if (! $table->needsCleaning()) {
+            return back();
+        }
+
+        $table->update(['needs_cleaning_since' => null]);
+
+        // Same event the boards already listen to — the tile clears everywhere
+        // without inventing a second channel for it.
+        SafeBroadcast::dispatch(new TableStatusChanged($table->refresh(), $table->status));
+
+        return back()->with('success', "تم تنظيف طاولة {$table->number}.");
+    }
+
     public function transferSession(Request $request, Table $table, TableSessionTransferService $transfers)
     {
         $this->authorize('transfer', $table);

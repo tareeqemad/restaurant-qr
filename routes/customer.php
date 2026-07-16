@@ -11,7 +11,7 @@ Route::get('/menu/{token}', [Customer\MenuController::class, 'open'])->name('cus
 Route::post('/currency', [CurrencyController::class, 'switch'])->name('customer.currency.switch');
 
 // After session is opened (cookie set)
-Route::middleware(['table.session', 'license'])->group(function () {
+Route::middleware(['table.session'])->group(function () {
     Route::get('/menu', [Customer\MenuController::class, 'menu'])->name('customer.menu');
     Route::post('/menu/dismiss-promo/{id}', [Customer\MenuController::class, 'dismissGuestPromo'])
         ->name('customer.menu.dismissGuestPromo');
@@ -26,6 +26,7 @@ Route::middleware(['table.session', 'license'])->group(function () {
     Route::post('/track/signup/dismiss', [Customer\OrderStatusController::class, 'dismissSignup'])->name('customer.track.signup.dismiss');
     Route::post('/orders/{order}/cancel', [Customer\OrderStatusController::class, 'cancel'])->name('customer.orders.cancel');
     Route::post('/profile', [Customer\OrderStatusController::class, 'saveProfile'])->name('customer.profile');
+    Route::post('/call-waiter', [Customer\OrderStatusController::class, 'requestHelp'])->name('customer.help.request');
     Route::get('/bill', [Customer\BillController::class, 'show'])->name('customer.bill');
     Route::post('/bill/request', [Customer\BillController::class, 'requestBill'])->name('customer.bill.request');
     // Diner declares they paid by bank transfer → creates a pending-transfer the

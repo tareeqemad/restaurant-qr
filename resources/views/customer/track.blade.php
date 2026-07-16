@@ -478,6 +478,38 @@
     font-size: .75rem;
     line-height: 1.5;
 }
+
+/* Call the waiter — a diner's hand in the air. Deliberately the loudest
+   control on the page after the order itself: the whole point is that it's
+   findable without hunting when you need something. */
+.track-help {
+    display: flex; align-items: center; gap: .6rem;
+    margin-bottom: .9rem;
+}
+.track-help-btn {
+    flex: 1;
+    display: inline-flex; align-items: center; justify-content: center; gap: .5rem;
+    min-height: 52px;
+    padding: .7rem 1rem;
+    border: 1.5px solid var(--c-primary, #166534);
+    border-radius: 14px;
+    background: #fff;
+    color: var(--c-primary, #166534);
+    font-size: 1rem; font-weight: 800;
+    cursor: pointer;
+}
+.track-help-btn:active { transform: scale(.99); }
+.track-help-btn--sent {
+    background: #ecfdf5;
+    border-color: #16a34a;
+    color: #15803d;
+    cursor: default;
+}
+.track-help-note {
+    font-size: .82rem; color: #64748b; font-weight: 600;
+    margin: -.4rem 0 .9rem;
+    text-align: center;
+}
 </style>
 @endpush
 
@@ -488,6 +520,21 @@
      the @push('styles') block above. Zero custom JS polling, zero
      /track/status fetcher — everything goes through Livewire now. --}}
 <div class="track-wrap">
+    @php
+        $helpPending = filled($session->help_requested_at);
+    @endphp
+    <form method="POST" action="{{ route('customer.help.request') }}" class="track-help">
+        @csrf
+        <button type="submit" class="track-help-btn {{ $helpPending ? 'track-help-btn--sent' : '' }}"
+                {{ $helpPending ? 'disabled' : '' }}>
+            <i class="bi {{ $helpPending ? 'bi-check2-circle' : 'bi-hand-index-thumb-fill' }}"></i>
+            {{ $helpPending ? 'الجرسون جاي' : 'نادِ الجرسون' }}
+        </button>
+    </form>
+    @if($helpPending)
+        <p class="track-help-note">وصل طلبك — الجرسون جاي على طاولتك.</p>
+    @endif
+
     @php
         $signupPin = session('signup_pin');
         $alreadyDismissed = session('signup_dismissed_session_'.$session->id);
