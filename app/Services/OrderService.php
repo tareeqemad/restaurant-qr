@@ -148,8 +148,71 @@ class OrderService
      * Create an order from customer cart.
      * Cart shape: [ ['menu_item_id' => int, 'quantity' => float, 'modifier_ids' => [int,...], 'notes' => string], ... ]
      */
+    /**
+     * A required modifier group must actually be satisfied before the ticket
+     * can exist.
+     *
+     * This lives in the service rather than in each screen because "required"
+     * was only ever honoured in ONE of the three entry points: the waiter POS
+     * blocks it in its own modal, the cashier rendered a warning next to a
+     * button that worked anyway, and the customer cart never looked at all. An
+     * order that reaches the pass missing a required choice ("which size?") is
+     * not a UI blemish — it's a ticket the cook cannot make, and the guest is
+     * already waiting on it.
+     *
+     * The rule mirrors the POS's own check exactly (required + min_select, then
+     * max_select), so no screen has to change its behaviour — the two that were
+     * already correct just stop being the only thing standing between a bad
+     * cart and the kitchen.
+     *
+     * @param  array<int, array<string, mixed>>  $cart
+     */
+    protected function assertModifierRulesSatisfied(array $cart): void
+    {
+        $itemIds = collect($cart)
+            ->pluck('menu_item_id')
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique();
+
+        if ($itemIds->isEmpty()) {
+            return;
+        }
+
+        $items = MenuItem::with('modifierGroups.modifiers')->whereKey($itemIds)->get()->keyBy('id');
+
+        foreach ($cart as $line) {
+            $item = $items->get((int) ($line['menu_item_id'] ?? 0));
+            if (! $item) {
+                continue;
+            }
+
+            $selected = collect($line['modifier_ids'] ?? [])
+                ->map(fn ($id) => (int) $id)
+                ->filter()
+                ->unique();
+
+            foreach ($item->modifierGroups as $group) {
+                $count = $group->modifiers->pluck('id')
+                    ->map(fn ($id) => (int) $id)
+                    ->intersect($selected)
+                    ->count();
+
+                if ($group->required && $count < (int) $group->min_select) {
+                    throw new \RuntimeException("«{$item->name}»: اختر {$group->min_select} من {$group->name}.");
+                }
+
+                if ((int) $group->max_select > 0 && $count > (int) $group->max_select) {
+                    throw new \RuntimeException("«{$item->name}»: الحد الأعلى في {$group->name} هو {$group->max_select}.");
+                }
+            }
+        }
+    }
+
     public function createFromCart(TableSession $session, array $cart, ?int $createdByUserId = null, ?string $customerNotes = null): Order
     {
+        $this->assertModifierRulesSatisfied($cart);
+
         $order = DB::transaction(function () use ($session, $cart, $createdByUserId, $customerNotes) {
             $session = TableSession::whereKey($session->id)->lockForUpdate()->firstOrFail();
             if ($session->invoice()->where('status', '!=', 'cancelled')->exists()) {
@@ -229,6 +292,8 @@ class OrderService
         if ($type === 'delivery' && empty($opts['delivery_address'])) {
             throw new \InvalidArgumentException('Delivery orders require an address.');
         }
+
+        $this->assertModifierRulesSatisfied($cart);
 
         // Pin the branch so BelongsToBranch stamps the order + items correctly
         // — this matters because the customer's request flow doesn't go
@@ -315,6 +380,8 @@ class OrderService
         if (! in_array($type, ['takeaway', 'delivery'], true)) {
             throw new \InvalidArgumentException("Order type must be 'takeaway' or 'delivery'.");
         }
+
+        $this->assertModifierRulesSatisfied($cart);
 
         $orderSource = OrderSource::tryFrom($source) ?? OrderSource::Other;
 

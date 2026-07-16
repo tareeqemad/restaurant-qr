@@ -770,24 +770,35 @@ new class extends Component
                 }
             }
 
-            $order = $orders->createCashierOrder(
-                customer: $customer,
-                branch: $branch,
-                type: $this->orderType,
-                source: $this->orderSource,
-                cart: $cart,
-                opts: [
-                    'customer_name' => trim($this->customerName) ?: null,
-                    'customer_phone' => trim($this->customerPhone) ?: null,
-                    'customer_notes' => trim($this->orderNotes) ?: null,
-                    'delivery_address' => trim($this->deliveryAddress) ?: null,
-                    'delivery_fee' => (float) $this->deliveryFee,
-                    'external_reference' => trim($this->externalReference) ?: null,
-                    'delivery_receiver' => trim($this->deliveryReceiver) ?: null,
-                    'platform_commission_pct' => $this->platformCommissionPct,
-                ],
-                createdByUserId: auth()->id(),
-            );
+            // OrderService now refuses a cart that leaves a required modifier
+            // group unsatisfied (it used to render a warning next to a button
+            // that worked anyway, so half-made tickets reached the pass). The
+            // guard messages are written for this screen — surface them as a
+            // toast instead of Livewire's full-screen English error.
+            try {
+                $order = $orders->createCashierOrder(
+                    customer: $customer,
+                    branch: $branch,
+                    type: $this->orderType,
+                    source: $this->orderSource,
+                    cart: $cart,
+                    opts: [
+                        'customer_name' => trim($this->customerName) ?: null,
+                        'customer_phone' => trim($this->customerPhone) ?: null,
+                        'customer_notes' => trim($this->orderNotes) ?: null,
+                        'delivery_address' => trim($this->deliveryAddress) ?: null,
+                        'delivery_fee' => (float) $this->deliveryFee,
+                        'external_reference' => trim($this->externalReference) ?: null,
+                        'delivery_receiver' => trim($this->deliveryReceiver) ?: null,
+                        'platform_commission_pct' => $this->platformCommissionPct,
+                    ],
+                    createdByUserId: auth()->id(),
+                );
+            } catch (\RuntimeException $e) {
+                $this->dispatch('toast', type: 'warning', message: $e->getMessage());
+
+                return;
+            }
 
             if ($this->sendToKitchen) {
                 try {
@@ -1773,6 +1784,20 @@ new class extends Component
                 @php $cartSummary = $this->cartSummary; @endphp
                 <div class="cx-section cx-cart-summary">
                     <div class="cx-section-head"><strong><i class="bi bi-receipt-cutoff"></i> ملخص الطلب</strong></div>
+
+                    {{-- An empty cart used to render a wall of zeros — worse than
+                         blank, because it fills the space without saying anything.
+                         This is the one place the screen can teach the thing it was
+                         hiding: the defaults are ALREADY set, so tapping an item is
+                         the whole flow. The cashier reads "الكاشير بطيء" off the
+                         absence of this line, not off the actual step count. --}}
+                    @if($cartSummary['lines'] === 0)
+                        <div class="cx-cart-empty">
+                            <i class="bi bi-hand-index-thumb"></i>
+                            <strong>دقّ على أي صنف ليبدأ الطلب</strong>
+                            <small>جاهز على: <b>{{ $orderSource === 'phone' ? 'هاتفي' : ($orderSource === 'delivery' ? 'دليفري' : 'مباشر') }}</b> · <b>{{ $orderType === 'delivery' ? 'توصيل' : 'سفري' }}</b> — غيّرهم فقط لو احتجت</small>
+                        </div>
+                    @else
                     <div class="cx-summary-meter">
                         <div>
                             <small>الأصناف</small>
@@ -1803,6 +1828,12 @@ new class extends Component
                         <span>الإجمالي المتوقع</span>
                         <strong>{{ \App\Helpers\Money::format($cartSummary['total']) }}</strong>
                     </div>
+                    @endif
+
+                    {{-- These are no longer advisory: OrderService refuses a cart
+                         that leaves a required modifier group unsatisfied, so what
+                         used to sit next to a working button is now the reason the
+                         button will refuse. Say so. --}}
                     @if(count($cartSummary['warnings']))
                         <div class="cx-summary-warnings">
                             @foreach(array_slice($cartSummary['warnings'], 0, 4) as $warning)
@@ -1814,13 +1845,24 @@ new class extends Component
 
                 <div class="cx-section">
                     <div class="cx-section-head"><strong><i class="bi bi-send-check-fill"></i> التنفيذ</strong></div>
-                    <label class="cx-toggle-row">
-                        <input type="checkbox" wire:model="sendToKitchen">
-                        <span>اعتماد الطلب وإرساله للمطبخ/البار مباشرة</span>
+
+                    {{-- Two real decisions, not settings: one says whether a cook
+                         starts making this, the other whether the guest owes money
+                         for it. As bare checkboxes they read as chrome and get
+                         skimmed — so each one states its consequence, live. --}}
+                    <label class="cx-decision {{ $sendToKitchen ? 'is-on' : '' }}">
+                        <input type="checkbox" wire:model.live="sendToKitchen">
+                        <span class="cx-decision-body">
+                            <b><i class="bi bi-fire"></i> إرسال للمطبخ/البار</b>
+                            <small>{{ $sendToKitchen ? 'الطبّاخ بيبدأ فوراً' : 'الطلب بيضل بانتظار الاعتماد — ما حدا بيبدأ فيه' }}</small>
+                        </span>
                     </label>
-                    <label class="cx-toggle-row">
-                        <input type="checkbox" wire:model="issueInvoiceAfterCreate">
-                        <span>إصدار فاتورة فور إنشاء الطلب</span>
+                    <label class="cx-decision {{ $issueInvoiceAfterCreate ? 'is-on' : '' }}">
+                        <input type="checkbox" wire:model.live="issueInvoiceAfterCreate">
+                        <span class="cx-decision-body">
+                            <b><i class="bi bi-receipt"></i> إصدار الفاتورة فوراً</b>
+                            <small>{{ $issueInvoiceAfterCreate ? 'الفاتورة بتصدر مع الطلب — ما بتقدر تضيف أصناف بعدها' : 'بتصدرها بعدين لما يخلص الطلب' }}</small>
+                        </span>
                     </label>
                     <button type="button" wire:click="createStandaloneOrder" wire:loading.attr="disabled" class="cx-btn-lg cx-btn-primary">
                         <i class="bi bi-check2-circle"></i>
