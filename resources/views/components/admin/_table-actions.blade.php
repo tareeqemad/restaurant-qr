@@ -16,10 +16,31 @@
     $ta_active = $activeCount ?? ($ta_session?->orders?->count() ?? 0);
     $ta_transfer = $availableTransferTables ?? collect();
     $ta_perms = ($perms ?? []) + ['update' => false, 'transfer' => false, 'delete' => false];
+    $ta_editPayload = [
+        'updateUrl' => route('admin.tables.update', $t),
+        'number' => (string) $t->number,
+        'name' => (string) ($t->name ?? ''),
+        'capacity' => (int) $t->capacity,
+        'zoneId' => $t->zone_lookup_id ? (string) $t->zone_lookup_id : '',
+        'status' => (string) $t->status,
+        'active' => (bool) $t->active,
+    ];
 @endphp
 {{-- flip: a 190px menu anchored to a 78px map tile runs off-screen on the edge
      columns (it opens toward one side only). Measure once on open and flip to
      the other side if it would spill past the viewport. --}}
+{{-- Own Alpine scope is required: a nested Livewire component does not inherit
+     the page shell's scope reliably after a poll/morph. Without it the pencil
+     rendered but its $dispatch handler was never initialised. --}}
+<div class="ta-actions" x-data="{}">
+    @if($ta_perms['update'])
+        <button type="button" class="ta-quick-edit-btn"
+                @click.stop="$dispatch('table-quick-edit', @js($ta_editPayload))"
+                aria-label="تعديل سريع لطاولة {{ $t->number }}" title="تعديل سريع">
+            <i class="bi bi-pencil-fill"></i>
+        </button>
+    @endif
+
 <div class="dropdown ta-more"
      x-data="{
         open: false,
@@ -54,9 +75,6 @@
         @endif
         <li><a class="dropdown-item" href="{{ route('admin.waiter-orders.create', $t) }}"><i class="bi bi-plus-lg"></i> {{ $ta_session ? 'إضافة طلب' : 'تشغيل الطاولة' }}</a></li>
         <li><a class="dropdown-item" href="{{ route('admin.tables.qr-print', $t) }}"><i class="bi bi-qr-code"></i> طباعة QR</a></li>
-        @if($ta_perms['update'])
-            <li><a class="dropdown-item" href="{{ route('admin.tables.edit', $t) }}"><i class="bi bi-pencil-square"></i> تعديل الطاولة</a></li>
-        @endif
         @if($ta_perms['transfer'] && $ta_session && $ta_transfer->isNotEmpty())
             <li><hr class="dropdown-divider"></li>
             <li class="ta-more-transfer">
@@ -87,4 +105,5 @@
             </li>
         @endif
     </ul>
+</div>
 </div>

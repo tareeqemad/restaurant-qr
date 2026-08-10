@@ -34,7 +34,7 @@ class ExpenseController extends Controller
     {
         $this->authorize('viewAny', Expense::class);
 
-        $query = Expense::with(['creator', 'approver', 'shift', 'supplier', 'branch', 'category'])
+        $query = Expense::with(['supplier', 'branch', 'category'])
             ->orderBy('expense_date', 'desc')
             ->orderBy('id', 'desc');
 
@@ -67,13 +67,17 @@ class ExpenseController extends Controller
         }
 
         $filteredQuery = clone $query;
+        $hasFilters = $request->hasAny(['search', 'from', 'to', 'category_id', 'status', 'payment_method']);
+        $filteredStats = null;
 
-        $filteredStats = [
-            'count'    => (clone $filteredQuery)->count(),
-            'total'    => (float) (clone $filteredQuery)->sum('amount'),
-            'pending'  => (clone $filteredQuery)->where('status', 'pending_approval')->count(),
-            'approved' => (clone $filteredQuery)->where('status', 'approved')->count(),
-        ];
+        if ($hasFilters || $request->get('export') === 'xlsx') {
+            $filteredStats = [
+                'count'    => (clone $filteredQuery)->count(),
+                'total'    => (float) (clone $filteredQuery)->sum('amount'),
+                'pending'  => (clone $filteredQuery)->where('status', 'pending_approval')->count(),
+                'approved' => (clone $filteredQuery)->where('status', 'approved')->count(),
+            ];
+        }
 
         if ($request->get('export') === 'xlsx') {
             return $this->exportXlsx(
@@ -93,60 +97,12 @@ class ExpenseController extends Controller
             'pending'      => Expense::pending()->count(),
             'today_total'  => (float) Expense::approved()->whereDate('expense_date', $today)->sum('amount'),
             'month_total'  => (float) Expense::approved()->whereDate('expense_date', '>=', $monthStart)->sum('amount'),
-            'rejected_30d' => Expense::rejected()->where('updated_at', '>=', now()->subDays(30))->count(),
         ];
-
-        // ─── Category breakdown for the active filter window ──────
-        // Built from scratch (not cloned from the main query) so the
-        // ORDER BY / SELECT of the main listing don't collide with the
-        // GROUP BY here. Re-applies the same filters explicitly.
-        $catQuery = DB::table('expenses')
-            ->leftJoin('lookups', 'lookups.id', '=', 'expenses.expense_category_id')
-            ->whereNull('expenses.deleted_at')
-            ->where('expenses.status', 'approved');
-
-        if ($branchId = BranchContext::current()) {
-            $catQuery->where('expenses.branch_id', $branchId);
-        }
-        if ($categoryId = $request->get('category_id')) {
-            $catQuery->where('expenses.expense_category_id', (int) $categoryId);
-        }
-        if ($method = $request->get('payment_method')) {
-            $catQuery->where('expenses.payment_method', $method);
-        }
-        if ($from = $request->get('from')) {
-            $catQuery->whereDate('expenses.expense_date', '>=', $from);
-        }
-        if ($to = $request->get('to')) {
-            $catQuery->whereDate('expenses.expense_date', '<=', $to);
-        }
-        if ($search = trim((string) $request->get('search'))) {
-            $catQuery->where(function ($q) use ($search) {
-                $q->where('expenses.description', 'like', "%{$search}%")
-                  ->orWhere('expenses.expense_number', 'like', "%{$search}%")
-                  ->orWhere('expenses.vendor_name', 'like', "%{$search}%")
-                  ->orWhere('expenses.payment_reference', 'like', "%{$search}%");
-            });
-        }
-
-        $byCategory = $catQuery
-            ->select(
-                'lookups.id as category_id',
-                'lookups.label as category_label',
-                'lookups.icon as category_icon',
-                'lookups.color as category_color',
-                DB::raw('SUM(expenses.amount) as total'),
-                DB::raw('COUNT(*) as cnt'),
-            )
-            ->groupBy('lookups.id', 'lookups.label', 'lookups.icon', 'lookups.color')
-            ->orderByDesc('total')
-            ->get();
 
         return view('admin.expenses.index', [
             'expenses'   => $expenses,
             'stats'      => $stats,
             'filteredStats' => $filteredStats,
-            'byCategory' => $byCategory,
             'categories' => Lookup::for('expense_categories'),
             'paymentMethods' => Expense::PAYMENT_METHODS,
         ]);

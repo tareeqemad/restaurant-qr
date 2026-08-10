@@ -24,7 +24,8 @@
 <x-admin.breadcrumb
     title="شجرة الحسابات"
     icon="bi-diagram-3-fill"
-    subtitle="دليل الحسابات المحاسبي — تشكيلة هرمية، إضافة وتعديل عبر نافذة منبثقة"/>
+    subtitle="إعداد نادر للحسابات التي يستخدمها النظام"
+    :crumbs="[['label' => 'المحاسبة', 'url' => route('admin.accounting.index')]]" />
 
 {{-- ────────── Toolbar (GFC pattern) ────────── --}}
 <div class="card mb-3 acc-toolbar">

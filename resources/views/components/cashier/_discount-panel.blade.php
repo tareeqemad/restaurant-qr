@@ -30,6 +30,11 @@
     $canApply = auth()->user()?->can('apply', \App\Models\OrderDiscount::class);
 @endphp
 
+<details class="cx-advanced-block" @if($discountOpen || $discounts->count()) open @endif>
+    <summary>
+        <span><i class="bi bi-percent"></i> الخصم</span>
+        <small>{{ $discounts->count() ? $discounts->count().' مطبّق' : 'عند الحاجة فقط' }}</small>
+    </summary>
 <div class="cx-section cx-discount-section">
     <div class="cx-section-head d-flex align-items-center justify-content-between">
         <strong><i class="bi bi-percent"></i> الخصومات</strong>
@@ -172,6 +177,7 @@
         @endif
     @endif
 </div>
+</details>
 
 @once
 <style>

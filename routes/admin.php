@@ -376,6 +376,7 @@ Route::middleware(['auth', 'setup.complete', 'admin', 'branch'])->group(function
 
     // Accounting review
     Route::prefix('accounting')->name('accounting.')->group(function () {
+        Route::get('/', [Admin\AccountingController::class, 'index'])->name('index');
         Route::get('journal', [Admin\AccountingController::class, 'journal'])->name('journal');
         Route::get('journal/export.csv', [Admin\AccountingController::class, 'exportJournalCsv'])->name('journal.export.csv');
         Route::get('trial-balance', [Admin\AccountingController::class, 'trialBalance'])->name('trial-balance');

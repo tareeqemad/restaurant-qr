@@ -6,6 +6,14 @@
 --}}
 @php
     $cur = \App\Models\Setting::get('currency_symbol', config('restaurant.currency_symbol', 'د.أ'));
+    $selectedShiftId = old('shift_id', $expense->shift_id ?: $openShift?->id);
+    $hasExtraDetails = (bool) (
+        old('payment_reference', $expense->payment_reference)
+        || old('vendor_name', $expense->vendor_name)
+        || old('supplier_id', $expense->supplier_id)
+        || old('notes', $expense->notes)
+        || $expense->attachment_path
+    );
 @endphp
 
 <div class="row g-3">
@@ -65,6 +73,20 @@
                value="{{ old('expense_date', optional($expense->expense_date)->format('Y-m-d') ?: now()->toDateString()) }}"
                required max="{{ now()->toDateString() }}">
     </div>
+</div>
+
+{{-- Link cash expenses to the current drawer automatically. --}}
+<input type="hidden" name="shift_id" value="{{ $selectedShiftId }}">
+
+<details class="mt-4 border rounded-3 bg-light p-3" @if($errors->hasAny(['payment_reference','vendor_name','supplier_id','attachment','notes'])) open @endif>
+    <summary class="fw-semibold text-primary" style="cursor:pointer">
+        <i class="bi bi-plus-circle me-1"></i> تفاصيل إضافية (اختياري)
+        @if($hasExtraDetails)
+            <span class="badge bg-primary-transparent ms-2">يوجد تفاصيل محفوظة</span>
+        @endif
+    </summary>
+
+    <div class="row g-3 mt-1">
 
     {{-- Payment reference (cheque #, transfer ref) --}}
     <div class="col-md-6">
@@ -93,23 +115,6 @@
         </select>
     </div>
 
-    {{-- Open shift link --}}
-    <div class="col-md-6">
-        <label class="form-label">ربط بوردية كاشير</label>
-        @if($openShift)
-            <select name="shift_id" class="form-select">
-                <option value="">— بدون ربط —</option>
-                <option value="{{ $openShift->id }}" @selected(old('shift_id', $expense->shift_id)==$openShift->id) selected>
-                    وردية #{{ $openShift->id }} — {{ $openShift->user->name ?? 'كاشير' }} (مفتوحة منذ {{ $openShift->opened_at->format('H:i') }})
-                </option>
-            </select>
-            <small class="text-muted">سيتم خصم المبلغ من درج هذه الوردية عند الاعتماد إذا كان الدفع نقداً.</small>
-        @else
-            <input type="text" class="form-control" disabled value="لا توجد وردية مفتوحة حالياً">
-            <small class="text-muted">سيتم تسجيل المصروف بدون ربط بدرج الكاشير.</small>
-        @endif
-    </div>
-
     {{-- Attachment --}}
     <div class="col-md-6">
         <label class="form-label">إرفاق إيصال <small class="text-muted">(PDF / صورة، حد أقصى 5MB)</small></label>
@@ -130,7 +135,10 @@
         <textarea name="notes" class="form-control" rows="3" maxlength="1000"
                   placeholder="تفاصيل إضافية…">{{ old('notes', $expense->notes) }}</textarea>
     </div>
+    </div>
+</details>
 
+<div class="row g-3 mt-2">
     @if($categories->isEmpty())
         <div class="col-12">
             <div class="alert alert-warning mb-0">

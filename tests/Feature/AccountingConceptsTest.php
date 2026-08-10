@@ -325,6 +325,23 @@ class AccountingConceptsTest extends TestCase
         $this->assertSame(0, JournalEntry::where('event_type', 'manual_journal')->count());
     }
 
+    public function test_period_name_is_generated_from_start_date_when_omitted(): void
+    {
+        $this->actingAs($this->admin)
+            ->post(route('admin.accounting.periods.store'), [
+                'starts_on' => '2026-09-01',
+                'ends_on' => '2026-09-30',
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('accounting_periods', [
+            'branch_id' => $this->branch->id,
+            'name' => 'شهر 09/2026',
+            'starts_on' => '2026-09-01 00:00:00',
+            'ends_on' => '2026-09-30 00:00:00',
+        ]);
+    }
+
     public function test_closing_period_posts_retained_earnings_entry_and_zeroes_nominal_accounts(): void
     {
         app(AccountingService::class)->post(

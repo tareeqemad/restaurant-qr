@@ -40,6 +40,7 @@ new class extends Component
 
     public string $search = '';
     public string $viewMode = 'tables';
+    public string $sessionFilter = 'checkout';
     public ?int $selectedSessionId = null;
     public ?int $selectedRemoteOrderId = null;
 
@@ -123,7 +124,24 @@ new class extends Component
             ->orderByDesc('bill_requested_at')
             ->orderByDesc('last_activity_at');
 
-        if (strlen(trim($this->search)) > 0) {
+        $hasSearch = strlen(trim($this->search)) > 0;
+
+        // During a rush the cashier needs the queue that requires money, not
+        // every seated table in the restaurant. Search deliberately bypasses
+        // this filter so a walk-up guest can still name any table and be found.
+        if ($this->sessionFilter === 'checkout' && ! $hasSearch) {
+            $selected = $this->selectedSessionId;
+            $query->where(function ($needsMoney) use ($selected) {
+                $needsMoney->whereNotNull('bill_requested_at')
+                    ->orWhereHas('invoice', fn ($invoice) => $invoice->where('status', '!=', 'cancelled'));
+
+                if ($selected) {
+                    $needsMoney->orWhere('id', $selected);
+                }
+            });
+        }
+
+        if ($hasSearch) {
             $s = trim($this->search);
             $query->where(function ($lookup) use ($s) {
                 $lookup->whereHas('table', fn($q) => $q->where('number', 'like', "%{$s}%"))
@@ -134,6 +152,12 @@ new class extends Component
         }
 
         return $query->get();
+    }
+
+    #[Computed]
+    public function allActiveSessionsCount(): int
+    {
+        return TableSession::where('status', 'active')->count();
     }
 
     #[Computed]
@@ -453,6 +477,16 @@ new class extends Component
         }
     }
 
+    public function setSessionFilter(string $filter): void
+    {
+        if (! in_array($filter, ['checkout', 'all'], true)) {
+            return;
+        }
+
+        $this->sessionFilter = $filter;
+        unset($this->sessions);
+    }
+
     public function selectSession(int $id): void
     {
         $this->viewMode = 'tables';
@@ -498,6 +532,41 @@ new class extends Component
         }
 
         $this->paymentMethod = $method;
+    }
+
+    public function prepareFullPayment(string $method): void
+    {
+        if (! in_array($method, $this->enabledPaymentMethods(), true)) {
+            return;
+        }
+
+        $invoice = $this->activeInvoice();
+        if (! $invoice || (float) $invoice->balance <= 0) {
+            return;
+        }
+
+        $this->paymentMethod = $method;
+        $this->paymentAmount = number_format((float) $invoice->balance, 2, '.', '');
+    }
+
+    /** Common rush path: collect the full remaining balance in cash.
+     *  The template uses wire:confirm, while recordPayment keeps the normal
+     *  authorization, split guard, idempotency and accounting service path. */
+    public function recordFullCashPayment(BillingService $billing): void
+    {
+        if (! in_array('cash', $this->enabledPaymentMethods(), true)) {
+            $this->dispatch('toast', type: 'warning', message: 'الدفع النقدي غير مفعّل.');
+            return;
+        }
+
+        $invoice = $this->activeInvoice();
+        if (! $invoice || (float) $invoice->balance <= 0) {
+            $this->dispatch('toast', type: 'warning', message: 'لا يوجد مبلغ متبقٍ للتحصيل.');
+            return;
+        }
+
+        $this->prepareFullPayment('cash');
+        $this->recordPayment($billing);
     }
 
     protected function activeInvoice(): ?Invoice
@@ -916,7 +985,7 @@ new class extends Component
             $this->paymentIdem = (string) Str::uuid();   // next payment = fresh token
             $this->dispatch('toast', type: 'success', message: "تم تسجيل دفعة بقيمة {$this->paymentAmount}");
             $this->reset(['paymentAmount', 'paymentReference', 'paymentNotes']);
-            unset($this->selectedSession, $this->selectedRemoteOrder, $this->remoteOrders);
+            unset($this->selectedSession, $this->selectedRemoteOrder, $this->remoteOrders, $this->sessions);
             // NO balance re-fill after a partial payment — the cashier arms
             // the next payment deliberately via the «المتبقي» preset.
         });
@@ -1192,7 +1261,7 @@ new class extends Component
     #[On('echo-private:waiters,.table.status_changed')]
     public function refreshFromBroadcast(): void
     {
-        unset($this->sessions, $this->selectedSession, $this->billStats, $this->pendingTransfersCount, $this->pendingTransfers, $this->hasOpenShift);
+        unset($this->sessions, $this->allActiveSessionsCount, $this->selectedSession, $this->billStats, $this->pendingTransfersCount, $this->pendingTransfers, $this->hasOpenShift);
     }
 
     /**
@@ -1450,8 +1519,11 @@ new class extends Component
         </div>
     @endif
 
-    {{-- ═════════════════ Today KPI rail ═════════════════ --}}
-    <div class="row g-2 mb-3">
+    {{-- Useful at shift review, but not part of taking money. Keep it one tap
+         away instead of making the cashier scroll past four cards per bill. --}}
+    <details class="cx-day-summary">
+        <summary><i class="bi bi-bar-chart-fill"></i> ملخص اليوم</summary>
+    <div class="row g-2">
         <div class="col-md-3">
             <div class="cx-kpi cx-kpi-primary">
                 <div class="cx-kpi-icon"><i class="bi bi-receipt-cutoff"></i></div>
@@ -1489,19 +1561,28 @@ new class extends Component
             </div>
         </div>
     </div>
+    </details>
 
     <div class="cx-mode-tabs">
         <button type="button" wire:click="setViewMode('tables')" class="cx-mode-tab {{ $viewMode === 'tables' ? 'is-active' : '' }}">
-            <i class="bi bi-grid-3x3-gap-fill"></i> الطاولات
+            <i class="bi bi-cash-stack"></i> التحصيل
             <span>{{ $this->sessions->count() }}</span>
         </button>
-        <button type="button" wire:click="setViewMode('remote')" class="cx-mode-tab {{ $viewMode === 'remote' ? 'is-active' : '' }}">
-            <i class="bi bi-telephone-fill"></i> طلبات بدون طاولة
-            <span>{{ $this->remoteOrders->count() }}</span>
-        </button>
-        <button type="button" wire:click="setViewMode('new')" class="cx-mode-tab cx-mode-tab-primary {{ $viewMode === 'new' ? 'is-active' : '' }}">
-            <i class="bi bi-plus-lg"></i> طلب جديد
-        </button>
+        <details class="cx-other-orders" @if($viewMode !== 'tables') open @endif>
+            <summary class="cx-mode-tab {{ $viewMode !== 'tables' ? 'is-active' : '' }}">
+                <i class="bi bi-three-dots"></i>
+                طلبات أخرى
+            </summary>
+            <div class="cx-other-orders-menu">
+                <button type="button" wire:click="setViewMode('remote')" class="{{ $viewMode === 'remote' ? 'is-active' : '' }}">
+                    <i class="bi bi-telephone-fill"></i> بدون طاولة
+                    <span>{{ $this->remoteOrders->count() }}</span>
+                </button>
+                <button type="button" wire:click="setViewMode('new')" class="{{ $viewMode === 'new' ? 'is-active' : '' }}">
+                    <i class="bi bi-plus-lg"></i> إنشاء طلب جديد
+                </button>
+            </div>
+        </details>
     </div>
 
     @if($viewMode === 'new')
@@ -1907,10 +1988,20 @@ new class extends Component
                     @if($viewMode === 'remote')
                         طلبات بدون طاولة
                     @else
-                    الطاولات النشطة
+                        {{ $sessionFilter === 'checkout' ? 'بانتظار الحساب' : 'كل الطاولات النشطة' }}
                     @endif
                     <span class="cx-chip">{{ $viewMode === 'remote' ? $this->remoteOrders->count() : $this->sessions->count() }}</span>
                 </h3>
+                @if($viewMode === 'tables')
+                    <div class="cx-session-filters" aria-label="تصفية الطاولات">
+                        <button type="button" wire:click="setSessionFilter('checkout')" class="{{ $sessionFilter === 'checkout' ? 'is-active' : '' }}">
+                            تحتاج حساب
+                        </button>
+                        <button type="button" wire:click="setSessionFilter('all')" class="{{ $sessionFilter === 'all' ? 'is-active' : '' }}">
+                            الكل {{ $this->allActiveSessionsCount }}
+                        </button>
+                    </div>
+                @endif
             </div>
 
             <div class="cx-search-wrap">
@@ -2040,7 +2131,10 @@ new class extends Component
                 @empty
                     <div class="cx-empty">
                         <i class="bi bi-people"></i>
-                        <div>ما في طاولات نشطة الآن</div>
+                        <div>{{ $sessionFilter === 'checkout' ? 'لا توجد طاولات تنتظر الحساب الآن' : 'ما في طاولات نشطة الآن' }}</div>
+                        @if($sessionFilter === 'checkout')
+                            <button type="button" wire:click="setSessionFilter('all')" class="btn btn-sm btn-light mt-2">عرض كل الطاولات</button>
+                        @endif
                     </div>
                 @endforelse
                 @endif
@@ -2235,6 +2329,30 @@ new class extends Component
                                          wire:key="cx-rpayzone-{{ $invoice->id }}-{{ number_format((float) $invoice->balance, 2, '.', '') }}"
                                          x-data="cxPayConfirm({ balance: {{ (float) $invoice->balance }} })">
                                         <div class="cx-section-head"><strong><i class="bi bi-cash-stack"></i> تسجيل دفعة</strong></div>
+                                        @if(array_key_exists('cash', $this->paymentMethods))
+                                            <button type="button"
+                                                    wire:click="recordFullCashPayment"
+                                                    wire:confirm="تأكيد قبض كامل المتبقي نقداً: {{ \App\Helpers\Money::format($invoice->balance) }}؟"
+                                                    wire:loading.attr="disabled"
+                                                    wire:target="recordFullCashPayment"
+                                                    class="cx-fast-cash">
+                                                <span><i class="bi bi-cash-coin"></i> قبض كامل نقدي</span>
+                                                <strong>{{ \App\Helpers\Money::format($invoice->balance) }}</strong>
+                                            </button>
+                                        @endif
+                                        @if(count($this->paymentMethods) > 1)
+                                            <div class="cx-fast-alt">
+                                                @foreach($this->paymentMethods as $m => $meta)
+                                                    @continue($m === 'cash')
+                                                    <button type="button" wire:click="prepareFullPayment('{{ $m }}')">
+                                                        <i class="bi {{ $meta['icon'] }}"></i> كامل {{ $meta['label'] }}
+                                                    </button>
+                                                @endforeach
+                                            </div>
+                                        @endif
+                                        <details class="cx-manual-payment" @if($paymentAmount !== '' && $paymentMethod !== 'cash') open @endif>
+                                            <summary><i class="bi bi-sliders"></i> دفع جزئي أو تفاصيل إضافية</summary>
+                                            <div class="cx-manual-payment__body">
                                         <div class="cx-presets">
                                             <button type="button" wire:click="setAmount('{{ number_format((float) $invoice->balance, 2, '.', '') }}')" class="cx-preset cx-preset-primary">
                                                 <small>المتبقي</small>
@@ -2293,10 +2411,21 @@ new class extends Component
                                                 </button>
                                             </div>
                                         </div>
+                                            </div>
+                                        </details>
                                     </div>
                                     @endif
                                 @endif
 
+                                <a href="{{ route('admin.cashier.print', $invoice) }}" target="_blank" class="cx-print-primary">
+                                    <i class="bi bi-printer-fill"></i> طباعة الفاتورة
+                                </a>
+                                <details class="cx-advanced-money">
+                                    <summary>
+                                        <span><i class="bi bi-three-dots"></i> خيارات إضافية</span>
+                                        <small>السجل، PDF أو استرداد</small>
+                                    </summary>
+                                    <div class="cx-advanced-money__body">
                                 @if($invoice->payments->count())
                                     <div class="cx-section">
                                         <div class="cx-section-head"><strong><i class="bi bi-clock-history"></i> سجل الدفعات</strong></div>
@@ -2310,7 +2439,6 @@ new class extends Component
                                 @endif
 
                                 <div class="cx-actions">
-                                    <a href="{{ route('admin.cashier.print', $invoice) }}" target="_blank" class="btn btn-light btn-sm"><i class="bi bi-printer"></i> طباعة</a>
                                     <a href="{{ route('admin.cashier.pdf', $invoice) }}" class="btn btn-light btn-sm"><i class="bi bi-file-pdf"></i> PDF</a>
                                     @if((float) $invoice->paid_total > (float) ($invoice->refunded_total ?? 0))
                                         @can('create', \App\Models\Refund::class)
@@ -2320,6 +2448,8 @@ new class extends Component
                                         @endcan
                                     @endif
                                 </div>
+                                    </div>
+                                </details>
                             @endif
                         </div>
                     </div>
@@ -2873,6 +3003,30 @@ new class extends Component
                                      wire:key="cx-payzone-{{ $invoice->id }}-{{ number_format((float) $invoice->balance, 2, '.', '') }}"
                                      x-data="cxPayConfirm({ balance: {{ (float) $invoice->balance }} })">
                                     <div class="cx-section-head"><strong><i class="bi bi-cash-stack"></i> تسجيل دفعة</strong></div>
+                                    @if(array_key_exists('cash', $this->paymentMethods))
+                                        <button type="button"
+                                                wire:click="recordFullCashPayment"
+                                                wire:confirm="تأكيد قبض كامل المتبقي نقداً: {{ \App\Helpers\Money::format($invoice->balance) }}؟"
+                                                wire:loading.attr="disabled"
+                                                wire:target="recordFullCashPayment"
+                                                class="cx-fast-cash">
+                                            <span><i class="bi bi-cash-coin"></i> قبض كامل نقدي</span>
+                                            <strong>{{ \App\Helpers\Money::format($invoice->balance) }}</strong>
+                                        </button>
+                                    @endif
+                                    @if(count($this->paymentMethods) > 1)
+                                        <div class="cx-fast-alt">
+                                            @foreach($this->paymentMethods as $m => $meta)
+                                                @continue($m === 'cash')
+                                                <button type="button" wire:click="prepareFullPayment('{{ $m }}')">
+                                                    <i class="bi {{ $meta['icon'] }}"></i> كامل {{ $meta['label'] }}
+                                                </button>
+                                            @endforeach
+                                        </div>
+                                    @endif
+                                    <details class="cx-manual-payment" @if($paymentAmount !== '' && $paymentMethod !== 'cash') open @endif>
+                                        <summary><i class="bi bi-sliders"></i> دفع جزئي أو تفاصيل إضافية</summary>
+                                        <div class="cx-manual-payment__body">
 
                                     {{-- Quick amount presets --}}
                                     <div class="cx-presets">
@@ -2956,16 +3110,21 @@ new class extends Component
                                             </button>
                                         </div>
                                     </div>
+                                        </div>
+                                    </details>
                                 </div>
 
                                 @if($canManageSplits)
                                     {{-- Split the bill — opens the SAME builder modal used for editing.
                                          Offered only while no splits exist yet (this @else branch); once
                                          splits exist the manager above replaces this whole keypad. --}}
-                                    <button type="button" class="btn btn-outline-primary w-100 mt-2"
-                                            data-bs-toggle="modal" data-bs-target="#splitModal{{ $session->id }}">
-                                        <i class="bi bi-diagram-3"></i> تقسيم الفاتورة على عدة أشخاص
-                                    </button>
+                                    <details class="cx-inline-advanced">
+                                        <summary><i class="bi bi-diagram-3"></i> تقسيم الفاتورة</summary>
+                                        <button type="button" class="btn btn-outline-primary w-100"
+                                                data-bs-toggle="modal" data-bs-target="#splitModal{{ $session->id }}">
+                                            تقسيمها على عدة أشخاص
+                                        </button>
+                                    </details>
                                 @endif
                                 @endif
 
@@ -3073,6 +3232,17 @@ new class extends Component
                                 @endif
                             @endif
 
+                            <a href="{{ route('admin.cashier.print', $invoice) }}" target="_blank" class="cx-print-primary">
+                                <i class="bi bi-printer-fill"></i> طباعة الفاتورة
+                            </a>
+
+                            <details class="cx-advanced-money" @if($invoice->settled_on_account_at) open @endif>
+                                <summary>
+                                    <span><i class="bi bi-three-dots"></i> خيارات إضافية</span>
+                                    <small>سجل، PDF، استرداد، دين أو إلغاء</small>
+                                </summary>
+                                <div class="cx-advanced-money__body">
+
                             {{-- Payment history + per-payment void (Group B). Void reverses a
                                  mistaken entry (wrong method / fat-fingered amount / double
                                  tap) and REOPENS the invoice — it is NOT a refund. Native
@@ -3120,9 +3290,6 @@ new class extends Component
 
                             {{-- Action buttons --}}
                             <div class="cx-actions">
-                                <a href="{{ route('admin.cashier.print', $invoice) }}" target="_blank" class="btn btn-light btn-sm">
-                                    <i class="bi bi-printer"></i> طباعة
-                                </a>
                                 <a href="{{ route('admin.cashier.pdf', $invoice) }}" class="btn btn-light btn-sm">
                                     <i class="bi bi-file-pdf"></i> PDF
                                 </a>
@@ -3310,6 +3477,9 @@ new class extends Component
                                     </div>
                                 </div>
                             @endif
+
+                                </div>
+                            </details>
 
                         @endif
                     </div>

@@ -9,7 +9,6 @@
     ['label' => 'استردادات اليوم',   'value' => $stats['today_count'],                                        'icon' => 'bi-receipt-cutoff',    'color' => 'primary'],
     ['label' => 'قيمة اليوم',         'value' => \App\Helpers\Money::format($stats['today_amount']),            'icon' => 'bi-cash-stack',         'color' => 'accent'],
     ['label' => 'معلّقة',              'value' => $stats['pending'],                                             'icon' => 'bi-hourglass-split',   'color' => 'accent'],
-    ['label' => 'قيمة الشهر',         'value' => \App\Helpers\Money::format($stats['month_amount']),            'icon' => 'bi-calendar-month',    'color' => 'danger'],
 ]" />
 
 <x-admin.data-panel title="سجل الاستردادات" :count="$refunds->total()" icon="bi-arrow-counterclockwise">
@@ -20,7 +19,11 @@
     </x-slot:actions>
 
     <x-slot:filters>
-        <form class="row g-2 align-items-end">
+        <details @if(request()->hasAny(['search','status','method','from','to'])) open @endif>
+            <summary class="fw-semibold text-primary" style="cursor:pointer">
+                <i class="bi bi-search me-1"></i> بحث وتصفية
+            </summary>
+        <form class="row g-2 align-items-end mt-2">
             <div class="col-md-3">
                 <label class="form-label small text-muted mb-1">بحث</label>
                 <input name="search" value="{{ request('search') }}" class="form-control" placeholder="رقم الاسترداد / الفاتورة / المرجع">
@@ -55,26 +58,16 @@
                 <button class="btn btn-primary px-5"><i class="bi bi-funnel"></i> استعلام</button>
             </div>
         </form>
+        </details>
     </x-slot:filters>
 
-    <div class="ref-filter-summary mb-3">
-        <div>
-            <span class="ref-filter-summary__label">نتائج الاستعلام</span>
-            <strong>{{ number_format($filteredStats['count']) }}</strong>
+    @if(request()->hasAny(['search','status','method','from','to']))
+        <div class="alert alert-light border py-2 mb-3">
+            النتائج: <strong>{{ number_format($filteredStats['count']) }}</strong>
+            <span class="mx-2 text-muted">|</span>
+            الإجمالي: <strong class="text-danger">{{ \App\Helpers\Money::format($filteredStats['amount']) }}</strong>
         </div>
-        <div>
-            <span class="ref-filter-summary__label">إجمالي المبالغ</span>
-            <strong class="text-danger">{{ \App\Helpers\Money::format($filteredStats['amount']) }}</strong>
-        </div>
-        <div>
-            <span class="ref-filter-summary__label">معلّقة</span>
-            <strong class="text-warning">{{ number_format($filteredStats['pending']) }}</strong>
-        </div>
-        <div>
-            <span class="ref-filter-summary__label">مكتملة</span>
-            <strong class="text-success">{{ number_format($filteredStats['completed']) }}</strong>
-        </div>
-    </div>
+    @endif
 
     <div class="table-responsive">
         <table class="table align-middle ref-table">
@@ -187,25 +180,6 @@
 
 @push('styles')
 <style>
-    .ref-filter-summary {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 8px;
-    }
-    .ref-filter-summary > div {
-        border: 1px solid #e5e7eb;
-        border-radius: 8px;
-        background: #fff;
-        padding: 10px 12px;
-        min-width: 0;
-    }
-    .ref-filter-summary__label {
-        display: block;
-        color: #6b7280;
-        font-size: .76rem;
-        margin-bottom: 3px;
-    }
-    .ref-filter-summary strong,
     .ref-num,
     .ref-date,
     .ref-amount {
@@ -230,9 +204,6 @@
     }
     .ref-row--pending { background: rgba(251, 191, 36, .04); }
     .ref-row--cancelled { opacity: .72; }
-    @media (max-width: 767.98px) {
-        .ref-filter-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    }
 </style>
 @endpush
 

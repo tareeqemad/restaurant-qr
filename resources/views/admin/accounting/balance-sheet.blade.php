@@ -7,7 +7,7 @@
     title="الميزانية العمومية"
     icon="bi-bank"
     subtitle="أصول = التزامات + حقوق ملكية من دفتر القيود"
-    :crumbs="[['label' => 'التقارير', 'url' => route('admin.reports.index')]]" />
+    :crumbs="[['label' => 'المحاسبة', 'url' => route('admin.accounting.index')]]" />
 
 <form method="GET" class="row g-2 align-items-end mb-3">
     <div class="col-md-4">

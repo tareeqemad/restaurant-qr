@@ -9,6 +9,27 @@
     gap: 1rem;
 }
 
+/* ── Compact page header ────────────────────────────────────────────────── */
+.tables-quick-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: .7rem;
+    border-bottom: 1px solid #edf1f5;
+}
+.tables-quick-head h1 {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    margin: 0;
+    color: #0f172a;
+    font-size: 1.2rem;
+    font-weight: 900;
+}
+.tables-quick-head h1 i { color: rgb(var(--primary-rgb)); }
+.tables-quick-head p { margin: .18rem 0 0; color: #64748b; font-size: .82rem; }
+
 /* ── Section tabs: the one navigation control ─────────────────────────────
    Sized for a thumb on a tablet, not a mouse on a desktop — 48px min height,
    and the strip scrolls sideways rather than wrapping into a wall of buttons
@@ -190,7 +211,7 @@
 .tb-feed {
     display: flex;
     flex-direction: column;
-    gap: .5rem;
+    gap: .35rem;
 }
 .tb-feed-head {
     display: flex;
@@ -202,26 +223,33 @@
 .tb-feed-head h3 { margin: 0; font-size: .95rem; font-weight: 900; color: #1e293b; }
 .tb-feed-sub { font-size: .76rem; color: #94a3b8; font-weight: 700; }
 
+.tb-feed-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(330px, 100%), 1fr));
+    gap: .5rem;
+    align-items: start;
+}
+
 .tb-feed-card {
     --u: #64748b; --u-bg: #f1f5f9; --u-tx: #475569;
     display: flex;
     align-items: center;
-    gap: .85rem;
+    gap: .6rem;
     background: #fff;
     border: 1px solid #edf1f5;
     border-inline-start: 4px solid var(--u);
-    border-radius: 12px;
-    padding: .7rem .85rem;
+    border-radius: 10px;
+    padding: .5rem .6rem;
 }
 .tb-urg-red   { --u: #dc2626; --u-bg: #fef2f2; --u-tx: #991b1b; }
 .tb-urg-amber { --u: #d97706; --u-bg: #fffbeb; --u-tx: #92400e; }
 .tb-urg-bill  { --u: #2563eb; --u-bg: #eff6ff; --u-tx: #1e40af; }
 .tb-urg-grey  { --u: #64748b; --u-bg: #f1f5f9; --u-tx: #475569; }
-.tb-feed-card.tb-urg-red { box-shadow: 0 0 0 1px rgba(220, 38, 38, .12); animation: tb-glow 2s ease-in-out infinite; }
+.tb-feed-card.tb-urg-red { box-shadow: 0 0 0 1px rgba(220, 38, 38, .18); }
 
 .tb-feed-num {
     flex-shrink: 0;
-    width: 52px; height: 52px;
+    width: 44px; height: 44px;
     display: flex; flex-direction: column;
     align-items: center; justify-content: center;
     border-radius: 11px;
@@ -229,18 +257,18 @@
     line-height: 1;
 }
 .tb-feed-num small { font-size: .62rem; font-weight: 700; color: var(--u-tx); opacity: .85; }
-.tb-feed-num strong { font-size: 1.4rem; font-weight: 900; color: var(--u-tx); font-variant-numeric: tabular-nums; }
+.tb-feed-num strong { font-size: 1.18rem; font-weight: 900; color: var(--u-tx); font-variant-numeric: tabular-nums; }
 
 .tb-feed-body { flex: 1; min-width: 0; }
 .tb-feed-label {
-    font-size: .92rem; font-weight: 800; color: #1e293b;
+    font-size: .84rem; font-weight: 800; color: #1e293b;
     display: flex; align-items: center; gap: .4rem;
 }
 .tb-feed-label i { color: var(--u); }
 .tb-feed-meta {
     display: flex; flex-wrap: wrap; gap: .1rem .8rem;
     margin-top: .25rem;
-    font-size: .76rem; color: #64748b; font-weight: 600;
+    font-size: .7rem; color: #64748b; font-weight: 600;
 }
 .tb-feed-meta > span { display: inline-flex; align-items: center; gap: .28rem; }
 .tb-zdot { width: 8px; height: 8px; border-radius: 50%; background: var(--sec-color, #94a3b8); }
@@ -260,18 +288,6 @@
 }
 .tb-feed-btn:hover { color: #fff; filter: brightness(.95); }
 
-.tb-feed-empty {
-    display: flex; align-items: center; justify-content: center;
-    gap: .55rem;
-    padding: 1.4rem;
-    border: 1.5px dashed #d7e0da;
-    border-radius: 12px;
-    color: #0f7050;
-    background: #f6fbf8;
-    font-size: .88rem; font-weight: 700;
-}
-.tb-feed-empty i { font-size: 1.1rem; }
-
 /* ── Floor map ───────────────────────────────────────────────────────────── */
 .tb-map { display: flex; flex-direction: column; gap: .7rem; }
 .tb-map-head { display: flex; align-items: center; gap: .5rem; }
@@ -289,8 +305,8 @@
 }
 .tb-map-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
-    gap: .5rem;
+    grid-template-columns: repeat(auto-fill, minmax(138px, 1fr));
+    gap: .55rem;
 }
 .tb-map-section { margin-bottom: .3rem; }
 
@@ -299,10 +315,12 @@
     position: relative;
     border: 1px solid #e8edf1;
     background: var(--t-bg);
-    border-radius: 10px;
-    padding: .4rem .5rem .35rem;
-    min-height: 60px;
-    display: flex; flex-direction: column; justify-content: space-between;
+    border-radius: 12px;
+    padding: .55rem;
+    min-height: 136px;
+    display: flex;
+    flex-direction: column;
+    gap: .35rem;
 }
 .tb-tile--available { --t: #16845f; --t-bg: #ecfdf5; }
 .tb-tile--occupied  { --t: #64748b; --t-bg: #f8fafc; }
@@ -317,48 +335,89 @@
 .tb-tile--urgent { animation: tb-glow 2s ease-in-out infinite; }
 
 .tb-tile-top { display: flex; align-items: flex-start; justify-content: space-between; gap: .2rem; }
-.tb-tile-num { font-size: 1.05rem; font-weight: 900; color: var(--t); font-variant-numeric: tabular-nums; line-height: 1; }
-/* One line, always: the old Duration::since() text ("منذ يوم و22 ساعات")
-   wrapped to three lines and blew the tile height open. */
-.tb-tile-foot {
-    display: flex; align-items: center; gap: .3rem;
-    font-size: .68rem; font-weight: 700; color: var(--t);
-    opacity: .9;
-    white-space: nowrap; overflow: hidden;
-}
-.tb-tile-foot i { font-size: .7rem; flex-shrink: 0; }
-.tb-tile-foot span { overflow: hidden; text-overflow: ellipsis; }
+.tb-tile-num { font-size: 1.35rem; font-weight: 900; color: var(--t); font-variant-numeric: tabular-nums; line-height: 1; }
 
-/* ── Legend ──────────────────────────────────────────────────────────────── */
-.tb-legend {
-    display: flex; flex-wrap: wrap; gap: .3rem 1.1rem;
-    padding-top: .6rem;
-    border-top: 1px solid #eef2f5;
-    font-size: .76rem; color: #64748b; font-weight: 700;
+.tb-tile-body {
+    flex: 1;
+    min-height: 42px;
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
 }
-.tb-legend > span { display: inline-flex; align-items: center; gap: .4rem; }
-.tb-lg {
-    width: 18px; height: 18px; border-radius: 5px;
-    display: inline-flex; align-items: center; justify-content: center;
+.tb-tile-state {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    color: var(--t);
+    font-size: .76rem;
+    font-weight: 800;
+}
+.tb-tile-state small { font-size: .68rem; font-weight: 700; }
+.tb-tile-name {
+    overflow: hidden;
+    color: #64748b;
+    font-size: .7rem;
+    font-weight: 700;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.tb-order-pulse {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .2rem;
+    margin-top: auto;
+}
+.tb-order-pulse span {
+    padding: .12rem .32rem;
+    border-radius: 999px;
+    background: #fff;
     font-size: .62rem;
+    font-weight: 900;
+    white-space: nowrap;
 }
-.tb-lg--available { background: #ecfdf5; border: 1px solid #16845f; color: #16845f; }
-.tb-lg--occupied  { background: #f8fafc; border: 1px solid #94a3b8; color: #64748b; }
-.tb-lg--attention { background: #fffbeb; border: 1px solid #d97706; color: #d97706; }
-.tb-lg--cleaning  { background: #ecfeff; border: 1px solid #0891b2; color: #0891b2; }
-.tb-lg--stale     { background: #faf8f3; border: 1px solid #7c6f5a; color: #7c6f5a; }
-.tb-lg--urgent    { background: #fef2f2; border: 1px solid #dc2626; color: #dc2626; }
-.tb-lg--bill      { background: #eff6ff; border: 1px solid #2563eb; color: #2563eb; }
+.tb-order-pulse .is-pending { color: #b45309; background: #fef3c7; }
+.tb-order-pulse .is-kitchen { color: #1d4ed8; background: #dbeafe; }
+.tb-order-pulse .is-ready { color: #047857; background: #d1fae5; }
 
-.tb-section-manage {
-    display: inline-flex; align-items: center; gap: .3rem;
-    margin-inline-start: auto;
-    font-size: .76rem; font-weight: 700; color: #64748b; text-decoration: none;
+.tb-tile-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .3rem;
+    margin: 0;
 }
-.tb-section-manage:hover { color: rgb(var(--primary-rgb)); }
+.tb-tile-action {
+    min-width: 0;
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .25rem;
+    padding: .3rem .25rem;
+    border: 1px solid color-mix(in srgb, var(--t) 22%, #fff);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--t) 10%, #fff);
+    color: var(--t);
+    font-size: .7rem;
+    font-weight: 900;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.tb-tile-action.is-wide { grid-column: 1 / -1; }
+.tb-tile-action--add { background: var(--t); border-color: var(--t); color: #fff; }
+.tb-tile-action--follow { background: #fff; }
+.tb-tile-action:hover { filter: brightness(.94); color: var(--t); }
+.tb-tile-action--add:hover { color: #fff; }
+.tb-tile-action:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--t) 30%, transparent);
+    outline-offset: 1px;
+}
 
-/* ── Per-table action menu (shared partial) ──────────────────────────────── */
+/* ── Per-table actions (shared partial) ─────────────────────────────────── */
+.ta-actions { display: inline-flex; align-items: center; gap: .2rem; flex-shrink: 0; }
 .ta-more { position: relative; }
+.ta-quick-edit-btn,
 .ta-more-btn {
     border: 0; background: rgba(15, 42, 34, .05);
     color: #64748b; cursor: pointer;
@@ -366,6 +425,7 @@
     display: inline-flex; align-items: center; justify-content: center;
     font-size: .85rem;
 }
+.ta-quick-edit-btn:hover,
 .ta-more-btn:hover { background: rgba(15, 42, 34, .1); color: #1e293b; }
 /* The popover must be able to escape the tile — a 78px tile can't contain a
    210px menu, and any overflow:hidden up the chain scissors it in half. */
@@ -443,13 +503,12 @@
     .tb-search-wrap { order: 3; max-width: none; margin-inline-start: 0; }
     .tb-feed-card { flex-wrap: wrap; }
     .tb-feed-actions { width: 100%; justify-content: flex-end; }
-    .tb-map-grid { grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); }
+    .tb-map-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .tables-quick-head { align-items: flex-start; }
+    .tables-quick-head p { max-width: 230px; }
 }
 
-/* ── The housekeeping lens ───────────────────────────────────────────────
-   The only tier kept out of the feed, so the only one that needs a door
-   back in. Sits in the header, not as a fifth filter chip competing with
-   the strip for the one screen a waiter actually reads. */
+/* Housekeeping stays secondary beside the room status. */
 .tb-lens {
     display: inline-flex;
     align-items: center;
@@ -484,6 +543,7 @@
     font-weight: 900;
     font-variant-numeric: tabular-nums;
 }
+.tb-command .tb-lens { margin-inline-start: 0; }
 
 /* ── Touch targets ───────────────────────────────────────────────────────
    Measured on a real waiter's tablet (845×604): the feed's action buttons
@@ -500,15 +560,82 @@
     height: 44px;
     font-size: 1rem;
 }
-/* The tile's ⋯ can't be 44px — the tile is only 78px wide and the number has
-   to stay readable. Keep the glyph small but grow the hit area past it. */
-.tb-tile .ta-more-btn {
-    width: 30px;
-    height: 30px;
-    position: relative;
+.ta-quick-edit-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    color: #64748b;
+    cursor: pointer;
 }
-.tb-tile .ta-more-btn::after {
-    content: '';
-    position: absolute;
-    inset: -8px;   /* → 46px of hittable area around a 30px glyph */
+.tb-tile .ta-more-btn {
+    width: 34px;
+    height: 34px;
+}
+.tb-tile .ta-quick-edit-btn {
+    width: 34px;
+    height: 34px;
+}
+
+/* ── Quick edit modal ───────────────────────────────────────────────────── */
+.table-quick-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1095;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    background: rgba(15, 23, 42, .48);
+}
+.table-quick-modal__panel {
+    width: min(560px, 100%);
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, .28);
+}
+.table-quick-modal__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.1rem;
+    border-bottom: 1px solid #edf1f5;
+}
+.table-quick-modal__head small { color: rgb(var(--primary-rgb)); font-weight: 800; }
+.table-quick-modal__head h2 { margin: .1rem 0 0; color: #0f172a; font-size: 1.2rem; font-weight: 900; }
+.table-quick-modal__head button {
+    width: 40px;
+    height: 40px;
+    border: 0;
+    border-radius: 9px;
+    background: #f1f5f9;
+    color: #475569;
+}
+.table-quick-modal__body { padding: 1.1rem; }
+.table-quick-modal__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: .5rem;
+    padding: .85rem 1.1rem;
+    border-top: 1px solid #edf1f5;
+    background: #f8fafc;
+}
+.table-active-switch {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    min-height: 44px;
+    padding: .6rem .75rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 9px;
+    color: #334155;
+    font-weight: 700;
+    cursor: pointer;
+}
+.table-active-switch input[type="checkbox"] { width: 18px; height: 18px; }
+
+@media (max-width: 575.98px) {
+    .table-quick-modal { place-items: end center; padding: 0; }
+    .table-quick-modal__panel { width: 100%; max-height: 92vh; border-radius: 16px 16px 0 0; }
 }

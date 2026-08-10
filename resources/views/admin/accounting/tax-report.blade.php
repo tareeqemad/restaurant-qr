@@ -7,7 +7,7 @@
     title="تقرير {{ $taxLabel }}"
     icon="bi-percent"
     subtitle="تقرير مبني من دفتر القيود وحسابات الضريبة المربوطة"
-    :crumbs="[['label' => 'التقارير', 'url' => route('admin.reports.index')]]" />
+    :crumbs="[['label' => 'المحاسبة', 'url' => route('admin.accounting.index')]]" />
 
 <form method="GET" class="row g-2 align-items-end mb-3">
     <div class="col-md-3">

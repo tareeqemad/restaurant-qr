@@ -7,7 +7,7 @@
     title="خرائط الحسابات"
     icon="bi-diagram-3"
     subtitle="وجه قواعد الترحيل وفئات المصاريف وطرق الدفع إلى حسابات محددة من شجرة الحسابات"
-    :crumbs="[['label' => 'القيود اليومية', 'url' => route('admin.accounting.journal')]]" />
+    :crumbs="[['label' => 'المحاسبة', 'url' => route('admin.accounting.index')]]" />
 
 <form method="POST" action="{{ route('admin.accounting.mappings.store') }}">
     @csrf

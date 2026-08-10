@@ -110,6 +110,26 @@ class TableRenameAndDeleteSafetyTest extends TestCase
             'Sessions opened after the rename pick up the new number.');
     }
 
+    public function test_quick_edit_payload_uses_the_normal_guarded_update_flow(): void
+    {
+        $this->actingAs($this->admin)
+            ->put(route('admin.tables.update', $this->table), [
+                'number' => '5A',
+                'name' => 'قرب الشباك',
+                'capacity' => 6,
+                'zone_lookup_id' => null,
+                'status' => 'reserved',
+                'active' => 1,
+            ])
+            ->assertRedirect(route('admin.tables.index'));
+
+        $this->table->refresh();
+        $this->assertSame('5A', $this->table->number);
+        $this->assertSame('قرب الشباك', $this->table->name);
+        $this->assertSame(6, $this->table->capacity);
+        $this->assertSame('reserved', $this->table->status);
+    }
+
     // ────────────────────────────────────────────────────────────────
     // Delete: historical FK soft-nulls but snapshots preserve display
     // ────────────────────────────────────────────────────────────────

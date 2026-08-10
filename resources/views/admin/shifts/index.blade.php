@@ -3,9 +3,6 @@
 
 @php
     $branchId   = \App\Support\BranchContext::current();
-    $branchName = $branchId
-        ? (\App\Models\Branch::find($branchId)?->name ?? '—')
-        : 'كل الفروع';
     $currency   = config('restaurant.currency_symbol', '₪');
 @endphp
 
@@ -14,82 +11,6 @@
     title="الورديات (الشفت)"
     icon="bi-clock-history"
     subtitle="افتح شفت الكاشير في بداية الدوام، أغلقه عند الانتهاء، والنظام يحسب فرق الكاش تلقائياً." />
-
-{{-- ═══════════════════ Branch context chip ═══════════════════ --}}
-<div class="sh-context mb-3">
-    <div class="sh-context__main">
-        <i class="bi {{ $branchId ? 'bi-shop' : 'bi-building-fill' }}"></i>
-        <span>الورديات معروضة لـ:</span>
-        <strong>{{ $branchName }}</strong>
-        @if($branchId)
-            <small class="ms-2">— شفتك في هذا الفرع وحده. تبديل الفرع يعرض شفت ذاك الفرع.</small>
-        @else
-            <small class="ms-2">— شفتات كل الفروع. اختر فرعاً محدداً لتفتح/تغلق فيه شفتاً.</small>
-        @endif
-    </div>
-</div>
-
-{{-- ═══════════════════ Help banner — explains how shifts work ═══════════════════ --}}
-<details class="sh-help mb-3" {{ $activeShift ? '' : 'open' }}>
-    <summary class="sh-help__head">
-        <span class="sh-help__title">
-            <i class="bi bi-info-circle-fill"></i>
-            شو الـ«شفت» وكيف أستخدم هذه الشاشة؟
-        </span>
-        <i class="bi bi-chevron-down sh-help__caret"></i>
-    </summary>
-    <div class="sh-help__body">
-        <div class="row g-3">
-            <div class="col-md-4">
-                <div class="sh-help__card">
-                    <div class="sh-help__num">١</div>
-                    <h6>شو هو الشفت؟</h6>
-                    <p>
-                        فترة عمل الكاشير من بداية دوامه لنهايته. كل دفعة كاش (أو كارد)
-                        تتم خلال هذه الفترة <b>تُربط تلقائياً</b> بهذا الشفت — عشان تقدر
-                        تراجع الدرج في النهاية وتطلع نص حساب يومي عن كل كاشير.
-                    </p>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="sh-help__card">
-                    <div class="sh-help__num">٢</div>
-                    <h6>كيف أبدأ؟</h6>
-                    <p>
-                        في بداية الدوام، عُدّ النقد الموجود في الدرج واكتبه كـ
-                        «كاش الافتتاح». اضغط <b>«فتح الشفت»</b> → النظام يبدأ بربط
-                        كل دفعاتك بهذا الشفت. <b>شفت واحد مفتوح لكل كاشير في كل فرع.</b>
-                    </p>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="sh-help__card">
-                    <div class="sh-help__num">٣</div>
-                    <h6>كيف أغلق وأشيك؟</h6>
-                    <p>
-                        في نهاية الدوام، عُدّ النقد الفعلي في الدرج واكتبه كـ
-                        «كاش الإغلاق». النظام يحسب:
-                        <br><b>المتوقع</b> = افتتاح + مبيعات الكاش
-                        <br><b>الفرق</b> = الفعلي − المتوقع
-                    </p>
-                </div>
-            </div>
-            <div class="col-12">
-                <div class="sh-help__warn">
-                    <i class="bi bi-exclamation-triangle-fill"></i>
-                    <div>
-                        <b>قراءة عمود «الفرق»:</b>
-                        <span class="sh-tag sh-tag--ok">صفر</span> الدرج متطابق · ممتاز.
-                        <span class="sh-tag sh-tag--neg">سالب</span> نقص في الدرج — قد يكون
-                        خطأ في الباقي، فاتورة بدون تسجيل، أو سرقة.
-                        <span class="sh-tag sh-tag--pos">موجب</span> فائض — نسي يصرف باقي
-                        أو خطأ في عدّ الدرج. تابع الموظفين اللي يتكرر معاهم نفس النوع.
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</details>
 
 <div class="row g-3">
     {{-- ═══════════════════ Action card — open / close shift ═══════════════════ --}}
@@ -124,62 +45,6 @@
                     <button class="btn btn-danger w-100 mt-3" data-bs-toggle="modal" data-bs-target="#close">
                         <i class="bi bi-box-arrow-right"></i> إغلاق الشفت الآن
                     </button>
-
-                    {{-- Mid-shift tools: peek the drawer / record a cash movement, without closing --}}
-                    <div class="d-flex gap-2 mt-2">
-                        <a href="{{ route('admin.shifts.x-report', $activeShift) }}" class="btn btn-outline-secondary flex-fill">
-                            <i class="bi bi-clipboard-data"></i> تقرير الدرج الآن
-                        </a>
-                        <button class="btn btn-outline-primary flex-fill" data-bs-toggle="modal" data-bs-target="#cashMove">
-                            <i class="bi bi-arrow-left-right"></i> إيداع / صرف نقدي
-                        </button>
-                    </div>
-
-                    {{-- Ad-hoc cash pay-in / pay-out on the open shift --}}
-                    <div class="modal fade" id="cashMove" tabindex="-1">
-                        <div class="modal-dialog modal-dialog-centered">
-                            <div class="modal-content">
-                                <form action="{{ route('admin.shifts.cash-movement', $activeShift) }}" method="POST">
-                                    @csrf
-                                    <div class="modal-header">
-                                        <h5 class="modal-title"><i class="bi bi-arrow-left-right"></i> حركة نقدية على الدرج</h5>
-                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                    </div>
-                                    <div class="modal-body">
-                                        <div class="alert alert-info small mb-3">
-                                            <i class="bi bi-info-circle-fill"></i>
-                                            سجّل نقداً <b>دخل</b> الدرج (فكة من الخزنة) أو <b>خرج</b> منه (صرف بسيط)
-                                            حتى يتطابق عدّ الدرج عند الإغلاق. لا يؤثّر على المبيعات ولا القيود المحاسبية.
-                                        </div>
-                                        <div class="mb-3">
-                                            <label class="form-label fw-bold">نوع الحركة <span class="text-danger">*</span></label>
-                                            <select name="type" class="form-select" required>
-                                                <option value="pay_in">إيداع في الدرج (+)</option>
-                                                <option value="pay_out">صرف من الدرج (−)</option>
-                                            </select>
-                                        </div>
-                                        <div class="mb-3">
-                                            <label class="form-label fw-bold">المبلغ <span class="text-danger">*</span></label>
-                                            <div class="input-group">
-                                                <input type="number" step="0.01" min="0.01" max="99999999.99" name="amount"
-                                                       class="form-control text-end" required>
-                                                <span class="input-group-text">{{ $currency }}</span>
-                                            </div>
-                                        </div>
-                                        <div class="mb-2">
-                                            <label class="form-label">السبب <span class="text-danger">*</span></label>
-                                            <input type="text" name="reason" maxlength="255" class="form-control" required
-                                                   placeholder="مثلاً: فكة من الخزنة / شراء أكياس نقداً">
-                                        </div>
-                                    </div>
-                                    <div class="modal-footer">
-                                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">تراجع</button>
-                                        <button class="btn btn-primary"><i class="bi bi-check-circle-fill"></i> تسجيل الحركة</button>
-                                    </div>
-                                </form>
-                            </div>
-                        </div>
-                    </div>
 
                     <div class="modal fade" id="close" tabindex="-1">
                         <div class="modal-dialog modal-dialog-centered">
@@ -299,8 +164,7 @@
                                     <th>الموظف</th>
                                     <th>الافتتاح</th>
                                     <th>الإغلاق</th>
-                                    <th class="text-end">كاش</th>
-                                    <th class="text-end">كارد</th>
+                                    <th class="text-end">المبيعات</th>
                                     <th class="text-end" title="فرق الدرج: موجب=فائض، سالب=نقص، صفر=متطابق">
                                         الفرق <i class="bi bi-info-circle text-muted small"></i>
                                     </th>
@@ -328,8 +192,7 @@
                                                 <span class="text-muted">—</span>
                                             @endif
                                         </td>
-                                        <td class="text-end">{{ number_format((float) $s->cash_sales, 2) }}</td>
-                                        <td class="text-end">{{ number_format((float) $s->card_sales, 2) }}</td>
+                                        <td class="text-end">{{ \App\Helpers\Money::format($s->total_sales) }}</td>
                                         <td class="text-end fw-bold {{ $varClass }}">
                                             @if($s->status === 'open')
                                                 <span class="text-muted">—</span>
@@ -362,58 +225,6 @@
 
 @push('styles')
 <style>
-    /* ─── Branch context ────────────────────────────────────────── */
-    .sh-context {
-        background: linear-gradient(90deg, #eff6ff 0%, #fff 100%);
-        border: 1px solid #bfdbfe;
-        border-radius: 12px;
-        padding: .65rem 1rem;
-    }
-    .sh-context__main { display: inline-flex; align-items: center; gap: .5rem; font-size: .9rem; color: #1e3a8a; }
-    .sh-context__main i { font-size: 1.1rem; color: #2563eb; }
-    .sh-context__main strong { color: #0f172a; }
-
-    /* ─── Help banner ──────────────────────────────────────────── */
-    .sh-help { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden; }
-    .sh-help > summary { list-style: none; }
-    .sh-help > summary::-webkit-details-marker { display: none; }
-    .sh-help > summary::marker { display: none; content: ''; }
-    .sh-help__head {
-        display: flex; align-items: center; justify-content: space-between;
-        background: linear-gradient(90deg, #f0fdf4 0%, #fff 100%);
-        padding: .85rem 1.1rem; font-weight: 700; cursor: pointer;
-        transition: background .15s; user-select: none;
-    }
-    .sh-help__head:hover { background: linear-gradient(90deg, #dcfce7 0%, #fff 100%); }
-    .sh-help__title { display: inline-flex; align-items: center; gap: .55rem; color: #0f4731; }
-    .sh-help__title i { color: #16a34a; font-size: 1.1rem; }
-    .sh-help__caret { color: #64748b; transition: transform .2s ease; }
-    .sh-help[open] .sh-help__caret { transform: rotate(180deg); }
-    .sh-help__body { padding: 1rem 1.1rem; border-top: 1px solid #f1f5f9; }
-    .sh-help__card {
-        background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px;
-        padding: 1rem; height: 100%; position: relative;
-    }
-    .sh-help__num {
-        position: absolute; top: -10px; inset-inline-end: 12px;
-        width: 28px; height: 28px;
-        display: inline-flex; align-items: center; justify-content: center;
-        background: #16a34a; color: #fff;
-        border-radius: 50%; font-weight: 900; font-size: .85rem;
-    }
-    .sh-help__card h6 { font-weight: 800; color: #0f4731; margin-bottom: .5rem; }
-    .sh-help__card p { font-size: .82rem; color: #475569; margin: 0; line-height: 1.7; }
-    .sh-help__warn {
-        display: flex; align-items: flex-start; gap: .75rem;
-        background: #fef3c7; border: 1px solid #fcd34d; border-radius: 10px;
-        padding: .85rem 1rem; color: #78350f; font-size: .85rem; line-height: 1.7;
-    }
-    .sh-help__warn i { font-size: 1.3rem; color: #d97706; flex-shrink: 0; margin-top: 2px; }
-    .sh-tag { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: .72rem; font-weight: 800; margin: 0 4px; }
-    .sh-tag--ok  { background: #d1fae5; color: #065f46; }
-    .sh-tag--neg { background: #fee2e2; color: #b91c1c; }
-    .sh-tag--pos { background: #fef3c7; color: #b45309; }
-
     /* ─── Active shift card ──────────────────────────────────── */
     .sh-active__pulse {
         width: 12px; height: 12px; border-radius: 50%;

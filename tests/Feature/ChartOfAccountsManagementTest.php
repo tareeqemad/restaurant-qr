@@ -336,6 +336,48 @@ class ChartOfAccountsManagementTest extends TestCase
             ->assertOk();
     }
 
+    public function test_admin_can_open_the_simplified_accounting_center(): void
+    {
+        $response = $this->actingAs($this->admin)
+            ->get(route('admin.accounting.index'))
+            ->assertOk()
+            ->assertSee('الأرباح والخسائر')
+            ->assertSee('دفتر القيود')
+            ->assertSee('الأرصدة الافتتاحية')
+            ->assertSee(route('admin.accounting.opening-balances'), false)
+            ->assertSee('إقفال الشهر')
+            ->assertSee('أدوات متقدمة جداً')
+            ->assertSee('الأصول الثابتة');
+
+        $this->assertStringContainsString(
+            'accounting-task accounting-task--primary',
+            $response->getContent(),
+            'opening balances should be a visible accountant task, not buried in advanced tools'
+        );
+    }
+
+    public function test_cashier_cannot_open_the_accounting_center(): void
+    {
+        $this->actingAs($this->cashier)
+            ->get(route('admin.accounting.index'))
+            ->assertForbidden();
+    }
+
+    public function test_simplified_accounting_pages_render_for_admin(): void
+    {
+        $this->actingAs($this->admin);
+
+        foreach ([
+            'admin.accounting.journal',
+            'admin.accounting.manual-entry.create',
+            'admin.accounting.trial-balance',
+            'admin.accounting.periods',
+            'admin.reports.profit-loss',
+        ] as $routeName) {
+            $this->get(route($routeName))->assertOk();
+        }
+    }
+
     public function test_admin_can_save_posting_role_mapping_from_account_mappings_screen(): void
     {
         $customRevenue = app(AccountService::class)->create([

@@ -3,24 +3,17 @@
 
 @section('content')
 <x-admin.breadcrumb
-    title="قيد محاسبي يدوي"
+    title="قيد يدوي"
     icon="bi-journal-plus"
-    subtitle="سجّل أي عملية محاسبية مباشرة على أي حساب في الشجرة"
+    subtitle="لعملية لم يسجلها النظام تلقائياً فقط"
     :crumbs="[
+        ['label' => 'المحاسبة', 'url' => route('admin.accounting.index')],
         ['label' => 'القيود اليومية', 'url' => route('admin.accounting.journal')],
     ]"/>
 
-<div class="alert alert-light border d-flex align-items-start gap-3 mb-3"
-     style="border-right:4px solid var(--bs-primary)!important;">
-    <i class="bi bi-info-circle-fill text-primary fs-4 mt-1"></i>
-    <div class="small">
-        <strong class="d-block mb-1">متى تستعمل القيد اليدوي؟</strong>
-        <ul class="mb-0" style="padding-inline-start: 1.2rem;">
-            <li>لتسجيل عمليات لا يلتقطها النظام تلقائياً (مثلاً تسوية بنكية، استهلاك أصول، تحويل بين حسابات داخلية).</li>
-            <li>لاستخدام <strong>الحسابات المخصّصة</strong> اللي أنشأتها بشجرة الحسابات (الحسابات النظامية يستخدمها النظام تلقائياً).</li>
-            <li><strong>قاعدة ذهبية:</strong> مجموع المدين = مجموع الدائن. النظام يرفض القيد لو ما اتوازن.</li>
-        </ul>
-    </div>
+<div class="alert alert-light border d-flex align-items-center gap-2 mb-3">
+    <i class="bi bi-info-circle-fill text-primary"></i>
+    <span>اختر حساباً مديناً وحساباً دائناً بنفس القيمة. النظام يتأكد من التوازن قبل الحفظ.</span>
 </div>
 
 <form method="POST" action="{{ route('admin.accounting.manual-entry.store') }}"
@@ -67,9 +60,6 @@
                             <th style="min-width:260px">الحساب</th>
                             <th style="min-width:130px" class="text-end">مدين</th>
                             <th style="min-width:130px" class="text-end">دائن</th>
-                            <th style="min-width:110px">العملة</th>
-                            <th style="min-width:120px">سعر الصرف</th>
-                            <th>وصف السطر (اختياري)</th>
                             <th style="width:50px"></th>
                         </tr>
                     </thead>
@@ -92,6 +82,32 @@
                                             </optgroup>
                                         @endforeach
                                     </select>
+                                    <details class="mt-2">
+                                        <summary class="small text-muted" style="cursor:pointer">عملة أو وصف مختلف (اختياري)</summary>
+                                        <div class="row g-2 mt-1">
+                                            <div class="col-sm-4">
+                                                <label class="form-label small mb-1">العملة</label>
+                                                <select :name="`lines[${idx}][currency_code]`" x-model="line.currency_code"
+                                                        @change="line.exchange_rate = line.currency_code === baseCurrencyCode ? 1 : ''"
+                                                        class="form-select form-select-sm">
+                                                    @foreach($currencies as $currency)
+                                                        <option value="{{ $currency->code }}">{{ $currency->code }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </div>
+                                            <div class="col-sm-4">
+                                                <label class="form-label small mb-1">سعر الصرف</label>
+                                                <input type="number" step="0.000001" min="0.000001"
+                                                       :name="`lines[${idx}][exchange_rate]`" x-model.number="line.exchange_rate"
+                                                       class="form-control form-control-sm text-end">
+                                            </div>
+                                            <div class="col-sm-4">
+                                                <label class="form-label small mb-1">وصف السطر</label>
+                                                <input type="text" :name="`lines[${idx}][description]`" x-model="line.description"
+                                                       class="form-control form-control-sm" maxlength="255">
+                                            </div>
+                                        </div>
+                                    </details>
                                 </td>
                                 <td>
                                     <input type="number" step="0.01" min="0"
@@ -104,24 +120,6 @@
                                            :name="`lines[${idx}][foreign_credit]`" x-model.number="line.foreign_credit"
                                            @input="if (line.foreign_credit > 0) line.foreign_debit = 0"
                                            class="form-control form-control-sm text-end" placeholder="0.00">
-                                </td>
-                                <td>
-                                    <select :name="`lines[${idx}][currency_code]`" x-model="line.currency_code"
-                                            class="form-select form-select-sm">
-                                        @foreach($currencies as $currency)
-                                            <option value="{{ $currency->code }}">{{ $currency->code }}</option>
-                                        @endforeach
-                                    </select>
-                                </td>
-                                <td>
-                                    <input type="number" step="0.000001" min="0.000001"
-                                           :name="`lines[${idx}][exchange_rate]`" x-model.number="line.exchange_rate"
-                                           class="form-control form-control-sm text-end">
-                                </td>
-                                <td>
-                                    <input type="text" :name="`lines[${idx}][description]`" x-model="line.description"
-                                           class="form-control form-control-sm" maxlength="255"
-                                           placeholder="(اختياري)">
                                 </td>
                                 <td>
                                     <button type="button" class="btn btn-sm btn-outline-danger"
@@ -138,7 +136,7 @@
                             <td class="text-end">الإجمالي</td>
                             <td class="text-end" x-text="totalDebit().toFixed(2)"></td>
                             <td class="text-end" x-text="totalCredit().toFixed(2)"></td>
-                            <td colspan="3">
+                            <td>
                                 <span x-show="isBalanced()" class="badge bg-success">
                                     <i class="bi bi-check-circle"></i> متوازن
                                 </span>
@@ -147,7 +145,6 @@
                                     فرق: <span x-text="Math.abs(totalDebit() - totalCredit()).toFixed(2)"></span>
                                 </span>
                             </td>
-                            <td></td>
                         </tr>
                     </tfoot>
                 </table>
@@ -171,14 +168,15 @@ function manualEntry() {
     return {
         lines: [],
         nextKey: 1,
+        baseCurrencyCode: @js($baseCurrencyCode),
         addLine() {
             this.lines.push({
                 key: this.nextKey++,
                 account_id: '',
                 foreign_debit: 0,
                 foreign_credit: 0,
-                currency_code: @js($baseCurrencyCode),
-                exchange_rate: '',
+                currency_code: this.baseCurrencyCode,
+                exchange_rate: 1,
                 description: ''
             });
         },

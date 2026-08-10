@@ -5,29 +5,21 @@ namespace App\Http\Controllers\Admin;
 use App\Enums\OrderStatus;
 use App\Enums\ReservationStatus;
 use App\Http\Controllers\Controller;
-use App\Models\Attendance;
 use App\Models\Branch;
-use App\Models\Customer;
 use App\Models\Expense;
 use App\Models\Ingredient;
 use App\Models\IngredientBatch;
-use App\Models\InventoryMovement;
 use App\Models\Invoice;
-use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\PurchaseOrder;
-use App\Models\PurchaseReceipt;
 use App\Models\Refund;
 use App\Models\Reservation;
 use App\Models\Review;
-use App\Models\Shift;
 use App\Models\SupplierInvoice;
 use App\Models\SupplierInvoiceItem;
 use App\Models\Table;
-use App\Services\AlertsService;
 use App\Support\BranchContext;
-use App\Support\MarketProfile;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -46,7 +38,6 @@ class DashboardController extends Controller
         $can = [
             'financials'  => (bool) $user?->hasPermission('reports.viewAny'),
             'procurement' => (bool) $user?->hasPermission('purchase_orders.viewAny'),
-            'expenses'    => (bool) $user?->hasPermission('expenses.viewAny'),
             'customers'   => (bool) $user?->hasPermission('customers.viewAny'),
         ];
 
@@ -123,26 +114,9 @@ class DashboardController extends Controller
         $outOfStock = Ingredient::where('track_stock', true)
             ->where('current_stock', '<=', 0)
             ->count();
-        $menuItems = MenuItem::where('is_available', true)->count();
-
         $purchaseOrdersNeedApproval = PurchaseOrder::where('status', 'draft')
             ->whereNull('approved_at')
             ->count();
-        $overduePurchaseOrders = PurchaseOrder::whereIn('status', ['sent', 'partially_received'])
-            ->whereNotNull('expected_at')
-            ->whereDate('expected_at', '<', $today)
-            ->count();
-        $uninvoicedPurchaseOrders = PurchaseOrder::whereIn('status', ['received', 'partially_received'])
-            ->whereDoesntHave('supplierInvoices', fn ($q) => $q->where('status', '!=', 'cancelled'))
-            ->count();
-
-        $supplierInvoiceQueue = SupplierInvoice::whereNotIn('status', ['paid', 'cancelled'])
-            ->where(function ($q) {
-                $q->whereNull('due_date')
-                    ->orWhereDate('due_date', '<=', now()->addDays(7)->toDateString());
-            });
-        $supplierInvoiceQueueCount = (clone $supplierInvoiceQueue)->count();
-
         $overdueSupplierInvoices = SupplierInvoice::whereNotIn('status', ['paid', 'cancelled'])
             ->whereDate('due_date', '<', $today);
         $overdueSupplierInvoiceCount = (clone $overdueSupplierInvoices)->count();
@@ -159,9 +133,13 @@ class DashboardController extends Controller
             ->count();
         $pendingExpenses = Expense::pending()->count();
 
+        $expiredBatches = IngredientBatch::where('remaining_qty', '>', 0)
+            ->whereNotNull('expiry_date')
+            ->whereDate('expiry_date', '<', $today)
+            ->count();
         $expiringBatches = IngredientBatch::where('remaining_qty', '>', 0)
             ->whereNotNull('expiry_date')
-            ->whereDate('expiry_date', '<=', now()->addDays(7)->toDateString())
+            ->whereBetween('expiry_date', [$today, now()->addDays(7)->toDateString()])
             ->count();
 
         // Customer debt snapshot — feeds the action-center row + the
@@ -182,20 +160,6 @@ class DashboardController extends Controller
                 COALESCE(SUM(balance), 0) as total_debt
             ')
             ->first();
-
-        $topDebtors = (clone $customerDebtQuery)
-            ->select('customer_id', DB::raw('SUM(balance) as debt'), DB::raw('COUNT(*) as invoice_count'))
-            ->groupBy('customer_id')
-            ->orderByDesc('debt')
-            ->limit(5)
-            ->get();
-        if ($topDebtors->isNotEmpty()) {
-            $topCustomers = Customer::whereIn('id', $topDebtors->pluck('customer_id'))->get()->keyBy('id');
-            $topDebtors = $topDebtors->map(function ($r) use ($topCustomers) {
-                $r->customer = $topCustomers[$r->customer_id] ?? null;
-                return $r;
-            })->filter(fn ($r) => $r->customer);
-        }
 
         $invoiceVariancesQuery = SupplierInvoiceItem::where(function ($query) {
             $query->whereRaw('ABS(COALESCE(variance_qty, 0)) > 0.0001')
@@ -243,7 +207,7 @@ class DashboardController extends Controller
                 'route' => route('admin.reservations.index', ['status' => ReservationStatus::Pending->value]),
                 'icon' => 'bi-calendar-event-fill',
                 'severity' => 'warning',
-                'permission' => null,
+                'permission' => 'customers.viewAny',
             ],
             [
                 'title' => 'تقييمات منخفضة',
@@ -252,7 +216,7 @@ class DashboardController extends Controller
                 'route' => route('admin.reviews.index', ['rating' => 2]),
                 'icon' => 'bi-star-half',
                 'severity' => 'critical',
-                'permission' => null,
+                'permission' => 'customers.viewAny',
             ],
             [
                 'title' => 'مخزون يحتاج شراء',
@@ -261,6 +225,24 @@ class DashboardController extends Controller
                 'route' => route('admin.reports.reorder-suggestions'),
                 'icon' => 'bi-cart-plus-fill',
                 'severity' => $outOfStock > 0 ? 'critical' : 'warning',
+                'permission' => 'inventory.viewAny',
+            ],
+            [
+                'title' => 'دفعات منتهية الصلاحية',
+                'count' => $expiredBatches,
+                'description' => 'دفعات لها رصيد متبقٍ ويجب معالجتها كهدر.',
+                'route' => route('admin.batches.index', ['expired' => 1]),
+                'icon' => 'bi-x-octagon-fill',
+                'severity' => 'critical',
+                'permission' => 'inventory.viewAny',
+            ],
+            [
+                'title' => 'دفعات تنتهي قريباً',
+                'count' => $expiringBatches,
+                'description' => 'استخدم هذه الدفعات أولاً خلال الأيام القادمة.',
+                'route' => route('admin.batches.index', ['expiring' => 1]),
+                'icon' => 'bi-alarm-fill',
+                'severity' => 'warning',
                 'permission' => 'inventory.viewAny',
             ],
             [
@@ -299,7 +281,7 @@ class DashboardController extends Controller
                 'route' => route('admin.customers.debts.index'),
                 'icon' => 'bi-wallet2',
                 'severity' => 'warning',
-                'permission' => null,
+                'permission' => 'customers.viewAny',
             ],
         ])
             ->filter(fn ($item) => (int) $item['count'] > 0)
@@ -308,122 +290,25 @@ class DashboardController extends Controller
             ->filter(fn ($item) => empty($item['permission']) || ($user?->hasPermission($item['permission']) ?? false))
             ->values();
 
-        $criticalActions = $actionCenter
-            ->where('severity', 'critical')
-            ->sum(fn ($item) => (int) $item['count']);
-        $actionCount = $actionCenter->sum(fn ($item) => (int) $item['count']);
-
         $stats = [
             'pending_orders'  => $pendingOrders,
             'active_orders'   => $activeOrders,
             'today_orders'    => $todayOrders,
-            'today_sales'     => $todaySales,
-            'net_operating'   => $financialPulse['net_operating'] ?? 0,
             'occupied_tables' => $occupiedTables,
             'total_tables'    => $totalTables,
-            'low_stock'       => $lowStock + $outOfStock,
-            'menu_items'      => $menuItems,
-            'action_count'    => $actionCount,
-            'critical_actions'=> $criticalActions,
         ];
 
-        $recentOrders = Order::with(['table', 'items'])->latest()->limit(8)->get();
-
-        // Top items in the last 7 days. Raw query — bypasses BranchScope —
-        // so we stamp the branch filter manually when one is bound.
-        $topItemsQuery = \DB::table('order_items')
-            ->join('orders', 'order_items.order_id', '=', 'orders.id')
-            ->whereDate('orders.created_at', '>=', now()->subDays(7))
-            ->where('order_items.status', '!=', 'cancelled');
-
-        if ($branchId = BranchContext::current()) {
-            $topItemsQuery->where('orders.branch_id', $branchId);
-        }
-
-        $topItems = $topItemsQuery
-            ->select(
-                'order_items.name_snapshot',
-                \DB::raw('SUM(order_items.quantity) as qty'),
-                \DB::raw('SUM(order_items.subtotal) as total')
-            )
-            ->groupBy('order_items.name_snapshot')
-            ->orderByDesc('qty')
-            ->limit(5)
-            ->get();
-
-        // 7-day sales trend (for the sparkline chart).
-        // Fill every day so the chart doesn't skip missing days.
-        $salesByDay = Invoice::whereIn('status', ['paid', 'partially_paid'])
-            ->whereDate('issued_at', '>=', now()->subDays(6)->toDateString())
-            ->selectRaw('DATE(issued_at) as day, SUM(paid_total) as total')
-            ->groupBy('day')
-            ->pluck('total', 'day');
-
-        $trend = collect();
-        for ($i = 6; $i >= 0; $i--) {
-            $d = now()->subDays($i)->toDateString();
-            $trend->push([
-                'date'  => $d,
-                'label' => now()->subDays($i)->locale(MarketProfile::lang())->isoFormat('ddd'),
-                'value' => (float) ($salesByDay[$d] ?? 0),
-            ]);
-        }
-
-        // Hour heatmap — today's orders by hour (0-23).
-        $hourly = Order::whereDate('created_at', $today)
-            ->selectRaw('HOUR(created_at) as hour, COUNT(*) as count')
-            ->groupBy('hour')
-            ->pluck('count', 'hour');
-        $hourly = collect(range(0, 23))->map(fn($h) => [
-            'hour'  => $h,
-            'count' => (int) ($hourly[$h] ?? 0),
-        ]);
-
         $inventoryProcurement = [
-            'tracked' => Ingredient::where('track_stock', true)->where('active', true)->count(),
             'low_stock' => $lowStock,
             'out_stock' => $outOfStock,
             'expiring_batches' => $expiringBatches,
-            'open_pos' => PurchaseOrder::whereIn('status', ['draft', 'sent', 'partially_received'])->count(),
-            'po_needs_approval' => $purchaseOrdersNeedApproval,
-            'overdue_pos' => $overduePurchaseOrders,
-            'uninvoiced_pos' => $uninvoicedPurchaseOrders,
-            'supplier_invoice_queue' => $supplierInvoiceQueueCount,
-            'invoice_variances' => $invoiceVariances,
-            'receipts_7d' => PurchaseReceipt::where('received_at', '>=', now()->subDays(7))->count(),
-            'ap_due' => (float) SupplierInvoice::whereNotIn('status', ['paid', 'cancelled'])->sum('balance'),
-            'ap_overdue' => $overdueSupplierInvoiceAmount,
-            'waste_7d' => (float) InventoryMovement::where('type', 'waste')
-                ->where('occurred_at', '>=', now()->subDays(7))
-                ->sum('total_cost'),
         ];
-
-        $recentReceipts = PurchaseReceipt::with('purchaseOrder', 'supplier')
-            ->latest('received_at')
-            ->limit(5)
-            ->get();
-
-        $newCustomersQuery = Customer::query();
-        if ($branchId) {
-            $newCustomersQuery->where('default_branch_id', $branchId);
-        }
 
         $customerPulse = [
-            'new_today' => (clone $newCustomersQuery)->whereDate('created_at', $today)->count(),
-            'new_7d' => (clone $newCustomersQuery)->whereDate('created_at', '>=', now()->subDays(6)->toDateString())->count(),
             'reservations_today' => $todayReservations,
             'reservations_pending' => $pendingReservations,
-            'reservations_upcoming' => Reservation::upcoming()->count(),
-            'reviews_today' => Review::whereDate('created_at', $today)->count(),
-            'average_rating' => round((float) Review::published()->avg('rating'), 1),
             'low_reviews' => $lowReviews,
-            'identified_orders_today' => Order::whereDate('created_at', $today)->whereNotNull('customer_id')->count(),
         ];
-
-        $recentReviews = Review::with('customer')
-            ->latest()
-            ->limit(4)
-            ->get();
 
         $delayedOrders = Order::whereIn('status', [
                 OrderStatus::Approved->value,
@@ -434,21 +319,10 @@ class DashboardController extends Controller
             ->count();
 
         $dailyOps = [
-            'open_shifts' => Shift::where('status', 'open')->count(),
-            'open_attendance' => Attendance::open()->count(),
-            'active_orders' => $activeOrders,
             'ready_orders' => Order::where('status', OrderStatus::Ready->value)->count(),
             'delayed_orders' => $delayedOrders,
-            'occupied_tables' => $occupiedTables,
             'table_utilization' => $totalTables > 0 ? round(($occupiedTables / $totalTables) * 100) : 0,
-            'pending_refunds' => $pendingRefunds,
-            'pending_expenses' => $pendingExpenses,
         ];
-
-        $ordersByStatus = Order::whereDate('created_at', $today)
-            ->select('status', DB::raw('COUNT(*) as count'))
-            ->groupBy('status')
-            ->pluck('count', 'status');
 
         $branchSnapshot = collect();
         if ($user?->isOwnerLevel()) {
@@ -508,6 +382,14 @@ class DashboardController extends Controller
 
         $quickActions = collect([
             [
+                'label' => 'الطاولات',
+                'hint' => 'فتح طلب ومتابعة الصالة',
+                'icon' => 'bi-grid-3x3-gap-fill',
+                'route' => route('admin.tables.index'),
+                'color' => 'success',
+                'permission' => 'tables.viewAny',
+            ],
+            [
                 'label' => 'الكاشير',
                 'hint' => 'إصدار ودفع الفواتير',
                 'icon' => 'bi-cash-register',
@@ -553,7 +435,7 @@ class DashboardController extends Controller
                 'icon' => 'bi-calendar-event-fill',
                 'route' => route('admin.reservations.index'),
                 'color' => 'primary',
-                'permission' => null,
+                'permission' => 'customers.viewAny',
             ],
             [
                 'label' => 'مخزون ومشتريات',
@@ -585,9 +467,6 @@ class DashboardController extends Controller
             ->values()
             ->all();
 
-        // Operational alerts — expiry, AP, low stock, stale count, pending orders...
-        $alerts = app(AlertsService::class)->dashboardSnapshot();
-
         return view('admin.dashboard.index', compact(
             'can',
             'stats',
@@ -596,18 +475,8 @@ class DashboardController extends Controller
             'inventoryProcurement',
             'customerPulse',
             'dailyOps',
-            'ordersByStatus',
             'branchSnapshot',
             'quickActions',
-            'recentOrders',
-            'recentReceipts',
-            'recentReviews',
-            'topItems',
-            'trend',
-            'hourly',
-            'alerts',
-            'customerDebtStats',
-            'topDebtors',
         ));
     }
 

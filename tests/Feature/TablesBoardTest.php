@@ -388,6 +388,128 @@ class TablesBoardTest extends TestCase
         $this->assertSame('all', Livewire::actingAs($this->admin)->test('admin.tables-board')->get('view'));
     }
 
+    public function test_table_tiles_expose_the_primary_action_directly(): void
+    {
+        $table = Table::create([
+            'branch_id' => $this->branch->id,
+            'number' => '8',
+            'capacity' => 4,
+            'status' => 'available',
+            'active' => true,
+        ]);
+
+        Livewire::actingAs($this->waiter)
+            ->test('admin.tables-board')
+            ->assertSee('فتح طلب')
+            ->assertSee(route('admin.waiter-orders.create', $table), false);
+    }
+
+    public function test_attention_area_disappears_when_nothing_needs_action(): void
+    {
+        $this->table('18')->update(['status' => 'available']);
+
+        $html = Livewire::actingAs($this->admin)
+            ->test('admin.tables-board')
+            ->html();
+
+        $this->assertStringContainsString('الصالة تحت السيطرة', $html);
+        $this->assertStringNotContainsString('class="tb-feed"', $html);
+    }
+
+    public function test_attention_cards_are_compact_and_do_not_duplicate_management_buttons(): void
+    {
+        $table = $this->table('19');
+        $this->openSession($table, $this->waiter->id, now()->subMinutes(20));
+
+        $html = Livewire::actingAs($this->admin)
+            ->test('admin.tables-board')
+            ->html();
+
+        $this->assertStringContainsString('class="tb-feed-list"', $html);
+        $this->assertStringContainsString('الأهم الآن', $html);
+        $this->assertSame(
+            1,
+            substr_count($html, 'class="ta-actions" x-data="{}"'),
+            'table management belongs on the map, not duplicated inside the attention card',
+        );
+    }
+
+    public function test_busy_table_exposes_add_follow_and_live_status_directly(): void
+    {
+        [$table] = $this->readyOrder();
+
+        Livewire::actingAs($this->waiter)
+            ->test('admin.tables-board')
+            ->assertSee('+ طلب')
+            ->assertSee('متابعة')
+            ->assertSee('جاهز 1')
+            ->assertSee(route('admin.waiter-orders.create', $table), false)
+            ->assertSee(route('admin.orders.index', ['table_id' => $table->id]), false);
+
+        $row = $this->rowsFor($this->waiter)->firstWhere('table.id', $table->id);
+        $this->assertSame(1, $row['active_count']);
+        $this->assertSame(1, $row['ready_count']);
+        $this->assertSame(0, $row['pending_count']);
+        $this->assertSame(0, $row['kitchen_count']);
+    }
+
+    public function test_following_a_table_filters_the_live_orders_board_and_keeps_add_order_visible(): void
+    {
+        [$table] = $this->readyOrder();
+
+        $otherTable = $this->table('41');
+        $otherSession = $this->openSession($otherTable, $this->waiter->id);
+        app(\App\Services\OrderService::class)->createFromCart($otherSession, [
+            ['menu_item_id' => $this->menuItem()->id, 'quantity' => 1, 'modifier_ids' => []],
+        ], $this->waiter->id);
+
+        $board = Livewire::withQueryParams(['table_id' => $table->id])
+            ->actingAs($this->waiter)
+            ->test('admin.waiter-orders-board')
+            ->assertSet('tableId', $table->id)
+            ->assertSee('تتابع الآن')
+            ->assertSee('طاولة '.$table->number)
+            ->assertSee('إضافة طلب')
+            ->assertSee(route('admin.waiter-orders.create', $table), false)
+            ->assertSee(route('admin.tables.index'), false);
+
+        $groups = $board->instance()->groups;
+        $visibleTableIds = collect(['pending', 'production', 'ready', 'served'])
+            ->flatMap(fn (string $group) => $groups[$group]->pluck('table_id'))
+            ->unique()
+            ->values()
+            ->all();
+
+        $this->assertSame([$table->id], $visibleTableIds);
+    }
+
+    public function test_quick_edit_is_visible_to_management_only(): void
+    {
+        $this->table('18');
+
+        Livewire::actingAs($this->admin)
+            ->test('admin.tables-board')
+            ->assertSee('تعديل سريع')
+            ->assertSee('class="ta-actions" x-data="{}"', false);
+
+        Livewire::actingAs($this->waiter)
+            ->test('admin.tables-board')
+            ->assertDontSee('تعديل سريع');
+    }
+
+    public function test_tables_page_renders_the_quick_editor_only_for_management(): void
+    {
+        $this->actingAs($this->admin)
+            ->get(route('admin.tables.index'))
+            ->assertOk()
+            ->assertSee('حفظ التعديل');
+
+        $this->actingAs($this->waiter)
+            ->get(route('admin.tables.index'))
+            ->assertOk()
+            ->assertDontSee('حفظ التعديل');
+    }
+
     /**
      * A raised hand outranks everything — including cold food. The guest is
      * watching the room right now to see whether anyone comes.

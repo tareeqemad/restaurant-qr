@@ -198,6 +198,10 @@ new class extends Component
         $orders       = $session?->orders ?? collect();       // active statuses only
         $activeCount  = $orders->count();
         $pendingCount = $orders->where('status', OrderStatus::Pending->value)->count();
+        $kitchenCount = $orders->whereIn('status', [
+            OrderStatus::Approved->value,
+            OrderStatus::Preparing->value,
+        ])->count();
         $readyCount   = $orders->where('status', OrderStatus::Ready->value)->count();
         $openMinutes  = $session?->opened_at ? (int) abs($session->opened_at->diffInMinutes(now())) : 0;
         $lastSeenAt   = $session?->last_activity_at ?? $session?->opened_at;
@@ -343,6 +347,9 @@ new class extends Component
             'session'     => $session,
             'invoice'     => $invoice,
             'active_count' => $activeCount,
+            'pending_count' => $pendingCount,
+            'kitchen_count' => $kitchenCount,
+            'ready_count' => $readyCount,
             'open_minutes' => $openMinutes,
             'last_seen_at' => $lastSeenAt,
             'waiter_name' => $session?->assignedWaiter?->name,
@@ -710,6 +717,18 @@ new class extends Component
             @endif
         </div>
 
+        {{-- Housekeeping is secondary, so keep its switch beside the room
+             status instead of making the waiter scan a second header. --}}
+        @if($this->staleCount > 0 || $lens === 'stale')
+            <button type="button" wire:click="toggleLens('stale')"
+                class="tb-lens {{ $lens === 'stale' ? 'is-active' : '' }}"
+                aria-pressed="{{ $lens === 'stale' ? 'true' : 'false' }}">
+                <i class="bi {{ $lens === 'stale' ? 'bi-arrow-right' : 'bi-hourglass-bottom' }}"></i>
+                {{ $lens === 'stale' ? 'رجوع للأهم' : 'راكدة' }}
+                @if($lens !== 'stale')<span class="tb-lens-count">{{ $this->staleCount }}</span>@endif
+            </button>
+        @endif
+
         <div class="tb-search-wrap">
             <i class="bi bi-search"></i>
             <input type="text" wire:model.live.debounce.400ms="search"
@@ -720,28 +739,18 @@ new class extends Component
         </div>
     </div>
 
-    {{-- ── Priority feed: the hero. Short, urgency-sorted, one action each. ── --}}
-    <section class="tb-feed" aria-label="شريط المتابعة">
+    {{-- Compact action tray. It only exists while work needs attention; the
+         floor map remains the main interface instead of being pushed down by
+         a second full-width copy of the same tables. --}}
+    @if($triage->isNotEmpty())
+    <section class="tb-feed" aria-label="الأهم الآن">
         <header class="tb-feed-head">
             <i class="bi {{ $lens === 'stale' ? 'bi-hourglass-bottom' : 'bi-lightning-charge-fill' }}"></i>
-            <h3>{{ $lens === 'stale' ? 'الجلسات الراكدة' : 'شريط المتابعة' }}</h3>
-            <span class="tb-feed-sub">{{ $lens === 'stale' ? 'تدبير — ما حدا مستني عليها' : 'مرتّب حسب الإلحاح' }}</span>
-
-            {{-- The one lens. Housekeeping is the only tier kept OUT of the feed
-                 (no guest is waiting on it), so it's the only one that needs a
-                 way back in. --}}
-            @if($this->staleCount > 0 || $lens === 'stale')
-                <button type="button" wire:click="toggleLens('stale')"
-                    class="tb-lens {{ $lens === 'stale' ? 'is-active' : '' }}"
-                    aria-pressed="{{ $lens === 'stale' ? 'true' : 'false' }}">
-                    <i class="bi {{ $lens === 'stale' ? 'bi-arrow-right' : 'bi-hourglass-bottom' }}"></i>
-                    {{ $lens === 'stale' ? 'رجوع للمتابعة' : 'راكدة' }}
-                    @if($lens !== 'stale')<span class="tb-lens-count">{{ $this->staleCount }}</span>@endif
-                </button>
-            @endif
+            <h3>{{ $lens === 'stale' ? 'جلسات قديمة' : 'الأهم الآن' }}</h3>
         </header>
 
-        @forelse($triage as $r)
+        <div class="tb-feed-list">
+        @foreach($triage as $r)
             @php
                 $t = $r['table'];
                 $g = $r['triage'];
@@ -783,20 +792,12 @@ new class extends Component
                     @else
                         <a href="{{ $g['action']['url'] }}" class="tb-feed-btn"><i class="bi {{ $g['action']['icon'] }}"></i> {{ $g['action']['label'] }}</a>
                     @endif
-                    @include('components.admin._table-actions', [
-                        't' => $t, 'session' => $r['session'], 'invoice' => $r['invoice'],
-                        'activeCount' => $r['active_count'], 'availableTransferTables' => $availableTransferTables,
-                        'perms' => $r['perms'],
-                    ])
                 </div>
             </article>
-        @empty
-            <div class="tb-feed-empty">
-                <i class="bi bi-emoji-smile"></i>
-                <span>ما في شي عاجل — كل طاولاتك تحت السيطرة</span>
-            </div>
-        @endforelse
+        @endforeach
+        </div>
     </section>
+    @endif
 
     {{-- ── Floor map: compact, section-grouped, for orientation + new tables ── --}}
     <section class="tb-map" aria-label="خريطة الصالة">
@@ -834,6 +835,7 @@ new class extends Component
                                 $idle = $r['session'] && $r['last_seen_at']
                                     ? Duration::short((int) abs($r['last_seen_at']->diffInMinutes(now())))
                                     : null;
+                                $orderLabel = $r['session'] ? '+ طلب' : 'فتح طلب';
                             @endphp
                             <div class="tb-tile tb-tile--{{ $st }}" wire:key="tile-{{ $t->id }}"
                                  role="group" aria-label="طاولة {{ $t->number }} · {{ $tm['label'] }}{{ $idle ? ' · '.$idle : '' }}">
@@ -845,10 +847,37 @@ new class extends Component
                                         'perms' => $r['perms'],
                                     ])
                                 </div>
-                                <div class="tb-tile-foot" aria-hidden="true">
-                                    <i class="bi {{ $tm['icon'] }}"></i>
-                                    <span>{{ $idle ?? $tm['label'] }}</span>
+                                <div class="tb-tile-body">
+                                    <span class="tb-tile-state"><i class="bi {{ $tm['icon'] }}"></i>{{ $tm['label'] }} @if($idle)<small>· {{ $idle }}</small>@endif</span>
+                                    @if($t->name)<span class="tb-tile-name">{{ $t->name }}</span>@endif
+                                    @if($r['active_count'] > 0)
+                                        <div class="tb-order-pulse" aria-label="حالة طلبات الطاولة">
+                                            @if($r['pending_count'] > 0)<span class="is-pending">معلق {{ $r['pending_count'] }}</span>@endif
+                                            @if($r['kitchen_count'] > 0)<span class="is-kitchen">بالمطبخ {{ $r['kitchen_count'] }}</span>@endif
+                                            @if($r['ready_count'] > 0)<span class="is-ready">جاهز {{ $r['ready_count'] }}</span>@endif
+                                        </div>
+                                    @endif
                                 </div>
+
+                                @if($st === 'cleaning')
+                                    <form action="{{ route('admin.tables.mark-clean', $t) }}" method="POST" class="tb-tile-actions">
+                                        @csrf
+                                        <button type="submit" class="tb-tile-action is-wide"><i class="bi bi-check2"></i> تم التنظيف</button>
+                                    </form>
+                                @elseif($st !== 'oos')
+                                    <div class="tb-tile-actions">
+                                        <a href="{{ route('admin.waiter-orders.create', $t) }}"
+                                           class="tb-tile-action tb-tile-action--add {{ $r['active_count'] < 1 ? 'is-wide' : '' }}">
+                                            <i class="bi bi-plus-lg"></i> {{ $orderLabel }}
+                                        </a>
+                                        @if($r['active_count'] > 0)
+                                            <a href="{{ route('admin.orders.index', ['table_id' => $t->id]) }}"
+                                               class="tb-tile-action tb-tile-action--follow">
+                                                <i class="bi bi-list-check"></i> متابعة
+                                            </a>
+                                        @endif
+                                    </div>
+                                @endif
                             </div>
                         @endforeach
                     </div>
@@ -857,18 +886,6 @@ new class extends Component
         @endif
     </section>
 
-    {{-- Legend. Each swatch carries the tile's OWN icon, not just its colour:
-         red/amber/blue are exactly the trio that collapses under the common
-         colour-blindness types, and this row is where the colour language is
-         taught. Glyph + colour survives; hue alone doesn't. --}}
-    <div class="tb-legend">
-        @foreach(['available', 'occupied', 'attention', 'cleaning', 'stale', 'urgent', 'bill'] as $st)
-            <span>
-                <span class="tb-lg tb-lg--{{ $st }}"><i class="bi {{ $tileMeta[$st]['icon'] }}"></i></span>
-                {{ $tileMeta[$st]['label'] }}
-            </span>
-        @endforeach
-    </div>
 </div>
 {{-- Styles in public/assets/dashtic/css/tables-board.css, loaded in <head> by
      admin/tables/index.blade.php (@push('styles')) — a component-body <style>

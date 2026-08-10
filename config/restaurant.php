@@ -115,7 +115,7 @@ return [
     'nav' => [
         'vendor_price_compare' => env('NAV_VENDOR_PRICE_COMPARE', false),
         'batch_expiry'         => env('NAV_BATCH_EXPIRY', false),
-        'units_management'     => env('NAV_UNITS_MANAGEMENT', false),
+        'units_management'     => true,
     ],
 
     // Cashier-applied discounts. Caps are role-keyed defaults; the running

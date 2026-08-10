@@ -294,22 +294,20 @@
                 @endif
 
 
-                {{-- Accounting: cashier, shifts, refunds, and expenses. --}}
+                {{-- Daily money operations only. Accountant review lives behind
+                     the single "Accounting" entry below. --}}
                 @php
                     $canCashier  = $u && $u->can('viewAny', \App\Models\Payment::class);
                     $canShifts   = $u && $u->can('viewAny', \App\Models\Shift::class);
-                    $canRefunds  = $u && $u->can('viewAny', \App\Models\Refund::class);
                     $canExpenses = $u && $u->can('viewAny', \App\Models\Expense::class);
-                    $canAccounting = $u && $u->hasAnyRole(['super_admin','admin','manager']);
-                    $showAccounts = $canCashier || $canShifts || $canRefunds || $canExpenses || $canAccounting;
+                    $showAccounts = $canCashier || $canShifts || $canExpenses;
                     $accountsOpen = request()->routeIs('admin.cashier.*')
                                  || request()->routeIs('admin.shifts.*')
-                                 || request()->routeIs('admin.refunds.*')
-                                 || request()->routeIs('admin.expenses.*')
-                                 || request()->routeIs('admin.accounting.*');
+                                 || request()->routeIs('admin.expenses.*');
 
                     // Cached count from SidebarBadges (computed once per request).
                     $pendingExpenses = $canExpenses ? $sidebarBadges['pending_expenses'] : 0;
+                    $pendingTransfers = $canCashier ? ($sidebarBadges['pending_transfers'] ?? 0) : 0;
                 @endphp
                 @if($showAccounts)
                 <li class="slide has-sub {{ $accountsOpen ? 'open' : '' }}">
@@ -323,10 +321,8 @@
                     </a>
                     <ul class="slide-menu child2">
                         @if($canCashier)
-                            @php
-                                $pendingTransfers = $sidebarBadges['pending_transfers'] ?? 0;
-                            @endphp
                             <li class="slide"><a href="{{ route('admin.cashier.index') }}" class="side-menu__item {{ $isActive('admin.cashier.index') }}"><i class="bi bi-cash-stack submenu-icon"></i>{{ __('admin.nav.cashier') }}</a></li>
+                            @if($pendingTransfers > 0)
                             <li class="slide">
                                 <a href="{{ route('admin.cashier.transfers.queue') }}" class="side-menu__item {{ $isActive('admin.cashier.transfers.*') }}">
                                     <i class="bi bi-bank submenu-icon"></i>
@@ -336,29 +332,6 @@
                                     @endif
                                 </a>
                             </li>
-                        @endif
-                        @if($canAccounting)
-                            <li class="slide"><a href="{{ route('admin.accounting.trial-balance') }}" class="side-menu__item {{ $isActive('admin.accounting.trial-balance') }}"><i class="bi bi-columns-gap submenu-icon"></i>{{ __('admin.nav.trial_balance') }}</a></li>
-                            <li class="slide"><a href="{{ route('admin.accounting.journal') }}" class="side-menu__item {{ $isActive('admin.accounting.journal') }}"><i class="bi bi-journal-text submenu-icon"></i>{{ __('admin.nav.journal') }}</a></li>
-                            <li class="slide"><a href="{{ route('admin.accounting.balance-sheet') }}" class="side-menu__item {{ $isActive('admin.accounting.balance-sheet') }}"><i class="bi bi-bank submenu-icon"></i>الميزانية العمومية</a></li>
-                            <li class="slide"><a href="{{ route('admin.accounting.fixed-assets.index') }}" class="side-menu__item {{ $isActive('admin.accounting.fixed-assets.*') }}"><i class="bi bi-building-gear submenu-icon"></i>الأصول الثابتة</a></li>
-                            <li class="slide"><a href="{{ route('admin.accounting.aging') }}" class="side-menu__item {{ $isActive('admin.accounting.aging') }}"><i class="bi bi-hourglass-split submenu-icon"></i>أعمار الذمم</a></li>
-                            <li class="slide"><a href="{{ route('admin.accounting.tax-report') }}" class="side-menu__item {{ $isActive('admin.accounting.tax-report') }}"><i class="bi bi-percent submenu-icon"></i>تقرير الضريبة</a></li>
-                            @if(auth()->user()?->hasPermission('chart_of_accounts.update'))
-                                <li class="slide"><a href="{{ route('admin.accounting.mappings') }}" class="side-menu__item {{ $isActive('admin.accounting.mappings') }}"><i class="bi bi-diagram-3 submenu-icon"></i>قواعد الترحيل</a></li>
-                                <li class="slide"><a href="{{ route('admin.accounting.periods') }}" class="side-menu__item {{ $isActive('admin.accounting.periods') }}"><i class="bi bi-calendar-lock submenu-icon"></i>الفترات المحاسبية</a></li>
-                                <li class="slide"><a href="{{ route('admin.accounting.fiscal-years') }}" class="side-menu__item {{ $isActive('admin.accounting.fiscal-years') }}"><i class="bi bi-calendar2-check submenu-icon"></i>السنوات المالية</a></li>
-                                <li class="slide"><a href="{{ route('admin.accounting.tax-jurisdictions') }}" class="side-menu__item {{ $isActive('admin.accounting.tax-jurisdictions') }}"><i class="bi bi-percent submenu-icon"></i>قواعد ضريبة المبيعات</a></li>
-                                <li class="slide"><a href="{{ route('admin.accounting.reconciliations') }}" class="side-menu__item {{ $isActive('admin.accounting.reconciliations') }}"><i class="bi bi-check2-square submenu-icon"></i>مطابقة الصندوق والبنك</a></li>
-                            @endif
-                            @if(auth()->user()?->hasPermission('chart_of_accounts.update'))
-                                <li class="slide"><a href="{{ route('admin.accounting.settlements') }}" class="side-menu__item {{ $isActive('admin.accounting.settlements') }}"><i class="bi bi-arrow-left-right submenu-icon"></i>التسويات المحاسبية</a></li>
-                            @endif
-                            @if(auth()->user()?->hasPermission('chart_of_accounts.create'))
-                                <li class="slide"><a href="{{ route('admin.accounting.opening-balances') }}" class="side-menu__item {{ $isActive('admin.accounting.opening-balances') }}"><i class="bi bi-door-open submenu-icon"></i>الأرصدة الافتتاحية</a></li>
-                            @endif
-                            @if(auth()->user()?->hasPermission('chart_of_accounts.viewAny'))
-                                <li class="slide"><a href="{{ route('admin.accounts.index') }}" class="side-menu__item {{ $isActive('admin.accounts.*') }}"><i class="bi bi-diagram-3-fill submenu-icon"></i>{{ __('admin.nav.chart_of_accounts') }}</a></li>
                             @endif
                         @endif
                         @if($canShifts)
@@ -378,16 +351,6 @@
                                 </a>
                             </li>
                         @endif
-                        @if($canRefunds)
-                            <li class="slide"><a href="{{ route('admin.refunds.index') }}" class="side-menu__item {{ $isActive('admin.refunds.*') }}"><i class="bi bi-arrow-counterclockwise submenu-icon"></i>{{ __('admin.nav.refunds') }}</a></li>
-                        @endif
-                        @can('viewAny', App\Models\Announcement::class)
-                            <li class="slide">
-                                <a href="{{ route('admin.announcements.index') }}" class="side-menu__item {{ $isActive('admin.announcements.*') }}">
-                                    <i class="bi bi-megaphone-fill submenu-icon"></i>{{ __('admin.nav.offers_announcements') }}
-                                </a>
-                            </li>
-                        @endcan
                     </ul>
                 </li>
                 @endif
@@ -482,7 +445,6 @@
                         <li class="slide"><a href="{{ route('admin.reports.index') }}" class="side-menu__item {{ $isActive('admin.reports.index') }}"><i class="bi bi-speedometer2 submenu-icon"></i>{{ __('admin.nav.reports_dashboard') }}</a></li>
                         <li class="slide"><a href="{{ route('admin.reports.end-of-day') }}" class="side-menu__item {{ $isActive('admin.reports.end-of-day') }}"><i class="bi bi-calendar-check-fill submenu-icon"></i>{{ __('admin.nav.end_of_day') }}</a></li>
                         <li class="slide"><a href="{{ route('admin.reports.profit-loss') }}" class="side-menu__item {{ $isActive('admin.reports.profit-loss') }}"><i class="bi bi-graph-up-arrow submenu-icon"></i>{{ __('admin.nav.profit_loss') }}</a></li>
-                        <li class="slide"><a href="{{ route('admin.accounting.trial-balance') }}" class="side-menu__item {{ $isActive('admin.accounting.trial-balance') }}"><i class="bi bi-columns-gap submenu-icon"></i>{{ __('admin.nav.trial_balance') }}</a></li>
                         <li class="slide"><a href="{{ route('admin.reports.menu-engineering') }}" class="side-menu__item {{ $isActive('admin.reports.menu-engineering') }}"><i class="bi bi-diagram-3-fill submenu-icon"></i>{{ __('admin.nav.menu_engineering') }}</a></li>
                         <li class="slide"><a href="{{ route('admin.reports.reorder-suggestions') }}" class="side-menu__item {{ $isActive('admin.reports.reorder-suggestions') }}"><i class="bi bi-cart-plus-fill submenu-icon"></i>{{ __('admin.nav.reorder_suggestions') }}</a></li>
                         <li class="slide"><a href="{{ route('admin.reports.stock-valuation') }}" class="side-menu__item {{ $isActive('admin.reports.stock-valuation') }}"><i class="bi bi-cash-stack submenu-icon"></i>{{ __('admin.nav.stock_valuation') }}</a></li>
@@ -495,6 +457,25 @@
                         <li class="slide"><a href="{{ route('admin.reports.shifts') }}" class="side-menu__item {{ $isActive('admin.reports.shifts') }}"><i class="bi bi-clock-history submenu-icon"></i>{{ __('admin.nav.shifts') }}</a></li>
                     </ul>
                 </li>
+                @endif
+
+                {{-- Accountant workspace: one entry point instead of exposing
+                     every ledger and setup screen in the navigation. --}}
+                @if($u && $u->hasPermission('chart_of_accounts.viewAny'))
+                <li class="slide {{ request()->routeIs('admin.accounting.*', 'admin.accounts.*') ? 'active' : '' }}">
+                    <a href="{{ route('admin.accounting.index') }}" class="side-menu__item">
+                        <i class="bi bi-calculator-fill side-menu__icon"></i>
+                        <span class="side-menu__label">{{ __('admin.nav.accounting_center') }}</span>
+                    </a>
+                </li>
+                @if($u->hasPermission('chart_of_accounts.create'))
+                <li class="slide {{ request()->routeIs('admin.accounting.opening-balances') ? 'active' : '' }}">
+                    <a href="{{ route('admin.accounting.opening-balances') }}" class="side-menu__item">
+                        <i class="bi bi-door-open-fill side-menu__icon"></i>
+                        <span class="side-menu__label">الأرصدة الافتتاحية</span>
+                    </a>
+                </li>
+                @endif
                 @endif
 
                 {{-- System administration.
@@ -521,6 +502,7 @@
                              || request()->routeIs('admin.menu-items.*')
                              || request()->routeIs('admin.modifiers.*')
                              || request()->routeIs('admin.allergens.*')
+                             || request()->routeIs('admin.announcements.*')
                              || request()->routeIs('admin.stations.*');
 
                     // Users-and-roles submenu
@@ -566,6 +548,9 @@
                             @if(auth()->user()?->hasPermission('promotions.viewAny'))
                                 <li class="slide"><a href="{{ route('admin.promotions.index') }}" class="side-menu__item {{ $isActive('admin.promotions.*') }}"><i class="bi bi-tag-fill submenu-icon"></i>{{ __('admin.nav.promotions') }}</a></li>
                             @endif
+                            @can('viewAny', App\Models\Announcement::class)
+                                <li class="slide"><a href="{{ route('admin.announcements.index') }}" class="side-menu__item {{ $isActive('admin.announcements.*') }}"><i class="bi bi-megaphone-fill submenu-icon"></i>{{ __('admin.nav.offers_announcements') }}</a></li>
+                            @endcan
                         @endif
                         @if($canStations)
                             <li class="slide"><a href="{{ route('admin.stations.index') }}" class="side-menu__item {{ $isActive('admin.stations.*') }}"><i class="bi bi-fire submenu-icon"></i>{{ __('admin.nav.stations') }}</a></li>
@@ -647,12 +632,6 @@
                 </li>
                 @endif
 
-                {{-- Chart of accounts.
-                     The chart is also linked from the accounting group
-                     (operational accounting menu), but super-admin /
-                     manager naturally look for system-level config
-                     items under administration. Duplicate link here
-                     so it's discoverable from both spots. --}}
                 @if($canLicenseStatus)
                 <li class="slide {{ $isActive('admin.license-status.*') }}">
                     <a href="{{ route('admin.license-status.index') }}" class="side-menu__item">
@@ -667,15 +646,6 @@
                     <a href="{{ route('admin.licenses.index') }}" class="side-menu__item">
                         <i class="bi bi-patch-check-fill side-menu__icon"></i>
                         <span class="side-menu__label">{{ __('admin.nav.customer_licenses') }}</span>
-                    </a>
-                </li>
-                @endif
-
-                @if(auth()->user()?->hasPermission('chart_of_accounts.viewAny'))
-                <li class="slide {{ $isActive('admin.accounts.*') }}">
-                    <a href="{{ route('admin.accounts.index') }}" class="side-menu__item">
-                        <svg class="side-menu__icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"></circle><line x1="12" y1="22" x2="12" y2="8"></line><path d="M5 12H2a10 10 0 0 0 20 0h-3"></path></svg>
-                        <span class="side-menu__label">{{ __('admin.nav.chart_of_accounts') }}</span>
                     </a>
                 </li>
                 @endif

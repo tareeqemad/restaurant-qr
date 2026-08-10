@@ -4,6 +4,7 @@ use App\Enums\OrderItemStatus;
 use App\Enums\OrderStatus;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\Table;
 use App\Models\TableSession;
 use App\Services\InventoryService;
 use App\Services\OrderService;
@@ -22,6 +23,9 @@ new class extends Component
 
     #[Url(as: 'focus', except: 'all')]
     public string $focus = 'all';
+
+    #[Url(as: 'table_id', except: null, nullable: true)]
+    public ?int $tableId = null;
 
     /**
      * One lateness definition for the whole board: a task counts as "late"
@@ -67,6 +71,7 @@ new class extends Component
                 OrderStatus::Cancelled->value,
                 OrderStatus::Completed->value,
             ])
+            ->when($this->tableId, fn ($q) => $q->where('table_id', $this->tableId))
             ->orderBy('created_at')
             ->get();
 
@@ -98,6 +103,7 @@ new class extends Component
         ])
             ->where('status', 'active')
             ->whereNotNull('bill_requested_at')
+            ->when($this->tableId, fn ($q) => $q->where('table_id', $this->tableId))
             ->whereDoesntHave('invoice', fn ($q) => $q->whereNotIn('status', ['cancelled']))
             ->orderBy('bill_requested_at')
             ->get();
@@ -359,6 +365,12 @@ new class extends Component
         }
     }
 
+    #[Computed]
+    public function selectedTable(): ?Table
+    {
+        return $this->tableId ? Table::find($this->tableId) : null;
+    }
+
     #[On('echo-private:waiters,.order.created')]
     public function refreshFromCreated(): void
     {
@@ -384,7 +396,7 @@ new class extends Component
 
     private function clearComputed(): void
     {
-        unset($this->groups, $this->stats, $this->allPeakTasks, $this->peakTasks, $this->stockReports);
+        unset($this->groups, $this->stats, $this->allPeakTasks, $this->peakTasks, $this->stockReports, $this->selectedTable);
     }
 }
 ?>
@@ -402,6 +414,8 @@ new class extends Component
         $stats = $this->stats;
         $peakTasks = $this->peakTasks;
         $stockReports = $this->stockReports;
+        $selectedTable = $this->selectedTable;
+        $showPeakQueue = $peakMode && ! $selectedTable;
         $columns = [
             'pending' => [
                 'title' => 'قبول الطلبات',
@@ -432,7 +446,7 @@ new class extends Component
                 'kind' => 'bill',
             ],
         ];
-        $visibleColumns = $peakMode
+        $visibleColumns = $showPeakQueue
             ? array_intersect_key($columns, array_flip(['pending', 'ready', 'billing']))
             : $columns;
         $focusOptions = [
@@ -443,6 +457,24 @@ new class extends Component
             'billing' => ['label' => 'فاتورة', 'icon' => 'bi-receipt-cutoff'],
         ];
     @endphp
+
+    @if($selectedTable)
+        <section class="waiter-table-focus" aria-label="متابعة طاولة {{ $selectedTable->number }}">
+            <div>
+                <small>تتابع الآن</small>
+                <strong><i class="bi bi-pin-map-fill"></i> طاولة {{ $selectedTable->number }}</strong>
+                @if($selectedTable->name)<span>{{ $selectedTable->name }}</span>@endif
+            </div>
+            <div class="waiter-table-focus__actions">
+                <a href="{{ route('admin.waiter-orders.create', $selectedTable) }}" class="btn btn-primary">
+                    <i class="bi bi-plus-lg"></i> إضافة طلب
+                </a>
+                <a href="{{ route('admin.tables.index') }}" class="btn btn-light">
+                    <i class="bi bi-grid-3x3-gap-fill"></i> رجوع للطاولات
+                </a>
+            </div>
+        </section>
+    @endif
 
     @if (session('success') || session('error'))
         <div class="waiter-flash {{ session('error') ? 'is-error' : 'is-success' }}">
@@ -469,7 +501,7 @@ new class extends Component
             </button>
         </div>
 
-        @if($peakMode)
+        @if($showPeakQueue)
             <div class="waiter-focus-tabs" aria-label="فلترة المهام">
                 @foreach($focusOptions as $focusKey => $option)
                     <button type="button"
@@ -482,14 +514,16 @@ new class extends Component
             </div>
         @endif
 
-        <button type="button" wire:click="togglePeakMode" class="waiter-peak-toggle {{ ! $peakMode ? 'is-active' : '' }}">
-            <i class="bi {{ $peakMode ? 'bi-grid-3x3-gap-fill' : 'bi-list-task' }}"></i>
-            {{ $peakMode ? 'عرض المراحل بالتفصيل' : 'العودة لقائمة المهام' }}
-        </button>
+        @if(! $selectedTable)
+            <button type="button" wire:click="togglePeakMode" class="waiter-peak-toggle {{ ! $peakMode ? 'is-active' : '' }}">
+                <i class="bi {{ $peakMode ? 'bi-grid-3x3-gap-fill' : 'bi-list-task' }}"></i>
+                {{ $peakMode ? 'عرض المراحل بالتفصيل' : 'العودة لقائمة المهام' }}
+            </button>
+        @endif
     </section>
 
     @php $visiblePeakTasks = $peakTasks; @endphp
-    @if($peakMode)
+    @if($showPeakQueue)
         <section class="waiter-peak-queue">
             <header class="waiter-peak-head">
                 <div>
@@ -587,7 +621,7 @@ new class extends Component
         </section>
     @endif
 
-    @if(! $peakMode)
+    @if(! $peakMode || $selectedTable)
     <div class="waiter-flow {{ $peakMode ? 'waiter-flow--peak' : '' }}">
         @foreach($visibleColumns as $key => $column)
             @php $records = $groups[$key]; @endphp

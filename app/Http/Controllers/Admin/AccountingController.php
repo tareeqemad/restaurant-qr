@@ -36,6 +36,18 @@ use Illuminate\Validation\Rule;
 
 class AccountingController extends Controller
 {
+    /**
+     * One calm entry point for the accountant. Daily operations post their
+     * own journal entries; this page only exposes the handful of review and
+     * month-end tasks that a human normally needs.
+     */
+    public function index()
+    {
+        abort_unless(auth()->user()?->hasPermission('chart_of_accounts.viewAny'), 403);
+
+        return view('admin.accounting.index');
+    }
+
     public function journal(Request $request)
     {
         $filters = $request->validate([
@@ -376,8 +388,8 @@ class AccountingController extends Controller
 
         if ($inactiveAccounts->isNotEmpty()) {
             return back()->withInput()->with('error',
-                'ظ„ط§ ظٹظ…ظƒظ† ط§ظ„طھط±ط­ظٹظ„ ط¹ظ„ظ‰ ط­ط³ط§ط¨ ط؛ظٹط± ظ†ط´ط·: '.
-                $inactiveAccounts->map(fn (Account $account) => "{$account->code} â€” {$account->name}")->implode('طŒ '));
+                'لا يمكن الترحيل على حساب غير نشط: '.
+                $inactiveAccounts->map(fn (Account $account) => "{$account->code} — {$account->name}")->implode('، '));
         }
 
         $codeMap = $accounts->pluck('code', 'id');
@@ -727,11 +739,14 @@ class AccountingController extends Controller
         abort_unless(auth()->user()?->hasPermission('chart_of_accounts.update'), 403);
 
         $data = $request->validate([
-            'name' => ['required', 'string', 'max:191'],
+            'name' => ['nullable', 'string', 'max:191'],
             'starts_on' => ['required', 'date'],
             'ends_on' => ['required', 'date', 'after_or_equal:starts_on'],
             'notes' => ['nullable', 'string'],
         ]);
+
+        $data['name'] = trim((string) ($data['name'] ?? ''))
+            ?: 'شهر '.Carbon::parse($data['starts_on'])->format('m/Y');
 
         $branchId = BranchContext::current();
         $overlap = AccountingPeriod::query()

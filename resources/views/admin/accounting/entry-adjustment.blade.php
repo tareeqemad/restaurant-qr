@@ -8,6 +8,7 @@
     icon="bi-arrow-counterclockwise"
     subtitle="يعكس النظام القيد الأصلي تلقائيا، ويمكنك ترحيل قيد صحيح بدلا منه في نفس العملية"
     :crumbs="[
+        ['label' => 'المحاسبة', 'url' => route('admin.accounting.index')],
         ['label' => 'القيود اليومية', 'url' => route('admin.accounting.journal')],
         ['label' => $entry->entry_no],
     ]" />

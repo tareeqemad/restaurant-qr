@@ -9,6 +9,7 @@ use App\Models\Ingredient;
 use App\Models\IngredientStock;
 use App\Models\Invoice;
 use App\Models\MenuItem;
+use App\Models\Payment;
 use App\Models\RecipeItem;
 use App\Models\Refund;
 use App\Models\Role;
@@ -119,6 +120,70 @@ class CashierMergeParityTest extends TestCase
         app(BillingService::class)->addPayment($invoice, (float) $invoice->total, $method, $this->admin->id);
 
         return [$invoice->fresh(), $session];
+    }
+
+    /** @return array{0: Invoice, 1: TableSession} */
+    private function unpaidMeal(): array
+    {
+        $session = $this->openSession();
+        $order = app(OrderService::class)->createFromCart($session, [['menu_item_id'=>$this->menuItem->id,'quantity'=>1,'modifier_ids'=>[]]]);
+        app(OrderService::class)->approve($order, $this->admin->id);
+        $invoice = app(BillingService::class)->issueInvoice($session->fresh(), $this->admin->id);
+
+        return [$invoice->fresh(), $session];
+    }
+
+    public function test_cashier_defaults_to_tables_needing_checkout_but_search_can_find_any_table(): void
+    {
+        $this->actingAs($this->admin);
+
+        $idle = $this->openSession();
+        $billRequest = $this->openSession();
+        $billRequest->update(['bill_requested_at' => now()]);
+        [, $invoiced] = $this->unpaidMeal();
+
+        $board = Livewire::test('cashier.dashboard');
+        $ids = $board->instance()->sessions->pluck('id')->all();
+
+        $this->assertContains($billRequest->id, $ids);
+        $this->assertContains($invoiced->id, $ids);
+        $this->assertNotContains($idle->id, $ids, 'a quiet seated table should not crowd the checkout queue');
+
+        $board->call('setSessionFilter', 'all');
+        $this->assertContains($idle->id, $board->instance()->sessions->pluck('id')->all());
+
+        $board->call('setSessionFilter', 'checkout')
+            ->set('search', (string) $idle->table->number);
+        $this->assertContains($idle->id, $board->instance()->sessions->pluck('id')->all(), 'search must bypass the rush filter');
+    }
+
+    public function test_full_cash_button_uses_the_normal_guarded_payment_flow(): void
+    {
+        $this->actingAs($this->admin);
+        [$invoice, $session] = $this->unpaidMeal();
+
+        Livewire::test('cashier.dashboard')
+            ->set('selectedSessionId', $session->id)
+            ->call('recordFullCashPayment')
+            ->assertHasNoErrors();
+
+        $payment = Payment::where('invoice_id', $invoice->id)->sole();
+        $this->assertSame('cash', $payment->method);
+        $this->assertEqualsWithDelta((float) $invoice->total, (float) $payment->amount, 0.001);
+        $this->assertSame('paid', $invoice->fresh()->status);
+    }
+
+    public function test_simplified_checkout_keeps_daily_and_advanced_tools_collapsed(): void
+    {
+        $this->actingAs($this->admin);
+        [, $session] = $this->unpaidMeal();
+
+        Livewire::test('cashier.dashboard', ['session' => $session->id])
+            ->assertSee('قبض كامل نقدي')
+            ->assertSee('دفع جزئي أو تفاصيل إضافية')
+            ->assertSee('خيارات إضافية')
+            ->assertSee('ملخص اليوم')
+            ->assertSee('تحتاج حساب');
     }
 
     // ─── FIX 1: customer-link panel is embedded again ──────────────────

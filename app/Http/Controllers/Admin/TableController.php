@@ -24,16 +24,12 @@ class TableController extends Controller
     public function index()
     {
         $this->authorize('viewAny', Table::class);
-        $tables = Table::with('activeSession')->orderBy('number')->paginate(30);
-        $total    = Table::count();
-        $occupied = Table::has('activeSession')->count();
-        $stats = [
-            'total'    => $total,
-            'occupied' => $occupied,
-            'free'     => max(0, $total - $occupied),
-            'capacity' => (int) Table::sum('capacity'),
-        ];
-        return view('admin.tables.index', compact('tables', 'stats'));
+
+        // The Livewire board owns the table query. The old controller loaded a
+        // second paginated copy plus four statistics that the view never used.
+        return view('admin.tables.index', [
+            'zones' => \App\Models\Lookup::for('zones'),
+        ]);
     }
 
     public function create()

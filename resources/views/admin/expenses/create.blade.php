@@ -26,7 +26,7 @@
         <div class="form-actions">
             <a href="{{ route('admin.expenses.index') }}" class="btn btn-light">إلغاء</a>
             <button class="btn btn-primary" @disabled(! $hasActiveBranch || $categories->isEmpty())>
-                <i class="bi bi-save"></i> حفظ — بانتظار الاعتماد
+                <i class="bi bi-save"></i> حفظ المصروف
             </button>
         </div>
     </form>

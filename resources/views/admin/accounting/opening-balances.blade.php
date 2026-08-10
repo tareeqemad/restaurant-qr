@@ -7,7 +7,7 @@
     title="الأرصدة الافتتاحية"
     icon="bi-door-open"
     subtitle="ابدأ الدفاتر بأرصدة الصندوق والبنك والمخزون والذمم ورأس المال"
-    :crumbs="[['label' => 'القيود اليومية', 'url' => route('admin.accounting.journal')]]" />
+    :crumbs="[['label' => 'المحاسبة', 'url' => route('admin.accounting.index')]]" />
 
 <div class="alert alert-info d-flex align-items-start gap-3">
     <i class="bi bi-info-circle-fill fs-4 mt-1"></i>

@@ -6,113 +6,74 @@
 <x-admin.breadcrumb
     title="ميزان المراجعة"
     icon="bi-columns-gap"
-    subtitle="مطابقة إجمالي المدين والدائن لكل الحسابات المرحّلة"
-    :crumbs="[['label' => 'التقارير', 'url' => route('admin.reports.index')]]"
->
-    @if(auth()->user()?->hasPermission('chart_of_accounts.viewAny'))
-        {{-- Direct shortcut for the accountant: gives a second discovery
-             path so they don't have to dig through the sidebar to find
-             "شجرة الحسابات". --}}
-        <x-slot:actions>
-            <a href="{{ route('admin.accounts.index') }}" class="btn btn-outline-primary">
-                <i class="bi bi-diagram-3-fill"></i> إدارة شجرة الحسابات
-            </a>
-        </x-slot:actions>
-    @endif
-</x-admin.breadcrumb>
-
-{{-- Plain-language explainer — accountants of all backgrounds open this
-     page and the abstract "balanced/unbalanced" label means nothing
-     without context. Two sentences in clear Arabic save the support ping. --}}
-<div class="alert alert-info d-flex align-items-start gap-3 mb-3">
-    <i class="bi bi-info-circle-fill fs-4 mt-1"></i>
-    <div>
-        <strong class="d-block mb-1">شو وظيفة هذه الصفحة؟</strong>
-        هذا تقرير مراجعة محاسبية يثبت أن مجموع <strong>المدين</strong> = مجموع <strong>الدائن</strong> في كل
-        القيود اليومية. إذا الميزان <span class="text-success">متوازن</span> = الكتب سليمة محاسبياً.
-        لو بدك تشوف <strong>الأرباح/الخسائر</strong> أو <strong>دفتر الديون</strong> فاستخدم التقارير المخصصة بدلاً
-        من هذه الصفحة.
-    </div>
-</div>
+    subtitle="مراجعة المدين والدائن"
+    :crumbs="[['label' => 'المحاسبة', 'url' => route('admin.accounting.index')]]" />
 
 <div class="row g-3 mb-3">
-    <div class="col-md-3">
+    <div class="col-md-4">
         <div class="accounting-metric">
             <span>حسابات عليها حركة</span>
             <strong>{{ $activeAccountsCount }}</strong>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-4">
         <div class="accounting-metric">
             <span>إجمالي المدين</span>
             <strong>{{ \App\Helpers\Money::formatAccounting($totalBalanceDebit) }}</strong>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-4">
         <div class="accounting-metric">
             <span>إجمالي الدائن</span>
             <strong>{{ \App\Helpers\Money::formatAccounting($totalBalanceCredit) }}</strong>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="accounting-metric {{ $isBalanced ? 'is-balanced' : 'is-unbalanced' }}">
-            <span>حالة الميزان</span>
-            <strong>{{ $isBalanced ? 'متوازن' : 'غير متوازن' }}</strong>
-        </div>
-    </div>
 </div>
 
-<x-admin.data-panel title="ميزان المراجعة" icon="bi-columns-gap" :count="$accounts->count()">
-    <x-slot:filters>
+<div class="alert {{ $isBalanced ? 'alert-success' : 'alert-danger' }} d-flex align-items-center gap-2 py-2 mb-3">
+    <i class="bi {{ $isBalanced ? 'bi-check2-circle' : 'bi-exclamation-triangle' }}"></i>
+    <strong>{{ $isBalanced ? 'الميزان متوازن.' : 'يوجد فرق ويجب مراجعة القيود.' }}</strong>
+</div>
+
+@php($filtersActive = request()->hasAny(['from', 'to', 'show_empty']))
+<details class="card mb-3" @if($filtersActive) open @endif>
+    <summary class="card-header accounting-filter-summary">
+        <span><i class="bi bi-calendar3 me-2"></i>تغيير الفترة</span>
+        <small>اختياري</small>
+    </summary>
+    <div class="card-body">
         <form class="row g-2 align-items-end" method="GET">
             <div class="col-md-3">
-                <label class="form-label small text-muted fw-bold">من تاريخ</label>
+                <label class="form-label small text-muted fw-bold">من</label>
                 <input type="date" name="from" value="{{ $from }}" class="form-control">
             </div>
             <div class="col-md-3">
-                <label class="form-label small text-muted fw-bold">إلى تاريخ</label>
+                <label class="form-label small text-muted fw-bold">إلى</label>
                 <input type="date" name="to" value="{{ $to }}" class="form-control">
             </div>
             <div class="col-md-3 d-flex align-items-end">
                 <div class="form-check form-switch">
                     <input type="hidden" name="show_empty" value="0">
-                    <input type="checkbox" id="show_empty" name="show_empty" value="1" class="form-check-input"
-                           @checked($showEmpty)>
-                    <label for="show_empty" class="form-check-label fw-bold">إظهار الحسابات الفارغة</label>
+                    <input type="checkbox" id="show_empty" name="show_empty" value="1" class="form-check-input" @checked($showEmpty)>
+                    <label for="show_empty" class="form-check-label">الحسابات بلا حركة</label>
                 </div>
             </div>
             <div class="col-md-3 d-grid">
-                <button class="btn btn-primary">
-                    <i class="bi bi-search"></i> استعلام
-                </button>
+                <button class="btn btn-primary"><i class="bi bi-search"></i> عرض</button>
             </div>
             @if($hiddenZeroCount > 0 && ! $showEmpty)
-                <div class="col-12">
-                    <small class="text-muted">
-                        <i class="bi bi-eye-slash"></i>
-                        تم إخفاء <strong>{{ $hiddenZeroCount }}</strong> حساب بدون حركة في هذه الفترة.
-                        فعّل "إظهار الحسابات الفارغة" أعلاه لعرضها جميعاً.
-                    </small>
-                </div>
+                <div class="col-12"><small class="text-muted">تم إخفاء {{ $hiddenZeroCount }} حساباً بلا حركة.</small></div>
             @endif
         </form>
-    </x-slot:filters>
-
-    <div class="alert {{ $isBalanced ? 'alert-success' : 'alert-danger' }} d-flex align-items-center gap-2 mb-3" role="alert">
-        <i class="bi {{ $isBalanced ? 'bi-check2-circle' : 'bi-exclamation-triangle' }}"></i>
-        <div>
-            {{ $isBalanced ? 'الميزان متوازن، إجمالي الأرصدة المدينة يساوي إجمالي الأرصدة الدائنة.' : 'يوجد فرق في ميزان المراجعة ويحتاج تدقيق القيود.' }}
-        </div>
     </div>
+</details>
 
+<x-admin.data-panel title="الحسابات" icon="bi-columns-gap" :count="$accounts->count()">
     <div class="table-responsive">
         <table class="table align-middle accounting-trial-table mb-0">
             <thead class="bg-light">
                 <tr>
-                    <th>الكود</th>
                     <th>الحساب</th>
-                    <th>النوع</th>
-                    <th>طبيعته</th>
                     <th class="text-end">حركة مدينة</th>
                     <th class="text-end">حركة دائنة</th>
                     <th class="text-end">رصيد مدين</th>
@@ -121,22 +82,14 @@
             </thead>
             <tbody>
                 @forelse($accounts as $account)
-                    @php
-                        $hasMovement = ! $account->is_zero;
-                    @endphp
-                    <tr class="{{ $hasMovement ? '' : 'text-muted' }}">
-                        <td class="fw-bold text-primary">{{ $account->code }}</td>
-                        <td class="fw-bold">
-                            {{ $account->name }}
+                    <tr class="{{ $account->is_zero ? 'text-muted' : '' }}">
+                        <td>
+                            <strong class="text-primary">{{ $account->code }}</strong>
+                            <span class="fw-bold ms-1">{{ $account->name }}</span>
                             @if(! $account->is_active)
-                                <span class="badge bg-warning text-dark ms-1"
-                                      title="هذا الحساب معطّل من شجرة الحسابات لكن له حركة في هذه الفترة">
-                                    معطّل
-                                </span>
+                                <span class="badge bg-warning text-dark ms-1">معطّل</span>
                             @endif
                         </td>
-                        <td>{{ $typeLabels[$account->type] ?? $account->type }}</td>
-                        <td>{{ $normalBalanceLabels[$account->normal_balance] ?? $account->normal_balance }}</td>
                         <td class="text-end">{{ \App\Helpers\Money::formatAccounting($account->movement_debit) }}</td>
                         <td class="text-end">{{ \App\Helpers\Money::formatAccounting($account->movement_credit) }}</td>
                         <td class="text-end fw-bold">{{ \App\Helpers\Money::formatAccounting($account->balance_debit) }}</td>
@@ -144,7 +97,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="8" class="text-center text-muted py-4">
+                        <td colspan="5" class="text-center text-muted py-4">
                             <i class="bi bi-inbox fs-3 d-block mb-2"></i>
                             لا توجد حركات محاسبية في هذه الفترة.
                         </td>
@@ -153,7 +106,7 @@
             </tbody>
             <tfoot class="bg-light fw-bold">
                 <tr>
-                    <td colspan="4">المجموع</td>
+                    <td>المجموع</td>
                     <td class="text-end">{{ \App\Helpers\Money::formatAccounting($totalMovementDebit) }}</td>
                     <td class="text-end">{{ \App\Helpers\Money::formatAccounting($totalMovementCredit) }}</td>
                     <td class="text-end">{{ \App\Helpers\Money::formatAccounting($totalBalanceDebit) }}</td>
@@ -167,36 +120,29 @@
 @push('styles')
 <style>
 .accounting-metric {
-    border: 1px solid rgba(var(--primary-rgb), .12);
-    border-radius: 8px;
-    background: #fff;
-    padding: 1rem;
-    min-height: 92px;
+    min-height: 84px;
     display: grid;
     align-content: center;
     gap: .25rem;
+    padding: 1rem;
+    border: 1px solid rgba(var(--primary-rgb), .12);
+    border-radius: 8px;
+    background: #fff;
 }
-.accounting-metric span {
-    color: #64748b;
-    font-size: .82rem;
+.accounting-metric span { color: #64748b; font-size: .82rem; font-weight: 800; }
+.accounting-metric strong { color: #111827; font-size: 1.25rem; }
+.accounting-filter-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
     font-weight: 800;
+    list-style: none;
 }
-.accounting-metric strong {
-    color: #111827;
-    font-size: 1.35rem;
-}
-.accounting-metric.is-balanced {
-    border-color: rgba(16, 185, 129, .25);
-    background: rgba(16, 185, 129, .07);
-}
-.accounting-metric.is-unbalanced {
-    border-color: rgba(239, 68, 68, .25);
-    background: rgba(239, 68, 68, .07);
-}
+.accounting-filter-summary::-webkit-details-marker { display: none; }
+.accounting-filter-summary small { color: #64748b; font-weight: 500; }
 .accounting-trial-table th,
-.accounting-trial-table td {
-    white-space: nowrap;
-}
+.accounting-trial-table td { white-space: nowrap; }
 </style>
 @endpush
 @endsection
