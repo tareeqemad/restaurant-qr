@@ -2,7 +2,7 @@
 
 namespace App\Exceptions;
 
-use App\Models\User;
+use App\Models\Employee;
 
 /**
  * Thrown by `StaffMealService` when a charge would push the employee
@@ -18,7 +18,7 @@ use App\Models\User;
 class StaffMealLimitException extends \RuntimeException
 {
     public function __construct(
-        public readonly User $staff,
+        public readonly Employee $staff,
         public readonly string $limitType,    // 'monthly_allowance' | 'debt_ceiling'
         public readonly float $attempted,     // amount the user tried to charge
         public readonly float $headroom,      // how much room was left (negative = over)
@@ -36,8 +36,8 @@ class StaffMealLimitException extends \RuntimeException
 
         return $this->limitType === 'debt_ceiling'
             ? "تم رفض الطلب: يتجاوز الموظف «{$name}» سقف الدين المسموح. "
-                . "المتاح: {$headroomFmt} | المحاولة: {$attemptedFmt}."
+                ."المتاح: {$headroomFmt} | المحاولة: {$attemptedFmt}."
             : "تم رفض الطلب: يتجاوز الموظف «{$name}» بدله الشهري المسموح. "
-                . "المتاح: {$headroomFmt} | المحاولة: {$attemptedFmt}.";
+                ."المتاح: {$headroomFmt} | المحاولة: {$attemptedFmt}.";
     }
 }

@@ -3,9 +3,11 @@
 namespace App\Services;
 
 use App\Models\ActivityLog;
+use App\Models\Customer;
 use App\Models\Invoice;
 use App\Models\LoyaltyCustomer;
 use App\Models\LoyaltyTransaction;
+use App\Support\PhoneNumber;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -30,10 +32,17 @@ class LoyaltyService
     /** Find a customer by phone, or create a new (Bronze) record. */
     public function findOrCreate(string $phone, ?string $name = null, ?string $email = null): LoyaltyCustomer
     {
-        $phone = $this->normalizePhone($phone);
+        $phone = PhoneNumber::normalize($phone);
 
-        $customer = LoyaltyCustomer::where('phone', $phone)->first();
+        $matches = LoyaltyCustomer::withTrashed()
+            ->whereIn('phone', PhoneNumber::lookupVariants($phone))
+            ->get();
+        $customer = $matches->firstWhere('phone', $phone) ?? $matches->first();
         if ($customer) {
+            if ($customer->trashed()) $customer->restore();
+            if ($customer->phone !== $phone && ! LoyaltyCustomer::where('phone', $phone)->exists()) {
+                $customer->update(['phone' => $phone]);
+            }
             if ($name && !$customer->name)   $customer->update(['name' => $name]);
             if ($email && !$customer->email) $customer->update(['email' => $email]);
             return $customer;
@@ -49,10 +58,21 @@ class LoyaltyService
         ]);
     }
 
+    public function ensureForCustomer(Customer $customer): LoyaltyCustomer
+    {
+        $profile = $customer->loyaltyCustomer;
+        if (! $profile) {
+            $profile = $this->findOrCreate($customer->phone, $customer->name, $customer->email);
+            $customer->update(['loyalty_customer_id' => $profile->id]);
+        }
+
+        return $profile;
+    }
+
     /**
-     * Award points based on the invoice's paid total.
-     * Called from BillingService::addPayment when invoice becomes fully paid
-     * (or partially — we award on every successful payment).
+     * Award points once when the invoice becomes fully paid. Subsequent
+     * refunds, payment voids, and re-payments reconcile that same invoice
+     * ledger entry instead of earning duplicate points.
      *
      * Returns the transaction (or null if nothing to award).
      */
@@ -61,7 +81,17 @@ class LoyaltyService
         if ($paymentAmount <= 0) return null;
 
         return DB::transaction(function () use ($customer, $invoice, $paymentAmount, $userId) {
-            $customer = $customer->fresh()->lockForUpdate();
+            $existing = LoyaltyTransaction::query()
+                ->where('loyalty_customer_id', $customer->id)
+                ->where('invoice_id', $invoice->id)
+                ->where('type', 'earn')
+                ->first();
+            if ($existing) return $this->syncInvoicePoints($invoice, $userId);
+
+            $customer = LoyaltyCustomer::query()
+                ->whereKey($customer->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
             $earnRate = $customer->earnRate();
             $earned = (int) floor($paymentAmount * $earnRate);
@@ -70,6 +100,7 @@ class LoyaltyService
             $tx = LoyaltyTransaction::create([
                 'loyalty_customer_id' => $customer->id,
                 'invoice_id'          => $invoice->id,
+                'order_id'            => $invoice->order_id,
                 'type'                => 'earn',
                 'points'              => $earned,
                 'cash_value'          => $paymentAmount,
@@ -96,6 +127,100 @@ class LoyaltyService
                 "ربح {$earned} نقطة للعميل {$customer->phone}",
                 $tx
             );
+
+            return $tx;
+        });
+    }
+
+    public function awardPaidInvoice(Invoice $invoice, ?int $userId = null): ?LoyaltyTransaction
+    {
+        $invoice->loadMissing('customer.loyaltyCustomer');
+        if (! $invoice->customer || $invoice->status !== 'paid') {
+            return null;
+        }
+
+        $profile = $this->ensureForCustomer($invoice->customer);
+
+        return $this->awardPoints($profile, $invoice, min($invoice->netPaid(), $invoice->adjustedTotal()), $userId);
+    }
+
+    public function reverseForRefund(Invoice $invoice, float $refundAmount, ?int $userId = null): ?LoyaltyTransaction
+    {
+        return $refundAmount > 0 ? $this->syncInvoicePoints($invoice, $userId) : null;
+    }
+
+    public function reverseForPaymentVoid(Invoice $invoice, float $voidAmount, ?int $userId = null): ?LoyaltyTransaction
+    {
+        return $voidAmount > 0 ? $this->syncInvoicePoints($invoice, $userId) : null;
+    }
+
+    protected function syncInvoicePoints(Invoice $invoice, ?int $userId): ?LoyaltyTransaction
+    {
+        return DB::transaction(function () use ($invoice, $userId) {
+            $invoice = Invoice::withoutGlobalScope(\App\Models\Scopes\BranchScope::class)
+                ->whereKey($invoice->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $earn = LoyaltyTransaction::query()
+                ->where('invoice_id', $invoice->id)
+                ->where('type', 'earn')
+                ->lockForUpdate()
+                ->first();
+            if (! $earn) {
+                return null;
+            }
+
+            $profile = LoyaltyCustomer::query()->whereKey($earn->loyalty_customer_id)->lockForUpdate()->firstOrFail();
+            $adjustments = LoyaltyTransaction::query()
+                ->where('invoice_id', $invoice->id)
+                ->where('type', 'adjust')
+                ->where(function ($query) {
+                    $query->where('reason', 'like', 'مزامنة نقاط الفاتورة%')
+                        ->orWhere('reason', 'like', 'عكس نقاط استرداد%')
+                        ->orWhere('reason', 'like', 'عكس نقاط دفعة ملغاة%');
+                })
+                ->get();
+
+            $currentPoints = (int) $earn->points + (int) $adjustments->sum('points');
+            $earnedCash = max(0.01, (float) $earn->cash_value);
+            $desiredCash = min($earnedCash, $invoice->netPaid(), $invoice->adjustedTotal());
+            $desiredPoints = min((int) $earn->points, (int) floor(($desiredCash / $earnedCash) * (int) $earn->points));
+            $pointsDelta = $desiredPoints - $currentPoints;
+
+            $currentCash = $earnedCash + (float) $adjustments->sum(
+                fn (LoyaltyTransaction $tx) => $tx->points < 0 ? -(float) $tx->cash_value : (float) $tx->cash_value,
+            );
+            $cashDelta = round($desiredCash - $currentCash, 4);
+            if ($pointsDelta === 0 && abs($cashDelta) < 0.0001) {
+                return null;
+            }
+
+            if ($pointsDelta < 0) {
+                $pointsDelta = -min(abs($pointsDelta), (int) $profile->points_balance);
+            }
+            $tx = LoyaltyTransaction::create([
+                'loyalty_customer_id' => $profile->id,
+                'invoice_id' => $invoice->id,
+                'order_id' => $invoice->order_id,
+                'type' => 'adjust',
+                'points' => $pointsDelta,
+                'cash_value' => abs($cashDelta),
+                'reason' => 'مزامنة نقاط الفاتورة '.$invoice->number.' مع صافي التحصيل',
+                'user_id' => $userId,
+            ]);
+
+            if ($pointsDelta > 0) {
+                $profile->increment('points_balance', $pointsDelta);
+            } elseif ($pointsDelta < 0) {
+                $profile->decrement('points_balance', abs($pointsDelta));
+            }
+            if ($cashDelta > 0) {
+                $profile->increment('total_spent', $cashDelta);
+            } elseif ($cashDelta < 0) {
+                $profile->decrement('total_spent', min((float) $profile->total_spent, abs($cashDelta)));
+            }
+
+            $invoice->update(['loyalty_points_earned' => max(0, $desiredPoints)]);
 
             return $tx;
         });
@@ -209,12 +334,4 @@ class LoyaltyService
         return 'bronze';
     }
 
-    /** Simple phone normalization — strip spaces, hyphens, leading zeros */
-    protected function normalizePhone(string $phone): string
-    {
-        $stripped = preg_replace('/[^\d+]/', '', $phone);
-        // Keep "+" prefix; remove leading zero in local format
-        if (str_starts_with($stripped, '+')) return $stripped;
-        return ltrim($stripped, '0');
-    }
 }

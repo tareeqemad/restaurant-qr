@@ -24,6 +24,7 @@ class SupplierInvoiceItem extends Model
         'total',
         'received_qty',
         'received_total',
+        'received_base_total',
         'variance_qty',
         'variance_total',
         'notes',
@@ -37,6 +38,7 @@ class SupplierInvoiceItem extends Model
         'total' => 'decimal:4',
         'received_qty' => 'decimal:4',
         'received_total' => 'decimal:4',
+        'received_base_total' => 'decimal:4',
         'variance_qty' => 'decimal:4',
         'variance_total' => 'decimal:4',
     ];

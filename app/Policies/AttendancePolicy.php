@@ -15,7 +15,7 @@ class AttendancePolicy extends BasePolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->hasAnyRole(['admin', 'manager']);
+        return $user->hasPermission('attendance.viewAny');
     }
 
     public function view(User $user, Attendance $attendance): bool
@@ -26,18 +26,18 @@ class AttendancePolicy extends BasePolicy
 
     public function create(User $user): bool
     {
-        return $user->hasAnyRole(['admin', 'manager']);
+        return $user->hasPermission('attendance.create');
     }
 
     public function update(User $user, Attendance $attendance): bool
     {
-        return $user->hasAnyRole(['admin', 'manager'])
+        return $user->hasPermission('attendance.update')
             && $this->inUserBranch($user, $attendance);
     }
 
     public function delete(User $user, Attendance $attendance): bool
     {
-        return $user->isAdmin()
+        return $user->hasPermission('attendance.delete')
             && $this->inUserBranch($user, $attendance);
     }
 }

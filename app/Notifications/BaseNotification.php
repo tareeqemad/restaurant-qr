@@ -27,8 +27,6 @@ use Illuminate\Notifications\Notification;
  * 2) Channel defaults to 'database' only. We don't push to mail/broadcast
  *    here — the unified bell is the single inbox, and the polling refresh
  *    keeps the count fresh without needing a websocket connection.
- *    If you later add Reverb, override channels() in subclasses you want
- *    to broadcast (and make sure they implement toBroadcast()).
  */
 abstract class BaseNotification extends Notification
 {

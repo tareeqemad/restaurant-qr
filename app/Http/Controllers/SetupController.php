@@ -3,30 +3,45 @@
 namespace App\Http\Controllers;
 
 use App\Enums\UserRole;
+use App\Helpers\Brand;
 use App\Models\Branch;
+use App\Models\BusinessOwner;
 use App\Models\Currency;
+use App\Models\CustomerSalesTaxRate;
 use App\Models\FiscalYear;
 use App\Models\Setting;
+use App\Models\Station;
+use App\Models\StorageLocation;
 use App\Models\User;
 use App\Services\DemoResetService;
-use App\Services\ExchangeRateService;
+use App\Services\StaffSetupService;
 use App\Support\FirstRunSetup;
+use App\Support\PhoneNumber;
 use App\Support\RuntimeConfig;
-use App\Support\ThemePalette;
+use Carbon\Carbon;
 use Database\Seeders\SystemSeeder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\ValidationException;
-use Carbon\Carbon;
+use Inertia\Inertia;
 
 class SetupController extends Controller
 {
+    /** @var array<int,string> */
+    private const TEAM_ROLES = [
+        UserRole::Manager->value,
+        UserRole::Accountant->value,
+        UserRole::Waiter->value,
+        UserRole::Chef->value,
+        UserRole::Bartender->value,
+        UserRole::Cashier->value,
+    ];
+
     public function show(Request $request)
     {
         if (! FirstRunSetup::wizardAvailable()) {
@@ -37,21 +52,32 @@ class SetupController extends Controller
             return redirect()->route('login')->with('status', __('setup.auth_required'));
         }
 
-        $willResetDemoData = FirstRunSetup::willResetDemoData();
+        $isDemoTrial = FirstRunSetup::isDemoTrial();
+        $branch = $this->setupBranch();
 
-        return view('setup.show', [
-            'hasUsers' => FirstRunSetup::hasUsers(),
-            'hasBranches' => FirstRunSetup::hasBranches(),
-            'willResetDemoData' => $willResetDemoData,
-            'isDemoTrial' => FirstRunSetup::isDemoTrial(),
-            'profile' => config('market.profiles.'.config('market.profile'), []),
-            'currentProfile' => config('market.profile', 'palestine'),
-            'defaults' => $this->defaults($willResetDemoData),
+        Inertia::setRootView('inertia');
+
+        return Inertia::render('Setup/Show', [
+            'brand' => [
+                'name' => Brand::name(),
+                'logo' => Brand::logoUrl(),
+            ],
+            'mode' => $isDemoTrial ? 'demo' : 'fresh',
+            'defaults' => $this->visibleDefaults($request->user(), $branch, $isDemoTrial),
+            'summary' => $this->handoverSummary($branch),
+            'roles' => $this->teamRoleCards(),
+            'routes' => [
+                'store' => route('setup.store'),
+                'continueDemo' => $isDemoTrial && Auth::check() ? route('admin.dashboard') : route('login'),
+            ],
         ]);
     }
 
-    public function store(Request $request, DemoResetService $reset)
-    {
+    public function store(
+        Request $request,
+        DemoResetService $reset,
+        StaffSetupService $staffSetup,
+    ) {
         if (! FirstRunSetup::wizardAvailable()) {
             return $this->completedRedirect();
         }
@@ -60,289 +86,416 @@ class SetupController extends Controller
             abort(403);
         }
 
-        $willResetDemoData = FirstRunSetup::willResetDemoData();
-        $setupBranch = $willResetDemoData ? null : $this->setupBranch();
-        $data = $request->validate($this->rules($willResetDemoData, $setupBranch));
-        $data = $this->normalizeAccountingSetup($data);
-        $profile = $data['market_profile'];
-        $license = $this->licenseSettings();
+        $this->normalizePhones($request);
 
-        config(['market.profile' => $profile]);
+        $willResetDemoData = FirstRunSetup::willResetDemoData();
+        $setupBranch = $this->setupBranch();
+        $data = $request->validate($this->rules($willResetDemoData, $setupBranch, $request->user()));
+        $actor = $request->user();
 
         if ($willResetDemoData) {
+            abort_unless($setupBranch, 422, 'تعذر تحديد فرع المنيو الذي سيُحفظ أثناء التجهيز.');
             $this->clearUploadedBrandAssets();
-            $reset->reset(null, wipeBusinessReferenceData: true);
+            $reset->reset(
+                keepUser: $actor,
+                wipeBusinessReferenceData: true,
+                preserveBranchId: $setupBranch->id,
+            );
             Setting::query()->delete();
             Cache::flush();
         }
 
         Artisan::call('db:seed', ['--class' => SystemSeeder::class, '--force' => true]);
 
-        $user = DB::transaction(function () use ($data, $request, $license) {
-            $this->putSetting('market_profile', $data['market_profile'], 'system');
+        [$owner, $credentials] = DB::transaction(function () use (
+            $data,
+            $request,
+            $actor,
+            $setupBranch,
+            $willResetDemoData,
+            $staffSetup,
+        ) {
+            $this->writeCleanSettings($data, $request);
 
-            $this->putSetting('site_name', $data['restaurant_name'], 'general');
-            $this->putOptionalSetting('legal_name', $data['legal_name'] ?? null, 'general');
-            $this->putOptionalSetting('tax_number', $data['tax_number'] ?? null, 'general');
-            $this->putOptionalSetting('receipt_footer', $data['receipt_footer'] ?? null, 'billing');
-            $this->putSetting('currency_symbol', $data['currency_symbol'], 'billing');
-            $this->putSetting('sales_currency', $data['sales_currency'], 'billing');
-            $this->putSetting('accounting_base_currency', $data['accounting_base_currency'], 'accounting');
-            $this->putSetting('accounting_currency_symbol', $data['accounting_currency_symbol'], 'accounting');
-            $this->putSetting('sales_to_accounting_rate', $data['sales_to_accounting_rate'], 'accounting', 'float');
-            $this->putSetting('fiscal_year_start_month', $data['fiscal_year_start_month'], 'accounting', 'int');
-            $this->putSetting('fiscal_year_start_day', $data['fiscal_year_start_day'], 'accounting', 'int');
-            $this->syncCurrencies($data);
-            $this->putSetting('tax_enabled', (bool) ($data['tax_enabled'] ?? false), 'billing', 'bool');
-            $this->putSetting('tax_rate', $data['tax_rate'], 'billing', 'float');
-            $this->putSetting('customer_tax_display', $data['customer_tax_display'], 'billing');
-            $this->putSetting('service_enabled', (bool) ($data['service_enabled'] ?? false), 'billing', 'bool');
-            $this->putSetting('service_rate', $data['service_rate'], 'billing', 'float');
+            $branch = $willResetDemoData
+                ? Branch::withoutGlobalScopes()->findOrFail($setupBranch->id)
+                : new Branch;
 
-            foreach (['theme_primary', 'theme_dark', 'theme_header', 'theme_accent', 'theme_menu'] as $key) {
-                $this->putSetting($key, $data[$key], 'theme');
-            }
-            $this->putSetting('theme_header_style', $data['theme_header_style'], 'theme');
-            $this->putSetting('theme_menu_style', $data['theme_menu_style'], 'theme');
-
-            foreach (['brand_logo', 'brand_favicon'] as $field) {
-                if ($request->hasFile($field)) {
-                    $this->putSetting($field, $this->storeBrandAsset($request, $field), 'brand');
-                }
-            }
-
-            $this->putOptionalSetting('menu_base_url', $data['menu_base_url'] ?? null, 'connectivity');
-            $this->putSetting('strict_stock', (bool) ($data['strict_stock'] ?? false), 'inventory', 'bool');
-            $this->putSetting('inventory_deduction_stage', $data['inventory_deduction_stage'], 'inventory');
-            $this->putSetting('customer_cancel_window_seconds', $data['customer_cancel_window_seconds'], 'customer', 'int');
-            $this->putSetting('session_ttl_minutes', $data['session_ttl_minutes'], 'customer', 'int');
-
-            $this->putSetting('sync_enabled', (bool) ($data['sync_enabled'] ?? false), 'sync', 'bool');
-            $this->putSetting('sync_role', $data['sync_role'], 'sync');
-            $this->putOptionalSetting('sync_cloud_url', $data['sync_cloud_url'] ?? null, 'sync');
-            $this->putOptionalSetting('sync_token', $data['sync_token'] ?? null, 'sync');
-
-            $this->putSetting('license_enabled', $license['enabled'], 'license', 'bool');
-            $this->putSetting('license_role', $license['role'], 'license');
-            $this->putOptionalSetting('license_cloud_url', $license['cloud_url'], 'license');
-            $this->putOptionalSetting('license_key', $license['key'], 'license');
-
-            $branchPayload = [
+            $branch->fill([
                 'code' => $data['branch_code'],
                 'name' => $data['branch_name'],
-                'name_en' => $data['branch_name_en'] ?? null,
-                'phone' => $data['branch_phone'] ?? null,
-                'email' => $data['branch_email'] ?? null,
-                'city' => $data['branch_city'] ?? null,
-                'address' => $data['branch_address'] ?? null,
+                'phone' => $data['branch_phone'] ?: null,
+                'email' => null,
+                'city' => $data['branch_city'] ?: null,
+                'address' => $data['branch_address'] ?: null,
                 'is_active' => true,
                 'display_order' => 1,
-                'settings' => [
-                    'delivery_estimated_minutes' => (int) $data['delivery_estimated_minutes'],
-                    'delivery_fee' => (float) $data['delivery_fee'],
-                    'prep_buffer_minutes' => (int) $data['prep_buffer_minutes'],
+                'settings' => ['prep_buffer_minutes' => 5],
+            ])->save();
+
+            $branch->legalProfile()->updateOrCreate(
+                ['branch_id' => $branch->id],
+                [
+                    'registered_name' => $data['legal_name'] ?: null,
+                    'tax_number' => $data['tax_number'] ?: null,
+                    'commercial_registration_number' => $data['commercial_registration_number'] ?: null,
+                    'municipal_license_number' => $data['municipal_license_number'] ?: null,
+                    'invoice_phone' => $data['branch_phone'] ?: null,
+                    'invoice_address' => $data['branch_address'] ?: null,
+                    'created_by_user_id' => $actor?->id,
+                    'updated_by_user_id' => $actor?->id,
                 ],
-            ];
+            );
 
-            $branch = Branch::create($branchPayload);
-            $this->createInitialFiscalYear($branch, $data);
-            $syncBranchUuid = trim((string) ($data['sync_branch_uuid'] ?? '')) ?: (string) ($branch->uuid ?? '');
-            $this->putOptionalSetting('sync_branch_uuid', $syncBranchUuid, 'sync');
-
-            $createdUser = User::create([
-                'name' => $data['admin_name'],
-                'username' => $data['admin_username'],
-                'email' => $data['admin_email'] ?? null,
-                'phone' => $data['admin_phone'] ?? null,
-                'role' => UserRole::SuperAdmin->value,
-                'status' => 'active',
-                'password' => Hash::make($data['admin_password']),
+            $businessOwner = BusinessOwner::create([
+                'owner_type' => $data['business_owner_type'],
+                'name' => $data['business_owner_name'],
+                'national_id' => $data['business_owner_national_id'] ?: null,
+                'tax_number' => $data['tax_number'] ?: null,
+                'phone' => $data['business_owner_phone'] ?: null,
+                'is_active' => true,
+                'created_by_user_id' => $actor?->id,
+            ]);
+            $branch->owners()->attach($businessOwner->id, [
+                'uuid' => (string) Str::ulid(),
+                'ownership_percentage' => $data['business_owner_percentage'],
+                'title' => $data['business_owner_type'] === 'company' ? 'الجهة المالكة' : 'مالك',
+                'is_primary' => true,
+                'is_authorized_signatory' => true,
+                'starts_on' => now()->toDateString(),
             ]);
 
-            $this->putSetting('setup_completed', true, 'system', 'bool');
-            $this->putSetting('setup_completed_at', now()->toISOString(), 'system');
+            $this->ensureBranchSkeleton($branch);
+            $this->createInitialFiscalYear($branch);
+
+            $owner = $actor ?: new User;
+            $owner->fill([
+                'name' => $data['admin_name'],
+                'username' => $data['admin_username'],
+                'email' => $data['admin_email'] ?: null,
+                'phone' => $data['admin_phone'] ?: null,
+                'role' => UserRole::SuperAdmin->value,
+                'station_id' => null,
+                'status' => 'active',
+                'password' => $data['admin_password'],
+            ]);
+            $owner->deleted_at = null;
+            $owner->save();
+            $owner->branches()->sync([
+                $branch->id => ['is_primary' => true, 'joined_at' => now()],
+            ]);
 
             session(['active_branch_id' => $branch->id]);
 
-            return $createdUser;
+            $credentials = [];
+            foreach ($data['staff'] ?? [] as $member) {
+                $created = $staffSetup->create([
+                    'name' => $member['name'],
+                    'phone' => $member['phone'] ?: null,
+                    'role' => $member['role'],
+                    'branch_id' => $branch->id,
+                ]);
+                $credentials[] = [
+                    'name' => $created['user']->name,
+                    'role' => UserRole::from($created['user']->role)->label(),
+                    'username' => $created['user']->username,
+                    'password' => $created['password'],
+                ];
+            }
+
+            Setting::put('setup_completed', true, 'system', 'bool');
+            Setting::put('setup_completed_at', now()->toISOString(), 'system');
+
+            return [$owner, $credentials];
         });
 
         RuntimeConfig::apply();
+        Auth::login($owner);
+        $request->session()->regenerate();
 
-        if ($user) {
-            Auth::login($user);
-            $request->session()->regenerate();
-        }
-
-        return redirect()->route('admin.dashboard')->with('success', __('setup.completed_notice'));
+        return redirect()
+            ->route('setup.complete')
+            ->with('setup_credentials', $credentials);
     }
 
-    private function rules(bool $willResetDemoData, ?Branch $setupBranch): array
+    public function complete(Request $request)
     {
-        $configuredProfile = config('market.profile', 'palestine');
-
-        $branchCodeRules = ['required', 'alpha_dash', 'max:32'];
-        if (! $willResetDemoData) {
-            $branchCodeRules[] = Rule::unique('branches', 'code')->ignore($setupBranch?->id);
+        if (! Auth::check() || ! FirstRunSetup::completed()) {
+            return redirect()->route('login');
         }
 
-        $usernameRules = ['required', 'alpha_dash', 'max:50'];
-        $emailRules = ['nullable', 'email', 'max:120'];
-        if (! $willResetDemoData) {
-            $usernameRules[] = Rule::unique('users', 'username');
-            $emailRules[] = Rule::unique('users', 'email');
+        if (! $request->session()->has('setup_credentials')) {
+            return redirect()->route('admin.dashboard');
         }
 
-        $rules = [
-            'market_profile' => ['required', Rule::in([$configuredProfile])],
+        Inertia::setRootView('inertia');
+
+        return Inertia::render('Setup/Complete', [
+            'brand' => ['name' => Brand::name(), 'logo' => Brand::logoUrl()],
+            'owner' => ['name' => $request->user()->name, 'username' => $request->user()->username],
+            'credentials' => $request->session()->get('setup_credentials', []),
+            'dashboardUrl' => route('admin.dashboard'),
+        ]);
+    }
+
+    private function rules(bool $willResetDemoData, ?Branch $setupBranch, ?User $actor): array
+    {
+        $branchCode = ['required', 'alpha_dash', 'max:32'];
+        $username = ['required', 'alpha_dash', 'max:50'];
+        $email = ['nullable', 'email', 'max:120'];
+
+        if ($willResetDemoData) {
+            $branchCode[] = Rule::unique('branches', 'code')->ignore($setupBranch?->id);
+            $username[] = Rule::unique('users', 'username')->ignore($actor?->id);
+            $email[] = Rule::unique('users', 'email')->ignore($actor?->id);
+        } else {
+            $branchCode[] = Rule::unique('branches', 'code');
+            $username[] = Rule::unique('users', 'username');
+            $email[] = Rule::unique('users', 'email');
+        }
+
+        return [
             'restaurant_name' => ['required', 'string', 'max:120'],
             'legal_name' => ['nullable', 'string', 'max:160'],
             'tax_number' => ['nullable', 'string', 'max:80'],
+            'commercial_registration_number' => ['nullable', 'string', 'max:100'],
+            'municipal_license_number' => ['nullable', 'string', 'max:100'],
             'receipt_footer' => ['nullable', 'string', 'max:500'],
-            'currency_symbol' => ['required', 'string', 'max:10'],
-            'sales_currency' => ['required', 'string', 'regex:/^[A-Za-z]{3}$/'],
-            'accounting_base_currency' => ['required', 'string', 'regex:/^[A-Za-z]{3}$/'],
-            'accounting_currency_symbol' => ['required', 'string', 'max:10'],
-            'sales_to_accounting_rate' => ['required', 'numeric', 'min:0.000001', 'max:999999'],
-            'fiscal_year_start_month' => ['required', 'integer', 'min:1', 'max:12'],
-            'fiscal_year_start_day' => ['required', 'integer', 'min:1', 'max:31'],
-            'tax_enabled' => ['sometimes', 'boolean'],
-            'tax_rate' => ['required', 'numeric', 'min:0', 'max:100'],
-            'customer_tax_display' => ['required', 'in:exclusive,inclusive'],
-            'service_enabled' => ['sometimes', 'boolean'],
-            'service_rate' => ['required', 'numeric', 'min:0', 'max:100'],
-            'theme_primary' => ['required', 'regex:/^#[0-9a-fA-F]{6}$/'],
-            'theme_dark' => ['required', 'regex:/^#[0-9a-fA-F]{6}$/'],
-            'theme_header' => ['required', 'regex:/^#[0-9a-fA-F]{6}$/'],
-            'theme_accent' => ['required', 'regex:/^#[0-9a-fA-F]{6}$/'],
-            'theme_menu' => ['required', 'regex:/^#[0-9a-fA-F]{6}$/'],
-            'theme_header_style' => ['required', 'in:light,dark,color'],
-            'theme_menu_style' => ['required', 'in:light,dark,brand'],
             'brand_logo' => ['nullable', 'image', 'mimes:png,jpg,jpeg,webp,svg', 'max:2048'],
             'brand_favicon' => ['nullable', 'image', 'mimes:png,ico,jpg,webp,svg', 'max:512'],
-            'branch_code' => $branchCodeRules,
+            'branch_code' => $branchCode,
             'branch_name' => ['required', 'string', 'max:120'],
-            'branch_name_en' => ['nullable', 'string', 'max:120'],
-            'branch_phone' => ['nullable', 'string', 'max:50'],
-            'branch_email' => ['nullable', 'email', 'max:120'],
+            'branch_phone' => ['nullable', 'string', 'max:20'],
             'branch_city' => ['nullable', 'string', 'max:80'],
             'branch_address' => ['nullable', 'string', 'max:500'],
-            'delivery_estimated_minutes' => ['required', 'integer', 'min:0', 'max:240'],
-            'delivery_fee' => ['required', 'numeric', 'min:0', 'max:9999'],
-            'prep_buffer_minutes' => ['required', 'integer', 'min:0', 'max:180'],
-            'menu_base_url' => ['nullable', 'url', 'max:255'],
-            'strict_stock' => ['sometimes', 'boolean'],
-            'inventory_deduction_stage' => ['required', 'in:approve,preparing,ready,served'],
-            'customer_cancel_window_seconds' => ['required', 'integer', 'min:0', 'max:900'],
-            'session_ttl_minutes' => ['required', 'integer', 'min:30', 'max:1440'],
-            'sync_enabled' => ['sometimes', 'boolean'],
-            'sync_role' => ['required', 'in:standalone,branch,cloud'],
-            'sync_cloud_url' => ['nullable', 'url', 'max:255'],
-            'sync_token' => ['nullable', 'string', 'max:255'],
-            'sync_branch_uuid' => ['nullable', 'string', 'max:80'],
-            'admin_name' => ['required', 'string', 'max:120'],
-            'admin_username' => $usernameRules,
-            'admin_email' => $emailRules,
-            'admin_phone' => ['nullable', 'string', 'max:50'],
+            'business_owner_type' => ['required', Rule::in(['person', 'company'])],
+            'business_owner_name' => ['required', 'string', 'min:2', 'max:191'],
+            'business_owner_national_id' => ['nullable', 'string', 'max:80'],
+            'business_owner_phone' => ['nullable', 'string', 'size:10', 'regex:/^(?:056|059)\d{7}$/'],
+            'business_owner_percentage' => ['required', 'numeric', 'gt:0', 'max:100'],
+            'admin_name' => ['required', 'string', 'min:2', 'max:120'],
+            'admin_username' => $username,
+            'admin_email' => $email,
+            'admin_phone' => ['nullable', 'string', 'size:10', 'regex:/^(?:056|059)\d{7}$/'],
             'admin_password' => ['required', 'string', 'min:8', 'confirmed'],
-        ];
-
-        return $rules;
-    }
-
-    private function defaults(bool $willResetDemoData = false): array
-    {
-        $isUs = config('market.profile') === 'us';
-        $branch = $willResetDemoData ? null : $this->setupBranch();
-        $themeDefaults = config('restaurant.theme', []);
-        $license = $this->licenseSettings();
-        $themePrimary = $themeDefaults['primary'] ?? '#164c37';
-        $themeDark = $themeDefaults['dark'] ?? '#0f2d22';
-        $themeHeader = $themeDefaults['header'] ?? $themePrimary;
-        $themeAccent = $themeDefaults['accent'] ?? '#b97818';
-        $themeMenu = $themeDefaults['menu'] ?? '#f7f8f5';
-        $defaultCurrency = strtoupper((string) config('restaurant.currency', $isUs ? 'USD' : 'ILS'));
-
-        return [
-            'restaurant_name' => config('restaurant.name', $isUs ? __('setup.defaults.restaurant_us') : __('setup.defaults.restaurant_palestine')),
-            'receipt_footer' => Setting::get('receipt_footer'),
-            'currency_symbol' => config('restaurant.currency_symbol', $isUs ? '$' : '₪'),
-            'sales_currency' => Setting::get('sales_currency', $defaultCurrency),
-            'accounting_base_currency' => Setting::get('accounting_base_currency', $defaultCurrency),
-            'accounting_currency_symbol' => Setting::get('accounting_currency_symbol', $this->currencySymbolForCode($defaultCurrency, config('restaurant.currency_symbol', $isUs ? '$' : 'â‚ھ'))),
-            'sales_to_accounting_rate' => Setting::get('sales_to_accounting_rate', 1),
-            'fiscal_year_start_month' => Setting::get('fiscal_year_start_month', 1),
-            'fiscal_year_start_day' => Setting::get('fiscal_year_start_day', 1),
-            'tax_rate' => config('restaurant.tax.rate', $isUs ? 0 : 16),
-            'tax_enabled' => config('restaurant.tax.enabled', true),
-            'service_rate' => config('restaurant.service_charge.rate', $isUs ? 0 : 10),
-            'service_enabled' => config('restaurant.service_charge.enabled', false),
-            'theme_primary' => ThemePalette::normalizeHex(Setting::get('theme_primary', $themePrimary), $themePrimary),
-            'theme_dark' => ThemePalette::normalizeHex(Setting::get('theme_dark', $themeDark), $themeDark),
-            'theme_header' => ThemePalette::normalizeHex(Setting::get('theme_header', $themeHeader), $themeHeader),
-            'theme_accent' => ThemePalette::normalizeHex(Setting::get('theme_accent', $themeAccent), $themeAccent),
-            'theme_menu' => ThemePalette::normalizeHex(Setting::get('theme_menu', $themeMenu), $themeMenu),
-            'theme_header_style' => Setting::get('theme_header_style', $themeDefaults['header_style'] ?? 'color'),
-            'theme_menu_style' => Setting::get('theme_menu_style', $themeDefaults['menu_style'] ?? 'brand'),
-            'branch_code' => $branch?->code ?? 'main',
-            'branch_name' => $branch?->name ?? ($isUs ? __('setup.defaults.branch_us') : __('setup.defaults.branch_palestine')),
-            'branch_name_en' => $branch?->name_en ?? 'Main Branch',
-            'branch_phone' => $branch?->phone,
-            'branch_email' => $branch?->email,
-            'branch_city' => $branch?->city,
-            'branch_address' => $branch?->address,
-            'delivery_estimated_minutes' => $branch?->deliveryMinutes() ?? 30,
-            'delivery_fee' => $branch?->deliveryFee() ?? 0,
-            'prep_buffer_minutes' => $branch?->prepBufferMinutes() ?? 5,
-            'menu_base_url' => config('restaurant.menu_base_url'),
-            'inventory_deduction_stage' => config('restaurant.inventory.deduction_stage', 'approve'),
-            'customer_cancel_window_seconds' => config('restaurant.order.customer_cancel_window_seconds', 120),
-            'session_ttl_minutes' => config('restaurant.order.session_ttl_minutes', 240),
-            'sync_role' => config('sync.role', 'standalone'),
-            'sync_enabled' => (bool) config('sync.enabled', false),
-            'sync_cloud_url' => config('sync.cloud_url'),
-            'sync_token' => config('sync.token'),
-            'sync_branch_uuid' => config('sync.branch_uuid'),
-            'license_role' => $license['role'],
-            'license_enabled' => $license['enabled'],
-            'license_cloud_url' => $license['cloud_url'],
-            'license_key' => $license['key'],
+            'staff' => ['sometimes', 'array', 'max:12'],
+            'staff.*.name' => ['required', 'string', 'min:2', 'max:120'],
+            'staff.*.phone' => ['nullable', 'string', 'size:10', 'regex:/^(?:056|059)\d{7}$/'],
+            'staff.*.role' => ['required', Rule::in(self::TEAM_ROLES)],
+            'confirm_reset' => [$willResetDemoData ? 'accepted' : 'nullable'],
         ];
     }
 
-    private function normalizeAccountingSetup(array $data): array
+    private function normalizePhones(Request $request): void
     {
-        $data['sales_currency'] = strtoupper(trim((string) $data['sales_currency']));
-        $data['accounting_base_currency'] = strtoupper(trim((string) $data['accounting_base_currency']));
-        $data['sales_to_accounting_rate'] = (float) $data['sales_to_accounting_rate'];
-        $data['fiscal_year_start_month'] = (int) $data['fiscal_year_start_month'];
-        $data['fiscal_year_start_day'] = (int) $data['fiscal_year_start_day'];
+        $staff = collect($request->input('staff', []))
+            ->filter(fn ($member) => filled($member['name'] ?? null))
+            ->map(function ($member) {
+                $member['name'] = trim((string) ($member['name'] ?? ''));
+                $member['phone'] = filled($member['phone'] ?? null)
+                    ? PhoneNumber::normalize($member['phone'])
+                    : null;
 
-        if ($data['sales_currency'] === $data['accounting_base_currency']) {
-            $data['sales_to_accounting_rate'] = 1.0;
-            $data['accounting_currency_symbol'] = $data['currency_symbol'];
+                return $member;
+            })
+            ->values()
+            ->all();
+
+        $request->merge([
+            'business_owner_phone' => $request->filled('business_owner_phone')
+                ? PhoneNumber::normalize($request->input('business_owner_phone'))
+                : null,
+            'admin_phone' => $request->filled('admin_phone')
+                ? PhoneNumber::normalize($request->input('admin_phone'))
+                : null,
+            'staff' => $staff,
+        ]);
+    }
+
+    private function writeCleanSettings(array $data, Request $request): void
+    {
+        Setting::put('site_name', $data['restaurant_name'], 'general');
+        $this->putOptionalSetting('legal_name', $data['legal_name'] ?? null, 'general');
+        $this->putOptionalSetting('tax_number', $data['tax_number'] ?? null, 'general');
+        $this->putOptionalSetting('receipt_footer', $data['receipt_footer'] ?? null, 'billing');
+
+        $currency = [
+            'sales_currency' => 'ILS',
+            'accounting_base_currency' => 'ILS',
+            'currency_symbol' => '₪',
+            'accounting_currency_symbol' => '₪',
+            'sales_to_accounting_rate' => 1.0,
+        ];
+        Setting::put('currency_symbol', '₪', 'billing');
+        Setting::put('sales_currency', 'ILS', 'billing');
+        Setting::put('accounting_base_currency', 'ILS', 'accounting');
+        Setting::put('accounting_currency_symbol', '₪', 'accounting');
+        Setting::put('sales_to_accounting_rate', 1.0, 'accounting', 'float');
+        Setting::put('fiscal_year_start_month', 1, 'accounting', 'int');
+        Setting::put('fiscal_year_start_day', 1, 'accounting', 'int');
+        $this->syncCurrencies($currency);
+
+        Setting::put('tax_enabled', false, 'billing', 'bool');
+        Setting::put('tax_rate', 0, 'billing', 'float');
+        Setting::put('customer_tax_display', 'exclusive', 'billing');
+        Setting::put('service_enabled', false, 'billing', 'bool');
+        Setting::put('service_rate', 0, 'billing', 'float');
+        CustomerSalesTaxRate::updateOrCreate(
+            ['effective_from' => now()->toDateString()],
+            ['enabled' => false, 'rate' => 0, 'created_by' => null],
+        );
+
+        $theme = config('restaurant.theme', []);
+        foreach ([
+            'theme_primary' => $theme['primary'] ?? '#1f6b50',
+            'theme_dark' => $theme['dark'] ?? '#123f31',
+            'theme_header' => $theme['header'] ?? '#ffffff',
+            'theme_accent' => $theme['accent'] ?? '#b97818',
+            'theme_menu' => $theme['menu'] ?? '#ffffff',
+            'theme_header_style' => $theme['header_style'] ?? 'color',
+            'theme_menu_style' => $theme['menu_style'] ?? 'brand',
+        ] as $key => $value) {
+            Setting::put($key, $value, 'theme');
         }
 
-        if (! checkdate($data['fiscal_year_start_month'], $data['fiscal_year_start_day'], 2025)) {
-            throw ValidationException::withMessages([
-                'fiscal_year_start_day' => __('setup.validation.invalid_fiscal_year_start'),
+        foreach (['brand_logo', 'brand_favicon'] as $field) {
+            if ($request->hasFile($field)) {
+                Setting::put($field, $this->storeBrandAsset($request, $field), 'brand');
+            }
+        }
+
+        Setting::put('strict_stock', true, 'inventory', 'bool');
+        Setting::put('inventory_deduction_stage', 'preparing', 'inventory');
+        Setting::put('customer_cancel_window_seconds', 120, 'customer', 'int');
+        Setting::put('session_ttl_minutes', 240, 'customer', 'int');
+        Setting::put('sync_enabled', false, 'sync', 'bool');
+        Setting::put('sync_role', 'standalone', 'sync');
+    }
+
+    private function visibleDefaults(?User $user, ?Branch $branch, bool $isDemoTrial): array
+    {
+        return [
+            'restaurant_name' => Setting::get('site_name', config('restaurant.name', 'مطعمي')),
+            'legal_name' => Setting::get('legal_name', ''),
+            'tax_number' => Setting::get('tax_number', ''),
+            'commercial_registration_number' => $branch?->legalProfile?->commercial_registration_number ?? '',
+            'municipal_license_number' => $branch?->legalProfile?->municipal_license_number ?? '',
+            'receipt_footer' => Setting::get('receipt_footer', 'شكراً لزيارتكم'),
+            'branch_code' => $branch?->code ?? 'main',
+            'branch_name' => $branch?->name ?? 'الفرع الرئيسي',
+            'branch_phone' => $branch?->phone ?? '',
+            'branch_city' => $branch?->city ?? '',
+            'branch_address' => $branch?->address ?? '',
+            'business_owner_type' => 'person',
+            'business_owner_name' => $branch?->owners()->orderByDesc('branch_ownerships.is_primary')->value('business_owners.name') ?? '',
+            'business_owner_national_id' => '',
+            'business_owner_phone' => '',
+            'business_owner_percentage' => 100,
+            // Demo identities are disposable. Never let their name, email or
+            // mobile silently become the owner's real production identity.
+            'admin_name' => $isDemoTrial ? '' : ($user?->name ?? ''),
+            'admin_username' => $user?->username ?? 'admin',
+            'admin_email' => $isDemoTrial ? '' : ($user?->email ?? ''),
+            'admin_phone' => $isDemoTrial ? '' : ($user?->phone ?? ''),
+        ];
+    }
+
+    private function handoverSummary(?Branch $branch): array
+    {
+        $branchId = $branch?->id;
+        $itemIds = $branchId
+            ? DB::table('menu_items')->where('branch_id', $branchId)->pluck('id')
+            : collect();
+
+        return [
+            'branchName' => $branch?->name,
+            'categories' => $branchId ? DB::table('categories')->where('branch_id', $branchId)->count() : 0,
+            'items' => $itemIds->count(),
+            'ingredients' => DB::table('ingredients')->count(),
+            'recipes' => $itemIds->isEmpty() ? 0 : DB::table('recipe_items')->whereIn('menu_item_id', $itemIds)->count(),
+            'orders' => DB::table('orders')->count(),
+            'invoices' => DB::table('invoices')->count(),
+            'customers' => DB::table('customers')->count(),
+            'staff' => DB::table('users')->count(),
+            'branches' => DB::table('branches')->count(),
+        ];
+    }
+
+    /** @return array<int,array{value:string,label:string,description:string,icon:string}> */
+    private function teamRoleCards(): array
+    {
+        return collect(self::TEAM_ROLES)->map(function (string $value) {
+            $role = UserRole::from($value);
+
+            return [
+                'value' => $value,
+                'label' => $role->label(),
+                'description' => match ($role) {
+                    UserRole::Manager => 'يتابع الفرع والموظفين والتشغيل.',
+                    UserRole::Accountant => 'يدير الدفتر والقيود والتقارير.',
+                    UserRole::Waiter => 'يتابع الطاولات والطلبات والتسليم.',
+                    UserRole::Chef => 'يستلم طلبات المطبخ ويجهزها.',
+                    UserRole::Bartender => 'يستلم طلبات البار ويجهزها.',
+                    UserRole::Cashier => 'يحصّل الفواتير ويسجل الدفعات.',
+                    default => '',
+                },
+                'icon' => match ($role) {
+                    UserRole::Manager => 'bi-person-badge',
+                    UserRole::Accountant => 'bi-calculator',
+                    UserRole::Waiter => 'bi-person-check',
+                    UserRole::Chef => 'bi-egg-fried',
+                    UserRole::Bartender => 'bi-cup-straw',
+                    UserRole::Cashier => 'bi-receipt-cutoff',
+                    default => 'bi-person',
+                },
+            ];
+        })->all();
+    }
+
+    private function ensureBranchSkeleton(Branch $branch): void
+    {
+        $location = StorageLocation::withoutGlobalScopes()
+            ->where('branch_id', $branch->id)
+            ->orderByDesc('is_default')
+            ->first();
+
+        if (! $location) {
+            $location = StorageLocation::create([
+                'branch_id' => $branch->id,
+                'code' => 'main-'.$branch->id,
+                'name' => 'المخزن الرئيسي',
+                'icon' => 'bi-box-seam',
+                'is_default' => true,
+                'active' => true,
+                'display_order' => 0,
             ]);
         }
 
-        return $data;
+        foreach ([
+            ['code' => 'kitchen', 'name' => 'المطبخ', 'icon' => 'bi-egg-fried', 'order' => 1],
+            ['code' => 'bar', 'name' => 'البار', 'icon' => 'bi-cup-straw', 'order' => 2],
+        ] as $station) {
+            Station::withoutGlobalScopes()->firstOrCreate(
+                ['branch_id' => $branch->id, 'code' => $station['code']],
+                [
+                    'name' => $station['name'],
+                    'color' => '#1f6b50',
+                    'icon' => $station['icon'],
+                    'storage_location_id' => $location->id,
+                    'display_order' => $station['order'],
+                    'active' => true,
+                ],
+            );
+        }
     }
 
     private function syncCurrencies(array $data): void
     {
-        $baseCode = $data['accounting_base_currency'];
-        $salesCode = $data['sales_currency'];
-
         Currency::query()->update(['is_base' => false]);
-
         Currency::updateOrCreate(
-            ['code' => $baseCode],
+            ['code' => $data['accounting_base_currency']],
             [
-                'name' => $this->currencyName($baseCode),
+                'name' => 'Israeli Shekel',
                 'symbol' => $data['accounting_currency_symbol'],
                 'rate_to_base' => 1,
                 'is_base' => true,
@@ -352,51 +505,28 @@ class SetupController extends Controller
             ],
         );
 
-        if ($salesCode !== $baseCode) {
-            Currency::updateOrCreate(
-                ['code' => $salesCode],
-                [
-                    'name' => $this->currencyName($salesCode),
-                    'symbol' => $data['currency_symbol'],
-                    'rate_to_base' => $data['sales_to_accounting_rate'],
-                    'is_base' => false,
-                    'is_active' => true,
-                    'display_order' => 2,
-                    'rate_updated_at' => now(),
-                ],
-            );
+        // USD stays available for supplier invoices, but the fresh ledger is
+        // ILS-based until the accountant records the first real exchange rate.
+        Currency::updateOrCreate(
+            ['code' => 'USD'],
+            [
+                'name' => 'US Dollar',
+                'symbol' => '$',
+                'rate_to_base' => (float) (Currency::where('code', 'USD')->value('rate_to_base') ?: 3.65),
+                'is_base' => false,
+                'is_active' => true,
+                'display_order' => 2,
+                'rate_updated_at' => now(),
+            ],
+        );
 
-            app(ExchangeRateService::class)->record(
-                currencyCode: $salesCode,
-                baseCurrencyCode: $baseCode,
-                rate: (float) $data['sales_to_accounting_rate'],
-                validFrom: now()->toDateString(),
-                validTo: null,
-                createdBy: auth()->id(),
-                source: 'setup',
-                note: 'Initial first-run exchange rate',
-            );
-        }
-
-        config([
-            'restaurant.currency' => $salesCode,
-            'restaurant.currency_symbol' => $data['currency_symbol'],
-        ]);
+        config(['restaurant.currency' => 'ILS', 'restaurant.currency_symbol' => '₪']);
     }
 
-    private function createInitialFiscalYear(Branch $branch, array $data): void
+    private function createInitialFiscalYear(Branch $branch): void
     {
-        $asOf = Carbon::now();
-        $startsOn = Carbon::create($asOf->year, $data['fiscal_year_start_month'], $data['fiscal_year_start_day'])->startOfDay();
-
-        if ($asOf->lt($startsOn)) {
-            $startsOn->subYear();
-        }
-
-        $endsOn = $startsOn->copy()->addYear()->subDay();
-        $name = $startsOn->year === $endsOn->year
-            ? 'FY '.$startsOn->year
-            : 'FY '.$startsOn->year.'/'.$endsOn->year;
+        $startsOn = Carbon::now()->startOfYear();
+        $endsOn = $startsOn->copy()->endOfYear();
 
         FiscalYear::updateOrCreate(
             [
@@ -404,60 +534,8 @@ class SetupController extends Controller
                 'starts_on' => $startsOn->toDateString(),
                 'ends_on' => $endsOn->toDateString(),
             ],
-            [
-                'name' => $name,
-                'status' => 'open',
-            ],
+            ['name' => 'FY '.$startsOn->year, 'status' => 'open'],
         );
-    }
-
-    private function currencyName(string $code): string
-    {
-        return match (strtoupper($code)) {
-            'USD' => 'US Dollar',
-            'ILS' => 'Israeli Shekel',
-            'JOD' => 'Jordanian Dinar',
-            'EUR' => 'Euro',
-            'GBP' => 'British Pound',
-            default => strtoupper($code),
-        };
-    }
-
-    private function currencySymbolForCode(string $code, string $fallback): string
-    {
-        return match (strtoupper($code)) {
-            'USD' => '$',
-            'ILS' => '₪',
-            'JOD' => 'د.أ',
-            'EUR' => '€',
-            'GBP' => '£',
-            default => $fallback,
-        };
-    }
-
-    /**
-     * License terms are provider-controlled. Setup should persist the
-     * delivered build configuration, not accept customer-edited license values.
-     *
-     * @return array{enabled: bool, role: string, cloud_url: ?string, key: ?string}
-     */
-    private function licenseSettings(): array
-    {
-        $role = (string) config('license.role', 'standalone');
-        if (! in_array($role, ['standalone', 'branch', 'cloud'], true)) {
-            $role = 'standalone';
-        }
-
-        $stringOrNull = static fn (mixed $value): ?string => is_string($value) && trim($value) !== ''
-            ? trim($value)
-            : null;
-
-        return [
-            'enabled' => (bool) config('license.enabled', false),
-            'role' => $role,
-            'cloud_url' => $stringOrNull(config('license.cloud_url')),
-            'key' => $stringOrNull(config('license.key')),
-        ];
     }
 
     private function completedRedirect()
@@ -469,15 +547,16 @@ class SetupController extends Controller
 
     private function setupBranch(): ?Branch
     {
-        return Branch::query()
-            ->where('is_active', true)
-            ->orderBy('display_order')
-            ->orderBy('id')
+        $activeBranchId = session('active_branch_id');
+
+        return Branch::withoutGlobalScopes()
+            ->when($activeBranchId, fn ($query) => $query->where('id', $activeBranchId))
             ->first()
-            ?? Branch::query()->orderBy('id')->first();
+            ?? Branch::withoutGlobalScopes()->where('is_active', true)->orderBy('display_order')->orderBy('id')->first()
+            ?? Branch::withoutGlobalScopes()->orderBy('id')->first();
     }
 
-    private function putOptionalSetting(string $key, mixed $value, string $group, string $type = 'string'): void
+    private function putOptionalSetting(string $key, mixed $value, string $group): void
     {
         if ($value === null || $value === '') {
             Setting::query()->where('key', $key)->delete();
@@ -486,12 +565,7 @@ class SetupController extends Controller
             return;
         }
 
-        $this->putSetting($key, $value, $group, $type);
-    }
-
-    private function putSetting(string $key, mixed $value, string $group, string $type = 'string'): void
-    {
-        Setting::put($key, $value, $group, $type);
+        Setting::put($key, $value, $group);
     }
 
     private function clearUploadedBrandAssets(): void
@@ -503,11 +577,9 @@ class SetupController extends Controller
             }
 
             $normalized = ltrim($path, '/');
-            $normalized = str_starts_with($normalized, 'storage/')
+            Storage::disk('public')->delete(str_starts_with($normalized, 'storage/')
                 ? substr($normalized, strlen('storage/'))
-                : $normalized;
-
-            Storage::disk('public')->delete($normalized);
+                : $normalized);
         }
     }
 
@@ -528,15 +600,12 @@ class SetupController extends Controller
         }
 
         @chmod($path, 0644);
-
         $directory = dirname($path);
         while ($directory && $directory !== dirname($directory)) {
             @chmod($directory, 0755);
-
             if ($directory === storage_path('app/public')) {
                 break;
             }
-
             $directory = dirname($directory);
         }
     }

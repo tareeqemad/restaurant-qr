@@ -20,7 +20,11 @@ class InvoicePaid implements ShouldBroadcastNow
     {
         // Staff channels are PRIVATE (auth via routes/channels.php).
         // Customer session channel stays public — token is the capability.
-        $channels = [new PrivateChannel('waiters'), new PrivateChannel('cashiers')];
+        $channels = [
+            new PrivateChannel('branch.'.$this->invoice->branch_id.'.waiters'),
+            new PrivateChannel('branch.'.$this->invoice->branch_id.'.cashiers'),
+            new PrivateChannel('owners'),
+        ];
         if ($this->invoice->tableSession) {
             $channels[] = new Channel('session.'.$this->invoice->tableSession->token);
         }

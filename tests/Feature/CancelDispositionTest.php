@@ -111,7 +111,7 @@ class CancelDispositionTest extends TestCase
     {
         $this->actingAs($this->waiter);
 
-        $oi = $this->placeAndApprove();   // deducts 150g → 850g on shelf
+        $oi = $this->placeAndStartPreparing();   // deducts 150g → 850g on shelf
 
         $this->assertSame(850.0, (float) $this->patty->fresh()->current_stock);
 
@@ -145,7 +145,7 @@ class CancelDispositionTest extends TestCase
     {
         $this->actingAs($this->waiter);
 
-        $oi = $this->placeAndApprove();   // 850g after deduction
+        $oi = $this->placeAndStartPreparing();   // 850g after deduction
         $stockBefore = (float) $this->patty->fresh()->current_stock;
 
         app(OrderService::class)->cancelItem(
@@ -208,7 +208,7 @@ class CancelDispositionTest extends TestCase
 
     // ─── helper ───────────────────────────────────────────────────────
 
-    protected function placeAndApprove(): OrderItem
+    protected function placeAndStartPreparing(): OrderItem
     {
         $table = Table::create([
             'number' => (string) random_int(100, 999),
@@ -224,6 +224,13 @@ class CancelDispositionTest extends TestCase
         ]], createdByUserId: $this->waiter->id);
         app(OrderService::class)->approve($order, $this->waiter->id);
 
-        return $order->items->first()->fresh();
+        // The restaurant policy now deducts ingredients when the kitchen
+        // actually starts, rather than when the waiter approves the ticket.
+        // These two scenarios intentionally exercise cancellation after a
+        // real deduction, so move the line to Preparing first.
+        $item = $order->items()->firstOrFail();
+        app(OrderService::class)->startPreparing($item, $this->waiter->id);
+
+        return $item->fresh();
     }
 }

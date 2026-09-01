@@ -21,6 +21,7 @@ use App\Services\OrderService;
 use App\Support\BranchContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 /**
@@ -257,7 +258,7 @@ class CashierMergeGroupCTest extends TestCase
             ->post(route('admin.cashier.split', $invoice), [
                 'return_session' => $session->id,
                 'splits' => [
-                    ['label' => 'أحمد', 'amount' => 40, 'method' => 'card'],
+                    ['label' => 'أحمد', 'amount' => 40, 'method' => 'transfer'],
                     ['label' => 'سمير', 'amount' => 30, 'method' => 'cash'],
                     ['label' => 'ليلى', 'amount' => 30, 'method' => 'cash'],
                 ],
@@ -324,11 +325,7 @@ class CashierMergeGroupCTest extends TestCase
         $this->assertSame(2, $invoice->splits()->count(), 'A refused clear must leave the split grouping intact.');
     }
 
-    /**
-     * The dashboard checkout renders the FULL split manager inline (rows, the
-     * edit/clear controls while unpaid) and no longer links out to the classic
-     * page — the «إدارة التقسيم» handoff is gone.
-     */
+    /** The Vue cashier receives every split row in its one-screen contract. */
     public function test_dashboard_renders_split_manager_and_drops_classic_handoff(): void
     {
         $this->actingAs($this->admin);
@@ -337,16 +334,16 @@ class CashierMergeGroupCTest extends TestCase
         $this->post(route('admin.cashier.split', $invoice), [
             'splits' => [
                 ['label' => 'رامي', 'amount' => 50, 'method' => 'cash'],
-                ['label' => 'هبة', 'amount' => 50, 'method' => 'card'],
+                ['label' => 'هبة', 'amount' => 50, 'method' => 'transfer'],
             ],
         ])->assertSessionHas('success');
 
         $this->get($this->checkoutUrl($session))
             ->assertOk()
-            ->assertSee('رامي')
-            ->assertSee('هبة')
-            ->assertSee('تعديل التقسيم')      // in-dashboard regroup control
-            ->assertSee('إزالة التقسيم')      // in-dashboard clear control
-            ->assertDontSee('إدارة التقسيم');  // classic handoff link is gone
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/Cashier/Index')
+                ->has('initialState.workspace.invoice.splits', 2)
+                ->where('initialState.workspace.invoice.splits.0.label', 'رامي')
+                ->where('initialState.workspace.invoice.splits.1.label', 'هبة'));
     }
 }

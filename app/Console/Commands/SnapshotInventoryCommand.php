@@ -8,7 +8,6 @@ use App\Models\IngredientStock;
 use App\Models\InventorySnapshot;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Writes a close-of-day snapshot for every (ingredient × branch) pair.
@@ -43,6 +42,7 @@ class SnapshotInventoryCommand extends Command
 
         if ($branches->isEmpty()) {
             $this->warn('No active branches — nothing to snapshot.');
+
             return self::SUCCESS;
         }
 
@@ -53,6 +53,7 @@ class SnapshotInventoryCommand extends Command
 
         if ($ingredients->isEmpty()) {
             $this->warn('No tracked ingredients — nothing to snapshot.');
+
             return self::SUCCESS;
         }
 
@@ -60,12 +61,9 @@ class SnapshotInventoryCommand extends Command
 
         $written = 0;
 
-        // No outer transaction — updateOrCreate is atomic per row, and
-        // wrapping all branches+ingredients in a single transaction makes
-        // SQLite (the test driver) skip-visible the rows from a prior
-        // invocation, which breaks the idempotency contract on re-runs.
-        // A partial failure of one row also leaves all the prior rows
-        // committed, which is the more useful behavior for a nightly cron.
+        // No outer transaction: each row is idempotent on its unique key.
+        // A partial failure leaves prior snapshots committed, which is the
+        // more useful recovery behavior for a nightly cron.
         foreach ($branches as $branch) {
             foreach ($ingredients as $ingredient) {
                 $qty = (float) IngredientStock::query()
@@ -76,12 +74,8 @@ class SnapshotInventoryCommand extends Command
 
                 $cost = $ingredient->costAtBranch($branch->id);
 
-                // Find existing snapshot explicitly with whereDate to
-                // avoid driver-specific date-vs-datetime equality issues
-                // (SQLite stores 'date' columns as text and Eloquent's
-                // updateOrCreate matcher uses string equality, which can
-                // miss the previous run on re-execution and trip the
-                // unique constraint).
+                // Match by calendar date explicitly so rerunning the command
+                // updates the same daily snapshot instead of duplicating it.
                 $existing = InventorySnapshot::where('ingredient_id', $ingredient->id)
                     ->where('branch_id', $branch->id)
                     ->whereDate('taken_on', $date)
@@ -89,7 +83,7 @@ class SnapshotInventoryCommand extends Command
 
                 $attrs = [
                     'quantity_in_base' => round($qty, 4),
-                    'cost_value'       => round($qty * $cost, 2),
+                    'cost_value' => round($qty * $cost, 2),
                 ];
 
                 if ($existing) {
@@ -97,8 +91,8 @@ class SnapshotInventoryCommand extends Command
                 } else {
                     InventorySnapshot::create(array_merge($attrs, [
                         'ingredient_id' => $ingredient->id,
-                        'branch_id'     => $branch->id,
-                        'taken_on'      => $date,
+                        'branch_id' => $branch->id,
+                        'taken_on' => $date,
                     ]));
                 }
                 $written++;
@@ -106,6 +100,7 @@ class SnapshotInventoryCommand extends Command
         }
 
         $this->info("  ✓ Wrote/updated {$written} snapshot rows.");
+
         return self::SUCCESS;
     }
 }

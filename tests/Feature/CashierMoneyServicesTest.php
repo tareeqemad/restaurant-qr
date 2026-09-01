@@ -15,7 +15,6 @@ use App\Models\Payment;
 use App\Models\RecipeItem;
 use App\Models\Role;
 use App\Models\Scopes\BranchScope;
-use App\Models\Shift;
 use App\Models\Station;
 use App\Models\StorageLocation;
 use App\Models\Table;
@@ -31,10 +30,8 @@ use Tests\TestCase;
 
 /**
  * Regressions for the money-services fixes of the 2026-07 cashier audit:
- *  - shift X/Z aggregates must sum by shift_id UNSCOPED (cross-branch money
- *    physically sitting in the drawer counted as phantom variance before)
  *  - voiding a split-tab payment must un-mark the split it settled
- *  - voiding is refused once the payment's drawer closed (frozen Z-report)
+ *  - every payment is attributed directly to the responsible user
  *  - credit-limit + FIFO debt collection are CUSTOMER-global, not per-branch
  *  - un-parking a settle-on-account is flag-only and blocked once touched
  *  - a prepaid takeaway stays on its kitchen lifecycle until actually served
@@ -87,14 +84,6 @@ class CashierMoneyServicesTest extends TestCase
         parent::tearDown();
     }
 
-    private function openShift(float $opening): Shift
-    {
-        return Shift::create([
-            'user_id' => $this->admin->id, 'branch_id' => $this->branch->id,
-            'cash_opening' => $opening, 'status' => 'open', 'opened_at' => now(),
-        ]);
-    }
-
     /** @return array{0: Invoice, 1: TableSession, 2: \App\Models\Order} */
     private function issueMeal(): array
     {
@@ -108,7 +97,7 @@ class CashierMoneyServicesTest extends TestCase
 
     /**
      * A bare invoice living on branch B (no order/kitchen ceremony) —
-     * enough surface for the debt-ledger and shift-aggregate assertions.
+     * enough surface for the debt-ledger assertions.
      * Number passed explicitly so the fixture never races the generator.
      */
     private function makeBranchBInvoice(float $total, array $extra = []): Invoice
@@ -137,47 +126,6 @@ class CashierMoneyServicesTest extends TestCase
         });
     }
 
-    /** Cross-branch money physically in the drawer shows up in the X-report
-     *  AND the close, keyed by shift_id alone — no phantom variance. */
-    public function test_shift_sums_include_cross_branch_payments_bound_to_the_drawer(): void
-    {
-        $this->actingAs($this->admin);
-        $shift = $this->openShift(100.0);
-
-        // A branch-B invoice paid into THIS drawer (payments carry the
-        // INVOICE's branch, the drawer keeps the shift_id).
-        $invoiceB = $this->makeBranchBInvoice(80.0);
-        BranchContext::forBranch($this->branchB->id, function () use ($invoiceB, $shift) {
-            Payment::create([
-                'branch_id'           => $this->branchB->id,
-                'invoice_id'          => $invoiceB->id,
-                'method'              => 'cash',
-                'amount'              => 80,
-                'received_by_user_id' => $this->admin->id,
-                'shift_id'            => $shift->id,
-                'paid_at'             => now(),
-            ]);
-        });
-
-        // Viewer stands on branch A — the X-report must still see the 80.
-        $resp = $this->actingAs($this->admin)->get(route('admin.shifts.x-report', $shift));
-        $resp->assertOk();
-        $b = $resp->viewData('breakdown');
-        $this->assertEqualsWithDelta(80.0, $b['cash_sales'], 0.001, 'Branch scope must not zero the drawer sums.');
-        $this->assertEqualsWithDelta(180.0, $b['expected_cash'], 0.001, 'opening 100 + cross-branch cash 80');
-
-        // Closing with the true count stores the same sums and no variance.
-        $this->actingAs($this->admin)
-            ->post(route('admin.shifts.close', $shift), ['cash_closing' => 180])
-            ->assertSessionHas('success');
-
-        $shift->refresh();
-        $this->assertSame('closed', $shift->status);
-        $this->assertEqualsWithDelta(80.0, (float) $shift->cash_sales, 0.001);
-        $this->assertEqualsWithDelta(180.0, (float) $shift->expected_cash, 0.001);
-        $this->assertEqualsWithDelta(0.0, (float) $shift->cash_variance, 0.001, 'No phantom variance posted for cross-branch money.');
-    }
-
     /** Voiding a split-tab payment un-marks the split it settled so the tab
      *  can be re-collected — it must not stay «مدفوع» over deleted money. */
     public function test_void_payment_unmarks_the_split_it_settled(): void
@@ -204,21 +152,16 @@ class CashierMoneyServicesTest extends TestCase
         $this->assertEqualsWithDelta(100.0, (float) $invoice->balance, 0.001, 'Invoice fully reopens.');
     }
 
-    /** Void is refused once the payment's drawer closed — the stored Z-report
-     *  and any variance GL entry already counted this payment. */
-    public function test_void_payment_blocked_after_drawer_closed(): void
+    public function test_payment_is_attributed_to_the_user_and_can_be_corrected_without_a_shift(): void
     {
         $this->actingAs($this->admin);
-        $shift = $this->openShift(0.0);
         [$invoice] = $this->issueMeal();
         $payment = app(BillingService::class)->addPayment($invoice, 100.0, 'cash', $this->admin->id);
-        $this->assertSame($shift->id, $payment->shift_id, 'Sanity: payment bound to the open drawer.');
-
-        $shift->update(['status' => 'closed', 'closed_at' => now()]);
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessageMatches('/أُغلق/u');
+        $this->assertSame($this->admin->id, $payment->received_by_user_id);
         app(BillingService::class)->voidPayment($payment->fresh(), $this->admin->id, 'محاولة متأخرة');
+
+        $this->assertDatabaseHas('payments', ['id' => $payment->id, 'status' => 'voided']);
+        $this->assertEqualsWithDelta(100.0, (float) $invoice->fresh()->balance, 0.001);
     }
 
     /** Credit-limit check sums the customer's debt across ALL branches —

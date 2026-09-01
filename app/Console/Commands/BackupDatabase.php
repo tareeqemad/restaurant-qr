@@ -71,11 +71,9 @@ class BackupDatabase extends Command
     }
 
     /**
-     * Dump the database, then gzip it. Done as two separate processes rather
-     * than a `mysqldump | gzip` pipe on purpose: a shell pipe reports gzip's
-     * exit code, so a failed mysqldump (server down, bad creds) would still
-     * leave a valid-looking but empty gzip. Writing the raw dump first lets us
-     * check mysqldump's own exit code and that it produced real content.
+     * Dump, then gzip it. Compression goes through PHP's zlib extension so
+     * this safety-net also works on Windows, where a standalone `gzip`
+     * executable is normally unavailable.
      *
      * Credentials go through a temporary defaults-file (chmod 600) so the
      * password never appears in the process list. Returns false and removes
@@ -95,15 +93,15 @@ class BackupDatabase extends Command
         ));
         @chmod($defaults, 0600);
 
-        $dumpCmd = sprintf(
-            '%s --defaults-extra-file=%s --single-transaction --quick --no-tablespaces --result-file=%s %s',
-            escapeshellarg((string) config('backup.mysqldump_binary')),
-            escapeshellarg($defaults),
-            escapeshellarg($rawPath),
-            escapeshellarg($db['database']),
-        );
-
-        $process = Process::fromShellCommandline($dumpCmd, base_path(), null, null, 1800);
+        $process = new Process([
+            $this->dumpBinary(),
+            "--defaults-extra-file={$defaults}",
+            '--single-transaction',
+            '--quick',
+            '--no-tablespaces',
+            "--result-file={$rawPath}",
+            (string) $db['database'],
+        ], base_path(), null, null, 1800);
 
         try {
             $process->run();
@@ -120,20 +118,10 @@ class BackupDatabase extends Command
             return false;
         }
 
-        // Compress the verified dump. gzip removes the source on success.
-        $gzip = Process::fromShellCommandline(
-            sprintf('gzip -f %s', escapeshellarg($rawPath)),
-            base_path(),
-            null,
-            null,
-            600,
-        );
-        $gzip->run();
-
-        if (! $gzip->isSuccessful() || ! is_file($absPath)) {
+        if (! $this->gzip($rawPath, $absPath)) {
             @unlink($rawPath);
             @unlink($absPath);
-            $error = trim($gzip->getErrorOutput()) ?: 'gzip failed.';
+            $error = 'PHP zlib could not compress the verified database dump.';
             $this->error("Backup failed: {$error}");
             Log::error('Database backup failed', ['error' => $error]);
 
@@ -141,6 +129,65 @@ class BackupDatabase extends Command
         }
 
         return true;
+    }
+
+    private function dumpBinary(): string
+    {
+        $configured = (string) config('backup.mysqldump_binary', 'mysqldump');
+
+        if ($configured !== 'mysqldump' || PHP_OS_FAMILY !== 'Windows') {
+            return $configured;
+        }
+
+        foreach ([
+            'C:\\xampp\\mysql\\bin\\mysqldump.exe',
+            'C:\\Program Files\\MySQL\\MySQL Server 8.0\\bin\\mysqldump.exe',
+        ] as $candidate) {
+            if (is_file($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return $configured;
+    }
+
+    private function gzip(string $source, string $destination): bool
+    {
+        if (! function_exists('gzopen')) {
+            return false;
+        }
+
+        $input = @fopen($source, 'rb');
+        $output = @gzopen($destination, 'wb9');
+
+        if ($input === false || $output === false) {
+            if (is_resource($input)) {
+                fclose($input);
+            }
+            if (is_resource($output)) {
+                gzclose($output);
+            }
+
+            return false;
+        }
+
+        $ok = true;
+        while (! feof($input)) {
+            $chunk = fread($input, 1024 * 1024);
+            if ($chunk === false || ($chunk !== '' && gzwrite($output, $chunk) === false)) {
+                $ok = false;
+                break;
+            }
+        }
+
+        fclose($input);
+        gzclose($output);
+
+        if ($ok) {
+            @unlink($source);
+        }
+
+        return $ok && is_file($destination) && filesize($destination) > 0;
     }
 
     /**

@@ -6,23 +6,86 @@ use App\Http\Controllers\Controller;
 use App\Models\Station;
 use App\Models\StorageLocation;
 use App\Models\User;
+use App\Support\AdminShell;
 use App\Support\BranchContext;
+use App\Support\MenuWorkspace;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 class StationController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
         $this->authorize('viewAny', User::class);
-        $stations = Station::with('storageLocation')->orderBy('display_order')->get();
-        return view('admin.stations.index', compact('stations'));
+
+        return $this->page($request);
     }
 
-    public function create()
+    protected function page(Request $request, ?array $editor = null)
+    {
+        $stations = Station::with('storageLocation')
+            ->withCount(['users', 'menuItems', 'orderItems'])
+            ->orderBy('display_order')
+            ->get();
+        $user = auth()->user();
+        $canUpdate = (bool) $user?->can('update', User::class);
+        $canDelete = (bool) $user?->can('delete', User::class);
+
+        return AdminShell::render('Admin/MenuCatalog/Stations', [
+            'navigation' => MenuWorkspace::navigation(),
+            'stations' => $stations->map(fn (Station $station) => [
+                'id' => $station->id,
+                'code' => $station->code,
+                'name' => $station->name,
+                'color' => $station->color ?: '#166534',
+                'icon' => $station->icon,
+                'storageLocationId' => $station->storage_location_id,
+                'storageLocation' => $station->storageLocation?->name,
+                'displayOrder' => (int) $station->display_order,
+                'active' => (bool) $station->active,
+                'usersCount' => (int) $station->users_count,
+                'itemsCount' => (int) $station->menu_items_count,
+                'historyCount' => (int) $station->order_items_count,
+                'can' => [
+                    'update' => $canUpdate,
+                    'delete' => $canDelete
+                        && $station->users_count === 0
+                        && $station->menu_items_count === 0
+                        && $station->order_items_count === 0,
+                ],
+                'urls' => [
+                    'update' => route('admin.stations.update', $station),
+                    'destroy' => route('admin.stations.destroy', $station),
+                ],
+            ])->values(),
+            'stats' => [
+                'total' => $stations->count(),
+                'active' => $stations->where('active', true)->count(),
+                'items' => $stations->sum('menu_items_count'),
+                'staff' => $stations->sum('users_count'),
+            ],
+            'storageLocations' => $this->formData()['storageLocations']->map(fn (StorageLocation $location) => [
+                'id' => $location->id,
+                'name' => $location->name,
+                'isDefault' => (bool) $location->is_default,
+            ])->values(),
+            'editor' => $editor,
+            'can' => [
+                'create' => (bool) $user?->can('create', User::class),
+            ],
+            'urls' => [
+                'index' => route('admin.stations.index'),
+                'store' => route('admin.stations.store'),
+                'storageLocations' => route('admin.storage-locations.index'),
+            ],
+        ]);
+    }
+
+    public function create(Request $request)
     {
         $this->authorize('create', User::class);
-        return view('admin.stations.create', $this->formData());
+
+        return $this->page($request, ['mode' => 'create', 'station' => null]);
     }
 
     public function store(Request $request)
@@ -32,10 +95,24 @@ class StationController extends Controller
         return redirect()->route('admin.stations.index')->with('success', 'تم');
     }
 
-    public function edit(Station $station)
+    public function edit(Request $request, Station $station)
     {
         $this->authorize('update', User::class);
-        return view('admin.stations.edit', array_merge($this->formData(), compact('station')));
+
+        return $this->page($request, [
+            'mode' => 'edit',
+            'station' => [
+                'id' => $station->id,
+                'code' => $station->code,
+                'name' => $station->name,
+                'color' => $station->color ?: '#166534',
+                'icon' => $station->icon,
+                'storageLocationId' => $station->storage_location_id,
+                'displayOrder' => (int) $station->display_order,
+                'active' => (bool) $station->active,
+                'updateUrl' => route('admin.stations.update', $station),
+            ],
+        ]);
     }
 
     public function update(Request $request, Station $station)
@@ -48,6 +125,11 @@ class StationController extends Controller
     public function destroy(Station $station)
     {
         $this->authorize('delete', User::class);
+
+        if ($station->users()->exists() || $station->menuItems()->exists() || $station->orderItems()->exists()) {
+            return back()->with('error', 'المحطة مستخدمة في أصناف أو موظفين أو طلبات سابقة. عطّلها بدلاً من حذفها.');
+        }
+
         $station->delete();
         return back()->with('success', 'تم');
     }
@@ -70,7 +152,6 @@ class StationController extends Controller
                     ->ignore($station?->id),
             ],
             'name' => ['required', 'string', 'max:255'],
-            'name_en' => ['nullable', 'string', 'max:255'],
             'color' => ['nullable', 'string', 'max:7'],
             'icon' => ['nullable', 'string', 'max:64'],
             'storage_location_id' => [

@@ -21,7 +21,10 @@ class OrderCreated implements ShouldBroadcastNow
         // Staff channels are PRIVATE — the auth closures in routes/channels.php
         // gate them by role. The customer session channel stays public because
         // the session token itself is the capability.
-        $channels = [new PrivateChannel('waiters')];
+        $channels = [
+            new PrivateChannel('branch.'.$this->order->branch_id.'.waiters'),
+            new PrivateChannel('owners'),
+        ];
         if ($this->order->tableSession) {
             $channels[] = new Channel('session.'.$this->order->tableSession->token);
         }

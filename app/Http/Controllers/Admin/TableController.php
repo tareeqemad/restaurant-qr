@@ -5,15 +5,17 @@ namespace App\Http\Controllers\Admin;
 use App\Events\TableStatusChanged;
 use App\Helpers\SafeBroadcast;
 use App\Http\Controllers\Controller;
+use App\Models\Lookup;
 use App\Models\Order;
 use App\Models\Scopes\BranchScope;
 use App\Models\Table;
 use App\Models\TableSession;
 use App\Services\BillingService;
 use App\Services\TableSessionTransferService;
+use App\Support\AdminShell;
 use App\Support\BranchContext;
-use BaconQrCode\Renderer\ImageRenderer;
 use BaconQrCode\Renderer\Image\SvgImageBackEnd;
+use BaconQrCode\Renderer\ImageRenderer;
 use BaconQrCode\Renderer\RendererStyle\RendererStyle;
 use BaconQrCode\Writer;
 use Illuminate\Http\Request;
@@ -21,23 +23,19 @@ use Illuminate\Validation\Rule;
 
 class TableController extends Controller
 {
-    public function index()
-    {
-        $this->authorize('viewAny', Table::class);
-
-        // The Livewire board owns the table query. The old controller loaded a
-        // second paginated copy plus four statistics that the view never used.
-        return view('admin.tables.index', [
-            'zones' => \App\Models\Lookup::for('zones'),
-        ]);
-    }
+    // The tables URL is served by TablesBoardController@show (Inertia/Vue).
+    // This controller keeps
+    // the classic CRUD forms + the table actions the board posts to.
 
     public function create()
     {
         $this->authorize('create', Table::class);
-        return view('admin.tables.create', [
-            'zones' => \App\Models\Lookup::for('zones'),
-        ]);
+
+        return AdminShell::render('Admin/Tables/Form', $this->tableFormData(new Table([
+            'capacity' => 4,
+            'status' => 'available',
+            'active' => true,
+        ])));
     }
 
     public function store(Request $request)
@@ -47,21 +45,49 @@ class TableController extends Controller
         $table = Table::create($data);
         // New table → tables board should refresh (treat it as a "was-nothing → now-status" change)
         SafeBroadcast::dispatch(new TableStatusChanged($table, ''));
+
         return redirect()->route('admin.tables.index')->with('success', 'تم إنشاء الطاولة');
     }
 
     public function edit(Table $table)
     {
         $this->authorize('update', $table);
-        return view('admin.tables.edit', [
-            'table' => $table,
-            'zones' => \App\Models\Lookup::for('zones'),
-        ]);
+
+        return AdminShell::render('Admin/Tables/Form', $this->tableFormData($table));
     }
 
     public function update(Request $request, Table $table)
     {
         $this->authorize('update', $table);
+        $this->applyUpdate($request, $table);
+
+        return redirect()->route('admin.tables.index')->with('success', 'تم التحديث');
+    }
+
+    /**
+     * Quick-edit (the board's pencil sheet) — SAME pipeline as update():
+     * same validation, renumber notice, ghost-session sweep, broadcast.
+     * Only the response shape differs (JSON, no redirect) so the board
+     * can stay put mid-rush. The renumber notice rides as `info`.
+     */
+    public function quickUpdate(Request $request, Table $table)
+    {
+        $this->authorize('update', $table);
+        $info = $this->applyUpdate($request, $table);
+
+        return response()->json([
+            'ok' => true,
+            'message' => "تم تحديث طاولة {$table->number}.",
+            'info' => $info,
+        ]);
+    }
+
+    /**
+     * The shared update body. Returns the renumber notice (or null) so
+     * JSON callers can surface it without touching the session flash.
+     */
+    protected function applyUpdate(Request $request, Table $table): ?string
+    {
         $previousStatus = $table->status;
         $previousNumber = $table->number;
         $table->update($this->valid($request, $table->id));
@@ -71,13 +97,14 @@ class TableController extends Controller
         // the manager understands the snapshot system keeps history
         // accurate. (No data action needed — snapshots already protect
         // every past record; this is purely an information message.)
+        $info = null;
         if ($previousNumber !== $table->number) {
             $hasHistory = TableSession::where('table_id', $table->id)->exists()
                        || Order::where('table_id', $table->id)->exists();
             if ($hasHistory) {
-                session()->flash('info',
-                    "تم تغيير رقم الطاولة من «{$previousNumber}» إلى «{$table->number}». "
-                    . "السجلات السابقة تحتفظ بالرقم الأصلي للحفاظ على دقة الإيصالات والتقارير.");
+                $info = "تم تغيير رقم الطاولة من «{$previousNumber}» إلى «{$table->number}». "
+                    .'السجلات السابقة تحتفظ بالرقم الأصلي للحفاظ على دقة الإيصالات والتقارير.';
+                session()->flash('info', $info);
             }
         }
 
@@ -89,7 +116,7 @@ class TableController extends Controller
             $session = $table->activeSession;
             if ($session && $session->orders()->count() === 0) {
                 $session->update([
-                    'status'    => 'closed',
+                    'status' => 'closed',
                     'closed_at' => now(),
                 ]);
             }
@@ -98,7 +125,8 @@ class TableController extends Controller
         if ($table->wasChanged('status')) {
             SafeBroadcast::dispatch(new TableStatusChanged($table->refresh(), $previousStatus));
         }
-        return redirect()->route('admin.tables.index')->with('success', 'تم التحديث');
+
+        return $info;
     }
 
     /**
@@ -211,32 +239,46 @@ class TableController extends Controller
         $previousStatus = $table->status;
         $table->delete();
         SafeBroadcast::dispatch(new TableStatusChanged($table, $previousStatus));
+
         return back()->with('success',
             "تم حذف الطاولة. السجلات التاريخية (الفواتير والطلبات) تحتفظ بالرقم الأصلي «{$table->number}».");
     }
 
     public function qr(Table $table)
     {
+        $this->authorize('view', $table);
+
         $renderer = new ImageRenderer(
-            new RendererStyle(300, 2),
-            new SvgImageBackEnd()
+            // Four modules are the minimum safe QR quiet zone.  Keeping it
+            // inside the generated SVG means downloads and print layouts
+            // remain scannable even when surrounding CSS changes.
+            new RendererStyle(320, 4),
+            new SvgImageBackEnd
         );
         $writer = new Writer($renderer);
         $svg = $writer->writeString($table->qrUrl());
+
         return response($svg, 200, ['Content-Type' => 'image/svg+xml']);
     }
 
     public function qrPrint(Table $table)
     {
+        $this->authorize('view', $table);
         $table->loadMissing(['branch', 'zone']);
+        $qrUrl = $table->qrUrl();
 
         $renderer = new ImageRenderer(
-            new RendererStyle(400, 2),
-            new SvgImageBackEnd()
+            new RendererStyle(512, 4),
+            new SvgImageBackEnd
         );
         $writer = new Writer($renderer);
-        $svg = $writer->writeString($table->qrUrl());
-        return view('admin.tables.qr-print', ['table' => $table, 'svg' => $svg]);
+        $svg = $writer->writeString($qrUrl);
+
+        return view('admin.tables.qr-print', [
+            'table' => $table,
+            'svg' => $svg,
+            'qrUrl' => $qrUrl,
+        ]);
     }
 
     protected function valid(Request $request, ?int $id = null): array
@@ -246,27 +288,55 @@ class TableController extends Controller
         $branchId = BranchContext::current();
 
         return $request->validate([
-            'number'   => [
+            'number' => [
                 'required', 'string', 'max:16',
-                \Illuminate\Validation\Rule::unique('tables')
+                Rule::unique('tables')
                     ->where(fn ($q) => $q->where('branch_id', $branchId)->whereNull('deleted_at'))
                     ->ignore($id),
             ],
-            'name'           => ['nullable', 'string', 'max:255'],
-            'capacity'       => ['required', 'integer', 'min:1', 'max:50'],
+            'name' => ['nullable', 'string', 'max:255'],
+            'capacity' => ['required', 'integer', 'min:1', 'max:50'],
             'zone_lookup_id' => [
                 'nullable',
-                \Illuminate\Validation\Rule::exists('lookups', 'id')->where(fn ($q) =>
-                    $q->where('group', 'zones')->where('is_active', true)
+                Rule::exists('lookups', 'id')->where(fn ($q) => $q->where('group', 'zones')->where('is_active', true)
                 ),
             ],
-            'status'         => ['required', \Illuminate\Validation\Rule::in(['available','occupied','reserved','out_of_service'])],
-            'active'         => ['sometimes', 'boolean'],
+            'status' => ['required', Rule::in(['available', 'occupied', 'reserved', 'out_of_service'])],
+            'active' => ['sometimes', 'boolean'],
         ], [
             'number.unique' => 'رقم الطاولة مستخدم بالفعل في هذا الفرع.',
         ], [
             'zone_lookup_id' => 'المنطقة',
-            'number'         => 'رقم الطاولة',
+            'number' => 'رقم الطاولة',
         ]);
+    }
+
+    protected function tableFormData(Table $table): array
+    {
+        $user = auth()->user();
+
+        return [
+            'table' => [
+                'id' => $table->id,
+                'number' => $table->number ?? '',
+                'name' => $table->name ?? '',
+                'capacity' => $table->capacity ?? 4,
+                'zoneId' => $table->zone_lookup_id,
+                'status' => $table->status ?: 'available',
+                'active' => $table->exists ? (bool) $table->active : true,
+            ],
+            'zones' => Lookup::for('zones')->map(fn ($zone) => [
+                'id' => $zone->id,
+                'label' => $zone->label,
+            ])->values(),
+            'canManageZones' => (bool) $user?->can('viewAny', Lookup::class),
+            'urls' => [
+                'index' => route('admin.tables.index'),
+                'submit' => $table->exists
+                    ? route('admin.tables.update', $table)
+                    : route('admin.tables.store'),
+                'zones' => route('admin.lookups.index', ['group' => 'zones']),
+            ],
+        ];
     }
 }

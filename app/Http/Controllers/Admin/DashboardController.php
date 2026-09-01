@@ -4,11 +4,13 @@ namespace App\Http\Controllers\Admin;
 
 use App\Enums\OrderStatus;
 use App\Enums\ReservationStatus;
+use App\Helpers\Money;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\Expense;
 use App\Models\Ingredient;
 use App\Models\IngredientBatch;
+use App\Models\IngredientSupplierPrice;
 use App\Models\Invoice;
 use App\Models\Order;
 use App\Models\Payment;
@@ -19,6 +21,7 @@ use App\Models\Review;
 use App\Models\SupplierInvoice;
 use App\Models\SupplierInvoiceItem;
 use App\Models\Table;
+use App\Support\AdminShell;
 use App\Support\BranchContext;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -36,9 +39,10 @@ class DashboardController extends Controller
         // the money panels never render (and aren't even computed) for them.
         // Owner-level bypasses every check via User::hasPermission().
         $can = [
-            'financials'  => (bool) $user?->hasPermission('reports.viewAny'),
+            'financials' => (bool) $user?->hasPermission('reports.viewAny'),
             'procurement' => (bool) $user?->hasPermission('purchase_orders.viewAny'),
-            'customers'   => (bool) $user?->hasPermission('customers.viewAny'),
+            'inventory' => (bool) $user?->hasPermission('inventory.viewAny'),
+            'customers' => (bool) $user?->hasPermission('customers.viewAny'),
         ];
 
         $financialPulse = [];
@@ -83,7 +87,9 @@ class DashboardController extends Controller
             $todayRefundsCount = (clone $todayRefundsQuery)->count();
 
             $todayExpensesQuery = Expense::approved()->whereDate('expense_date', $today);
-            $todayExpenses = (float) (clone $todayExpensesQuery)->sum('amount');
+            $todayExpenses = (float) ((clone $todayExpensesQuery)
+                ->selectRaw('COALESCE(SUM(amount * COALESCE(exchange_rate, 1)), 0) as base_total')
+                ->value('base_total') ?? 0);
 
             $financialPulse = [
                 'gross_sales' => $todaySales,
@@ -107,13 +113,56 @@ class DashboardController extends Controller
         $todayOrders = Order::whereDate('created_at', $today)->count();
         $occupiedTables = Table::where('status', 'occupied')->count();
         $totalTables = Table::where('active', true)->count();
-        $lowStock = Ingredient::where('track_stock', true)
-            ->whereColumn('current_stock', '<=', 'reorder_threshold')
-            ->where('current_stock', '>', 0)
-            ->count();
-        $outOfStock = Ingredient::where('track_stock', true)
-            ->where('current_stock', '<=', 0)
-            ->count();
+        $inventoryAlerts = collect();
+        $lowStock = 0;
+        $outOfStock = 0;
+        if ($can['inventory']) {
+            $trackedIngredients = Ingredient::with(['baseUnit:id,code', 'supplier:id,name'])
+                ->where('track_stock', true)
+                ->get()
+                ->map(function (Ingredient $ingredient) use ($branchId) {
+                    $ingredient->operational_stock = $branchId
+                        ? $ingredient->usableStockAtBranch($branchId)
+                        : $ingredient->trackedUsableStock();
+                    $ingredient->operational_threshold = $branchId
+                        ? $ingredient->reorderThresholdAtBranch($branchId)
+                        : (float) $ingredient->reorder_threshold;
+
+                    return $ingredient;
+                });
+
+            $stockProblems = $trackedIngredients
+                ->filter(fn ($ingredient) => $ingredient->operational_stock <= $ingredient->operational_threshold)
+                ->values();
+            $outOfStock = $stockProblems->filter(fn ($ingredient) => $ingredient->operational_stock <= 0)->count();
+            $lowStock = $stockProblems->count() - $outOfStock;
+
+            $supplierHistory = IngredientSupplierPrice::query()
+                ->whereIn('ingredient_id', $stockProblems->pluck('id'))
+                ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+                ->whereHas('supplier', fn ($q) => $q->where('active', true)
+                    ->when($branchId, fn ($supplier) => $supplier->servingBranch($branchId)))
+                ->with('supplier:id,name')
+                ->latest('observed_at')
+                ->get()
+                ->unique(fn ($row) => $row->ingredient_id.'@'.$row->supplier_id)
+                ->groupBy('ingredient_id');
+
+            $inventoryAlerts = $stockProblems->map(function (Ingredient $ingredient) use ($supplierHistory) {
+                $suppliers = collect([$ingredient->supplier?->name])
+                    ->merge(collect($supplierHistory->get($ingredient->id, collect()))->pluck('supplier.name'))
+                    ->filter()->unique()->take(3)->values()->all();
+
+                return [
+                    'ingredient' => $ingredient,
+                    'kind' => $ingredient->operational_stock <= 0 ? 'out' : 'low',
+                    'severity' => $ingredient->operational_stock <= 0 ? 'danger' : 'warning',
+                    'title' => $ingredient->operational_stock <= 0 ? 'نفد من المخزون الصالح' : 'مخزونه منخفض',
+                    'detail' => number_format($ingredient->operational_stock, 2).' '.($ingredient->baseUnit?->code ?? ''),
+                    'suppliers' => $suppliers,
+                ];
+            });
+        }
         $purchaseOrdersNeedApproval = PurchaseOrder::where('status', 'draft')
             ->whereNull('approved_at')
             ->count();
@@ -141,6 +190,35 @@ class DashboardController extends Controller
             ->whereNotNull('expiry_date')
             ->whereBetween('expiry_date', [$today, now()->addDays(7)->toDateString()])
             ->count();
+
+        if ($can['inventory']) {
+            $expiryAlerts = IngredientBatch::with(['ingredient.baseUnit', 'ingredient.supplier:id,name'])
+                ->where('remaining_qty', '>', 0)
+                ->whereNotNull('expiry_date')
+                ->whereDate('expiry_date', '<=', now()->addDays(7)->toDateString())
+                ->orderBy('expiry_date')
+                ->limit(10)
+                ->get()
+                ->map(function (IngredientBatch $batch) use ($today) {
+                    $expired = $batch->expiry_date->toDateString() < $today;
+
+                    return [
+                        'ingredient' => $batch->ingredient,
+                        'kind' => $expired ? 'expired' : 'expiring',
+                        'severity' => $expired ? 'danger' : 'warning',
+                        'title' => $expired ? 'دفعة منتهية الصلاحية' : 'تنتهي خلال '.$batch->daysUntilExpiry().' يوم',
+                        'detail' => number_format((float) $batch->remaining_qty, 2).' '.($batch->ingredient?->baseUnit?->code ?? '')
+                            .' · '.$batch->expiry_date->format('Y-m-d'),
+                        'suppliers' => collect([$batch->ingredient?->supplier?->name])->filter()->all(),
+                    ];
+                });
+
+            $inventoryAlerts = $expiryAlerts
+                ->concat($inventoryAlerts)
+                ->sortBy(fn ($alert) => [$alert['severity'] === 'danger' ? 0 : 1, $alert['kind']])
+                ->take(12)
+                ->values();
+        }
 
         // Customer debt snapshot — feeds the action-center row + the
         // dedicated panel further down. Branch-aware via the invoices
@@ -193,7 +271,7 @@ class DashboardController extends Controller
                 'title' => 'فواتير موردين متأخرة',
                 'count' => $overdueSupplierInvoiceCount,
                 'description' => $overdueSupplierInvoiceAmount > 0
-                    ? 'قيمة متأخرة: '.\App\Helpers\Money::format($overdueSupplierInvoiceAmount)
+                    ? 'قيمة متأخرة: '.Money::format($overdueSupplierInvoiceAmount)
                     : 'فواتير تجاوزت تاريخ الاستحقاق.',
                 'route' => route('admin.supplier-invoices.index', ['overdue' => 1]),
                 'icon' => 'bi-cash-coin',
@@ -276,7 +354,7 @@ class DashboardController extends Controller
                 'title' => 'ديون زبائن مفتوحة',
                 'count' => (int) ($customerDebtStats->customers_owing ?? 0),
                 'description' => ($customerDebtStats?->total_debt ?? 0) > 0
-                    ? 'إجمالي الدين: '.\App\Helpers\Money::format((float) $customerDebtStats->total_debt)
+                    ? 'إجمالي الدين: '.Money::format((float) $customerDebtStats->total_debt)
                     : 'زبائن لم يسددوا كامل فواتيرهم بعد.',
                 'route' => route('admin.customers.debts.index'),
                 'icon' => 'bi-wallet2',
@@ -291,16 +369,17 @@ class DashboardController extends Controller
             ->values();
 
         $stats = [
-            'pending_orders'  => $pendingOrders,
-            'active_orders'   => $activeOrders,
-            'today_orders'    => $todayOrders,
+            'pending_orders' => $pendingOrders,
+            'active_orders' => $activeOrders,
+            'today_orders' => $todayOrders,
             'occupied_tables' => $occupiedTables,
-            'total_tables'    => $totalTables,
+            'total_tables' => $totalTables,
         ];
 
         $inventoryProcurement = [
             'low_stock' => $lowStock,
             'out_stock' => $outOfStock,
+            'expired_batches' => $expiredBatches,
             'expiring_batches' => $expiringBatches,
         ];
 
@@ -311,9 +390,9 @@ class DashboardController extends Controller
         ];
 
         $delayedOrders = Order::whereIn('status', [
-                OrderStatus::Approved->value,
-                OrderStatus::Preparing->value,
-            ])
+            OrderStatus::Approved->value,
+            OrderStatus::Preparing->value,
+        ])
             ->whereNotNull('estimated_ready_at')
             ->where('estimated_ready_at', '<', now())
             ->count();
@@ -467,17 +546,50 @@ class DashboardController extends Controller
             ->values()
             ->all();
 
-        return view('admin.dashboard.index', compact(
-            'can',
-            'stats',
-            'financialPulse',
-            'actionCenter',
-            'inventoryProcurement',
-            'customerPulse',
-            'dailyOps',
-            'branchSnapshot',
-            'quickActions',
-        ));
+        return AdminShell::render('Admin/Dashboard/Index', [
+            'viewerName' => $user?->name ?: ($user?->username ?: 'أهلاً بك'),
+            'can' => $can,
+            'stats' => $stats,
+            'financialPulse' => $financialPulse,
+            'actionCenter' => $actionCenter->all(),
+            'inventoryProcurement' => $inventoryProcurement,
+            'customerPulse' => $customerPulse,
+            'dailyOps' => $dailyOps,
+            'branchSnapshot' => $branchSnapshot->map(fn (array $row) => [
+                'id' => $row['branch']->id,
+                'name' => $row['branch']->localizedName(),
+                'sales' => $row['sales'],
+                'invoices' => $row['invoices'],
+                'orders' => $row['orders'],
+                'activeOrders' => $row['active_orders'],
+                'reservations' => $row['reservations'],
+                'overduePayables' => $row['overdue_ap'],
+            ])->values(),
+            'quickActions' => $quickActions,
+            'inventoryAlerts' => $inventoryAlerts->map(fn (array $alert) => [
+                'ingredientId' => $alert['ingredient']->id,
+                'name' => $alert['ingredient']->name,
+                'kind' => $alert['kind'],
+                'severity' => $alert['severity'],
+                'title' => $alert['title'],
+                'detail' => $alert['detail'],
+                'suppliers' => $alert['suppliers'],
+                'url' => route('admin.ingredients.show', $alert['ingredient']),
+            ])->values(),
+            'currency' => [
+                'symbol' => config('restaurant.currency_symbol', '₪'),
+                'decimals' => 2,
+            ],
+            'urls' => [
+                'orders' => route('admin.orders.index'),
+                'readyOrders' => route('admin.orders.index', ['status' => 'ready']),
+                'tables' => route('admin.tables.index'),
+                'endOfDay' => route('admin.reports.end-of-day'),
+                'inventory' => route('admin.inventory.dashboard'),
+                'reorder' => route('admin.reports.reorder-suggestions'),
+                'reservations' => route('admin.reservations.index'),
+            ],
+        ]);
     }
 
     /**

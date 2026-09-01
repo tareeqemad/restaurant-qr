@@ -8,14 +8,14 @@ use App\Models\User;
 /**
  * Branch-scoped moderation. The policy never gates *creation* — that's
  * the customer's domain (a different guard) and is enforced at the
- * Portal\ReviewController layer (eligibility = a Completed reservation
+ * customer review write layer (eligibility = a Completed reservation
  * the customer owns, with no existing review).
  */
 class ReviewPolicy extends BasePolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->hasAnyRole(['admin', 'manager']);
+        return $user->hasPermission('reviews.viewAny');
     }
 
     public function view(User $user, Review $review): bool
@@ -26,13 +26,13 @@ class ReviewPolicy extends BasePolicy
 
     public function hide(User $user, Review $review): bool
     {
-        return $user->hasAnyRole(['admin', 'manager'])
+        return $user->hasPermission('reviews.hide')
             && $this->inUserBranch($user, $review);
     }
 
     public function unhide(User $user, Review $review): bool
     {
-        return $user->hasAnyRole(['admin', 'manager'])
+        return $user->hasPermission('reviews.unhide')
             && $this->inUserBranch($user, $review);
     }
 
@@ -40,7 +40,7 @@ class ReviewPolicy extends BasePolicy
     {
         // Hard delete reserved for admin (manager only hides). Hiding
         // preserves the audit trail; deleting destroys evidence.
-        return $user->isAdmin()
+        return $user->hasPermission('reviews.delete')
             && $this->inUserBranch($user, $review);
     }
 }

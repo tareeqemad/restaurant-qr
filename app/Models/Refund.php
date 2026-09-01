@@ -6,6 +6,7 @@ use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Refund extends Model
@@ -16,15 +17,19 @@ class Refund extends Model
     // derived from invoice.branch_id by the writer (RefundService /
     // RefundController), not from BranchContext.
     protected $fillable = [
-        'branch_id', 'number', 'invoice_id', 'payment_id',
-        'amount', 'method', 'reference', 'status',
+        'branch_id', 'number', 'invoice_id', 'credit_note_id', 'payment_id',
+        'amount', 'method', 'reference', 'idempotency_key', 'status',
         'reason', 'notes',
-        'processed_by', 'shift_id', 'refunded_at',
+        'processed_by', 'completed_by', 'cancelled_by', 'reversed_by',
+        'refunded_at', 'completed_at', 'cancelled_at', 'reversed_at', 'reversal_reason',
     ];
 
     protected $casts = [
         'amount'      => 'decimal:4',
         'refunded_at' => 'datetime',
+        'completed_at' => 'datetime',
+        'cancelled_at' => 'datetime',
+        'reversed_at' => 'datetime',
     ];
 
     public function invoice(): BelongsTo
@@ -34,17 +39,22 @@ class Refund extends Model
 
     public function payment(): BelongsTo
     {
-        return $this->belongsTo(Payment::class);
+        return $this->belongsTo(Payment::class)->withoutGlobalScope('posted');
+    }
+
+    public function creditNote(): BelongsTo
+    {
+        return $this->belongsTo(CreditNote::class);
+    }
+
+    public function allocations(): HasMany
+    {
+        return $this->hasMany(RefundAllocation::class);
     }
 
     public function processor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'processed_by');
-    }
-
-    public function shift(): BelongsTo
-    {
-        return $this->belongsTo(Shift::class);
     }
 
     public function statusLabel(): string
@@ -53,6 +63,7 @@ class Refund extends Model
             'pending'   => 'معلّق',
             'completed' => 'مكتمل',
             'cancelled' => 'ملغي',
+            'reversed'  => 'معكوس',
             default     => $this->status,
         };
     }
@@ -63,6 +74,7 @@ class Refund extends Model
             'completed' => 'success',
             'pending'   => 'warning',
             'cancelled' => 'secondary',
+            'reversed'  => 'secondary',
             default     => 'light',
         };
     }
@@ -73,9 +85,14 @@ class Refund extends Model
     }
 
     public const METHODS = [
+        'original' => 'إلى طرق الدفع الأصلية',
         'cash'     => 'نقدا',
         'card'     => 'فيزا',
         'transfer' => 'تحويل بنكي',
+        'palpay' => 'PalPay',
+        'jawwal_pay' => 'Jawwal Pay',
+        'customer_advance' => 'رصيد الزبون',
+        'mixed' => 'حسب الدفعات الأصلية',
         'other'    => 'أخرى',
         // Legacy values still resolve to a label for historical refunds
         // (see AccountingService::cashAccountForMethod for the account
@@ -86,7 +103,7 @@ class Refund extends Model
     ];
 
     /** Methods the UI is allowed to offer for NEW refunds. */
-    public const ACTIVE_METHODS = ['cash', 'card', 'transfer', 'other'];
+    public const ACTIVE_METHODS = ['original', 'cash', 'card', 'transfer', 'palpay', 'jawwal_pay', 'customer_advance'];
 
     public static function generateNumber(): string
     {

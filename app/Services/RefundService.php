@@ -2,222 +2,318 @@
 
 namespace App\Services;
 
+use App\Helpers\Money;
 use App\Models\ActivityLog;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Refund;
 use App\Models\Scopes\BranchScope;
-use App\Models\Shift;
 use App\Services\Accounting\AccountingService;
 use App\Support\BranchContext;
+use App\Support\PaymentMethods;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Handles refunds against paid invoices.
- *
- * Business rules:
- *  - Cannot refund more than (paid_total − already_refunded)
- *  - Refund is linked to invoice; optionally to a specific payment
- *  - Updates invoice.refunded_total (denormalized) for fast AP/AR reporting
- *  - Creates an ActivityLog entry for audit trail
- *
- * What this service does NOT do (intentionally):
- *  - Doesn't reverse stock — use OrderService::cancelItem for that (stock ops are
- *    kitchen-centric, refunds are cashier-centric; separation of concerns)
- *  - Doesn't call external payment APIs — integrators wire that into controllers
+ * Refund orchestration = credit-note document + payout settlement.
+ * The invoice row is the concurrency boundary for issue/complete/cancel.
  */
 class RefundService
 {
-    /**
-     * Issue a refund against an invoice.
-     *
-     * @param Invoice $invoice
-     * @param float   $amount   Refund amount in invoice currency
-     * @param string  $method   Payment method used to return money (cash/card/...)
-     * @param string  $reason   Required — why is this refund happening?
-     * @param array   $opts     payment_id, reference, notes, status, shift_id
-     */
+    public function __construct(
+        private readonly CreditNoteService $creditNotes,
+        private readonly AccountingService $accounting,
+        private readonly CustomerAdvanceService $advances,
+    ) {}
+
     public function issue(
         Invoice $invoice,
-        float   $amount,
-        string  $method,
-        string  $reason,
-        int     $userId,
-        array   $opts = []
+        float $amount,
+        string $method,
+        string $reason,
+        int $userId,
+        array $opts = [],
     ): Refund {
+        $amount = Money::round($amount);
         if ($amount <= 0) {
             throw ValidationException::withMessages(['amount' => 'قيمة الاسترداد يجب أن تكون أكبر من صفر.']);
         }
+        if (! in_array($method, Refund::ACTIVE_METHODS, true)) {
+            throw ValidationException::withMessages(['method' => 'طريقة الاسترداد غير مدعومة.']);
+        }
+        $status = $opts['status'] ?? 'completed';
+        if (! in_array($status, ['pending', 'completed'], true)) {
+            throw ValidationException::withMessages(['status' => 'حالة الاسترداد غير صحيحة.']);
+        }
 
-        $refund = DB::transaction(function () use ($invoice, $amount, $method, $reason, $userId, $opts) {
-            // Lock the invoice row so two cashiers can't refund the same
-            // balance simultaneously. Resolved WITHOUT the viewer's
-            // BranchScope and pinned to the INVOICE's branch below — the
-            // refunded_total increment is an exact-id UPDATE that the scope
-            // silently reduced to 0 rows for a cross-branch operator.
+        $refund = DB::transaction(function () use ($invoice, $amount, $method, $reason, $userId, $opts, $status) {
             $invoice = Invoice::withoutGlobalScope(BranchScope::class)
-                ->lockForUpdate()->findOrFail($invoice->id);
+                ->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
 
-            return BranchContext::forBranch($invoice->branch_id, function () use ($invoice, $amount, $method, $reason, $userId, $opts) {
-                // A written-off / cancelled invoice is closed: its residual was
-                // already expensed to bad debt (5200) or reversed. Refunding it
-                // would silently recompute its status back to open and resurrect
-                // it on the debt board with a balance the ledger no longer holds.
-                if (in_array($invoice->status, ['unpaid_writeoff', 'cancelled'], true)) {
-                    throw ValidationException::withMessages([
-                        'amount' => 'لا يمكن استرداد فاتورة مشطوبة أو ملغاة. تراجع عن الشطب أولاً إن لزم.',
-                    ]);
+            return BranchContext::forBranch($invoice->branch_id, function () use ($invoice, $amount, $method, $reason, $userId, $opts, $status) {
+                if ($key = trim((string) ($opts['idempotency_key'] ?? ''))) {
+                    if ($existing = Refund::withoutGlobalScope(BranchScope::class)->where('idempotency_key', $key)->first()) {
+                        return $existing;
+                    }
                 }
-
-                // A settle-on-account invoice IS the customer's debt record: its
-                // balance is what they still owe. A cash refund here would raise
-                // that balance (balance = total − netPaid grows as refunded rises),
-                // inflating outstandingDebt() while the GL A/R (1100) is never
-                // re-debited — the debt board and the ledger drift apart, and
-                // returning money to a debtor absurdly makes the debt LARGER. Handle
-                // a return on a parked bill through the customer's debt, not a refund.
+                if (in_array($invoice->status, ['unpaid_writeoff', 'cancelled'], true)) {
+                    throw ValidationException::withMessages(['amount' => 'لا يمكن استرداد فاتورة مشطوبة أو ملغاة.']);
+                }
                 if ($invoice->settled_on_account_at) {
                     throw ValidationException::withMessages([
-                        'amount' => 'هذه الفاتورة مؤجّلة كدين على الزبون — لا تُسترَد نقداً. حصّل الدين أو عدّله من سجل ديون الزبون.',
+                        'amount' => 'هذه فاتورة دين. استخدم «تخفيض الدين» لإصدار إشعار دائن، ثم اصرف فقط أي رصيد مستحق للزبون.',
                     ]);
                 }
+                if ($method === PaymentMethods::CUSTOMER_ADVANCE && ! $invoice->customer_id) {
+                    throw ValidationException::withMessages(['method' => 'اربط زبوناً بالفاتورة قبل تحويل الاسترداد إلى رصيده.']);
+                }
 
-                $alreadyRefunded = (float) $invoice->refunded_total;
-                $available       = (float) $invoice->paid_total - $alreadyRefunded;
-
-                if ($amount > $available + 0.0001) {
+                // credited_total includes pending credit notes, so a second
+                // request cannot reserve the same sale/payment again.
+                $available = $invoice->refundableBalance();
+                if ($amount - $available > 0.01) {
                     throw ValidationException::withMessages([
-                        'amount' => "الحد الأقصى للاسترداد: ".number_format($available, 2).
-                                    " (المدفوع: ".number_format($invoice->paid_total, 2).
-                                    ", المسترد سابقاً: ".number_format($alreadyRefunded, 2).").",
+                        'amount' => 'الحد المتاح للاسترداد الآن هو '.number_format($available, 2).'؛ يشمل حجز الطلبات المعلّقة.',
                     ]);
                 }
 
-                // Resolve active shift for the processor (optional — for shift
-                // reconciliation). Keyed by USER and unscoped on purpose: a user
-                // has at most one open drawer anywhere, and we're pinned to the
-                // INVOICE's branch here while the drawer may live on another —
-                // the scoped lookup left cross-branch refunds with shift_id NULL,
-                // so the cash never left the drawer's expected count.
-                $shiftId = $opts['shift_id'] ?? Shift::withoutGlobalScope(BranchScope::class)
-                    ->where('user_id', $userId)
-                    ->whereNull('closed_at')
-                    ->latest('opened_at')
-                    ->value('id');
+                if (! empty($opts['payment_id'])) {
+                    $payment = Payment::withoutGlobalScope('posted')->find($opts['payment_id']);
+                    if (! $payment || (int) $payment->invoice_id !== (int) $invoice->id || $payment->status !== 'posted') {
+                        throw ValidationException::withMessages(['payment_id' => 'الدفعة المحددة لا تعود لهذه الفاتورة أو تم إلغاؤها.']);
+                    }
+                }
 
-                $status = $opts['status'] ?? 'completed';
+                $creditNote = $this->creditNotes->issue(
+                    $invoice,
+                    $amount,
+                    'refund',
+                    $reason,
+                    $userId,
+                    ['lines' => $opts['lines'] ?? [], 'notes' => $opts['notes'] ?? null],
+                );
+                $invoice->refresh();
+
+                $allocations = $method === 'original'
+                    ? $this->originalPaymentAllocations($invoice, $amount)
+                    : [[
+                        'payment_id' => $opts['payment_id'] ?? null,
+                        'method' => $method,
+                        'amount' => $amount,
+                        'reference' => $opts['reference'] ?? null,
+                    ]];
+                $storedMethod = count(array_unique(array_column($allocations, 'method'))) > 1
+                    ? 'mixed' : (string) $allocations[0]['method'];
 
                 $refund = Refund::create([
-                    // Stamp branch_id from the invoice (NOT BranchContext) —
-                    // refunds may be processed from a different active branch.
-                    'branch_id'    => $invoice->branch_id,
-                    'number'       => Refund::generateNumber(),
-                    'invoice_id'   => $invoice->id,
-                    'payment_id'   => $opts['payment_id'] ?? null,
-                    'amount'       => $amount,
-                    'method'       => $method,
-                    'reference'    => $opts['reference'] ?? null,
-                    'status'       => $status,
-                    'reason'       => $reason,
-                    'notes'        => $opts['notes'] ?? null,
+                    'branch_id' => $invoice->branch_id,
+                    'number' => Refund::generateNumber(),
+                    'invoice_id' => $invoice->id,
+                    'credit_note_id' => $creditNote->id,
+                    'payment_id' => count($allocations) === 1 ? $allocations[0]['payment_id'] : null,
+                    'amount' => $amount,
+                    'method' => $storedMethod,
+                    'reference' => $opts['reference'] ?? null,
+                    'idempotency_key' => $opts['idempotency_key'] ?? null,
+                    'status' => $status,
+                    'reason' => trim($reason),
+                    'notes' => $opts['notes'] ?? null,
                     'processed_by' => $userId,
-                    'shift_id'     => $shiftId,
-                    'refunded_at'  => now(),
+                    'refunded_at' => now(),
                 ]);
+                $refund->allocations()->createMany($allocations);
 
-                // Only completed refunds affect the ledger. Pending ones are reservations.
                 if ($status === 'completed') {
-                    $invoice->increment('refunded_total', $amount);
-                    // Refund just shifted the balance math — recompute so the
-                    // dashboard, customer debt widget, and split flow see the
-                    // correct outstanding amount. Without this, partial
-                    // refunds left balance=0/status=paid forever.
-                    $invoice->fresh()->recomputeBalanceAfterRefund();
-                    app(AccountingService::class)->recordRefundCompleted($refund);
+                    $refund = $this->completeLocked($refund, $invoice, $userId, $opts['reference'] ?? null);
                 }
 
                 ActivityLog::log(
                     'refund.issued',
-                    "استرداد {$refund->number} مقابل فاتورة {$invoice->number}: ".number_format($amount, 2),
-                    $refund
+                    "استرداد {$refund->number} مقابل {$invoice->number}: ".number_format($amount, 2),
+                    $refund,
+                    ['credit_note_id' => $creditNote->id, 'status' => $status, 'allocations' => $allocations],
+                    causerId: $userId,
                 );
 
-                return $refund->fresh(['invoice', 'payment', 'processor']);
+                return $refund->fresh(['invoice', 'creditNote.lines', 'allocations.payment', 'processor']);
             });
         });
 
-        // Notify cashier/manager outside the transaction so a notify failure
-        // can never roll back a successful refund.
         app(NotifyService::class)->refundIssued($refund);
 
         return $refund;
     }
 
-    /**
-     * Cancel a pending refund (e.g., card refund rejected by gateway).
-     */
-    public function cancel(Refund $refund, int $userId, string $reason): Refund
-    {
-        if ($refund->status !== 'pending') {
-            throw ValidationException::withMessages(['status' => 'لا يمكن إلغاء استرداد تم تنفيذه.']);
-        }
-
-        return DB::transaction(function () use ($refund, $userId, $reason) {
-            $refund->update([
-                'status' => 'cancelled',
-                'notes'  => trim(($refund->notes ?? '').' | إلغاء: '.$reason),
-            ]);
-            ActivityLog::log('refund.cancelled', "إلغاء استرداد {$refund->number}: {$reason}", $refund);
-            return $refund->fresh();
-        });
-    }
-
-    /**
-     * Complete a pending refund (card gateway confirmed).
-     */
     public function complete(Refund $refund, int $userId, ?string $reference = null): Refund
     {
-        if ($refund->status !== 'pending') {
-            throw ValidationException::withMessages(['status' => 'يمكن إتمام الاستردادات المعلّقة فقط.']);
-        }
-
         return DB::transaction(function () use ($refund, $userId, $reference) {
-            // Re-fetch under lock WITHOUT the viewer scope and pin to the
-            // REFUND's branch (= the invoice's branch, stamped at issue).
-            // Completing from another active branch used to run the invoice
-            // increment through the viewer's BranchScope — an exact-id UPDATE
-            // matching 0 rows — while the GL entry still posted: the ledger
-            // said money left, the invoice never learned about it.
             $refund = Refund::withoutGlobalScope(BranchScope::class)
                 ->whereKey($refund->id)->lockForUpdate()->firstOrFail();
-
-            // Re-check under lock: a concurrent complete() would otherwise
-            // double-increment refunded_total.
+            $invoice = Invoice::withoutGlobalScope(BranchScope::class)
+                ->whereKey($refund->invoice_id)->lockForUpdate()->firstOrFail();
             if ($refund->status !== 'pending') {
                 throw ValidationException::withMessages(['status' => 'يمكن إتمام الاستردادات المعلّقة فقط.']);
             }
 
-            return BranchContext::forBranch($refund->branch_id, function () use ($refund, $reference) {
+            $otherReservations = (float) Refund::withoutGlobalScope(BranchScope::class)
+                ->where('invoice_id', $invoice->id)->where('status', 'pending')
+                ->whereKeyNot($refund->id)->sum('amount');
+            $capacity = max(0, (float) $invoice->paid_total - (float) $invoice->refunded_total - $otherReservations);
+            if ((float) $refund->amount - $capacity > 0.01) {
+                throw ValidationException::withMessages(['amount' => 'تغيّر رصيد الفاتورة ولم يعد يغطي هذا الاسترداد.']);
+            }
+
+            return BranchContext::forBranch($refund->branch_id, function () use ($refund, $invoice, $userId, $reference) {
+                if (! $refund->allocations()->exists()) {
+                    $refund->allocations()->create([
+                        'payment_id' => $refund->payment_id,
+                        'method' => $refund->method,
+                        'amount' => $refund->amount,
+                        'reference' => $reference ?? $refund->reference,
+                    ]);
+                }
+                // Upgrade a legacy pending request (created before credit-note
+                // documents existed) at the moment it is approved.
+                if (! $refund->credit_note_id) {
+                    $note = $this->creditNotes->issue(
+                        $invoice, (float) $refund->amount, 'refund', $refund->reason,
+                        $userId, ['notes' => $refund->notes],
+                    );
+                    $refund->update(['credit_note_id' => $note->id]);
+                    $invoice->refresh();
+                }
+
+                return $this->completeLocked($refund, $invoice, $userId, $reference);
+            });
+        });
+    }
+
+    public function cancel(Refund $refund, int $userId, string $reason): Refund
+    {
+        return DB::transaction(function () use ($refund, $userId, $reason) {
+            $refund = Refund::withoutGlobalScope(BranchScope::class)
+                ->whereKey($refund->id)->lockForUpdate()->firstOrFail();
+            $invoice = Invoice::withoutGlobalScope(BranchScope::class)
+                ->whereKey($refund->invoice_id)->lockForUpdate()->firstOrFail();
+            if ($refund->status !== 'pending') {
+                throw ValidationException::withMessages(['status' => 'لا يمكن إلغاء استرداد تم تنفيذه. استخدم عكس الاسترداد.']);
+            }
+
+            return BranchContext::forBranch($refund->branch_id, function () use ($refund, $invoice, $userId, $reason) {
                 $refund->update([
-                    'status'    => 'completed',
-                    'reference' => $reference ?? $refund->reference,
-                    // The money actually leaves at gateway confirmation (now), not
-                    // when the pending refund was initiated. Stamping the completion
-                    // date also keeps the posting out of an already-closed period —
-                    // otherwise a pending refund whose creation month got closed
-                    // could never be completed (its frozen date hit the lock).
-                    'refunded_at' => now(),
+                    'status' => 'cancelled', 'cancelled_by' => $userId,
+                    'cancelled_at' => now(),
+                    'notes' => trim(($refund->notes ?? '').' | إلغاء: '.$reason),
                 ]);
+                if ($refund->credit_note_id) {
+                    $this->creditNotes->reverse($refund->creditNote()->firstOrFail(), $userId, 'إلغاء استرداد معلّق: '.$reason);
+                }
+                $invoice->fresh()->recomputeBalanceAfterRefund();
+                ActivityLog::log('refund.cancelled', "إلغاء استرداد {$refund->number}: {$reason}", $refund, causerId: $userId);
 
-                // Now affect the ledger
-                Invoice::whereKey($refund->invoice_id)->increment('refunded_total', $refund->amount);
-                Invoice::find($refund->invoice_id)?->recomputeBalanceAfterRefund();
-                app(AccountingService::class)->recordRefundCompleted($refund);
-
-                ActivityLog::log('refund.completed', "إتمام استرداد {$refund->number}", $refund);
                 return $refund->fresh();
             });
         });
+    }
+
+    public function reverse(Refund $refund, int $userId, string $reason): Refund
+    {
+        return DB::transaction(function () use ($refund, $userId, $reason) {
+            $refund = Refund::withoutGlobalScope(BranchScope::class)
+                ->whereKey($refund->id)->with('allocations')->lockForUpdate()->firstOrFail();
+            $invoice = Invoice::withoutGlobalScope(BranchScope::class)
+                ->whereKey($refund->invoice_id)->lockForUpdate()->firstOrFail();
+            if ($refund->status !== 'completed') {
+                throw ValidationException::withMessages(['status' => 'يمكن عكس الاسترداد المكتمل فقط.']);
+            }
+
+            return BranchContext::forBranch($refund->branch_id, function () use ($refund, $invoice, $userId, $reason) {
+                $this->advances->reverseRefundCredits($refund, $userId, $reason);
+                $this->accounting->reverseRefundCompleted($refund, $userId, $reason);
+                $invoice->update([
+                    'refunded_total' => max(0, Money::round((float) $invoice->refunded_total - (float) $refund->amount)),
+                ]);
+                if ($refund->credit_note_id) {
+                    $this->creditNotes->reverse($refund->creditNote()->firstOrFail(), $userId, 'عكس الاسترداد: '.$reason);
+                } else {
+                    // Historical completed refunds had one combined GL entry.
+                    // Migration backfilled credited_total for them, so reverse
+                    // that backfill when their legacy document is reversed.
+                    $invoice->update([
+                        'credited_total' => max(0, Money::round((float) $invoice->credited_total - (float) $refund->amount)),
+                    ]);
+                }
+                $invoice->fresh()->recomputeBalanceAfterRefund();
+                $refund->update([
+                    'status' => 'reversed', 'reversed_by' => $userId,
+                    'reversed_at' => now(), 'reversal_reason' => trim($reason),
+                ]);
+                app(LoyaltyService::class)->reverseForRefund($invoice->fresh(), (float) $refund->amount, $userId);
+                ActivityLog::log('refund.reversed', "عكس استرداد {$refund->number}: {$reason}", $refund, causerId: $userId);
+
+                return $refund->fresh(['creditNote', 'allocations']);
+            });
+        });
+    }
+
+    private function completeLocked(Refund $refund, Invoice $invoice, int $userId, ?string $reference): Refund
+    {
+        $refund->update([
+            'status' => 'completed', 'reference' => $reference ?? $refund->reference,
+            'refunded_at' => now(), 'completed_at' => now(), 'completed_by' => $userId,
+        ]);
+        if ($reference) {
+            $refund->allocations()->whereNull('reference')->update(['reference' => $reference]);
+        }
+
+        $invoice->increment('refunded_total', (float) $refund->amount);
+        $invoice = $invoice->fresh();
+        $invoice->recomputeBalanceAfterRefund();
+        $refund = $refund->fresh('allocations');
+        $this->advances->creditRefundAllocations($refund, $userId);
+        $this->accounting->recordRefundCompleted($refund);
+        app(LoyaltyService::class)->reverseForRefund($invoice->fresh(), (float) $refund->amount, $userId);
+        ActivityLog::log('refund.completed', "إتمام استرداد {$refund->number}", $refund, causerId: $userId);
+
+        return $refund->fresh(['invoice', 'creditNote.lines', 'allocations.payment']);
+    }
+
+    private function originalPaymentAllocations(Invoice $invoice, float $amount): array
+    {
+        $payments = Payment::withoutGlobalScope('posted')
+            ->where('invoice_id', $invoice->id)->where('status', 'posted')
+            ->orderBy('paid_at')->orderBy('id')->lockForUpdate()->get();
+        $used = DB::table('refund_allocations')
+            ->join('refunds', 'refunds.id', '=', 'refund_allocations.refund_id')
+            ->whereIn('refunds.status', ['pending', 'completed'])
+            ->whereIn('refund_allocations.payment_id', $payments->pluck('id'))
+            ->groupBy('refund_allocations.payment_id')
+            ->selectRaw('refund_allocations.payment_id, SUM(refund_allocations.amount) as amount')
+            ->pluck('amount', 'payment_id');
+
+        $remaining = $amount;
+        $allocations = [];
+        foreach ($payments as $payment) {
+            if ($remaining <= 0.001) {
+                break;
+            }
+            $available = max(0, (float) $payment->amount - (float) ($used[$payment->id] ?? 0));
+            if ($available <= 0.001) {
+                continue;
+            }
+            $take = Money::round(min($remaining, $available));
+            $allocations[] = [
+                'payment_id' => $payment->id,
+                'method' => $payment->method,
+                'amount' => $take,
+                'reference' => $payment->reference,
+            ];
+            $remaining = Money::round($remaining - $take);
+        }
+        if ($remaining > 0.001) {
+            throw ValidationException::withMessages(['amount' => 'تعذّر توزيع المبلغ بالكامل على الدفعات الأصلية.']);
+        }
+
+        return $allocations;
     }
 }

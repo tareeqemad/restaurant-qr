@@ -14,9 +14,9 @@ class Ingredient extends Model
     use HasFactory, HasLocalizedFields, SoftDeletes;
 
     protected $fillable = [
-        'sku', 'name', 'name_en', 'base_unit_id', 'supplier_id',
+        'sku', 'name', 'base_unit_id', 'measurement_type', 'supplier_id',
         'current_stock', 'reorder_threshold', 'cost_per_unit',
-        'track_stock', 'active', 'notes',
+        'track_stock', 'tracks_expiry', 'default_shelf_life_days', 'active', 'notes',
         // Composite ingredient — expanded recursively at deduction time
         // (sub-recipe stored in recipe_items via parent_ingredient_id).
         'is_composite', 'composite_yield',
@@ -63,6 +63,8 @@ class Ingredient extends Model
         'reorder_threshold' => 'decimal:4',
         'cost_per_unit' => 'decimal:4',
         'track_stock' => 'boolean',
+        'tracks_expiry' => 'boolean',
+        'default_shelf_life_days' => 'integer',
         'active' => 'boolean',
         'is_composite' => 'boolean',
         'composite_yield' => 'decimal:4',
@@ -141,7 +143,19 @@ class Ingredient extends Model
 
         // Yield-adjusted raw cost: $10/kg paid for chicken with 70% yield
         // = $14.29/kg of usable meat.
-        if (! $this->is_composite && $this->yield_pct !== null && (float) $this->yield_pct > 0 && (float) $this->yield_pct < 100) {
+        // Purchase receipts already reduce the stocked quantity by yield and
+        // store cost_per_unit per USABLE base unit. Applying yield again here
+        // would double-gross-up every recipe after the first receipt. Before a
+        // first receipt, a manually entered catalogue cost is still a raw cost
+        // and needs the legacy yield adjustment.
+        $hasReceiptCost = IngredientBatch::withoutGlobalScopes()
+            ->withTrashed()
+            ->where('ingredient_id', $this->id)
+            ->exists();
+        if (! $this->is_composite && ! $hasReceiptCost
+            && $this->yield_pct !== null
+            && (float) $this->yield_pct > 0
+            && (float) $this->yield_pct < 100) {
             $base = $base / ((float) $this->yield_pct / 100);
         }
 
@@ -160,7 +174,7 @@ class Ingredient extends Model
 
     public function isLowStock(): bool
     {
-        return $this->track_stock && $this->current_stock <= $this->reorder_threshold;
+        return $this->track_stock && $this->trackedUsableStock() <= $this->reorder_threshold;
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -189,6 +203,63 @@ class Ingredient extends Model
     }
 
     /**
+     * Quantity that may actually be used in production. Once an ingredient
+     * has batch history, the batch ledger is authoritative and expired lots
+     * are excluded. Legacy, never-batched ingredients retain aggregate stock.
+     */
+    public function usableStockAtLocation(int $storageLocationId): float
+    {
+        $batches = IngredientBatch::withoutGlobalScope(\App\Models\Scopes\BranchScope::class)
+            ->where('ingredient_id', $this->id)
+            ->where('storage_location_id', $storageLocationId);
+
+        if ((clone $batches)->exists()) {
+            return (float) (clone $batches)
+                ->where('remaining_qty', '>', 0)
+                ->where(fn ($q) => $q->whereNull('expiry_date')
+                    ->orWhereDate('expiry_date', '>=', now()->toDateString()))
+                ->sum('remaining_qty');
+        }
+
+        return (float) IngredientStock::where('ingredient_id', $this->id)
+            ->where('storage_location_id', $storageLocationId)
+            ->value('quantity');
+    }
+
+    public function usableStockAtBranch(int $branchId): float
+    {
+        $batches = IngredientBatch::withoutGlobalScope(\App\Models\Scopes\BranchScope::class)
+            ->where('ingredient_id', $this->id)
+            ->where('branch_id', $branchId);
+
+        if ((clone $batches)->exists()) {
+            return (float) (clone $batches)
+                ->where('remaining_qty', '>', 0)
+                ->where(fn ($q) => $q->whereNull('expiry_date')
+                    ->orWhereDate('expiry_date', '>=', now()->toDateString()))
+                ->sum('remaining_qty');
+        }
+
+        return $this->stockAtBranch($branchId);
+    }
+
+    public function trackedUsableStock(): float
+    {
+        $batches = IngredientBatch::withoutGlobalScope(\App\Models\Scopes\BranchScope::class)
+            ->where('ingredient_id', $this->id);
+
+        if ((clone $batches)->exists()) {
+            return (float) (clone $batches)
+                ->where('remaining_qty', '>', 0)
+                ->where(fn ($q) => $q->whereNull('expiry_date')
+                    ->orWhereDate('expiry_date', '>=', now()->toDateString()))
+                ->sum('remaining_qty');
+        }
+
+        return $this->trackedStock();
+    }
+
+    /**
      * Inventory value at a specific branch — stock × per-branch weighted
      * average cost from the active batches sitting in that branch's
      * storage locations.
@@ -208,7 +279,8 @@ class Ingredient extends Model
      */
     public function trackedValue(): float
     {
-        $branchIds = StorageLocation::where('active', true)
+        $branchIds = StorageLocation::withoutGlobalScopes()
+            ->where('active', true)
             ->distinct()
             ->pluck('branch_id');
 
@@ -264,7 +336,10 @@ class Ingredient extends Model
      */
     public function costAtBranch(int $branchId): float
     {
-        $row = IngredientBatch::query()
+        // The requested branch id is authoritative. Do not let the active
+        // UI branch scope add a second, contradictory branch predicate when
+        // consolidated reports ask for several branches in one request.
+        $row = IngredientBatch::withoutGlobalScope(\App\Models\Scopes\BranchScope::class)
             ->join('storage_locations', 'ingredient_batches.storage_location_id', '=', 'storage_locations.id')
             ->where('ingredient_batches.ingredient_id', $this->id)
             ->where('storage_locations.branch_id', $branchId)
@@ -297,6 +372,6 @@ class Ingredient extends Model
             return false;
         }
 
-        return $this->stockAtBranch($branchId) <= $threshold;
+        return $this->usableStockAtBranch($branchId) <= $threshold;
     }
 }

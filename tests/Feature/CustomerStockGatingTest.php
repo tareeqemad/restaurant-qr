@@ -7,6 +7,7 @@ use App\Models\Category;
 use App\Models\Ingredient;
 use App\Models\IngredientStock;
 use App\Models\MenuItem;
+use App\Models\Order;
 use App\Models\RecipeItem;
 use App\Models\Station;
 use App\Models\StorageLocation;
@@ -16,6 +17,7 @@ use App\Models\Unit;
 use App\Services\InventoryService;
 use App\Support\BranchContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 /**
@@ -161,6 +163,88 @@ class CustomerStockGatingTest extends TestCase
         ]]);
         $this->assertCount(1, $two);
         $this->assertSame(300.0, (float) $two[0]['required']);
+    }
+
+    public function test_stock_in_another_branch_cannot_cover_this_kitchens_shortage(): void
+    {
+        $otherBranch = Branch::create(['code' => 'other', 'name' => 'Other', 'is_active' => true]);
+        $otherStorage = BranchContext::forBranch($otherBranch->id, fn () => StorageLocation::create([
+            'branch_id' => $otherBranch->id,
+            'code' => 'other-k',
+            'name' => 'Other kitchen',
+            'is_default' => true,
+            'active' => true,
+        ]));
+        IngredientStock::create([
+            'ingredient_id' => $this->patty->id,
+            'storage_location_id' => $otherStorage->id,
+            'quantity' => 10000,
+            'reorder_threshold' => 0,
+        ]);
+        $this->patty->update(['current_stock' => 10100]);
+
+        $issues = app(InventoryService::class)->checkStockForOrderPreview([[
+            'menu_item_id' => $this->burger->id,
+            'quantity' => 1,
+            'modifier_ids' => [],
+        ]], $this->branch->id);
+
+        $this->assertCount(1, $issues);
+        $this->assertSame(100.0, (float) $issues[0]['available']);
+    }
+
+    public function test_strict_stock_blocks_a_negative_location_balance(): void
+    {
+        try {
+            app(InventoryService::class)->recordMovement(
+                ingredient: $this->patty,
+                type: 'out',
+                qtyBase: 150,
+                storageLocationId: $this->storage->id,
+            );
+            $this->fail('Expected the local stock guard to reject a negative balance.');
+        } catch (ValidationException) {
+            // expected
+        }
+
+        $this->assertSame(100.0, (float) IngredientStock::where([
+            'ingredient_id' => $this->patty->id,
+            'storage_location_id' => $this->storage->id,
+        ])->value('quantity'));
+    }
+
+    public function test_qr_submit_token_prevents_a_duplicate_order(): void
+    {
+        IngredientStock::where('ingredient_id', $this->patty->id)->update(['quantity' => 1000]);
+        $this->patty->update(['current_stock' => 1000]);
+        $cart = [[
+            'id' => 'line-1',
+            'menu_item_id' => $this->burger->id,
+            'name' => 'Burger',
+            'image' => '',
+            'quantity' => 1,
+            'unit_price' => 10,
+            'modifier_ids' => [],
+            'modifiers' => [],
+            'modifiers_total' => 0,
+            'notes' => null,
+            'subtotal' => 10,
+        ]];
+
+        $payload = [
+            'session' => $this->session->token,
+            '_idem' => 'same-mobile-tap',
+            'customer_name' => 'زبون اختبار',
+            'customer_phone' => '0599000444',
+        ];
+        $cartKey = 'cart.'.$this->session->token;
+
+        $this->withSession([$cartKey => $cart])->post(route('customer.cart.submit'), $payload);
+        // Re-introduce the stale cart snapshot a concurrent second request
+        // would have read before the first request cleared the session.
+        $this->withSession([$cartKey => $cart])->post(route('customer.cart.submit'), $payload);
+
+        $this->assertSame(1, Order::where('table_session_id', $this->session->id)->count());
     }
 
     // ─── helpers ──────────────────────────────────────────────────────

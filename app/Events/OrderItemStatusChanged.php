@@ -32,10 +32,14 @@ class OrderItemStatusChanged implements ShouldBroadcastNow
     public function broadcastOn(): array
     {
         // Staff channels are PRIVATE (auth via routes/channels.php).
-        $channels = [new PrivateChannel('waiters')];
+        $branchId = $this->item->order->branch_id;
+        $channels = [
+            new PrivateChannel('branch.'.$branchId.'.waiters'),
+            new PrivateChannel('owners'),
+        ];
 
         if ($this->item->station?->code) {
-            $channels[] = new PrivateChannel('station.'.$this->item->station->code);
+            $channels[] = new PrivateChannel('branch.'.$branchId.'.station.'.$this->item->station->code);
         }
 
         // Customer session channel stays public — token is the capability.

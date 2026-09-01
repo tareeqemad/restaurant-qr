@@ -314,17 +314,26 @@ body {
     height: 32px !important;
 }
 
-/* Horizontal menu row — tighter padding, slightly smaller icons so the
-   row sits at ~48px without truncating any label. */
+/* Horizontal menu row — keep icons subordinate to their labels. Dashtic's
+   base rule gives every glyph a 1.438rem font size, which overflows even when
+   the surrounding icon frame is made smaller. Own both dimensions here. */
 [data-nav-layout="horizontal"] .app-sidebar .main-menu > li.slide > .side-menu__item {
     padding-block: 8px !important;
     padding-inline: 12px !important;
-    gap: 8px;
+    gap: 7px;
 }
 [data-nav-layout="horizontal"] .app-sidebar .side-menu__icon {
-    width: 18px !important;
-    height: 18px !important;
-    flex-shrink: 0;
+    width: 16px !important;
+    height: 16px !important;
+    flex: 0 0 16px !important;
+    margin: 0 !important;
+    font-size: .9rem !important;
+    line-height: 1 !important;
+}
+[data-nav-layout="horizontal"] .app-sidebar .side-menu__icon > i,
+[data-nav-layout="horizontal"] .app-sidebar .side-menu__icon > i::before {
+    font-size: inherit !important;
+    line-height: 1 !important;
 }
 [data-nav-layout="horizontal"] .app-sidebar .side-menu__label {
     font-size: .82rem;
@@ -401,17 +410,11 @@ body {
 
 @media (min-width: 992px) {
     /* First-level dropdowns drop DOWN — slide along Y */
-    html[data-nav-layout="horizontal"] .app-sidebar .main-menu > .slide.has-sub:hover > .slide-menu,
-    html[data-nav-layout="horizontal"] .app-sidebar .main-menu > .slide.has-sub:focus-within > .slide-menu,
-    html[data-nav-layout="horizontal"] .app-sidebar .main-menu > .slide.has-sub.relax-hover-open > .slide-menu,
-    html[data-nav-layout="horizontal"] .app-sidebar .main-menu > .slide.has-sub.relax-pinned-open > .slide-menu {
+    html[data-nav-layout="horizontal"] .app-sidebar .main-menu > .slide.has-sub.open > .slide-menu {
         animation: relaxDropdownIn .15s ease-out;
     }
     /* Second-level (RTL) flies out leftward — slide along X */
-    html[dir="rtl"][data-nav-layout="horizontal"] .app-sidebar .slide-menu .slide.has-sub:hover > .slide-menu,
-    html[dir="rtl"][data-nav-layout="horizontal"] .app-sidebar .slide-menu .slide.has-sub:focus-within > .slide-menu,
-    html[dir="rtl"][data-nav-layout="horizontal"] .app-sidebar .slide-menu .slide.has-sub.relax-hover-open > .slide-menu,
-    html[dir="rtl"][data-nav-layout="horizontal"] .app-sidebar .slide-menu .slide.has-sub.relax-pinned-open > .slide-menu {
+    html[dir="rtl"][data-nav-layout="horizontal"] .app-sidebar .slide-menu .slide.has-sub.open > .slide-menu {
         animation: relaxDropdownInRtl .15s ease-out;
     }
 }
@@ -499,3 +502,21 @@ body {
     background: rgba(var(--primary-rgb), .2);
     border-radius: 3px;
 }
+
+/*
+ * Compatibility aliases for icon names introduced after the bundled
+ * Bootstrap Icons font. Keeping the semantic class names in the Vue screens
+ * lets us upgrade the font later, while older on-prem installations render a
+ * real glyph instead of an empty square today.
+ */
+.bi-building-check::before { content: "\f62e"; }
+.bi-building-fill::before { content: "\f1dd"; }
+.bi-building-gear::before { content: "\f5db"; }
+.bi-building-x::before { content: "\f1c7"; }
+.bi-cash-register::before { content: "\f246"; }
+.bi-equals::before { content: "\f12b"; }
+.bi-person-down::before { content: "\f4d8"; }
+.bi-person-exclamation::before { content: "\f4df"; }
+.bi-cup-hot::before { content: "\f2e0"; }
+.bi-cup-hot-fill::before { content: "\f2de"; }
+.bi-fire::before { content: "\f46e"; }

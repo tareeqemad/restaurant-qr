@@ -2,17 +2,16 @@
 
 namespace Tests\Feature;
 
-use App\Enums\OrderItemStatus;
-use App\Enums\OrderStatus;
 use App\Models\Branch;
 use App\Models\Category;
 use App\Models\Customer;
 use App\Models\Ingredient;
 use App\Models\IngredientStock;
+use App\Models\Invoice;
 use App\Models\MenuItem;
-use App\Models\Permission;
 use App\Models\RecipeItem;
 use App\Models\Role;
+use App\Models\Setting;
 use App\Models\Station;
 use App\Models\StorageLocation;
 use App\Models\Table;
@@ -20,8 +19,10 @@ use App\Models\TableSession;
 use App\Models\Unit;
 use App\Models\User;
 use App\Services\BillingService;
+use App\Services\CustomerAdvanceService;
 use App\Services\OrderService;
 use App\Support\BranchContext;
+use App\Support\PaymentMethods;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
 use Tests\TestCase;
@@ -41,8 +42,11 @@ class CustomerDebtLedgerTest extends TestCase
     use RefreshDatabase;
 
     protected Branch $branch;
+
     protected User $cashier;
+
     protected MenuItem $menuItem;
+
     protected Customer $customer;
 
     protected function setUp(): void
@@ -52,8 +56,8 @@ class CustomerDebtLedgerTest extends TestCase
 
         // Disable tax/service so the test math is straightforward and the
         // arithmetic mirrors what the cashier sees on a tax-exempt sale.
-        \App\Models\Setting::put('tax_enabled',     false, 'billing', 'bool');
-        \App\Models\Setting::put('service_enabled', false, 'billing', 'bool');
+        Setting::put('tax_enabled', false, 'billing', 'bool');
+        Setting::put('service_enabled', false, 'billing', 'bool');
 
         $this->branch = Branch::create(['code' => 'main', 'name' => 'Main', 'is_active' => true]);
         BranchContext::set($this->branch->id);
@@ -61,10 +65,10 @@ class CustomerDebtLedgerTest extends TestCase
         Role::create(['name' => 'cashier', 'label' => 'Cashier', 'is_system' => true]);
         $this->cashier = $this->makeCashier();
 
-        $unit = Unit::create(['code'=>'pcs','name'=>'pcs','unit_type'=>'count','factor_to_base'=>1,'is_base'=>true]);
-        $storage = StorageLocation::create(['code'=>'main-kitchen','name'=>'K','is_default'=>true,'active'=>true]);
-        $station = Station::create(['code'=>'kitchen','name'=>'Kitchen','storage_location_id'=>$storage->id,'active'=>true]);
-        $category = Category::create(['slug'=>'mains','name'=>'Mains','default_station_id'=>$station->id,'active'=>true]);
+        $unit = Unit::create(['code' => 'pcs', 'name' => 'pcs', 'unit_type' => 'count', 'factor_to_base' => 1, 'is_base' => true]);
+        $storage = StorageLocation::create(['code' => 'main-kitchen', 'name' => 'K', 'is_default' => true, 'active' => true]);
+        $station = Station::create(['code' => 'kitchen', 'name' => 'Kitchen', 'storage_location_id' => $storage->id, 'active' => true]);
+        $category = Category::create(['slug' => 'mains', 'name' => 'Mains', 'default_station_id' => $station->id, 'active' => true]);
 
         $ingredient = Ingredient::create([
             'sku' => 'ING-1', 'name' => 'Stock', 'base_unit_id' => $unit->id,
@@ -147,10 +151,10 @@ class CustomerDebtLedgerTest extends TestCase
         // Customer hands over 180 — system should clear the older 40 debt
         // first (FIFO) and then chip 140 off the current visit.
         $allocations = app(BillingService::class)->payCustomerDebt(
-            customer:       $this->customer->refresh(),
-            amount:         180.0,
-            method:         'cash',
-            userId:         $this->cashier->id,
+            customer: $this->customer->refresh(),
+            amount: 180.0,
+            method: 'cash',
+            userId: $this->cashier->id,
             primaryInvoice: $invoice2,
         );
 
@@ -203,37 +207,78 @@ class CustomerDebtLedgerTest extends TestCase
         app(BillingService::class)->settleOnAccount($invoice2, $this->cashier->id);
     }
 
+    public function test_customer_advance_can_pay_an_old_debt_and_keeps_both_balances_correct(): void
+    {
+        $this->actingAs($this->cashier);
+        $invoice = $this->doVisit(total: 100);
+        app(BillingService::class)->settleOnAccount($invoice, $this->cashier->id);
+
+        app(CustomerAdvanceService::class)->deposit(
+            customer: $this->customer,
+            amount: 80,
+            method: 'cash',
+            branchId: $this->branch->id,
+            userId: $this->cashier->id,
+        );
+
+        $allocations = app(BillingService::class)->payCustomerDebt(
+            customer: $this->customer->fresh(),
+            amount: 60,
+            method: PaymentMethods::CUSTOMER_ADVANCE,
+            userId: $this->cashier->id,
+        );
+
+        $this->assertCount(1, $allocations);
+        $this->assertEqualsWithDelta(40, (float) $invoice->fresh()->balance, 0.001);
+        $this->assertEqualsWithDelta(40, $this->customer->fresh()->outstandingDebt(), 0.001);
+        $this->assertEqualsWithDelta(20, (float) $this->customer->fresh()->advance_balance, 0.001);
+        $this->assertDatabaseHas('payments', [
+            'invoice_id' => $invoice->id,
+            'method' => PaymentMethods::CUSTOMER_ADVANCE,
+            'amount' => 60,
+        ]);
+        $this->assertDatabaseHas('journal_entries', ['event_type' => 'customer_advance_redeemed']);
+    }
+
     // ─── helpers ──────────────────────────────────────────────────────
 
     /**
      * Open a fresh dine-in visit for the linked customer, drop one or
-     * more of the test meal in, approve, and issue the invoice. Returns
-     * the issued invoice ready for payment.
+     * more of the test meal in, approve it, complete the kitchen lifecycle,
+     * and issue the invoice. Debt settlement is a checkout action after the
+     * customer has received the meal, so only then may it free the table.
      */
-    protected function doVisit(float $total, int $quantity = 1): \App\Models\Invoice
+    protected function doVisit(float $total, int $quantity = 1): Invoice
     {
         $table = Table::create([
-            'number'   => (string) random_int(1, 9999),
+            'number' => (string) random_int(1, 9999),
             'capacity' => 4,
-            'status'   => 'occupied',
-            'active'   => true,
+            'status' => 'occupied',
+            'active' => true,
         ]);
         $session = TableSession::create([
-            'table_id'    => $table->id,
+            'table_id' => $table->id,
             'customer_id' => $this->customer->id,
             'cover_count' => 1,
-            'status'      => 'active',
+            'status' => 'active',
         ]);
 
         $order = app(OrderService::class)->createFromCart($session, [[
             'menu_item_id' => $this->menuItem->id,
-            'quantity'     => $quantity,
+            'quantity' => $quantity,
             'modifier_ids' => [],
         ]]);
         app(OrderService::class)->approve($order, $this->cashier->id);
 
+        foreach ($order->items as $item) {
+            app(OrderService::class)->startPreparing($item, $this->cashier->id);
+            app(OrderService::class)->markItemReady($item->fresh());
+            app(OrderService::class)->markItemServed($item->fresh(), $this->cashier->id);
+        }
+
         $invoice = app(BillingService::class)->issueInvoice($session->fresh(), $this->cashier->id);
         $this->assertSame($total, (float) $invoice->total, 'Sanity: invoice total mismatched test expectation.');
+
         return $invoice;
     }
 
@@ -245,6 +290,7 @@ class CustomerDebtLedgerTest extends TestCase
             'primary_branch_id' => $this->branch->id, 'role' => 'cashier',
         ]);
         $user->branches()->attach($this->branch->id);
+
         return $user;
     }
 }

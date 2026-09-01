@@ -19,6 +19,10 @@ class CashReconciliation extends Model
         'statement_balance',
         'difference',
         'status',
+        'resolution_journal_entry_id',
+        'resolved_by',
+        'resolved_at',
+        'resolution_notes',
         'reconciled_at',
         'reconciled_by',
         'notes',
@@ -30,6 +34,7 @@ class CashReconciliation extends Model
         'statement_balance' => 'decimal:4',
         'difference' => 'decimal:4',
         'reconciled_at' => 'datetime',
+        'resolved_at' => 'datetime',
     ];
 
     public function branch(): BelongsTo
@@ -50,5 +55,15 @@ class CashReconciliation extends Model
     public function reconciler(): BelongsTo
     {
         return $this->belongsTo(User::class, 'reconciled_by');
+    }
+
+    public function resolutionEntry(): BelongsTo
+    {
+        return $this->belongsTo(JournalEntry::class, 'resolution_journal_entry_id');
+    }
+
+    public function resolver(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'resolved_by');
     }
 }

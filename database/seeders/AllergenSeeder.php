@@ -10,16 +10,16 @@ class AllergenSeeder extends Seeder
     public function run(): void
     {
         $allergens = [
-            ['code' => 'gluten', 'name' => 'غلوتين', 'name_en' => 'Gluten', 'icon' => '🌾'],
-            ['code' => 'dairy', 'name' => 'ألبان', 'name_en' => 'Dairy', 'icon' => '🥛'],
-            ['code' => 'eggs', 'name' => 'بيض', 'name_en' => 'Eggs', 'icon' => '🥚'],
-            ['code' => 'nuts', 'name' => 'مكسرات', 'name_en' => 'Nuts', 'icon' => '🥜'],
-            ['code' => 'peanuts', 'name' => 'فول سوداني', 'name_en' => 'Peanuts', 'icon' => '🥜'],
-            ['code' => 'soy', 'name' => 'صويا', 'name_en' => 'Soy', 'icon' => '🫘'],
-            ['code' => 'fish', 'name' => 'سمك', 'name_en' => 'Fish', 'icon' => '🐟'],
-            ['code' => 'shellfish', 'name' => 'محار', 'name_en' => 'Shellfish', 'icon' => '🦐'],
-            ['code' => 'sesame', 'name' => 'سمسم', 'name_en' => 'Sesame', 'icon' => '🌰'],
-            ['code' => 'spicy', 'name' => 'حار', 'name_en' => 'Spicy', 'icon' => '🌶️'],
+            ['code' => 'gluten', 'name' => 'غلوتين', 'icon' => '🌾'],
+            ['code' => 'dairy', 'name' => 'ألبان', 'icon' => '🥛'],
+            ['code' => 'eggs', 'name' => 'بيض', 'icon' => '🥚'],
+            ['code' => 'nuts', 'name' => 'مكسرات', 'icon' => '🥜'],
+            ['code' => 'peanuts', 'name' => 'فول سوداني', 'icon' => '🥜'],
+            ['code' => 'soy', 'name' => 'صويا', 'icon' => '🫘'],
+            ['code' => 'fish', 'name' => 'سمك', 'icon' => '🐟'],
+            ['code' => 'shellfish', 'name' => 'محار', 'icon' => '🦐'],
+            ['code' => 'sesame', 'name' => 'سمسم', 'icon' => '🌰'],
+            ['code' => 'spicy', 'name' => 'حار', 'icon' => '🌶️'],
         ];
 
         foreach ($allergens as $i => $a) {

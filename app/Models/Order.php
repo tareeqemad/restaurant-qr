@@ -20,10 +20,11 @@ class Order extends Model
     protected $fillable = [
         'number', 'table_id', 'table_number_snapshot', 'table_session_id', 'customer_id', 'customer_name', 'customer_phone',
         'customer_address_id', 'order_type', 'status',
-        'order_source', 'external_reference', 'delivery_receiver', 'platform_commission_pct',
+        'order_source',
         'created_by_user_id', 'approved_by_user_id', 'cancelled_by_user_id',
-        // Staff-meal mode: when set, the order is consumed by THIS employee
-        // and gets charged to their monthly allowance (not invoiced normally).
+        // Operational owner of a staff meal. The legacy user column is kept
+        // only while existing installations are backfilled.
+        'staff_consumer_employee_id',
         'staff_consumer_user_id',
         'customer_notes', 'delivery_address', 'internal_notes', 'cancelled_reason',
         'subtotal', 'discount_total', 'tax_total', 'service_total', 'delivery_fee', 'tip', 'total',
@@ -43,7 +44,6 @@ class Order extends Model
         'total' => 'decimal:2',
         'tax_rate' => 'decimal:2',
         'service_rate' => 'decimal:2',
-        'platform_commission_pct' => 'decimal:2',
         'estimated_prep_minutes' => 'integer',
         'submitted_at' => 'datetime',
         'scheduled_for' => 'datetime',
@@ -59,6 +59,13 @@ class Order extends Model
 
     protected static function booted(): void
     {
+        static::saving(function (self $order): void {
+            if (! $order->staff_consumer_employee_id && $order->staff_consumer_user_id) {
+                $user = User::find($order->staff_consumer_user_id);
+                $order->staff_consumer_employee_id = $user ? Employee::fromUser($user)->id : null;
+            }
+        });
+
         static::creating(function (self $m) {
             if (empty($m->number)) {
                 $m->number = self::generateNumber();
@@ -244,17 +251,28 @@ class Order extends Model
      */
     public function staffConsumer(): BelongsTo
     {
+        return $this->belongsTo(Employee::class, 'staff_consumer_employee_id');
+    }
+
+    public function legacyStaffConsumerUser(): BelongsTo
+    {
         return $this->belongsTo(User::class, 'staff_consumer_user_id');
     }
 
     public function isStaffMeal(): bool
     {
-        return ! is_null($this->staff_consumer_user_id);
+        return ! is_null($this->staff_consumer_employee_id)
+            || ! is_null($this->staff_consumer_user_id);
     }
 
     public function discounts(): HasMany
     {
         return $this->hasMany(OrderDiscount::class);
+    }
+
+    public function changeRequests(): HasMany
+    {
+        return $this->hasMany(OrderChangeRequest::class);
     }
 
     public function statusLabel(): string
@@ -310,7 +328,7 @@ class Order extends Model
             ], true));
     }
 
-    // ─── Source / Delivery-platform helpers ────────────────────────────
+    // ─── Operational source helpers ────────────────────────────────────
 
     public function source(): ?OrderSource
     {
@@ -332,19 +350,9 @@ class Order extends Model
         return $this->source()?->icon() ?? 'bi-box';
     }
 
-    public function isExternal(): bool
+    /** Whether this order was entered without a dining-table session. */
+    public function isOffTable(): bool
     {
-        return $this->order_source !== 'dine_in';
-    }
-
-    /** Net revenue to the restaurant after platform commission. */
-    public function netRevenue(): float
-    {
-        return (float) $this->total * (1 - (float) $this->platform_commission_pct / 100);
-    }
-
-    public function commissionAmount(): float
-    {
-        return (float) $this->total - $this->netRevenue();
+        return $this->table_id === null;
     }
 }

@@ -30,12 +30,20 @@ class ActivityLog extends Model
         return $this->morphTo();
     }
 
-    public static function log(string $event, string $description, $subject = null, array $properties = [], string $logName = 'default'): self
-    {
+    public static function log(
+        string $event,
+        string $description,
+        $subject = null,
+        array $properties = [],
+        string $logName = 'default',
+        ?int $causerId = null,
+    ): self {
+        $causerId ??= auth()->id();
+
         return self::create([
             'log_name' => $logName,
-            'causer_id' => auth()->id(),
-            'causer_type' => auth()->user() ? get_class(auth()->user()) : null,
+            'causer_id' => $causerId,
+            'causer_type' => $causerId ? User::class : null,
             'event' => $event,
             'description' => $description,
             'subject_type' => $subject ? get_class($subject) : null,

@@ -23,6 +23,7 @@ class BranchDefaultProvisioningTest extends TestCase
     use RefreshDatabase;
 
     protected Branch $branch;
+
     protected User $superAdmin;
 
     protected function setUp(): void
@@ -53,6 +54,7 @@ class BranchDefaultProvisioningTest extends TestCase
         $this->actingAs($this->superAdmin)
             ->post(route('admin.branches.store'), [
                 'code' => 'gaza-2', 'name' => 'فرع غزة ٢', 'is_active' => 1,
+                'owners' => [$this->ownerPayload('مالك غزة')],
             ])
             ->assertRedirect(route('admin.branches.index'));
 
@@ -81,9 +83,11 @@ class BranchDefaultProvisioningTest extends TestCase
     {
         $this->actingAs($this->superAdmin)->post(route('admin.branches.store'), [
             'code' => 'north', 'name' => 'فرع الشمال', 'is_active' => 1,
+            'owners' => [$this->ownerPayload('مالك الشمال')],
         ]);
         $this->actingAs($this->superAdmin)->post(route('admin.branches.store'), [
             'code' => 'south', 'name' => 'فرع الجنوب', 'is_active' => 1,
+            'owners' => [$this->ownerPayload('مالك الجنوب')],
         ]);
 
         foreach (['north', 'south'] as $code) {
@@ -100,5 +104,16 @@ class BranchDefaultProvisioningTest extends TestCase
             StorageLocation::withoutGlobalScopes()
                 ->whereIn('code', ['main-north', 'main-south'])->count()
         );
+    }
+
+    private function ownerPayload(string $name): array
+    {
+        return [
+            'owner_type' => 'person',
+            'name' => $name,
+            'ownership_percentage' => 100,
+            'is_primary' => true,
+            'is_authorized_signatory' => true,
+        ];
     }
 }

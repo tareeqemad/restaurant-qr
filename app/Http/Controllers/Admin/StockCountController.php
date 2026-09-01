@@ -8,6 +8,8 @@ use App\Models\Ingredient;
 use App\Models\StockCount;
 use App\Models\StorageLocation;
 use App\Services\StockCountService;
+use App\Helpers\Money;
+use App\Support\AdminShell;
 use Illuminate\Http\Request;
 
 class StockCountController extends Controller
@@ -21,7 +23,7 @@ class StockCountController extends Controller
         $q = StockCount::query()->with(['creator', 'finalizer', 'storageLocation'])->withCount('items')->latest('count_date');
         if ($s = $request->get('status')) $q->where('status', $s);
 
-        $counts = $q->paginate(20);
+        $counts = $q->paginate(20)->withQueryString();
 
         $stats = [
             'draft_count' => StockCount::where('status', 'draft')->count(),
@@ -35,7 +37,40 @@ class StockCountController extends Controller
                 ->sum('items_sum_variance_cost'),
         ];
 
-        return view('admin.stock-counts.index', compact('counts', 'stats'));
+        $user = $request->user();
+        $counts->through(fn (StockCount $count) => [
+            'id' => $count->id,
+            'number' => $count->number,
+            'date' => $count->count_date?->toDateString(),
+            'location' => $count->storageLocation?->name ?? 'إجمالي الفرع',
+            'itemsCount' => (int) $count->items_count,
+            'status' => $count->status,
+            'statusLabel' => $count->statusLabel(),
+            'statusColor' => $count->statusColor(),
+            'creator' => $count->creator?->name ?? '—',
+            'finalizer' => $count->finalizer?->name,
+            'finalizedAgo' => $count->finalized_at?->diffForHumans(),
+            'editable' => $count->isEditable(),
+            'url' => route('admin.stock-counts.show', $count),
+        ]);
+
+        return AdminShell::render('Admin/StockCounts/Index', [
+            'counts' => $counts,
+            'stats' => [
+                'draftCount' => $stats['draft_count'],
+                'monthCount' => $stats['month_count'],
+                'lastFinalized' => $stats['last_finalized']
+                    ? \Illuminate\Support\Carbon::parse($stats['last_finalized'])->diffForHumans() : '—',
+                'monthVariance' => Money::format($stats['month_variance']),
+                'monthVarianceRaw' => $stats['month_variance'],
+            ],
+            'filters' => ['status' => (string) $request->get('status', '')],
+            'can' => ['create' => (bool) $user?->can('create', StockCount::class)],
+            'urls' => [
+                'index' => route('admin.stock-counts.index'),
+                'create' => route('admin.stock-counts.create'),
+            ],
+        ]);
     }
 
     public function create()
@@ -48,7 +83,20 @@ class StockCountController extends Controller
             ->orderBy('name')
             ->get();
 
-        return view('admin.stock-counts.create', compact('ingredientCount', 'storageLocations'));
+        return AdminShell::render('Admin/StockCounts/Create', [
+            'ingredientCount' => $ingredientCount,
+            'locations' => $storageLocations->map(fn (StorageLocation $location) => [
+                'id' => $location->id,
+                'name' => $location->name,
+                'code' => $location->code,
+                'default' => (bool) $location->is_default,
+            ])->values(),
+            'defaults' => ['date' => today()->toDateString()],
+            'urls' => [
+                'index' => route('admin.stock-counts.index'),
+                'store' => route('admin.stock-counts.store'),
+            ],
+        ]);
     }
 
     public function store(Request $request)
@@ -67,11 +115,76 @@ class StockCountController extends Controller
             ->with('success', "تم إنشاء جرد {$count->number} — ادخل الكميات الفعلية للمكونات.");
     }
 
+    /**
+     * The counting workspace — Inertia/Vue since Wave 4.
+     *
+     * Rows ship in stock_count_items.id order (the order create() snapshot
+     * them in, which is the order of the operator's printed list — NOT
+     * alphabetical). `counted_qty: null` means "not counted yet" and is
+     * emphatically different from 0 ("we have none left"); the whole
+     * screen preserves that distinction end to end.
+     */
     public function show(StockCount $stockCount)
     {
         $this->authorize('view', $stockCount);
         $stockCount->load(['items.ingredient.baseUnit', 'creator', 'finalizer', 'storageLocation']);
-        return view('admin.stock-counts.show', ['count' => $stockCount]);
+
+        $items = $stockCount->items;
+        $counted = $items->whereNotNull('counted_qty');
+
+        return \App\Support\AdminShell::render('Admin/StockCounts/Show', [
+            'count' => [
+                'id' => $stockCount->id,
+                'number' => $stockCount->number,
+                'countDate' => $stockCount->count_date?->toDateString(),
+                'locationName' => $stockCount->storageLocation?->name ?? 'إجمالي الفرع',
+                'status' => $stockCount->status,
+                'statusLabel' => match ($stockCount->status) {
+                    'draft' => 'مسودة — قيد العدّ',
+                    'finalized' => 'مُعتمد — تم تطبيق التسويات',
+                    default => 'ملغي',
+                },
+                'notes' => $stockCount->notes,
+                'creatorName' => $stockCount->creator?->name,
+                'createdAgo' => $stockCount->created_at?->diffForHumans(),
+                'finalizerName' => $stockCount->finalizer?->name,
+                'finalizedAt' => $stockCount->finalized_at?->format('Y-m-d H:i'),
+                'editable' => $stockCount->isEditable(),
+            ],
+            'rows' => $items->map(fn ($it) => [
+                // The save key is the LINE id — saveCounts only touches ids
+                // belonging to this count, which is what stops a crafted
+                // payload from writing another count's lines.
+                'id' => $it->id,
+                'name' => $it->ingredient?->name ?? '—',
+                'unit' => $it->ingredient?->baseUnit?->code ?? '',
+                'costPerUnit' => (float) ($it->ingredient?->cost_per_unit ?? 0),
+                'systemQty' => (float) $it->system_qty,
+                'countedQty' => $it->counted_qty === null ? null : (float) $it->counted_qty,
+                'notes' => (string) ($it->notes ?? ''),
+            ])->values()->all(),
+            'summary' => [
+                'total' => $items->count(),
+                'counted' => $counted->count(),
+                'matches' => $counted->filter(fn ($i) => abs((float) $i->variance) < 0.0001)->count(),
+                'shortages' => $counted->filter(fn ($i) => (float) $i->variance < -0.0001)->count(),
+                'overages' => $counted->filter(fn ($i) => (float) $i->variance > 0.0001)->count(),
+                'netCost' => (float) $items->sum('variance_cost'),
+            ],
+            'can' => [
+                'update' => auth()->user()->can('update', $stockCount),
+                'finalize' => auth()->user()->can('finalize', $stockCount),
+                'cancel' => auth()->user()->can('cancel', $stockCount),
+            ],
+            'currency' => config('restaurant.currency_symbol', '₪'),
+            'urls' => [
+                'save' => route('admin.stock-counts.save-counts', $stockCount),
+                'finalize' => route('admin.stock-counts.finalize', $stockCount),
+                'cancel' => route('admin.stock-counts.cancel', $stockCount),
+                'export' => route('admin.stock-counts.export.xlsx', $stockCount),
+                'index' => route('admin.stock-counts.index'),
+            ],
+        ]);
     }
 
     /**
@@ -98,8 +211,21 @@ class StockCountController extends Controller
 
         try {
             $this->service->saveCounts($stockCount, $data['counts'] ?? [], $data['notes'] ?? []);
+
+            // The workspace autosaves row-by-row: answer JSON so the table
+            // keeps its in-progress state instead of being blown away by a
+            // redirect. Every caller uses this validated write path, so a
+            // negative counted_qty cannot reach the ledger.
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json(['ok' => true]);
+            }
+
             return back()->with('success', 'تم حفظ الكميات — لم يتم تطبيق التعديلات بعد.');
         } catch (\Throwable $e) {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json(['ok' => false, 'message' => $e->getMessage()], 422);
+            }
+
             return back()->with('error', $e->getMessage());
         }
     }

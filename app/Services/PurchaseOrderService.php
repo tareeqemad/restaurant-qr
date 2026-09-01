@@ -8,6 +8,7 @@ use App\Models\IngredientSupplierPrice;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\PurchaseReceipt;
+use App\Models\StorageLocation;
 use App\Support\BranchContext;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -48,9 +49,9 @@ class PurchaseOrderService
             //   context → user's primary branch → user's first member branch
             //   → first active branch (only used for owner-level, who never
             //      sit in branch_user).
+            $user = $userId ? \App\Models\User::find($userId) : null;
             $branchId = BranchContext::current();
             if (! $branchId && $userId) {
-                $user = \App\Models\User::find($userId);
                 $branchId = optional($user?->primaryBranch())->id
                     ?? optional($user?->branches()->first())->id;
                 if (! $branchId && $user?->isOwnerLevel()) {
@@ -64,12 +65,32 @@ class PurchaseOrderService
                     'branch_id' => 'تعذّر تحديد فرع للأمر. اختر فرعاً نشطاً من شريط التبديل في الأعلى ثم أعد المحاولة.',
                 ]);
             }
+            if ($user && ! $user->belongsToBranch((int) $branchId)) {
+                throw ValidationException::withMessages([
+                    'branch_id' => 'لا تملك صلاحية إنشاء أمر شراء على هذا الفرع.',
+                ]);
+            }
+
+            $this->assertSupplierServesBranch((int) $data['supplier_id'], (int) $branchId);
+
+            $exchangeRates = app(ExchangeRateService::class);
+            $baseCurrency = $exchangeRates->baseCurrencyCode();
+            $currencyCode = $exchangeRates->normalizeCode($data['currency_code'] ?? $baseCurrency);
+            $exchangeRate = $currencyCode === $baseCurrency
+                ? 1.0
+                : (float) ($data['exchange_rate'] ?? $exchangeRates->rateFor($currencyCode, $baseCurrency, now()));
+
+            if ($exchangeRate <= 0) {
+                throw ValidationException::withMessages(['exchange_rate' => 'سعر الصرف يجب أن يكون أكبر من صفر.']);
+            }
 
             $po = PurchaseOrder::create([
                 'branch_id'   => $branchId,
                 'number'      => PurchaseOrder::generateNumber(),
                 'supplier_id' => $data['supplier_id'],
                 'status'      => 'draft',
+                'currency_code' => $currencyCode,
+                'exchange_rate' => $exchangeRate,
                 'expected_at' => $data['expected_at'] ?? null,
                 'notes'       => $data['notes'] ?? null,
                 'created_by'  => $userId,
@@ -173,10 +194,50 @@ class PurchaseOrderService
         $previousStatus = $po->status;
 
         $po = DB::transaction(function () use ($po, $receipts, $userId, $meta) {
+            $po = PurchaseOrder::withoutGlobalScopes()
+                ->whereKey($po->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if (! $po->isReceivable()) {
+                throw ValidationException::withMessages(['status' => 'أمر الشراء لم يعد قابلاً للاستلام.']);
+            }
+            $receiver = $userId ? \App\Models\User::find($userId) : null;
+            if ($receiver && ! $receiver->belongsToBranch((int) $po->branch_id)) {
+                throw ValidationException::withMessages([
+                    'branch_id' => 'لا تملك صلاحية استلام مخزون لهذا الفرع.',
+                ]);
+            }
+
             $lines = $po->items()
                 ->with('ingredient.baseUnit', 'unit', 'ingredientUnit')
                 ->lockForUpdate()->get();
             $receipt = null;
+
+            // A crafted payload must never be able to hide a foreign PO line
+            // among the keyed receipt quantities. Silently ignoring it makes
+            // the request look successful while no matching stock was received.
+            $lineIds = $lines->pluck('id')->map(fn ($id) => (int) $id)->all();
+            $submittedPositiveIds = collect($receipts)
+                ->filter(fn ($qty) => (float) $qty > 0)
+                ->keys()
+                ->map(fn ($id) => (int) $id)
+                ->all();
+            if (array_diff($submittedPositiveIds, $lineIds)) {
+                throw ValidationException::withMessages([
+                    'items' => 'توجد بنود استلام لا تنتمي إلى أمر الشراء المحدد.',
+                ]);
+            }
+
+            // Every receipt lands in exactly one active location owned by the
+            // PO branch. This is the hard boundary that keeps branch warehouses,
+            // batches, movements and accounting in sync.
+            $fallbackLocationId = StorageLocation::withoutGlobalScopes()
+                ->where('branch_id', $po->branch_id)
+                ->where('active', true)
+                ->orderByDesc('is_default')
+                ->orderBy('display_order')
+                ->value('id');
 
             foreach ($lines as $line) {
                 $qtyReceived = (float) ($receipts[$line->id] ?? 0);
@@ -185,7 +246,24 @@ class PurchaseOrderService
                 $lineMeta = $meta[$line->id] ?? [];
                 $storageLocationId = ! empty($lineMeta['storage_location_id'])
                     ? (int) $lineMeta['storage_location_id']
-                    : null;
+                    : ($fallbackLocationId ? (int) $fallbackLocationId : null);
+
+                if (! $storageLocationId) {
+                    throw ValidationException::withMessages([
+                        'storage_location_id' => 'أنشئ موقع تخزين نشطاً لهذا الفرع قبل استلام المشتريات.',
+                    ]);
+                }
+
+                $locationIsValid = StorageLocation::withoutGlobalScopes()
+                    ->whereKey($storageLocationId)
+                    ->where('branch_id', $po->branch_id)
+                    ->where('active', true)
+                    ->exists();
+                if (! $locationIsValid) {
+                    throw ValidationException::withMessages([
+                        'storage_location_id' => 'موقع التخزين المختار لا يتبع فرع أمر الشراء أو أنه غير نشط.',
+                    ]);
+                }
                 $batchNumber = trim((string) ($lineMeta['batch_number'] ?? '')) ?: null;
                 $expiryDate = ! empty($lineMeta['expiry_date'])
                     ? (string) $lineMeta['expiry_date']
@@ -248,9 +326,10 @@ class PurchaseOrderService
                 } else {
                     $oneOrderedUnitInBase = UnitConverter::convert(1.0, $orderedUnit, $baseUnit);
                 }
+                $actualUnitPriceBase = $actualUnitPrice * (float) ($po->exchange_rate ?: 1);
                 $baseUnitCost = $oneOrderedUnitInBase > 0
-                    ? $actualUnitPrice / $oneOrderedUnitInBase
-                    : $actualUnitPrice;
+                    ? $actualUnitPriceBase / $oneOrderedUnitInBase
+                    : $actualUnitPriceBase;
                 // Yield-adjust the cost so $/usable kg reflects reality.
                 if ($yieldFactor < 1) {
                     $baseUnitCost = round($baseUnitCost / $yieldFactor, 6);
@@ -375,6 +454,20 @@ class PurchaseOrderService
 
     // ── Internals ─────────────────────────────────────────────────────────
 
+    /** A supplier may serve many branches, but each PO belongs to one. */
+    public function assertSupplierServesBranch(int $supplierId, int $branchId): void
+    {
+        $valid = \App\Models\Supplier::whereKey($supplierId)
+            ->where('active', true)
+            ->servingBranch($branchId)
+            ->exists();
+        if (! $valid) {
+            throw ValidationException::withMessages([
+                'supplier_id' => 'المورد غير نشط أو غير مرتبط بفرع أمر الشراء.',
+            ]);
+        }
+    }
+
     /**
      * Append a row to ingredient_supplier_prices for this receipt. Computes
      * the percentage change vs the prior observation for the same trio
@@ -411,6 +504,8 @@ class PurchaseOrderService
             'supplier_id'            => $po->supplier_id,
             'unit_id'                => $line->unit_id,
             'unit_price'             => $unitPriceOrdered,
+            'currency_code'          => $po->currency_code,
+            'exchange_rate'          => (float) ($po->exchange_rate ?: 1),
             'unit_price_in_base'     => round($unitPriceInBase, 4),
             'previous_price_in_base' => $prev?->unit_price_in_base,
             'change_pct'             => $changePct !== null ? round($changePct, 2) : null,
@@ -433,13 +528,33 @@ class PurchaseOrderService
             $price = (float) ($line['unit_price'] ?? 0);
             if ($qty <= 0) continue;
 
+            $ingredient = Ingredient::with('baseUnit')->find((int) ($line['ingredient_id'] ?? 0));
+            $unit = \App\Models\Unit::find((int) ($line['unit_id'] ?? 0));
+            if (! $ingredient || ! $unit) {
+                throw ValidationException::withMessages(['items' => 'يوجد صنف أو وحدة شراء غير صالحة.']);
+            }
+
+            $ingredientUnitId = ! empty($line['ingredient_unit_id']) ? (int) $line['ingredient_unit_id'] : null;
+            if ($ingredientUnitId) {
+                $validPack = \App\Models\IngredientUnit::whereKey($ingredientUnitId)
+                    ->where('ingredient_id', $ingredient->id)
+                    ->exists();
+                if (! $validPack) {
+                    throw ValidationException::withMessages(['items' => "وحدة العبوة لا تخص الصنف «{$ingredient->name}»."]);
+                }
+            } elseif ($ingredient->baseUnit && $unit->unit_type !== $ingredient->baseUnit->unit_type) {
+                throw ValidationException::withMessages([
+                    'items' => "وحدة الشراء «{$unit->name}» لا تطابق نوع قياس الصنف «{$ingredient->name}».",
+                ]);
+            }
+
             $lineSubtotal = round($qty * $price, 4);
             $subtotal    += $lineSubtotal;
 
             $po->items()->create([
                 'ingredient_id'      => $line['ingredient_id'],
                 'unit_id'            => $line['unit_id'],
-                'ingredient_unit_id' => ! empty($line['ingredient_unit_id']) ? (int) $line['ingredient_unit_id'] : null,
+                'ingredient_unit_id' => $ingredientUnitId,
                 'quantity_ordered'   => $qty,
                 'unit_price'         => $price,
                 'subtotal'           => $lineSubtotal,

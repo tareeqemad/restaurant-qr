@@ -32,6 +32,7 @@ class PendingTransfer extends Model
         'customer_name_snapshot',
         'customer_phone_snapshot',
         'notes',
+        'proof_path',
         'status',
         'recorded_by_user_id',
         'verified_by_user_id',

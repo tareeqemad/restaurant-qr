@@ -7,6 +7,8 @@ use App\Models\Ingredient;
 use App\Models\IngredientStock;
 use App\Models\StockCount;
 use App\Models\StockCountItem;
+use App\Models\StorageLocation;
+use App\Support\BranchContext;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -33,14 +35,44 @@ class StockCountService
     public function create(array $opts, int $userId): StockCount
     {
         return DB::transaction(function () use ($opts, $userId) {
-            $count = StockCount::create([
+            $branchId = (int) (BranchContext::current() ?: 0);
+            $user = \App\Models\User::find($userId);
+            if (! $branchId && $user) {
+                $branchId = (int) ($user->primaryBranch()?->id
+                    ?? $user->branches()->value('branches.id')
+                    ?? ($user->isOwnerLevel()
+                        ? \App\Models\Branch::active()->orderBy('display_order')->value('id')
+                        : 0));
+            }
+            if (! $branchId || ($user && ! $user->belongsToBranch($branchId))) {
+                throw ValidationException::withMessages([
+                    'branch_id' => 'اختر فرعاً صالحاً قبل بدء الجرد.',
+                ]);
+            }
+
+            $locationId = ! empty($opts['storage_location_id'])
+                ? (int) $opts['storage_location_id']
+                : null;
+            if ($locationId && ! StorageLocation::withoutGlobalScopes()
+                ->whereKey($locationId)
+                ->where('branch_id', $branchId)
+                ->where('active', true)
+                ->exists()) {
+                throw ValidationException::withMessages([
+                    'storage_location_id' => 'موقع التخزين المختار لا يتبع فرع الجرد أو أنه غير نشط.',
+                ]);
+            }
+
+            $count = new StockCount([
                 'number'     => StockCount::generateNumber(),
                 'count_date' => $opts['count_date'] ?? today()->toDateString(),
-                'storage_location_id' => $opts['storage_location_id'] ?? null,
+                'storage_location_id' => $locationId,
                 'status'     => 'draft',
                 'notes'      => $opts['notes'] ?? null,
                 'created_by' => $userId,
             ]);
+            $count->branch_id = $branchId;
+            $count->save();
 
             $query = Ingredient::query()->where('track_stock', true);
             if (!empty($opts['ingredient_ids'])) {
@@ -49,16 +81,16 @@ class StockCountService
 
             $ingredients = $query->get();
             $locationStocks = collect();
-            if (! empty($opts['storage_location_id'])) {
-                $locationStocks = IngredientStock::where('storage_location_id', $opts['storage_location_id'])
+            if ($locationId) {
+                $locationStocks = IngredientStock::where('storage_location_id', $locationId)
                     ->whereIn('ingredient_id', $ingredients->pluck('id'))
                     ->pluck('quantity', 'ingredient_id');
             }
 
             foreach ($ingredients as $ing) {
-                $systemQty = ! empty($opts['storage_location_id'])
+                $systemQty = $locationId
                     ? (float) ($locationStocks[$ing->id] ?? 0)
-                    : (float) $ing->current_stock;
+                    : $ing->stockAtBranch($branchId);
 
                 $count->items()->create([
                     'ingredient_id' => $ing->id,
@@ -88,7 +120,15 @@ class StockCountService
         }
 
         return DB::transaction(function () use ($count, $counts, $notes) {
-            $items = $count->items()->with('ingredient')->get()->keyBy('id');
+            $count = StockCount::withoutGlobalScopes()
+                ->whereKey($count->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            if (! $count->isEditable()) {
+                throw ValidationException::withMessages(['status' => 'لا يمكن تعديل جرد معتمد.']);
+            }
+
+            $items = $count->items()->with('ingredient')->lockForUpdate()->get()->keyBy('id');
 
             foreach ($counts as $itemId => $qty) {
                 $item = $items->get($itemId);
@@ -100,7 +140,7 @@ class StockCountService
                     : round($counted - (float) $item->system_qty, 4);
                 $varianceCost = $counted === null
                     ? 0
-                    : round($variance * (float) ($item->ingredient?->cost_per_unit ?? 0), 4);
+                    : round($variance * (float) ($item->ingredient?->costAtBranch($count->branch_id) ?? 0), 4);
 
                 $item->update([
                     'counted_qty'   => $counted,
@@ -139,6 +179,30 @@ class StockCountService
 
             $items = $count->items()->with('ingredient')->whereNotNull('counted_qty')->get();
 
+            $movementLocationId = $count->storage_location_id;
+            if (! $movementLocationId) {
+                $movementLocationId = StorageLocation::withoutGlobalScopes()
+                    ->where('branch_id', $count->branch_id)
+                    ->where('active', true)
+                    ->orderByDesc('is_default')
+                    ->orderBy('display_order')
+                    ->value('id');
+            }
+            if (! $movementLocationId) {
+                throw ValidationException::withMessages([
+                    'storage_location_id' => 'لا يمكن اعتماد الجرد قبل إنشاء موقع تخزين نشط للفرع.',
+                ]);
+            }
+            if (! StorageLocation::withoutGlobalScopes()
+                ->whereKey($movementLocationId)
+                ->where('branch_id', $count->branch_id)
+                ->where('active', true)
+                ->exists()) {
+                throw ValidationException::withMessages([
+                    'storage_location_id' => 'موقع الجرد لا يتبع الفرع أو أصبح غير نشط.',
+                ]);
+            }
+
             $created = 0;
             foreach ($items as $item) {
                 $ing = $item->ingredient;
@@ -153,15 +217,16 @@ class StockCountService
                     ? (float) (IngredientStock::where('ingredient_id', $ing->id)
                         ->where('storage_location_id', $count->storage_location_id)
                         ->value('quantity') ?? 0)
-                    : (float) $ing->fresh()->current_stock;
+                    : $ing->stockAtBranch((int) $count->branch_id);
 
                 $delta = round((float) $item->counted_qty - $liveQty, 4);
+                $unitCost = (float) $ing->costAtBranch((int) $count->branch_id);
 
                 // Persist the ACTUALLY-posted variance so reports reconcile to
                 // the ledger (the stored open-time variance is now stale).
                 $item->update([
                     'variance'      => $delta,
-                    'variance_cost' => round($delta * (float) ($ing->cost_per_unit ?? 0), 4),
+                    'variance_cost' => round($delta * $unitCost, 4),
                 ]);
 
                 if (abs($delta) <= 0.0001) {
@@ -174,11 +239,11 @@ class StockCountService
                     ingredient: $ing,
                     type:       'adjustment',
                     qtyBase:    $delta,
-                    unitCost:   (float) $ing->cost_per_unit,
+                    unitCost:   $unitCost,
                     reference:  $item,
                     reason:     "جرد {$count->number}",
                     userId:     $userId,
-                    storageLocationId: $count->storage_location_id,
+                    storageLocationId: (int) $movementLocationId,
                     syncBatches: true,
                 );
                 $created++;
@@ -202,15 +267,21 @@ class StockCountService
 
     public function cancel(StockCount $count, int $userId, string $reason): StockCount
     {
-        if ($count->status !== 'draft') {
-            throw ValidationException::withMessages(['status' => 'يمكن إلغاء المسودات فقط.']);
-        }
-        $count->update([
-            'status'       => 'cancelled',
-            'cancelled_at' => now(),
-            'notes'        => trim(($count->notes ?? '').' | ألغي: '.$reason),
-        ]);
-        ActivityLog::log('stock_count.cancelled', "إلغاء جرد {$count->number}: {$reason}", $count);
-        return $count->fresh();
+        return DB::transaction(function () use ($count, $reason) {
+            $count = StockCount::withoutGlobalScopes()
+                ->whereKey($count->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            if ($count->status !== 'draft') {
+                throw ValidationException::withMessages(['status' => 'يمكن إلغاء مسودة الجرد فقط.']);
+            }
+            $count->update([
+                'status'       => 'cancelled',
+                'cancelled_at' => now(),
+                'notes'        => trim(($count->notes ?? '').' | ألغي: '.$reason),
+            ]);
+            ActivityLog::log('stock_count.cancelled', "إلغاء جرد {$count->number}: {$reason}", $count);
+            return $count->fresh();
+        });
     }
 }

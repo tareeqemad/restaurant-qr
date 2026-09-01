@@ -50,6 +50,16 @@ class LocationInventoryService
         if ($from->id === $to->id) {
             throw ValidationException::withMessages(['locations' => 'لا يمكن النقل لنفس الموقع.']);
         }
+        if ((int) $from->branch_id !== (int) $to->branch_id) {
+            throw ValidationException::withMessages([
+                'locations' => 'النقل بين فرعين يجب أن يتم عبر تحويل فروع، وليس كنقل داخلي بين المواقع.',
+            ]);
+        }
+        if (! $from->active || ! $to->active) {
+            throw ValidationException::withMessages([
+                'locations' => 'موقع المصدر والوجهة يجب أن يكونا نشطين.',
+            ]);
+        }
 
         return DB::transaction(function () use ($ingredient, $from, $to, $qtyBase, $reason, $userId) {
             // Check source stock (read-only — recordLocationMovement handles the decrement)
@@ -65,7 +75,7 @@ class LocationInventoryService
             }
 
             // Both movements handle their own stock updates + upserts.
-            $cost = (float) $ingredient->cost_per_unit;
+            $cost = (float) $ingredient->costAtBranch((int) $from->branch_id);
             $out  = $this->recordLocationMovement($ingredient, 'out', $from, $qtyBase, $cost, $reason ?? "نقل إلى {$to->name}", $userId);
             $in   = $this->recordLocationMovement($ingredient, 'in',  $to,   $qtyBase, $cost, $reason ?? "وارد من {$from->name}", $userId);
 

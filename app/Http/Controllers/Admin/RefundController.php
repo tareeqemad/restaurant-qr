@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Helpers\Money;
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
 use App\Models\Refund;
 use App\Services\RefundService;
-use App\Support\BranchContext;
+use App\Support\AdminShell;
+use App\Support\CollectionWorkspace;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -18,93 +20,162 @@ class RefundController extends Controller
     {
         $this->authorize('viewAny', Refund::class);
 
-        $q = Refund::query()
-            ->with(['invoice.tableSession.table', 'invoice.branch', 'processor'])
+        $query = Refund::query()
+            ->with(['invoice.tableSession.table', 'invoice.branch', 'processor', 'creditNote', 'allocations.payment'])
             ->latest('refunded_at');
 
-        // Refund.branch_id exists as of May 2026 → BranchScope handles
-        // this filter automatically. The legacy whereHas('invoice')
-        // subquery was redundant and slow; removed.
-
-        if ($s = $request->get('status')) $q->where('status', $s);
-        if ($m = $request->get('method')) $q->where('method', $m);
-        if ($d = $request->get('from'))   $q->whereDate('refunded_at', '>=', $d);
-        if ($d = $request->get('to'))     $q->whereDate('refunded_at', '<=', $d);
-        if ($s = $request->get('search')) {
-            $q->where(function ($qq) use ($s) {
-                $qq->where('number', 'like', "%$s%")
-                   ->orWhere('reference', 'like', "%$s%")
-                   ->orWhere('reason', 'like', "%$s%")
-                   ->orWhereHas('invoice', fn($i) => $i->where('number', 'like', "%$s%"));
+        if ($status = $request->get('status')) {
+            $query->where('status', $status);
+        }
+        if ($method = $request->get('method')) {
+            $query->where('method', $method);
+        }
+        if ($from = $request->get('from')) {
+            $query->whereDate('refunded_at', '>=', $from);
+        }
+        if ($to = $request->get('to')) {
+            $query->whereDate('refunded_at', '<=', $to);
+        }
+        if ($search = trim((string) $request->get('search', ''))) {
+            $query->where(function ($nested) use ($search) {
+                $nested->where('number', 'like', "%{$search}%")
+                    ->orWhere('reference', 'like', "%{$search}%")
+                    ->orWhere('reason', 'like', "%{$search}%")
+                    ->orWhereHas('invoice', fn ($invoice) => $invoice->where('number', 'like', "%{$search}%"));
             });
         }
 
-        $filteredQuery = clone $q;
+        $filteredQuery = clone $query;
         $filteredStats = [
-            'count'     => (clone $filteredQuery)->count(),
-            'amount'    => (float) (clone $filteredQuery)->sum('amount'),
-            'pending'   => (clone $filteredQuery)->where('status', 'pending')->count(),
+            'count' => (clone $filteredQuery)->count(),
+            'amount' => (float) (clone $filteredQuery)->sum('amount'),
+            'pending' => (clone $filteredQuery)->where('status', 'pending')->count(),
             'completed' => (clone $filteredQuery)->where('status', 'completed')->count(),
         ];
 
-        $refunds = $q->paginate(20)->withQueryString();
+        $refunds = $query->paginate(20)->withQueryString();
+        $refunds->through(function (Refund $refund) {
+            $branch = $refund->invoice?->branch;
+
+            return [
+                'id' => $refund->id,
+                'number' => $refund->number,
+                'reference' => $refund->reference,
+                'invoiceNumber' => $refund->invoice?->number,
+                'customer' => $refund->invoice?->customer_name ?: $refund->invoice?->customer_phone,
+                'tableNumber' => $refund->invoice?->tableSession?->table?->number,
+                'amount' => (float) $refund->amount,
+                'amountFormatted' => Money::format($refund->amount),
+                'method' => $refund->method,
+                'methodLabel' => $refund->methodLabel(),
+                'status' => $refund->status,
+                'statusLabel' => $refund->statusLabel(),
+                'statusColor' => $refund->statusColor(),
+                'reason' => $refund->reason,
+                'notes' => $refund->notes,
+                'processor' => $refund->processor?->name,
+                'creditNote' => $refund->creditNote?->number,
+                'allocations' => $refund->allocations->map(fn ($allocation) => [
+                    'method' => $allocation->method,
+                    'methodLabel' => Refund::METHODS[$allocation->method] ?? $allocation->method,
+                    'amount' => (float) $allocation->amount,
+                    'amountFormatted' => Money::format($allocation->amount),
+                ])->values(),
+                'refundedAt' => $refund->refunded_at?->format('Y-m-d H:i'),
+                'refundedAtHuman' => $refund->refunded_at?->diffForHumans(),
+                'branch' => $branch ? [
+                    'name' => $branch->localizedName(),
+                    'hue' => ($branch->id * 47) % 360,
+                ] : null,
+                'can' => [
+                    'complete' => auth()->user()->can('complete', $refund),
+                    'cancel' => auth()->user()->can('cancel', $refund),
+                    'reverse' => auth()->user()->can('reverse', $refund),
+                ],
+                'urls' => [
+                    'complete' => route('admin.refunds.complete', $refund),
+                    'cancel' => route('admin.refunds.cancel', $refund),
+                    'reverse' => route('admin.refunds.reverse', $refund),
+                ],
+            ];
+        });
 
         $today = today();
-        // BranchScope handles the per-branch filter automatically now —
-        // see comment above on the main query.
         $statsBase = Refund::query();
-
         $stats = [
-            'today_count'  => (clone $statsBase)->whereDate('refunded_at', $today)->where('status', 'completed')->count(),
-            'today_amount' => (float) (clone $statsBase)->whereDate('refunded_at', $today)->where('status', 'completed')->sum('amount'),
-            'pending'      => (clone $statsBase)->where('status', 'pending')->count(),
-            'month_amount' => (float) (clone $statsBase)->whereMonth('refunded_at', $today->month)
-                                            ->whereYear('refunded_at', $today->year)
-                                            ->where('status', 'completed')
-                                            ->sum('amount'),
+            'todayCount' => (clone $statsBase)->whereDate('refunded_at', $today)->where('status', 'completed')->count(),
+            'todayAmount' => (float) (clone $statsBase)->whereDate('refunded_at', $today)->where('status', 'completed')->sum('amount'),
+            'pending' => (clone $statsBase)->where('status', 'pending')->count(),
+            'monthAmount' => (float) (clone $statsBase)->whereMonth('refunded_at', $today->month)
+                ->whereYear('refunded_at', $today->year)
+                ->where('status', 'completed')
+                ->sum('amount'),
         ];
 
-        return view('admin.refunds.index', [
-            'refunds'       => $refunds,
-            'stats'         => $stats,
-            'filteredStats' => $filteredStats,
-            'methods'       => Refund::METHODS,
-            'showBranchCol' => (bool) session('view_all_branches'),
+        return AdminShell::render('Admin/Refunds/Index', [
+            'refunds' => $refunds,
+            'stats' => $stats + [
+                'todayAmountFormatted' => Money::format($stats['todayAmount']),
+                'monthAmountFormatted' => Money::format($stats['monthAmount']),
+            ],
+            'filteredStats' => $filteredStats + [
+                'amountFormatted' => Money::format($filteredStats['amount']),
+            ],
+            'filters' => [
+                'search' => trim((string) $request->get('search', '')),
+                'status' => (string) $request->get('status', ''),
+                'method' => (string) $request->get('method', ''),
+                'from' => (string) $request->get('from', ''),
+                'to' => (string) $request->get('to', ''),
+            ],
+            'methods' => collect(Refund::METHODS)
+                ->map(fn (string $label, string $value) => ['value' => $value, 'label' => $label])
+                ->values(),
+            'showBranch' => (bool) session('view_all_branches'),
+            'collectionNav' => CollectionWorkspace::navigation(),
+            'urls' => ['index' => route('admin.refunds.index')],
         ]);
     }
 
-    /** Store a new refund against an invoice (called from cashier's invoice page) */
     public function store(Request $request, Invoice $invoice)
     {
         $this->authorize('create', Refund::class);
 
         $data = $request->validate([
-            'amount'     => ['required', 'numeric', 'min:0.01'],
-            'method'     => ['required', Rule::in(Refund::ACTIVE_METHODS)],
-            'reason'     => ['required', 'string', 'max:500'],
-            'reference'  => ['nullable', 'string', 'max:100'],
-            'notes'      => ['nullable', 'string', 'max:1000'],
+            'amount' => ['required', 'numeric', 'min:0.01'],
+            'method' => ['required', Rule::in(Refund::ACTIVE_METHODS)],
+            'reason' => ['required', 'string', 'max:500'],
+            'reference' => ['nullable', 'string', 'max:100'],
+            'notes' => ['nullable', 'string', 'max:1000'],
             'payment_id' => ['nullable', 'exists:payments,id'],
-            'status'     => ['nullable', 'in:pending,completed'],
+            'status' => ['nullable', 'in:pending,completed'],
+            'lines' => ['nullable', 'array', 'max:50'],
+            'lines.*.order_item_id' => ['required', 'integer', 'exists:order_items,id'],
+            'lines.*.quantity' => ['required', 'numeric', 'min:0.01'],
+            'lines.*.disposition' => ['nullable', Rule::in(['none', 'waste', 'restock'])],
+            'idempotency_key' => ['nullable', 'string', 'max:100'],
         ]);
 
         try {
             $refund = $this->service->issue(
-                invoice:  $invoice,
-                amount:   (float) $data['amount'],
-                method:   $data['method'],
-                reason:   $data['reason'],
-                userId:   auth()->id(),
-                opts:     [
-                    'reference'  => $data['reference']  ?? null,
-                    'notes'      => $data['notes']      ?? null,
+                invoice: $invoice,
+                amount: (float) $data['amount'],
+                method: $data['method'],
+                reason: $data['reason'],
+                userId: auth()->id(),
+                opts: [
+                    'reference' => $data['reference'] ?? null,
+                    'notes' => $data['notes'] ?? null,
                     'payment_id' => $data['payment_id'] ?? null,
-                    'status'     => $data['status']     ?? 'completed',
+                    'status' => $data['status'] ?? 'completed',
+                    'lines' => $data['lines'] ?? [],
+                    'idempotency_key' => $data['idempotency_key'] ?? null,
                 ]
             );
-            return back()->with('success', "تم تسجيل الاسترداد {$refund->number} بقيمة ".number_format($refund->amount, 2));
-        } catch (\Throwable $e) {
-            return back()->withInput()->with('error', $e->getMessage());
+
+            return back()->with('success', "تم تسجيل الاسترداد {$refund->number} بقيمة ".Money::format($refund->amount));
+        } catch (\Throwable $exception) {
+            return back()->withInput()->with('error', $exception->getMessage());
         }
     }
 
@@ -112,11 +183,13 @@ class RefundController extends Controller
     {
         $this->authorize('complete', $refund);
         $data = $request->validate(['reference' => ['nullable', 'string', 'max:100']]);
+
         try {
             $this->service->complete($refund, auth()->id(), $data['reference'] ?? null);
+
             return back()->with('success', 'تم إتمام الاسترداد');
-        } catch (\Throwable $e) {
-            return back()->with('error', $e->getMessage());
+        } catch (\Throwable $exception) {
+            return back()->with('error', $exception->getMessage());
         }
     }
 
@@ -124,11 +197,27 @@ class RefundController extends Controller
     {
         $this->authorize('cancel', $refund);
         $data = $request->validate(['reason' => ['required', 'string', 'max:500']]);
+
         try {
             $this->service->cancel($refund, auth()->id(), $data['reason']);
+
             return back()->with('success', 'تم إلغاء طلب الاسترداد');
-        } catch (\Throwable $e) {
-            return back()->with('error', $e->getMessage());
+        } catch (\Throwable $exception) {
+            return back()->with('error', $exception->getMessage());
+        }
+    }
+
+    public function reverse(Request $request, Refund $refund)
+    {
+        $this->authorize('reverse', $refund);
+        $data = $request->validate(['reason' => ['required', 'string', 'max:500']]);
+
+        try {
+            $this->service->reverse($refund, auth()->id(), trim($data['reason']));
+
+            return back()->with('success', 'تم عكس الاسترداد والإشعار الدائن مع الاحتفاظ بكامل سجل التدقيق.');
+        } catch (\Throwable $exception) {
+            return back()->with('error', $exception->getMessage());
         }
     }
 }

@@ -41,13 +41,13 @@ class MenuSeeder extends Seeder
 
         // Categories
         $cats = [
-            ['slug' => 'appetizers', 'name' => 'المقبلات', 'name_en' => 'Appetizers', 'icon' => 'bi-egg-fried', 'color' => '#f59e0b', 'default_station_id' => $kitchen?->id, 'display_order' => 1],
-            ['slug' => 'main-courses', 'name' => 'الأطباق الرئيسية', 'name_en' => 'Main Courses', 'icon' => 'ri-fire-fill', 'color' => '#ef4444', 'default_station_id' => $kitchen?->id, 'display_order' => 2],
-            ['slug' => 'grill', 'name' => 'المشاوي', 'name_en' => 'Grill', 'icon' => 'ri-fire-fill', 'color' => '#dc2626', 'default_station_id' => $kitchen?->id, 'display_order' => 3],
-            ['slug' => 'sandwiches', 'name' => 'السندويشات', 'name_en' => 'Sandwiches', 'icon' => 'bi-basket', 'color' => '#a855f7', 'default_station_id' => $kitchen?->id, 'display_order' => 4],
-            ['slug' => 'salads', 'name' => 'السلطات', 'name_en' => 'Salads', 'icon' => 'bi-flower2', 'color' => '#22c55e', 'default_station_id' => $kitchen?->id, 'display_order' => 5],
-            ['slug' => 'drinks', 'name' => 'المشروبات', 'name_en' => 'Drinks', 'icon' => 'bi-cup-straw', 'color' => '#3b82f6', 'default_station_id' => $bar?->id, 'display_order' => 6],
-            ['slug' => 'desserts', 'name' => 'الحلويات', 'name_en' => 'Desserts', 'icon' => 'ri-cake-2-fill', 'color' => '#ec4899', 'default_station_id' => $dessert?->id, 'display_order' => 7],
+            ['slug' => 'appetizers', 'name' => 'المقبلات', 'icon' => 'bi-egg-fried', 'color' => '#f59e0b', 'default_station_id' => $kitchen?->id, 'display_order' => 1],
+            ['slug' => 'main-courses', 'name' => 'الأطباق الرئيسية', 'icon' => 'ri-fire-fill', 'color' => '#ef4444', 'default_station_id' => $kitchen?->id, 'display_order' => 2],
+            ['slug' => 'grill', 'name' => 'المشاوي', 'icon' => 'ri-fire-fill', 'color' => '#dc2626', 'default_station_id' => $kitchen?->id, 'display_order' => 3],
+            ['slug' => 'sandwiches', 'name' => 'السندويشات', 'icon' => 'bi-basket', 'color' => '#a855f7', 'default_station_id' => $kitchen?->id, 'display_order' => 4],
+            ['slug' => 'salads', 'name' => 'السلطات', 'icon' => 'bi-flower2', 'color' => '#22c55e', 'default_station_id' => $kitchen?->id, 'display_order' => 5],
+            ['slug' => 'drinks', 'name' => 'المشروبات', 'icon' => 'bi-cup-straw', 'color' => '#3b82f6', 'default_station_id' => $bar?->id, 'display_order' => 6],
+            ['slug' => 'desserts', 'name' => 'الحلويات', 'icon' => 'ri-cake-2-fill', 'color' => '#ec4899', 'default_station_id' => $dessert?->id, 'display_order' => 7],
         ];
 
         foreach ($cats as $c) {
@@ -59,21 +59,21 @@ class MenuSeeder extends Seeder
 
         // Ingredients
         $ings = [
-            ['sku' => 'ING-001', 'name' => 'صدر دجاج', 'name_en' => 'Chicken Breast', 'base_unit_id' => $g->id, 'current_stock' => 50000, 'reorder_threshold' => 5000, 'cost_per_unit' => 0.008],
-            ['sku' => 'ING-002', 'name' => 'لحم بقري', 'name_en' => 'Beef', 'base_unit_id' => $g->id, 'current_stock' => 30000, 'reorder_threshold' => 3000, 'cost_per_unit' => 0.015],
-            ['sku' => 'ING-003', 'name' => 'طماطم', 'name_en' => 'Tomato', 'base_unit_id' => $g->id, 'current_stock' => 20000, 'reorder_threshold' => 2000, 'cost_per_unit' => 0.002],
-            ['sku' => 'ING-004', 'name' => 'بصل', 'name_en' => 'Onion', 'base_unit_id' => $g->id, 'current_stock' => 15000, 'reorder_threshold' => 1500, 'cost_per_unit' => 0.001],
-            ['sku' => 'ING-005', 'name' => 'خبز', 'name_en' => 'Bread', 'base_unit_id' => $pcs->id, 'current_stock' => 200, 'reorder_threshold' => 30, 'cost_per_unit' => 0.2],
-            ['sku' => 'ING-006', 'name' => 'زيت زيتون', 'name_en' => 'Olive Oil', 'base_unit_id' => $ml->id, 'current_stock' => 10000, 'reorder_threshold' => 1000, 'cost_per_unit' => 0.01],
-            ['sku' => 'ING-007', 'name' => 'ملح', 'name_en' => 'Salt', 'base_unit_id' => $g->id, 'current_stock' => 5000, 'reorder_threshold' => 500, 'cost_per_unit' => 0.0005],
-            ['sku' => 'ING-008', 'name' => 'جبنة موزاريلا', 'name_en' => 'Mozzarella', 'base_unit_id' => $g->id, 'current_stock' => 10000, 'reorder_threshold' => 1000, 'cost_per_unit' => 0.012],
-            ['sku' => 'ING-009', 'name' => 'خيار', 'name_en' => 'Cucumber', 'base_unit_id' => $g->id, 'current_stock' => 8000, 'reorder_threshold' => 800, 'cost_per_unit' => 0.002],
-            ['sku' => 'ING-010', 'name' => 'نوتيلا', 'name_en' => 'Nutella', 'base_unit_id' => $g->id, 'current_stock' => 3000, 'reorder_threshold' => 500, 'cost_per_unit' => 0.025],
-            ['sku' => 'ING-011', 'name' => 'سكر', 'name_en' => 'Sugar', 'base_unit_id' => $g->id, 'current_stock' => 10000, 'reorder_threshold' => 1000, 'cost_per_unit' => 0.001],
-            ['sku' => 'ING-012', 'name' => 'قهوة حب', 'name_en' => 'Coffee Beans', 'base_unit_id' => $g->id, 'current_stock' => 5000, 'reorder_threshold' => 500, 'cost_per_unit' => 0.02],
-            ['sku' => 'ING-013', 'name' => 'حليب', 'name_en' => 'Milk', 'base_unit_id' => $ml->id, 'current_stock' => 20000, 'reorder_threshold' => 2000, 'cost_per_unit' => 0.001],
-            ['sku' => 'ING-014', 'name' => 'ماء', 'name_en' => 'Water', 'base_unit_id' => $ml->id, 'current_stock' => 50000, 'reorder_threshold' => 5000, 'cost_per_unit' => 0.0001],
-            ['sku' => 'ING-015', 'name' => 'ليمون', 'name_en' => 'Lemon', 'base_unit_id' => $pcs->id, 'current_stock' => 100, 'reorder_threshold' => 20, 'cost_per_unit' => 0.15],
+            ['sku' => 'ING-001', 'name' => 'صدر دجاج', 'base_unit_id' => $g->id, 'current_stock' => 50000, 'reorder_threshold' => 5000, 'cost_per_unit' => 0.008],
+            ['sku' => 'ING-002', 'name' => 'لحم بقري', 'base_unit_id' => $g->id, 'current_stock' => 30000, 'reorder_threshold' => 3000, 'cost_per_unit' => 0.015],
+            ['sku' => 'ING-003', 'name' => 'طماطم', 'base_unit_id' => $g->id, 'current_stock' => 20000, 'reorder_threshold' => 2000, 'cost_per_unit' => 0.002],
+            ['sku' => 'ING-004', 'name' => 'بصل', 'base_unit_id' => $g->id, 'current_stock' => 15000, 'reorder_threshold' => 1500, 'cost_per_unit' => 0.001],
+            ['sku' => 'ING-005', 'name' => 'خبز', 'base_unit_id' => $pcs->id, 'current_stock' => 200, 'reorder_threshold' => 30, 'cost_per_unit' => 0.2],
+            ['sku' => 'ING-006', 'name' => 'زيت زيتون', 'base_unit_id' => $ml->id, 'current_stock' => 10000, 'reorder_threshold' => 1000, 'cost_per_unit' => 0.01],
+            ['sku' => 'ING-007', 'name' => 'ملح', 'base_unit_id' => $g->id, 'current_stock' => 5000, 'reorder_threshold' => 500, 'cost_per_unit' => 0.0005],
+            ['sku' => 'ING-008', 'name' => 'جبنة موزاريلا', 'base_unit_id' => $g->id, 'current_stock' => 10000, 'reorder_threshold' => 1000, 'cost_per_unit' => 0.012],
+            ['sku' => 'ING-009', 'name' => 'خيار', 'base_unit_id' => $g->id, 'current_stock' => 8000, 'reorder_threshold' => 800, 'cost_per_unit' => 0.002],
+            ['sku' => 'ING-010', 'name' => 'نوتيلا', 'base_unit_id' => $g->id, 'current_stock' => 3000, 'reorder_threshold' => 500, 'cost_per_unit' => 0.025],
+            ['sku' => 'ING-011', 'name' => 'سكر', 'base_unit_id' => $g->id, 'current_stock' => 10000, 'reorder_threshold' => 1000, 'cost_per_unit' => 0.001],
+            ['sku' => 'ING-012', 'name' => 'قهوة حب', 'base_unit_id' => $g->id, 'current_stock' => 5000, 'reorder_threshold' => 500, 'cost_per_unit' => 0.02],
+            ['sku' => 'ING-013', 'name' => 'حليب', 'base_unit_id' => $ml->id, 'current_stock' => 20000, 'reorder_threshold' => 2000, 'cost_per_unit' => 0.001],
+            ['sku' => 'ING-014', 'name' => 'ماء', 'base_unit_id' => $ml->id, 'current_stock' => 50000, 'reorder_threshold' => 5000, 'cost_per_unit' => 0.0001],
+            ['sku' => 'ING-015', 'name' => 'ليمون', 'base_unit_id' => $pcs->id, 'current_stock' => 100, 'reorder_threshold' => 20, 'cost_per_unit' => 0.15],
         ];
         // Seed stock through ingredient_stock — the per-location truth table
         // — instead of writing current_stock directly. Otherwise the global
@@ -109,18 +109,18 @@ class MenuSeeder extends Seeder
 
         // Modifier groups
         $sizeGroup = ModifierGroup::updateOrCreate(['slug' => 'size'], [
-            'name' => 'الحجم', 'name_en' => 'Size', 'min_select' => 1, 'max_select' => 1, 'required' => true, 'display_order' => 1, 'active' => true,
+            'name' => 'الحجم', 'min_select' => 1, 'max_select' => 1, 'required' => true, 'display_order' => 1, 'active' => true,
         ]);
-        Modifier::updateOrCreate(['modifier_group_id' => $sizeGroup->id, 'name' => 'صغير'], ['name_en' => 'Small', 'price_delta' => 0, 'display_order' => 1, 'active' => true]);
-        Modifier::updateOrCreate(['modifier_group_id' => $sizeGroup->id, 'name' => 'متوسط'], ['name_en' => 'Medium', 'price_delta' => 2, 'display_order' => 2, 'active' => true]);
-        Modifier::updateOrCreate(['modifier_group_id' => $sizeGroup->id, 'name' => 'كبير'], ['name_en' => 'Large', 'price_delta' => 4, 'display_order' => 3, 'active' => true]);
+        Modifier::updateOrCreate(['modifier_group_id' => $sizeGroup->id, 'name' => 'صغير'], ['price_delta' => 0, 'display_order' => 1, 'active' => true]);
+        Modifier::updateOrCreate(['modifier_group_id' => $sizeGroup->id, 'name' => 'متوسط'], ['price_delta' => 2, 'display_order' => 2, 'active' => true]);
+        Modifier::updateOrCreate(['modifier_group_id' => $sizeGroup->id, 'name' => 'كبير'], ['price_delta' => 4, 'display_order' => 3, 'active' => true]);
 
         $addonsGroup = ModifierGroup::updateOrCreate(['slug' => 'addons'], [
-            'name' => 'إضافات', 'name_en' => 'Add-ons', 'min_select' => 0, 'max_select' => 10, 'required' => false, 'display_order' => 2, 'active' => true,
+            'name' => 'إضافات', 'min_select' => 0, 'max_select' => 10, 'required' => false, 'display_order' => 2, 'active' => true,
         ]);
-        Modifier::updateOrCreate(['modifier_group_id' => $addonsGroup->id, 'name' => 'جبنة إضافية'], ['name_en' => 'Extra Cheese', 'price_delta' => 2, 'display_order' => 1, 'active' => true]);
-        Modifier::updateOrCreate(['modifier_group_id' => $addonsGroup->id, 'name' => 'بدون بصل'], ['name_en' => 'No Onion', 'price_delta' => 0, 'display_order' => 2, 'active' => true]);
-        Modifier::updateOrCreate(['modifier_group_id' => $addonsGroup->id, 'name' => 'حار'], ['name_en' => 'Spicy', 'price_delta' => 0, 'display_order' => 3, 'active' => true]);
+        Modifier::updateOrCreate(['modifier_group_id' => $addonsGroup->id, 'name' => 'جبنة إضافية'], ['price_delta' => 2, 'display_order' => 1, 'active' => true]);
+        Modifier::updateOrCreate(['modifier_group_id' => $addonsGroup->id, 'name' => 'بدون بصل'], ['price_delta' => 0, 'display_order' => 2, 'active' => true]);
+        Modifier::updateOrCreate(['modifier_group_id' => $addonsGroup->id, 'name' => 'حار'], ['price_delta' => 0, 'display_order' => 3, 'active' => true]);
 
         // Menu items
         $appetizers = Category::where('slug', 'appetizers')->first();
@@ -153,9 +153,7 @@ class MenuSeeder extends Seeder
                 'category_id' => $sandwiches->id,
                 'station_id' => $kitchen->id,
                 'name' => 'شاورما دجاج',
-                'name_en' => 'Chicken Shawarma',
                 'description' => 'شاورما دجاج بتتبيلة خاصة مع الخضروات والصوص',
-                'description_en' => 'Chicken shawarma with special sauce and veggies',
                 'price' => 4.50,
                 'prep_time_minutes' => 8,
                 'is_available' => true,
@@ -178,7 +176,6 @@ class MenuSeeder extends Seeder
                 'category_id' => $sandwiches->id,
                 'station_id' => $kitchen->id,
                 'name' => 'برجر لحم',
-                'name_en' => 'Beef Burger',
                 'description' => 'برجر لحم طازج مع الجبنة والخضار',
                 'price' => 5.00,
                 'prep_time_minutes' => 12,
@@ -202,7 +199,6 @@ class MenuSeeder extends Seeder
                 'category_id' => $salads->id,
                 'station_id' => $kitchen->id,
                 'name' => 'فتوش',
-                'name_en' => 'Fattoush',
                 'description' => 'سلطة فتوش باللبنانية مع الخبز المحمص',
                 'price' => 3.00,
                 'prep_time_minutes' => 5,
@@ -224,7 +220,6 @@ class MenuSeeder extends Seeder
                 'category_id' => $drinks->id,
                 'station_id' => $bar->id,
                 'name' => 'بيبسي',
-                'name_en' => 'Pepsi',
                 'description' => 'بيبسي بارد 330 مل',
                 'price' => 1.00,
                 'prep_time_minutes' => 1,
@@ -242,7 +237,6 @@ class MenuSeeder extends Seeder
                 'category_id' => $drinks->id,
                 'station_id' => $bar->id,
                 'name' => 'إسبريسو',
-                'name_en' => 'Espresso',
                 'price' => 1.50,
                 'prep_time_minutes' => 3,
                 'is_available' => true,
@@ -260,7 +254,6 @@ class MenuSeeder extends Seeder
                 'category_id' => $drinks->id,
                 'station_id' => $bar->id,
                 'name' => 'كابتشينو',
-                'name_en' => 'Cappuccino',
                 'price' => 2.50,
                 'prep_time_minutes' => 4,
                 'is_available' => true,
@@ -279,7 +272,6 @@ class MenuSeeder extends Seeder
                 'category_id' => $drinks->id,
                 'station_id' => $bar->id,
                 'name' => 'ليمون بالنعنع',
-                'name_en' => 'Fresh Lemon Mint',
                 'price' => 2.00,
                 'prep_time_minutes' => 4,
                 'is_available' => true,
@@ -298,7 +290,6 @@ class MenuSeeder extends Seeder
                 'category_id' => $desserts->id,
                 'station_id' => $dessert->id,
                 'name' => 'كريب نوتيلا',
-                'name_en' => 'Nutella Crepe',
                 'price' => 4.50,
                 'prep_time_minutes' => 10,
                 'is_available' => true,
@@ -318,7 +309,6 @@ class MenuSeeder extends Seeder
                 'category_id' => $mains->id,
                 'station_id' => $kitchen->id,
                 'name' => 'دجاج مشوي',
-                'name_en' => 'Grilled Chicken',
                 'price' => 7.50,
                 'prep_time_minutes' => 20,
                 'is_available' => true,

@@ -18,7 +18,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  *   3. Exposes a `branch()` BelongsTo relation.
  *
  * Apply this only to OPERATIONAL data that is per-branch (orders,
- * invoices, inventory_movements, shifts). Reference data shared across
+ * invoices and inventory_movements). Reference data shared across
  * branches (menu_items, suppliers, categories) must NOT use this trait.
  */
 trait BelongsToBranch
@@ -54,7 +54,7 @@ trait BelongsToBranch
     public function resolveRouteBinding($value, $field = null)
     {
         // Use the staff guard explicitly. Portal routes default `auth()->user()`
-        // to a Customer (via auth:customer middleware), and Customer doesn't
+        // to a Customer, and Customer doesn't
         // implement isOwnerLevel — calling it blew up the order-tracking page.
         $staff = \Illuminate\Support\Facades\Auth::guard('web')->user();
         if ($staff && $staff->isOwnerLevel()) {

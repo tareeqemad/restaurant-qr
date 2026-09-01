@@ -120,22 +120,6 @@ class RequiredModifierGuardTest extends TestCase
         );
     }
 
-    /** The remote/integration path (this one demands a real customer). */
-    public function test_create_remote_order_refuses_a_missing_required_group(): void
-    {
-        $customer = \App\Models\Customer::create([
-            'name' => 'زبون', 'phone' => '0790000099', 'status' => 'active',
-            'password' => bcrypt('x'),
-        ]);
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('الحجم');
-
-        app(OrderService::class)->createRemoteOrder(
-            customer: $customer, branch: $this->branch, type: 'takeaway', cart: $this->line([]),
-        );
-    }
-
     /** Answer the question and the ticket goes through, priced with the modifier. */
     public function test_a_satisfied_required_group_creates_the_order(): void
     {

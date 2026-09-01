@@ -3,21 +3,27 @@
 namespace App\Sync;
 
 use App\Models\Account;
-use App\Models\AccountMapping;
 use App\Models\AccountingPeriod;
+use App\Models\AccountMapping;
 use App\Models\Allergen;
 use App\Models\Attendance;
 use App\Models\Branch;
+use App\Models\BranchLegalProfile;
 use App\Models\BranchTransfer;
 use App\Models\BranchTransferItem;
-use App\Models\CashMovement;
+use App\Models\BusinessOwner;
 use App\Models\CashReconciliation;
 use App\Models\Category;
 use App\Models\Currency;
 use App\Models\CurrencyExchangeRate;
+use App\Models\CreditNote;
+use App\Models\CreditNoteLine;
 use App\Models\Customer;
 use App\Models\CustomerAddress;
+use App\Models\CustomerAdvanceTransaction;
 use App\Models\Discount;
+use App\Models\DebtWriteoff;
+use App\Models\Employee;
 use App\Models\Expense;
 use App\Models\FiscalYear;
 use App\Models\Ingredient;
@@ -31,9 +37,11 @@ use App\Models\InvoiceSplit;
 use App\Models\JournalEntry;
 use App\Models\JournalLine;
 use App\Models\Lookup;
+use App\Models\LookupGroup;
 use App\Models\LoyaltyCustomer;
 use App\Models\LoyaltyTransaction;
 use App\Models\MenuItem;
+use App\Models\MenuItemPriceHistory;
 use App\Models\MenuPromotion;
 use App\Models\Modifier;
 use App\Models\ModifierGroup;
@@ -51,11 +59,11 @@ use App\Models\PurchaseReceipt;
 use App\Models\PurchaseReceiptItem;
 use App\Models\RecipeItem;
 use App\Models\Refund;
+use App\Models\RefundAllocation;
 use App\Models\Reservation;
 use App\Models\Review;
 use App\Models\Role;
 use App\Models\Setting;
-use App\Models\Shift;
 use App\Models\StaffMealCharge;
 use App\Models\StaffMealMonthClosure;
 use App\Models\Station;
@@ -68,7 +76,6 @@ use App\Models\SupplierInvoiceItem;
 use App\Models\SupplierPayment;
 use App\Models\Table;
 use App\Models\TableSession;
-use App\Models\TaxJurisdiction;
 use App\Models\Unit;
 use App\Models\User;
 
@@ -95,6 +102,9 @@ class SyncRegistry
             ],
             'currency_exchange_rates' => [
                 'natural' => ['currency_code', 'base_currency_code', 'valid_from', 'valid_to', 'source'],
+            ],
+            'lookup_groups' => [
+                'natural' => ['code'],
             ],
             'lookups' => [
                 'foreigns' => ['branch_id' => 'branches'],
@@ -137,9 +147,32 @@ class SyncRegistry
                 'natural' => ['username'],
                 'exclude' => ['remember_token'],
             ],
+            'business_owners' => [
+                'foreigns' => ['created_by_user_id' => 'users'],
+            ],
+            'branch_legal_profiles' => [
+                'foreigns' => [
+                    'branch_id' => 'branches',
+                    'created_by_user_id' => 'users',
+                    'updated_by_user_id' => 'users',
+                ],
+                'natural' => ['branch_id'],
+            ],
+            'branch_ownerships' => [
+                'foreigns' => ['branch_id' => 'branches', 'business_owner_id' => 'business_owners'],
+                'natural' => ['branch_id', 'business_owner_id'],
+            ],
             'branch_user' => [
                 'foreigns' => ['branch_id' => 'branches', 'user_id' => 'users', 'role_id' => 'roles'],
                 'natural' => ['branch_id', 'user_id'],
+            ],
+            'employees' => [
+                'foreigns' => ['user_id' => 'users'],
+                'natural' => ['code'],
+            ],
+            'branch_employee' => [
+                'foreigns' => ['branch_id' => 'branches', 'employee_id' => 'employees'],
+                'natural' => ['branch_id', 'employee_id'],
             ],
             'user_permission' => [
                 'foreigns' => ['user_id' => 'users', 'permission_id' => 'permissions'],
@@ -152,6 +185,13 @@ class SyncRegistry
             'menu_items' => [
                 'foreigns' => ['branch_id' => 'branches', 'category_id' => 'categories', 'station_id' => 'stations'],
                 'natural' => ['branch_id', 'sku'],
+            ],
+            'menu_item_price_histories' => [
+                'foreigns' => [
+                    'branch_id' => 'branches',
+                    'menu_item_id' => 'menu_items',
+                    'changed_by_user_id' => 'users',
+                ],
             ],
             'menu_item_allergens' => [
                 'foreigns' => ['menu_item_id' => 'menu_items', 'allergen_id' => 'allergens'],
@@ -230,9 +270,6 @@ class SyncRegistry
             'customer_addresses' => [
                 'foreigns' => ['customer_id' => 'customers'],
             ],
-            'shifts' => [
-                'foreigns' => ['branch_id' => 'branches', 'user_id' => 'users', 'closed_by_user_id' => 'users'],
-            ],
             'table_sessions' => [
                 'foreigns' => [
                     'branch_id' => 'branches',
@@ -253,6 +290,7 @@ class SyncRegistry
                     'created_by_user_id' => 'users',
                     'approved_by_user_id' => 'users',
                     'cancelled_by_user_id' => 'users',
+                    'staff_consumer_employee_id' => 'employees',
                     'staff_consumer_user_id' => 'users',
                 ],
                 'natural' => ['number'],
@@ -327,25 +365,54 @@ class SyncRegistry
                 'foreigns' => ['branch_id' => 'branches', 'invoice_id' => 'invoices'],
             ],
             'payments' => [
-                'foreigns' => ['branch_id' => 'branches', 'invoice_id' => 'invoices', 'received_by_user_id' => 'users', 'shift_id' => 'shifts'],
+                'foreigns' => ['branch_id' => 'branches', 'invoice_id' => 'invoices', 'received_by_user_id' => 'users', 'voided_by' => 'users'],
+            ],
+            'credit_notes' => [
+                'foreigns' => [
+                    'branch_id' => 'branches', 'invoice_id' => 'invoices',
+                    'issued_by' => 'users', 'reversed_by' => 'users',
+                ],
+                'natural' => ['number'],
+            ],
+            'credit_note_lines' => [
+                'foreigns' => ['credit_note_id' => 'credit_notes', 'order_item_id' => 'order_items'],
+            ],
+            'debt_writeoffs' => [
+                'foreigns' => [
+                    'branch_id' => 'branches', 'invoice_id' => 'invoices',
+                    'written_off_by' => 'users', 'reversed_by' => 'users',
+                ],
+                'natural' => ['number'],
             ],
             'refunds' => [
-                'foreigns' => ['branch_id' => 'branches', 'invoice_id' => 'invoices', 'payment_id' => 'payments', 'processed_by' => 'users', 'shift_id' => 'shifts'],
+                'foreigns' => [
+                    'branch_id' => 'branches', 'invoice_id' => 'invoices', 'credit_note_id' => 'credit_notes',
+                    'payment_id' => 'payments', 'processed_by' => 'users', 'completed_by' => 'users',
+                    'cancelled_by' => 'users', 'reversed_by' => 'users',
+                ],
                 'natural' => ['number'],
+            ],
+            'refund_allocations' => [
+                'foreigns' => ['refund_id' => 'refunds', 'payment_id' => 'payments'],
+            ],
+            'customer_advance_transactions' => [
+                'foreigns' => [
+                    'customer_id' => 'customers',
+                    'branch_id' => 'branches',
+                    'invoice_id' => 'invoices',
+                    'refund_id' => 'refunds',
+                    'reversed_transaction_id' => 'customer_advance_transactions',
+                    'created_by_user_id' => 'users',
+                ],
             ],
             'loyalty_transactions' => [
                 'foreigns' => ['loyalty_customer_id' => 'loyalty_customers', 'invoice_id' => 'invoices', 'order_id' => 'orders', 'user_id' => 'users'],
-            ],
-            'cash_movements' => [
-                'foreigns' => ['branch_id' => 'branches', 'shift_id' => 'shifts', 'user_id' => 'users'],
             ],
             'expenses' => [
                 'foreigns' => [
                     'branch_id' => 'branches',
                     'expense_category_id' => 'lookups',
                     'supplier_id' => 'suppliers',
-                    'shift_id' => 'shifts',
-                    'cash_movement_id' => 'cash_movements',
                     'created_by_user_id' => 'users',
                     'approved_by_user_id' => 'users',
                 ],
@@ -381,7 +448,7 @@ class SyncRegistry
                 'foreigns' => ['supplier_invoice_id' => 'supplier_invoices', 'purchase_order_item_id' => 'purchase_order_items', 'ingredient_id' => 'ingredients', 'unit_id' => 'units', 'ingredient_unit_id' => 'ingredient_units'],
             ],
             'supplier_payments' => [
-                'foreigns' => ['branch_id' => 'branches', 'supplier_invoice_id' => 'supplier_invoices', 'paid_by' => 'users', 'shift_id' => 'shifts'],
+                'foreigns' => ['branch_id' => 'branches', 'supplier_invoice_id' => 'supplier_invoices', 'paid_by' => 'users'],
             ],
             'stock_counts' => [
                 'foreigns' => ['branch_id' => 'branches', 'storage_location_id' => 'storage_locations', 'created_by' => 'users', 'finalized_by' => 'users'],
@@ -405,7 +472,7 @@ class SyncRegistry
                 'natural' => ['branch_id', 'month'],
             ],
             'staff_meal_charges' => [
-                'foreigns' => ['branch_id' => 'branches', 'user_id' => 'users', 'order_id' => 'orders', 'settled_by_user_id' => 'users', 'approved_by_user_id' => 'users', 'month_closure_id' => 'staff_meal_month_closures'],
+                'foreigns' => ['branch_id' => 'branches', 'employee_id' => 'employees', 'user_id' => 'users', 'order_id' => 'orders', 'settled_by_user_id' => 'users', 'approved_by_user_id' => 'users', 'month_closure_id' => 'staff_meal_month_closures'],
             ],
             'pending_transfers' => [
                 'foreigns' => ['branch_id' => 'branches', 'table_session_id' => 'table_sessions', 'invoice_id' => 'invoices', 'payment_id' => 'payments', 'customer_id' => 'customers', 'recorded_by_user_id' => 'users', 'verified_by_user_id' => 'users'],
@@ -431,11 +498,9 @@ class SyncRegistry
                     'accounting_period_id' => 'accounting_periods',
                     'account_id' => 'accounts',
                     'reconciled_by' => 'users',
+                    'resolution_journal_entry_id' => 'journal_entries',
+                    'resolved_by' => 'users',
                 ],
-            ],
-            'tax_jurisdictions' => [
-                'foreigns' => ['branch_id' => 'branches'],
-                'natural' => ['branch_id', 'country', 'state', 'city', 'postal_code', 'name'],
             ],
             'inventory_snapshots' => [
                 'foreigns' => ['branch_id' => 'branches', 'ingredient_id' => 'ingredients'],
@@ -472,16 +537,22 @@ class SyncRegistry
             Allergen::class => 'allergens',
             Attendance::class => 'attendances',
             Branch::class => 'branches',
+            BranchLegalProfile::class => 'branch_legal_profiles',
             BranchTransfer::class => 'branch_transfers',
             BranchTransferItem::class => 'branch_transfer_items',
-            CashMovement::class => 'cash_movements',
             CashReconciliation::class => 'cash_reconciliations',
+            CreditNote::class => 'credit_notes',
+            CreditNoteLine::class => 'credit_note_lines',
+            BusinessOwner::class => 'business_owners',
             Category::class => 'categories',
             Currency::class => 'currencies',
             CurrencyExchangeRate::class => 'currency_exchange_rates',
             Customer::class => 'customers',
+            CustomerAdvanceTransaction::class => 'customer_advance_transactions',
             CustomerAddress::class => 'customer_addresses',
             Discount::class => 'discounts',
+            DebtWriteoff::class => 'debt_writeoffs',
+            Employee::class => 'employees',
             Expense::class => 'expenses',
             FiscalYear::class => 'fiscal_years',
             Ingredient::class => 'ingredients',
@@ -495,9 +566,11 @@ class SyncRegistry
             JournalEntry::class => 'journal_entries',
             JournalLine::class => 'journal_lines',
             Lookup::class => 'lookups',
+            LookupGroup::class => 'lookup_groups',
             LoyaltyCustomer::class => 'loyalty_customers',
             LoyaltyTransaction::class => 'loyalty_transactions',
             MenuItem::class => 'menu_items',
+            MenuItemPriceHistory::class => 'menu_item_price_histories',
             MenuPromotion::class => 'menu_promotions',
             Modifier::class => 'modifiers',
             ModifierGroup::class => 'modifier_groups',
@@ -515,11 +588,11 @@ class SyncRegistry
             PurchaseReceiptItem::class => 'purchase_receipt_items',
             RecipeItem::class => 'recipe_items',
             Refund::class => 'refunds',
+            RefundAllocation::class => 'refund_allocations',
             Reservation::class => 'reservations',
             Review::class => 'reviews',
             Role::class => 'roles',
             Setting::class => 'settings',
-            Shift::class => 'shifts',
             StaffMealCharge::class => 'staff_meal_charges',
             StaffMealMonthClosure::class => 'staff_meal_month_closures',
             Station::class => 'stations',
@@ -532,7 +605,6 @@ class SyncRegistry
             SupplierPayment::class => 'supplier_payments',
             Table::class => 'tables',
             TableSession::class => 'table_sessions',
-            TaxJurisdiction::class => 'tax_jurisdictions',
             Unit::class => 'units',
             User::class => 'users',
         ];

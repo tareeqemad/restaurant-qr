@@ -2,12 +2,9 @@
 
 namespace App\Exports;
 
-use App\Models\Branch;
 use App\Helpers\Money;
-use App\Support\MarketProfile;
-use App\Support\MarketSpreadsheetLocalizer;
+use App\Models\Branch;
 use Carbon\Carbon;
-use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
@@ -26,16 +23,20 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 class ProfitLossXlsx
 {
     protected string $currency;
+
     protected string $brandGreen = '0F2D22';
-    protected string $brandGold  = 'B97818';
-    protected string $headerBg   = '1F4733';
-    protected string $rowAlt     = 'FAFDFA';
+
+    protected string $brandGold = 'B97818';
+
+    protected string $headerBg = '1F4733';
+
+    protected string $rowAlt = 'FAFDFA';
 
     public function download(array $r)
     {
         $this->currency = Money::accountingSymbol();
 
-        $book = new Spreadsheet();
+        $book = new Spreadsheet;
         $book->getProperties()
             ->setCreator(config('restaurant.name', 'Relax'))
             ->setTitle('Profit & Loss')
@@ -48,7 +49,6 @@ class ProfitLossXlsx
         $this->buildTrendSheet($book->createSheet(), $r);
         $this->buildTopItemsSheet($book->createSheet(), $r);
 
-        MarketSpreadsheetLocalizer::apply($book);
         $book->setActiveSheetIndex(0);
 
         $stamp = now()->format('Y-m-d_H-i');
@@ -86,13 +86,13 @@ class ProfitLossXlsx
         $sheet->getRowDimension(1)->setRowHeight(38);
 
         $rows = [
-            ['الفترة', Carbon::parse($r['period']['from'])->locale(MarketProfile::lang())->isoFormat('D MMMM YYYY')
-                . ' — ' . Carbon::parse($r['period']['to'])->locale(MarketProfile::lang())->isoFormat('D MMMM YYYY')
-                . ' ('.$r['period']['days'].' يوم)'],
+            ['الفترة', Carbon::parse($r['period']['from'])->locale('ar')->isoFormat('D MMMM YYYY')
+                .' — '.Carbon::parse($r['period']['to'])->locale('ar')->isoFormat('D MMMM YYYY')
+                .' ('.$r['period']['days'].' يوم)'],
             ['الفرع', $branchName],
             ['مصدر التقرير', ($r['period']['source'] ?? 'ledger') === 'ledger' ? 'دفتر القيود' : 'تشغيلي'],
             ['طريقة احتساب التكلفة', ($r['period']['source'] ?? 'ledger') === 'ledger' ? 'من دفتر القيود' : ($r['period']['per_branch_cost'] ? 'بأسعار شراء الفرع' : 'بالتكلفة الموحَّدة')],
-            ['تاريخ التقرير', now()->locale(MarketProfile::lang())->isoFormat('D MMMM YYYY · HH:mm')],
+            ['تاريخ التقرير', now()->locale('ar')->isoFormat('D MMMM YYYY · HH:mm')],
         ];
         $row = 3;
         foreach ($rows as $pair) {
@@ -121,17 +121,19 @@ class ProfitLossXlsx
         ]);
         $row++;
         $note = "كل ورقة تشرح جزءاً من القصة:\n"
-            . "• قائمة الدخل: المعادلة الكاملة من الإيراد إلى صافي الربح.\n"
-            . "• الخصومات: كم خصم وعلى يد من ولماذا.\n"
-            . "• المصروفات: التشغيلية معتمدة فقط، حسب التصنيف وطريقة الدفع.\n"
-            . "• الاتجاه اليومي: لرسم بياني أو ملاحظة الموسمية.\n"
-            . "• أعلى الأصناف: الأكثر ربحاً بترتيب المساهمة.";
+            ."• قائمة الدخل: المعادلة الكاملة من الإيراد إلى صافي الربح.\n"
+            ."• الخصومات: كم خصم وعلى يد من ولماذا.\n"
+            ."• المصروفات: التشغيلية معتمدة فقط، حسب التصنيف وطريقة الدفع.\n"
+            ."• الاتجاه اليومي: لرسم بياني أو ملاحظة الموسمية.\n"
+            .'• أعلى الأصناف: الأكثر ربحاً بترتيب المساهمة.';
         $sheet->setCellValue("A{$row}", $note);
         $sheet->mergeCells("A{$row}:D{$row}");
         $sheet->getStyle("A{$row}")->getAlignment()->setWrapText(true)->setVertical(Alignment::VERTICAL_TOP);
         $sheet->getRowDimension($row)->setRowHeight(110);
 
-        foreach (['A', 'B', 'C', 'D'] as $col) $sheet->getColumnDimension($col)->setWidth(28);
+        foreach (['A', 'B', 'C', 'D'] as $col) {
+            $sheet->getColumnDimension($col)->setWidth(28);
+        }
     }
 
     protected function writeKpi($sheet, int $row, string $label, float $value, string $rgb, string $suffix = ''): void
@@ -166,19 +168,18 @@ class ProfitLossXlsx
         $this->styleHeader($sheet, 'A1:D1');
 
         $netSales = $r['sales']['net_sales'];
-        $pctOf = fn($v) => $netSales > 0 ? ($v / $netSales) : 0;
+        $pctOf = fn ($v) => $netSales > 0 ? ($v / $netSales) : 0;
 
         $rows = [
             ['الإيرادات الإجمالية',  $r['sales']['gross_sales'],     null, 'مجموع subtotal للفواتير المصدرة (المُحصَّلة كلياً أو جزئياً)'],
-            ['(−) الخصومات',         -$r['sales']['discounts_total'], $netSales > 0 ? -$r['sales']['discounts_total']/$netSales : null, 'مجموع discount_total على نفس الفواتير'],
+            ['(−) الخصومات',         -$r['sales']['discounts_total'], $netSales > 0 ? -$r['sales']['discounts_total'] / $netSales : null, 'مجموع discount_total على نفس الفواتير'],
             ['= صافي المبيعات',      $r['sales']['net_sales'],       1.0, 'الإيرادات الإجمالية − الخصومات'],
-            ['(−) تكلفة البضاعة (COGS)', -$r['costs']['cogs'],       $netSales > 0 ? -$r['costs']['cogs']/$netSales : null, 'كمية الأصناف المباعة × تكلفة المكوّنات'],
-            ['(−) الهدر',            -$r['costs']['waste'],          $netSales > 0 ? -$r['costs']['waste']/$netSales : null, 'inventory_movements حيث type=waste'],
+            ['(−) تكلفة البضاعة (COGS)', -$r['costs']['cogs'],       $netSales > 0 ? -$r['costs']['cogs'] / $netSales : null, 'كمية الأصناف المباعة × تكلفة المكوّنات'],
+            ['(−) الهدر',            -$r['costs']['waste'],          $netSales > 0 ? -$r['costs']['waste'] / $netSales : null, 'inventory_movements حيث type=waste'],
             ['= الربح الإجمالي',     $r['profit']['gross_profit'],   $pctOf($r['profit']['gross_profit']), 'صافي المبيعات − COGS − الهدر'],
-            ['(−) المصروفات التشغيلية', -$r['costs']['expenses'],    $netSales > 0 ? -$r['costs']['expenses']/$netSales : null, 'مصروفات معتمدة في الفترة (إيجار، رواتب، فواتير…)'],
-            ['(−) عمولات منصات التوصيل', -$r['costs']['platform_commission'], $netSales > 0 ? -$r['costs']['platform_commission']/$netSales : null, 'orders.total × platform_commission_pct/100'],
-            ['= الربح من العمليات',  $r['profit']['operating_profit'], $pctOf($r['profit']['operating_profit']), 'الربح الإجمالي − المصروفات − العمولات'],
-            ['(−) الاستردادات',      -$r['costs']['refunds'],         $netSales > 0 ? -$r['costs']['refunds']/$netSales : null, 'مبالغ مُعادة للزبائن في الفترة'],
+            ['(−) المصروفات التشغيلية', -$r['costs']['expenses'],    $netSales > 0 ? -$r['costs']['expenses'] / $netSales : null, 'مصروفات معتمدة في الفترة (إيجار، رواتب، فواتير…)'],
+            ['= الربح من العمليات',  $r['profit']['operating_profit'], $pctOf($r['profit']['operating_profit']), 'الربح الإجمالي − المصروفات التشغيلية'],
+            ['(−) الاستردادات',      -$r['costs']['refunds'],         $netSales > 0 ? -$r['costs']['refunds'] / $netSales : null, 'مبالغ مُعادة للزبائن في الفترة'],
             ['= صافي الربح',         $r['profit']['net_profit'],     $pctOf($r['profit']['net_profit']), 'الرقم النهائي'],
         ];
 
@@ -186,7 +187,9 @@ class ProfitLossXlsx
         foreach ($rows as $r2) {
             $sheet->setCellValue("A{$row}", $r2[0]);
             $sheet->setCellValue("B{$row}", $r2[1]);
-            if ($r2[2] !== null) $sheet->setCellValue("C{$row}", $r2[2]);
+            if ($r2[2] !== null) {
+                $sheet->setCellValue("C{$row}", $r2[2]);
+            }
             $sheet->setCellValue("D{$row}", $r2[3]);
 
             $isSubtotal = str_starts_with($r2[0], '=');
@@ -205,7 +208,9 @@ class ProfitLossXlsx
                 ]);
             }
             $sheet->getStyle("B{$row}")->getNumberFormat()->setFormatCode("#,##0.00 \"{$this->currency}\"");
-            if ($r2[2] !== null) $sheet->getStyle("C{$row}")->getNumberFormat()->setFormatCode('0.00%');
+            if ($r2[2] !== null) {
+                $sheet->getStyle("C{$row}")->getNumberFormat()->setFormatCode('0.00%');
+            }
             $row++;
         }
 
@@ -213,7 +218,7 @@ class ProfitLossXlsx
         $sheet->getColumnDimension('B')->setWidth(20);
         $sheet->getColumnDimension('C')->setWidth(22);
         $sheet->getColumnDimension('D')->setWidth(50);
-        $sheet->getStyle('D2:D'.($row-1))->getAlignment()->setWrapText(true);
+        $sheet->getStyle('D2:D'.($row - 1))->getAlignment()->setWrapText(true);
         $sheet->freezePane('A2');
     }
 
@@ -239,7 +244,7 @@ class ProfitLossXlsx
             $sheet->setCellValue("A{$row}", $b['label']);
             $sheet->setCellValue("B{$row}", $b['count']);
             $sheet->setCellValue("C{$row}", $b['total']);
-            $sheet->setCellValue("D{$row}", $netSales > 0 ? $b['total']/$netSales : 0);
+            $sheet->setCellValue("D{$row}", $netSales > 0 ? $b['total'] / $netSales : 0);
             $sheet->getStyle("C{$row}")->getNumberFormat()->setFormatCode("#,##0.00 \"{$this->currency}\"");
             $sheet->getStyle("D{$row}")->getNumberFormat()->setFormatCode('0.00%');
             $row++;
@@ -294,7 +299,7 @@ class ProfitLossXlsx
             $sheet->setCellValue("A{$row}", $b['label']);
             $sheet->setCellValue("B{$row}", $b['count']);
             $sheet->setCellValue("C{$row}", $b['total']);
-            $sheet->setCellValue("D{$row}", $netSales > 0 ? $b['total']/$netSales : 0);
+            $sheet->setCellValue("D{$row}", $netSales > 0 ? $b['total'] / $netSales : 0);
             $sheet->getStyle("C{$row}")->getNumberFormat()->setFormatCode("#,##0.00 \"{$this->currency}\"");
             $sheet->getStyle("D{$row}")->getNumberFormat()->setFormatCode('0.00%');
             $row++;
@@ -337,7 +342,9 @@ class ProfitLossXlsx
             }
         }
 
-        foreach (['A', 'B', 'C', 'D', 'E'] as $col) $sheet->getColumnDimension($col)->setAutoSize(true);
+        foreach (['A', 'B', 'C', 'D', 'E'] as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
     }
 
     // ─── Sheet 5: Daily Trend ──────────────────────────────────────────
@@ -373,12 +380,14 @@ class ProfitLossXlsx
                 'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'EEF6F1']],
                 'borders' => ['top' => ['borderStyle' => Border::BORDER_MEDIUM, 'color' => ['rgb' => $this->brandGreen]]],
             ]);
-            foreach (['B','C','D','E','F'] as $col) {
+            foreach (['B', 'C', 'D', 'E', 'F'] as $col) {
                 $sheet->getStyle("{$col}2:{$col}{$row}")->getNumberFormat()->setFormatCode("#,##0.00 \"{$this->currency}\"");
             }
         }
 
-        foreach (['A','B','C','D','E','F'] as $col) $sheet->getColumnDimension($col)->setAutoSize(true);
+        foreach (['A', 'B', 'C', 'D', 'E', 'F'] as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
         $sheet->freezePane('A2');
     }
 
@@ -406,11 +415,15 @@ class ProfitLossXlsx
         }
 
         if ($row > 2) {
-            foreach (['D','E','F'] as $col) $sheet->getStyle("{$col}2:{$col}".($row-1))->getNumberFormat()->setFormatCode("#,##0.00 \"{$this->currency}\"");
-            $sheet->getStyle("G2:G".($row-1))->getNumberFormat()->setFormatCode('0.00%');
+            foreach (['D', 'E', 'F'] as $col) {
+                $sheet->getStyle("{$col}2:{$col}".($row - 1))->getNumberFormat()->setFormatCode("#,##0.00 \"{$this->currency}\"");
+            }
+            $sheet->getStyle('G2:G'.($row - 1))->getNumberFormat()->setFormatCode('0.00%');
         }
 
-        foreach (['A','B','C','D','E','F','G'] as $col) $sheet->getColumnDimension($col)->setAutoSize(true);
+        foreach (['A', 'B', 'C', 'D', 'E', 'F', 'G'] as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
         $sheet->freezePane('A2');
     }
 

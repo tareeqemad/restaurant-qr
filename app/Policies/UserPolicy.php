@@ -16,24 +16,24 @@ class UserPolicy extends BasePolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->hasAnyRole(['admin', 'manager']);
+        return $user->hasPermission('users.viewAny');
     }
 
     public function view(User $user, User $target): bool
     {
-        return $user->hasAnyRole(['admin', 'manager']) || $user->id === $target->id;
+        return $user->id === $target->id || $user->hasPermission('users.view');
     }
 
     public function create(User $user): bool
     {
-        return $user->hasAnyRole(['admin', 'manager']);
+        return $user->hasPermission('users.create');
     }
 
     public function update(User $user, User $target): bool
     {
         // Self-edit always allowed (subject to ProfileController gates).
         if ($user->id === $target->id) {
-            return $user->hasAnyRole(['admin', 'manager']);
+            return $user->hasPermission('users.update');
         }
 
         // Rank guard — never let a lower-rank actor edit a peer-or-higher
@@ -48,7 +48,7 @@ class UserPolicy extends BasePolicy
             return false;
         }
 
-        return $user->hasAnyRole(['admin', 'manager']);
+        return $user->hasPermission('users.update');
     }
 
     public function delete(User $user, User $target): bool
@@ -64,6 +64,6 @@ class UserPolicy extends BasePolicy
         // another owner-level user (which is gated by BasePolicy::before).
         if ($target->isOwnerLevel()) return false;
 
-        return $user->isAdmin();
+        return $user->hasPermission('users.delete');
     }
 }

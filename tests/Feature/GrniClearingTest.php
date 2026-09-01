@@ -56,6 +56,7 @@ class GrniClearingTest extends TestCase
             'is_default' => true, 'active' => true,
         ]);
         $this->supplier = Supplier::create(['name' => 'مورد', 'active' => true]);
+        $this->supplier->branches()->attach($this->branch->id);
 
         $this->ing = Ingredient::create([
             'name' => 'لحم', 'base_unit_id' => $this->pcs->id,

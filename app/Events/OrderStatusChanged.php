@@ -21,8 +21,9 @@ class OrderStatusChanged implements ShouldBroadcastNow
         // Staff channels are PRIVATE (auth via routes/channels.php).
         // Customer session channel stays public (token is the capability).
         $channels = [
-            new PrivateChannel('waiters'),
-            new PrivateChannel('cashiers'),
+            new PrivateChannel('branch.'.$this->order->branch_id.'.waiters'),
+            new PrivateChannel('branch.'.$this->order->branch_id.'.cashiers'),
+            new PrivateChannel('owners'),
         ];
 
         if ($this->order->tableSession) {
@@ -30,7 +31,7 @@ class OrderStatusChanged implements ShouldBroadcastNow
         }
 
         foreach ($this->order->items->pluck('station.code')->filter()->unique() as $code) {
-            $channels[] = new PrivateChannel('station.'.$code);
+            $channels[] = new PrivateChannel('branch.'.$this->order->branch_id.'.station.'.$code);
         }
 
         return $channels;

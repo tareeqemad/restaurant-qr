@@ -1,143 +1,92 @@
 <!DOCTYPE html>
 @php
     $market = \App\Support\MarketProfile::class;
-    $receiptFont = $market::isUs() ? 'Arial, sans-serif' : 'DejaVu Sans, sans-serif';
+    $theme = \App\Support\ThemePalette::current();
 @endphp
-<html lang="{{ $market::lang() }}" dir="{{ $market::direction() }}" data-market="{{ $market::current() }}">
+<html lang="ar" dir="rtl">
 <head>
-<meta charset="UTF-8"><title>{{ $invoice->number }}</title>
-<style>
-body { font-family: {!! $receiptFont !!}; font-size: 12px; }
-.center { text-align: center; }
-h1 { margin: 0.5rem 0; font-size: 18px; }
-table { width: 100%; border-collapse: collapse; }
-th, td { padding: 4px 6px; border-bottom: 1px solid #ddd; }
-th { background: #f5f5f5; }
-.totals td { border: 0; padding: 3px; }
-.lbl { text-align: start; } .val { text-align: end; font-weight: bold; }
-.grand { border-top: 2px solid #000; border-bottom: 2px solid #000; font-size: 14px; }
-hr { border: 0; border-top: 1px dashed #333; }
-</style>
-</head><body>
-@php
-    $invoiceOrders = $invoice->tableSession
-        ? $invoice->tableSession->orders
-        : collect([$invoice->order])->filter();
-    $originLabel = $invoice->tableSession
-        ? 'طاولة '.$invoice->tableLabel()
-        : (($invoice->order?->order_type === 'delivery' ? 'دليفري' : 'استلام/سفري').' - '.($invoice->order?->sourceLabel() ?? 'طلب مباشر'));
-    $siteName = \App\Helpers\Brand::name();
-    $legalName = \App\Models\Setting::get('legal_name');
-    $taxNumber = \App\Models\Setting::get('tax_number');
-    $currencySymbol = \App\Models\Setting::get('currency_symbol', config('restaurant.currency_symbol'));
-    $receiptFooter = \App\Models\Setting::get('receipt_footer', 'شكراً لزيارتكم');
-
-    // Same qty format as the KDS/cashier screens: «×2» whole, «×1.5» fractional.
-    $fmtQty = function ($qty): string {
-        $qty = (float) $qty;
-        return $qty == floor($qty)
-            ? (string) (int) $qty
-            : rtrim(rtrim(number_format($qty, 2, '.', ''), '0'), '.');
-    };
-
-    // Billed vs post-invoice items — identical logic to invoice-print (see
-    // the WHY there): the invoice totals froze at issued_at, so later items
-    // print under a separate «طلبات غير مفوترة» section unless a discount
-    // resync already absorbed them into the totals.
-    $issuedAt = $invoice->issued_at ?? $invoice->created_at;
-    $activeItems = $invoiceOrders->flatMap(fn ($o) => $o->items)->filter(fn ($it) => $it->status !== 'cancelled')->values();
-    $unbilledItems = $activeItems->filter(fn ($it) => $issuedAt && $it->created_at && $it->created_at->gt($issuedAt))->values();
-    if ($unbilledItems->isNotEmpty()
-        && abs($activeItems->sum(fn ($it) => (float) $it->subtotal) - (float) $invoice->subtotal) <= 0.011) {
-        $unbilledItems = collect();
-    }
-    $billedItems = $activeItems->reject(fn ($it) => $unbilledItems->contains(fn ($u) => $u->id === $it->id))->values();
-
-    $splitNotePrefix = 'دفعة جزء: ';
-@endphp
-<div class="center">
-<h1>{{ $siteName }}</h1>
-@if($legalName)<p>{{ $legalName }}</p>@endif
-@if($taxNumber)<p>الرقم الضريبي: <span dir="ltr">{{ $taxNumber }}</span></p>@endif
-<p>فاتورة ضريبية #{{ $invoice->number }} — {{ $invoice->issued_at?->format('Y-m-d H:i') }}</p>
-<p>{{ $originLabel }}</p>
-@if($invoice->customer_name || $invoice->customer_phone)
-    <p>{{ $invoice->customer_name }} @if($invoice->customer_phone) - <span dir="ltr">{{ $invoice->customer_phone }}</span>@endif</p>
-@endif
-</div>
-<hr>
-<table>
-<thead><tr><th>الصنف</th><th>كمية</th><th>سعر</th><th>إجمالي</th></tr></thead>
-<tbody>
-@foreach($billedItems as $it)
-        <tr>
-            <td>{{ $it->name_snapshot }}
-                @if($it->modifiers->count())<br><small>{{ $it->modifiers->pluck('name_snapshot')->join('، ') }}</small>@endif
-            </td>
-            <td>×{{ $fmtQty($it->quantity) }}</td>
-            <td>{{ number_format($it->unit_price + $it->modifiers_total, 2) }}</td>
-            <td>{{ number_format($it->subtotal, 2) }}</td>
-        </tr>
-@endforeach
-</tbody></table>
-<br>
-<table class="totals">
-<tr><td class="lbl">الفرعي:</td><td class="val">{{ number_format($invoice->subtotal, 2) }}</td></tr>
-@if($invoice->discount_total > 0)<tr><td class="lbl">خصم:</td><td class="val">-{{ number_format($invoice->discount_total, 2) }}</td></tr>@endif
-@if($invoice->tax_total > 0)<tr><td class="lbl">الضريبة:</td><td class="val">{{ number_format($invoice->tax_total, 2) }}</td></tr>@endif
-@if($invoice->service_total > 0)<tr><td class="lbl">الخدمة:</td><td class="val">{{ number_format($invoice->service_total, 2) }}</td></tr>@endif
-@if($invoice->delivery_fee > 0)<tr><td class="lbl">رسوم التوصيل:</td><td class="val">{{ number_format($invoice->delivery_fee, 2) }}</td></tr>@endif
-<tr class="grand"><td class="lbl">الإجمالي:</td><td class="val">{{ number_format($invoice->total, 2) }} {{ $currencySymbol }}</td></tr>
-{{-- Money trail — mirrors invoice-print: debt/refund customers must see
-     what was actually paid and what is still owed, not just the total. --}}
-@if($invoice->payments->count() || (float) ($invoice->refunded_total ?? 0) > 0 || $invoice->settled_on_account_at)
-<tr><td class="lbl">المدفوع:</td><td class="val">{{ number_format((float) $invoice->paid_total, 2) }}</td></tr>
-@if((float) ($invoice->refunded_total ?? 0) > 0)<tr><td class="lbl">المسترد:</td><td class="val">−{{ number_format((float) $invoice->refunded_total, 2) }}</td></tr>@endif
-<tr><td class="lbl">المتبقي:</td><td class="val">{{ number_format((float) $invoice->balance, 2) }}</td></tr>
-@endif
-</table>
-@if($invoice->settled_on_account_at && (float) $invoice->balance > 0.001)
-<p class="center" style="border:1px dashed #333; padding:4px;">
-    المتبقي مُؤجَّل كدين على حساب الزبون بتاريخ {{ $invoice->settled_on_account_at->format('Y-m-d') }}
-</p>
-@endif
-
-@if($unbilledItems->isNotEmpty())
-<hr>
-<p><strong>طلبات غير مفوترة</strong> <small>(أُضيفت بعد إصدار الفاتورة — غير مشمولة في الإجمالي أعلاه)</small></p>
-<table>
-<tbody>
-@foreach($unbilledItems as $it)
-        <tr>
-            <td>{{ $it->name_snapshot }}
-                @if($it->modifiers->count())<br><small>{{ $it->modifiers->pluck('name_snapshot')->join('، ') }}</small>@endif
-            </td>
-            <td>×{{ $fmtQty($it->quantity) }}</td>
-            <td>{{ number_format($it->unit_price + $it->modifiers_total, 2) }}</td>
-            <td>{{ number_format($it->subtotal, 2) }}</td>
-        </tr>
-@endforeach
-</tbody></table>
-@endif
-
-@if($invoice->payments->count())
-<hr>
-<p><strong>الدفعات:</strong></p>
-<table class="totals">
-@foreach($invoice->payments as $p)
-    @php
-        $splitLabel = str_starts_with((string) $p->notes, $splitNotePrefix)
-            ? trim(mb_substr($p->notes, mb_strlen($splitNotePrefix)))
-            : null;
-    @endphp
-    <tr>
-        <td class="lbl">{{ \App\Support\PaymentMethods::label($p->method) }}@if($splitLabel) ({{ $splitLabel }})@endif @if($p->reference)<span dir="ltr">[{{ $p->reference }}]</span>@endif</td>
-        <td class="val">{{ number_format((float) $p->amount, 2) }}</td>
-    </tr>
-@endforeach
-</table>
-@endif
-@if($receiptFooter)
-<p class="center" style="margin-top:14px; color:#555;">{{ $receiptFooter }}</p>
-@endif
-</body></html>
+    <meta charset="UTF-8">
+    <title>فاتورة {{ $invoice->number }}</title>
+    <style>
+        @page { margin: 20mm 17mm 18mm; }
+        * { box-sizing: border-box; }
+        body { margin: 0; color: #243129; text-align: right; font-family: tajawal, sans-serif; font-size: 10px; line-height: 1.55; }
+        .invoice-a4 { width: 100%; }
+        .a4-head { width: 100%; margin-bottom: 18px; border-collapse: collapse; }
+        .a4-head td { vertical-align: middle; }
+        .brand-mark-cell { width: 48px; }
+        .brand-mark {
+            width: 42px;
+            height: 42px;
+            border: 1px solid {!! $theme['accent'] !!};
+            border-radius: 12px;
+            background: {!! $theme['primary'] !!};
+            color: #fff;
+            font-size: 20px;
+            font-weight: 700;
+            line-height: 42px;
+            text-align: center;
+        }
+        .brand-copy h1 { margin: 0; color: {!! $theme['dark'] !!}; font-size: 20px; line-height: 1.35; }
+        .brand-copy p { margin: 2px 0 0; color: #68756e; font-size: 8.5px; }
+        .document-copy { width: 235px; text-align: start; }
+        .document-copy h2 { margin: 0; color: {!! $theme['primary'] !!}; font-size: 19px; }
+        .document-number { margin-top: 3px; color: #28352e; unicode-bidi: plaintext; font-family: tajawal, sans-serif; font-size: 9px; }
+        .status-badge {
+            display: inline-block;
+            margin-top: 6px;
+            padding: 3px 10px;
+            border: 1px solid #bdcdc3;
+            border-radius: 20px;
+            background: #f5f8f6;
+            color: #43564b;
+            font-size: 8px;
+            font-weight: 700;
+        }
+        .status-badge.is-paid { border-color: #88c19d; background: #edf8f1; color: #176238; }
+        .status-badge.is-cancelled, .status-badge.is-unpaid_writeoff { border-color: #df9b9b; background: #fff2f2; color: #9d2525; }
+        .accent-line { height: 3px; margin-bottom: 15px; background: {!! $theme['primary'] !!}; }
+        .meta-table { width: 100%; margin-bottom: 17px; border-collapse: separate; border-spacing: 6px; }
+        .meta-table td { width: 25%; padding: 9px 10px; border: 1px solid #dce5df; border-radius: 8px; background: #f8faf8; vertical-align: top; }
+        .meta-table span { display: block; margin-bottom: 3px; color: #748078; font-size: 7.5px; }
+        .meta-table strong { display: block; color: #25342b; font-size: 9px; }
+        .section-title { margin: 0 0 7px; color: {!! $theme['dark'] !!}; font-size: 11px; font-weight: 700; }
+        .items-table { width: 100%; margin-bottom: 14px; border-collapse: collapse; }
+        .items-table thead { display: table-header-group; }
+        .items-table tr { page-break-inside: avoid; }
+        .items-table th { padding: 8px 7px; border-bottom: 2px solid {!! $theme['primary'] !!}; background: {!! $theme['primary_soft'] !!}; color: {!! $theme['dark'] !!}; font-size: 8px; text-align: right; }
+        .items-table td { padding: 8px 7px; border-bottom: 1px solid #e1e7e3; vertical-align: top; }
+        .items-table th:first-child, .items-table td:first-child { width: 25px; text-align: center; color: #77837b; }
+        .items-table th:not(:nth-child(2)), .items-table td:not(:nth-child(2)) { white-space: nowrap; }
+        .items-table th:nth-child(n+3), .items-table td:nth-child(n+3) { text-align: left; }
+        .item-name { color: #17251d; font-weight: 700; }
+        .item-detail { display: block; margin-top: 2px; color: #748078; font-size: 7.5px; }
+        .item-discount { color: #9a5c08; }
+        .summary-layout { width: 100%; margin-top: 4px; border-collapse: collapse; page-break-inside: avoid; }
+        .summary-layout td { vertical-align: top; }
+        .summary-side { width: 51%; padding-left: 16px; }
+        .summary-total { width: 49%; }
+        .customer-card, .payment-card, .notice-card { margin-bottom: 10px; padding: 10px 11px; border: 1px solid #dde5e0; border-radius: 8px; background: #fbfcfb; }
+        .customer-card strong, .payment-card strong, .notice-card strong { display: block; margin-bottom: 3px; color: {!! $theme['dark'] !!}; font-size: 9px; font-weight: 700; }
+        .customer-card span, .notice-card span { color: #607067; font-size: 8px; }
+        .totals-table, .payments-table { width: 100%; border-collapse: collapse; }
+        .totals-table td { padding: 4px 0; }
+        .totals-table td:last-child, .payments-table td:last-child { text-align: left; white-space: nowrap; font-weight: 700; }
+        .totals-table .grand td { padding: 9px 0; border-top: 2px solid {!! $theme['primary'] !!}; border-bottom: 2px solid {!! $theme['primary'] !!}; color: {!! $theme['dark'] !!}; font-size: 13px; font-weight: 700; }
+        .totals-table .balance td { color: #9a3412; font-weight: 700; }
+        .payments-table td { padding: 4px 0; border-bottom: 1px solid #e2e7e4; font-size: 8px; }
+        .notice-card.is-warning { border-color: #dcad67; background: #fffaf1; }
+        .notice-card.is-danger { border-color: #dd9696; background: #fff4f4; color: #922626; }
+        .unbilled { margin-top: 16px; padding: 11px; border: 1px solid #d99a47; border-radius: 8px; background: #fffaf2; page-break-inside: avoid; }
+        .unbilled h3 { margin: 0 0 3px; color: #8a5309; font-size: 10px; }
+        .unbilled p { margin: 0 0 8px; color: #765b37; font-size: 8px; }
+        .invoice-footer { margin-top: 20px; padding-top: 10px; border-top: 1px solid #dce4df; text-align: center; color: #6d7971; font-size: 8px; }
+        .invoice-footer strong { display: block; margin-bottom: 2px; color: {!! $theme['dark'] !!}; font-size: 10px; }
+        bdi, .code-value { unicode-bidi: plaintext; }
+        bdi { font-family: dejavusans, sans-serif; }
+    </style>
+</head>
+<body>
+    @include('admin.cashier._invoice-document', ['documentMode' => 'a4'])
+</body>
+</html>

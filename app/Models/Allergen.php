@@ -11,7 +11,7 @@ class Allergen extends Model
 {
     use HasFactory, HasLocalizedFields;
 
-    protected $fillable = ['code', 'name', 'name_en', 'icon', 'description', 'display_order'];
+    protected $fillable = ['code', 'name', 'icon', 'description', 'display_order'];
 
     public function menuItems(): BelongsToMany
     {

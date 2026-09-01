@@ -4,10 +4,38 @@ use App\Http\Controllers\Admin;
 use App\Models\PurchaseOrder;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
 
 Route::middleware(['auth', 'setup.complete', 'admin', 'branch'])->group(function () {
     // Dashboard
     Route::get('/', [Admin\DashboardController::class, 'index'])->name('dashboard');
+
+    // Built-in operating manual. Every active back-office role can open it;
+    // the page itself only links to workspaces that role is allowed to use.
+    Route::get('usage-guide', Admin\UsageGuideController::class)->name('usage-guide');
+
+    // ── تجربة Inertia+Vue (MIGRATION-PILOT.md §5) ─────────────────────────
+    // المرحلة 0 — البوابة: هذه الصفحة تثبت السلسلة كاملة (route → middleware
+    // → inertia.blade → Vite → Vue). sol لا يبدأ المرحلة 2 قبل أن تشتغل.
+    Route::get('inertia-ping', fn () => Inertia::render('Ping', [
+        'now' => now()->toDateTimeString(),
+        'userName' => auth()->user()?->name,
+    ]))->name('inertia.ping');
+
+    // شاشة طلب الجرسون (Vue) — مورد واحد نظيف: الصفحة وكل الـ API تبعها
+    // على نفس المسار `waiter-orders/table/{table}` بلا أي بادئة تقنية.
+    Route::post('waiter-orders/table/{table}/preview-stock', [Admin\WaiterPosVueController::class, 'previewStock'])
+        ->name('waiter-orders.preview-stock');
+    Route::post('waiter-orders/table/{table}/submit', [Admin\WaiterPosVueController::class, 'submit'])
+        ->name('waiter-orders.submit');
+    Route::post('waiter-orders/table/{table}/review/{order}', [Admin\WaiterPosVueController::class, 'review'])
+        ->name('waiter-orders.review');
+    Route::post('waiter-orders/table/{table}/covers', [Admin\WaiterPosVueController::class, 'covers'])
+        ->name('waiter-orders.covers');
+    Route::post('waiter-orders/table/{table}/customer', [Admin\WaiterPosVueController::class, 'customer'])
+        ->name('waiter-orders.customer');
+    Route::post('waiter-orders/table/{table}/transfer', [Admin\WaiterPosVueController::class, 'transfer'])
+        ->name('waiter-orders.transfer-claim');
 
     // Profile
     Route::get('profile', [Admin\ProfileController::class, 'show'])->name('profile.show');
@@ -25,33 +53,20 @@ Route::middleware(['auth', 'setup.complete', 'admin', 'branch'])->group(function
     // tweak their grants/revokes without going through the full user form.
     // Gated by roles.update permission inside the controller.
     Route::get('permissions', [Admin\PermissionManagementController::class, 'index'])->name('permissions.index');
+    Route::put('permissions/roles/{role}', [Admin\PermissionManagementController::class, 'syncRole'])->name('permissions.roles.sync');
     Route::put('permissions/{user}/sync', [Admin\PermissionManagementController::class, 'sync'])->name('permissions.sync');
 
     // Multi-branch overview — partners + super admins only.
     Route::get('overview',
         [Admin\PartnerOverviewController::class, 'index'])->name('partner.overview');
+    Route::get('overview/pulse',
+        [Admin\PartnerOverviewController::class, 'pulse'])->name('partner.overview.pulse');
 
     // Multi-branch full-screen LIVE monitor (TV-mode for owners).
     Route::get('live-monitor',
         [Admin\LiveMonitorController::class, 'index'])->name('partner.live-monitor');
-
-    // System administration (Super Admin only — the controller enforces it).
-    Route::get('system',
-        [Admin\SystemController::class, 'index'])->name('system.index');
-    Route::post('system/reset-demo',
-        [Admin\SystemController::class, 'resetDemo'])->name('system.reset-demo');
-
-    // License status on branch nodes and license management on the cloud node.
-    Route::get('license-status', [Admin\LocalLicenseController::class, 'index'])->name('license-status.index');
-    Route::post('license-status/key', [Admin\LocalLicenseController::class, 'updateKey'])->name('license-status.key');
-    Route::post('license-status/refresh', [Admin\LocalLicenseController::class, 'refresh'])->name('license-status.refresh');
-
-    Route::resource('licenses', Admin\LicenseController::class)->only(['index', 'create', 'store', 'show']);
-    Route::post('licenses/{license}/renew', [Admin\LicenseController::class, 'renew'])->name('licenses.renew');
-    Route::post('licenses/{license}/suspend', [Admin\LicenseController::class, 'suspend'])->name('licenses.suspend');
-    Route::post('licenses/{license}/activate', [Admin\LicenseController::class, 'activate'])->name('licenses.activate');
-    Route::post('licenses/{license}/activations/{activation}/revoke', [Admin\LicenseController::class, 'revokeActivation'])->name('licenses.activations.revoke');
-    Route::post('licenses/{license}/activations/{activation}/activate', [Admin\LicenseController::class, 'activateActivation'])->name('licenses.activations.activate');
+    Route::get('live-monitor/pulse',
+        [Admin\LiveMonitorController::class, 'pulse'])->name('partner.live-monitor.pulse');
 
     // Branches (Super Admin only — gated by BranchPolicy)
     Route::resource('branches', Admin\BranchController::class)->except(['show']);
@@ -100,10 +115,15 @@ Route::middleware(['auth', 'setup.complete', 'admin', 'branch'])->group(function
     Route::get('customers/debts/lookup', [Admin\CustomerDebtController::class, 'quickLookup'])->name('customers.debts.lookup');
     Route::get('customers/debts/{customer}', [Admin\CustomerDebtController::class, 'show'])->name('customers.debts.show');
     Route::post('customers/debts/{customer}/payment', [Admin\CustomerDebtController::class, 'recordPayment'])->name('customers.debts.payment');
+    Route::post('customers/debts/{customer}/adjustment', [Admin\CustomerDebtController::class, 'adjustDebt'])->name('customers.debts.adjustment');
+    Route::post('customers/debts/{customer}/writeoff', [Admin\CustomerDebtController::class, 'writeoffDebt'])->name('customers.debts.writeoff');
+    Route::post('customers/debts/credit-notes/{creditNote}/reverse', [Admin\CustomerDebtController::class, 'reverseCreditNote'])->name('customers.debts.credit_notes.reverse');
+    Route::post('customers/debts/writeoffs/{writeoff}/reverse', [Admin\CustomerDebtController::class, 'reverseWriteoff'])->name('customers.debts.writeoffs.reverse');
     Route::post('customers/debts/{customer}/credit-limit', [Admin\CustomerDebtController::class, 'updateCreditLimit'])->name('customers.debts.credit_limit');
 
     Route::get('customers/{customer}', [Admin\CustomerController::class, 'show'])->name('customers.show');
     Route::put('customers/{customer}', [Admin\CustomerController::class, 'update'])->name('customers.update');
+    Route::post('customers/{customer}/sms', [Admin\CustomerController::class, 'sendSms'])->name('customers.sms');
     Route::post('customers/{customer}/block', [Admin\CustomerController::class, 'block'])->name('customers.block');
     Route::post('customers/{customer}/unblock', [Admin\CustomerController::class, 'unblock'])->name('customers.unblock');
     Route::delete('customers/{customer}', [Admin\CustomerController::class, 'destroy'])->name('customers.destroy');
@@ -118,23 +138,41 @@ Route::middleware(['auth', 'setup.complete', 'admin', 'branch'])->group(function
     Route::post('reservations/{reservation}/cancel', [Admin\ReservationController::class, 'cancel'])->name('reservations.cancel');
     Route::post('reservations/{reservation}/no-show', [Admin\ReservationController::class, 'noShow'])->name('reservations.no-show');
 
-    // Tables
-    Route::resource('tables', Admin\TableController::class);
+    // Tables — the triage board is Inertia/Vue (Wave 1, TablesBoardController);
+    // classic CRUD forms stay on TableController. Literal `board`/`sessions`
+    // segments are declared BEFORE the resource so tables/{table} wildcard
+    // binding can't swallow them. resource excludes: index (the board owns
+    // the URL) and show (was a dead route — resource declared it but the
+    // controller never had a show method).
+    Route::get('tables', [Admin\TablesBoardController::class, 'show'])->name('tables.index');
+    Route::get('tables/board/pulse', [Admin\TablesBoardController::class, 'pulse'])->name('tables.board-pulse');
+    Route::post('tables/board/close-stale', [Admin\TablesBoardController::class, 'closeStale'])->name('tables.close-stale');
+    Route::post('tables/sessions/{session}/serve', [Admin\TablesBoardController::class, 'serve'])->name('tables.serve');
+    Route::post('tables/sessions/{session}/ack-help', [Admin\TablesBoardController::class, 'ackHelp'])->name('tables.ack-help');
+    Route::resource('tables', Admin\TableController::class)->except(['index', 'show']);
+    Route::patch('tables/{table}/quick', [Admin\TableController::class, 'quickUpdate'])->name('tables.quick-update');
     Route::get('tables/{table}/qr', [Admin\TableController::class, 'qr'])->name('tables.qr');
     Route::get('tables/{table}/qr-print', [Admin\TableController::class, 'qrPrint'])->name('tables.qr-print');
     Route::post('tables/{table}/close-session', [Admin\TableController::class, 'closeSession'])->name('tables.close-session');
     Route::post('tables/{table}/transfer-session', [Admin\TableController::class, 'transferSession'])->name('tables.transfer');
     Route::post('tables/{table}/mark-clean', [Admin\TableController::class, 'markClean'])->name('tables.mark-clean');
 
-    // Section roster — who covers which part of the floor today. The Volt
-    // component guards the admin|manager role itself.
-    Route::view('section-assignments', 'admin.section-assignments.index')->name('section-assignments.index');
+    // Section roster — who covers which part of the floor today (Inertia/Vue,
+    // Wave 1). The controller guards the dedicated section-assignment
+    // permission (manager/cashier by default); every mutating action returns
+    // the fresh roster map.
+    Route::get('section-assignments', [Admin\SectionAssignmentController::class, 'show'])->name('section-assignments.index');
+    Route::post('section-assignments/toggle', [Admin\SectionAssignmentController::class, 'toggle'])->name('section-assignments.toggle');
+    Route::post('section-assignments/copy-previous', [Admin\SectionAssignmentController::class, 'copyPrevious'])->name('section-assignments.copy');
+    Route::post('section-assignments/clear-day', [Admin\SectionAssignmentController::class, 'clearDay'])->name('section-assignments.clear');
 
     // Zones — merged into the unified Lookups admin (group='zones').
     // Old /admin/zones routes removed; see admin.lookups.* routes below.
 
     // Categories
-    Route::resource('categories', Admin\CategoryController::class);
+    Route::patch('categories/{category}/toggle', [Admin\CategoryController::class, 'toggle'])->name('categories.toggle');
+    Route::post('categories/{category}/move', [Admin\CategoryController::class, 'move'])->name('categories.move');
+    Route::resource('categories', Admin\CategoryController::class)->except(['show']);
 
     // Menu Items
     Route::resource('menu-items', Admin\MenuItemController::class);
@@ -199,6 +237,7 @@ Route::middleware(['auth', 'setup.complete', 'admin', 'branch'])->group(function
     Route::post('invoices/{invoice}/refunds', [Admin\RefundController::class, 'store'])->name('refunds.store');
     Route::post('refunds/{refund}/complete', [Admin\RefundController::class, 'complete'])->name('refunds.complete');
     Route::post('refunds/{refund}/cancel', [Admin\RefundController::class, 'cancel'])->name('refunds.cancel');
+    Route::post('refunds/{refund}/reverse', [Admin\RefundController::class, 'reverse'])->name('refunds.reverse');
 
     // Supplier Invoices (Accounts Payable)
     Route::resource('supplier-invoices', Admin\SupplierInvoiceController::class)->except(['edit', 'update']);
@@ -248,7 +287,11 @@ Route::middleware(['auth', 'setup.complete', 'admin', 'branch'])->group(function
     Route::resource('stations', Admin\StationController::class);
 
     // Orders (waiter/manager) — board is the default view; classic table is secondary
-    Route::get('orders', [Admin\OrderController::class, 'board'])->name('orders.index');       // Kanban board (default)
+    // Service board — Inertia/Vue since Wave 3. Literal segments come
+    // BEFORE orders/{order} so the wildcard can't swallow them.
+    Route::get('orders', [Admin\ServiceBoardController::class, 'show'])->name('orders.index');
+    Route::get('orders/board/pulse', [Admin\ServiceBoardController::class, 'pulse'])->name('orders.board-pulse');
+    Route::post('orders/board/action', [Admin\ServiceBoardController::class, 'action'])->name('orders.board-action');
     Route::get('orders/list', [Admin\OrderController::class, 'index'])->name('orders.list');         // Classic table
     Route::get('orders/archive', [Admin\OrderController::class, 'archive'])->name('orders.archive');    // Comprehensive search/filter
     Route::post('orders/bulk-approve', [Admin\OrderController::class, 'bulkApprove'])->name('orders.bulk-approve');
@@ -257,48 +300,52 @@ Route::middleware(['auth', 'setup.complete', 'admin', 'branch'])->group(function
     Route::post('orders/{order}/unapprove', [Admin\OrderController::class, 'unapprove'])->name('orders.unapprove');
     Route::post('orders/{order}/transition', [Admin\OrderController::class, 'transition'])->name('orders.transition');
     Route::post('orders/{order}/cancel', [Admin\OrderController::class, 'cancel'])->name('orders.cancel');
-    Route::get('orders/{order}/source', [Admin\OrderController::class, 'editSource'])->name('orders.edit-source');
-    Route::post('orders/{order}/source', [Admin\OrderController::class, 'updateSource'])->name('orders.update-source');
     Route::post('orders/items/{item}/cancel', [Admin\OrderController::class, 'cancelItem'])->name('orders.items.cancel');
     Route::post('orders/items/{item}/serve', [Admin\OrderController::class, 'serveItem'])->name('orders.items.serve');
+    Route::post('order-change-requests/{changeRequest}/resolve', [Admin\OrderChangeRequestController::class, 'resolve'])->name('order-change-requests.resolve');
 
-    // Waiter-side order entry — for walk-in diners who can't scan the
-    // table QR. Mirrors the customer cart flow under the staff guard.
-    Route::get('waiter-orders', [Admin\WaiterOrderController::class, 'index'])->name('waiter-orders.index');
-    Route::get('waiter-orders/table/{table}', [Admin\WaiterOrderController::class, 'create'])->name('waiter-orders.create');
-    Route::post('waiter-orders/{session}/items', [Admin\WaiterOrderController::class, 'addItem'])->name('waiter-orders.items.add');
-    Route::delete('waiter-orders/{session}/items', [Admin\WaiterOrderController::class, 'removeItem'])->name('waiter-orders.items.remove');
-    Route::post('waiter-orders/{session}/customer', [Admin\WaiterOrderController::class, 'linkCustomer'])->name('waiter-orders.customer.link');
-    Route::post('waiter-orders/{session}/staff-mode', [Admin\WaiterOrderController::class, 'setStaffMode'])->name('waiter-orders.staff_mode');
-    Route::post('waiter-orders/{session}/submit', [Admin\WaiterOrderController::class, 'submit'])->name('waiter-orders.submit');
+    // The tables board is the one floor entry point. Keep the old picker URL
+    // as a redirect for saved bookmarks; the per-table order builder below
+    // remains the actual staff order-entry screen.
+    Route::redirect('waiter-orders', '/admin/tables')->name('waiter-orders.index');
+
+    // شاشة الطلب الرسمية (Vue). الشاشة القديمة ومساراتها حُذفت نهائياً
+    // بقرار صاحب المشروع 2026-08-11 — كل الفلو (وجبة موظف، زبون، حوالة)
+    // صار في WaiterPosVueController والـ API أعلى الملف.
+    Route::get('waiter-orders/table/{table}', [Admin\WaiterPosVueController::class, 'show'])->name('waiter-orders.create');
 
     // Staff meal allowance — per-employee monthly tabs (manager view)
     Route::get('staff-meals', [Admin\StaffMealController::class, 'index'])->name('staff-meals.index');
     Route::get('staff-meals/quick-consume', [Admin\StaffMealController::class, 'quickConsumeForm'])->name('staff-meals.quick_consume');
     Route::post('staff-meals/quick-consume', [Admin\StaffMealController::class, 'quickConsumeStore'])->name('staff-meals.quick_consume.store');
+    Route::post('staff-meals/employees', [Admin\StaffMealController::class, 'storeEmployee'])->name('staff-meals.employees.store');
     Route::get('staff-meals/closures', [Admin\StaffMealController::class, 'closures'])->name('staff-meals.closures');
     Route::post('staff-meals/close-month', [Admin\StaffMealController::class, 'closeMonth'])->name('staff-meals.close_month');
     Route::get('staff-meals/closures/{closure}', [Admin\StaffMealController::class, 'closureShow'])->name('staff-meals.closures.show');
-    Route::get('staff-meals/{user}', [Admin\StaffMealController::class, 'show'])->name('staff-meals.show');
-    Route::post('staff-meals/{user}/settle', [Admin\StaffMealController::class, 'settle'])->name('staff-meals.settle');
+    Route::get('staff-meals/{employee}', [Admin\StaffMealController::class, 'show'])->name('staff-meals.show');
+    Route::post('staff-meals/{employee}/settle', [Admin\StaffMealController::class, 'settle'])->name('staff-meals.settle');
     Route::post('staff-meals/charges/{charge}/waive', [Admin\StaffMealController::class, 'waiveCharge'])->name('staff-meals.charges.waive');
 
-    // Station displays — one generic route handles every station code.
-    // The controller checks the matching `station.{code}.view` permission
-    // so access is driven entirely by the roles UI.
-    Route::get('station/{code}', [Admin\KitchenDisplayController::class, 'show'])
+    // Station displays — Inertia/Vue KDS since Wave 3. One generic route
+    // handles every station code; the controller checks the matching
+    // `station.{code}.view` permission so access is driven by the roles UI.
+    Route::get('station/{code}', [Admin\KitchenBoardController::class, 'show'])
         ->where('code', '[a-z0-9_-]+')
         ->name('station.show');
+    Route::get('station/{code}/pulse', [Admin\KitchenBoardController::class, 'pulse'])
+        ->where('code', '[a-z0-9_-]+')
+        ->name('station.pulse');
+    Route::post('station/{code}/action', [Admin\KitchenBoardController::class, 'action'])
+        ->where('code', '[a-z0-9_-]+')
+        ->name('station.action');
     // Back-compat aliases — old /admin/kitchen and /admin/bar links still work.
     Route::redirect('kitchen', 'admin/station/kitchen')->name('kitchen.index');
     Route::redirect('bar', 'admin/station/bar')->name('bar.index');
-    // NOTE: the old POST station/items/{item}/start + /ready endpoints are
-    // gone — the Livewire kitchen-board owns every item transition now and
-    // no view/JS ever pointed at those routes.
+    // NOTE: every item transition rides POST station/{code}/action
+    // (KitchenBoardController) since the Wave-3 Vue migration.
 
     // Cashier / Billing
-    Route::get('cashier', [Admin\CashierController::class, 'index'])->name('cashier.index');
-    Route::get('cashier/session/{session}', [Admin\CashierController::class, 'show'])->name('cashier.show');
+    require base_path('routes/cashier-vue.php');
     Route::post('cashier/session/{session}/issue', [Admin\CashierController::class, 'issue'])->name('cashier.issue');
     Route::post('cashier/invoice/{invoice}/pay', [Admin\CashierController::class, 'pay'])->name('cashier.pay');
     Route::post('cashier/payments/{payment}/void', [Admin\CashierController::class, 'voidPayment'])->name('cashier.payments.void');
@@ -319,19 +366,13 @@ Route::middleware(['auth', 'setup.complete', 'admin', 'branch'])->group(function
     Route::post('waiter-orders/{session}/transfer', [Admin\PendingTransferController::class, 'store'])->name('waiter-orders.transfer.store');
     Route::post('cashier/session/{session}/transfer', [Admin\PendingTransferController::class, 'store'])->name('cashier.transfers.store');
     Route::get('cashier/transfers', [Admin\PendingTransferController::class, 'queue'])->name('cashier.transfers.queue');
+    Route::get('cashier/transfers/{transfer}/proof', [Admin\PendingTransferController::class, 'proof'])->name('cashier.transfers.proof');
     Route::post('cashier/transfers/{transfer}/verify', [Admin\PendingTransferController::class, 'verify'])->name('cashier.transfers.verify');
     Route::post('cashier/transfers/{transfer}/reject', [Admin\PendingTransferController::class, 'reject'])->name('cashier.transfers.reject');
     Route::post('cashier/transfers/{transfer}/reopen', [Admin\PendingTransferController::class, 'reopen'])->name('cashier.transfers.reopen');
     Route::get('cashier/transfers/report', [Admin\PendingTransferController::class, 'report'])->name('cashier.transfers.report');
 
-    // Shifts
-    Route::resource('shifts', Admin\ShiftController::class)->only(['index', 'store']);
-    Route::get('shifts/{shift}/x-report', [Admin\ShiftController::class, 'xReport'])->name('shifts.x-report');
-    Route::post('shifts/{shift}/close', [Admin\ShiftController::class, 'close'])->name('shifts.close');
-    Route::post('shifts/{shift}/cash-movement', [Admin\ShiftController::class, 'cashMovement'])->name('shifts.cash-movement');
-
-    // Expenses (branch-scoped) — see ExpenseController for the approval flow
-    // and the cash-movement bridge into the active shift's till.
+    // Expenses (branch-scoped) — see ExpenseController for the approval flow.
     Route::get('expenses', [Admin\ExpenseController::class, 'index'])->name('expenses.index');
     Route::get('expenses/create', [Admin\ExpenseController::class, 'create'])->name('expenses.create');
     Route::post('expenses', [Admin\ExpenseController::class, 'store'])->name('expenses.store');
@@ -341,43 +382,35 @@ Route::middleware(['auth', 'setup.complete', 'admin', 'branch'])->group(function
     Route::post('expenses/{expense}/reject', [Admin\ExpenseController::class, 'reject'])->name('expenses.reject');
     Route::delete('expenses/{expense}', [Admin\ExpenseController::class, 'destroy'])->name('expenses.destroy');
 
-    // Marketing announcements / promo broadcasts to portal customers.
-    // Publishing fans out one notification per matched customer; the
-    // service enforces audience filtering and idempotency.
-    Route::get('announcements', [Admin\AnnouncementController::class, 'index'])->name('announcements.index');
-    Route::get('announcements/create', [Admin\AnnouncementController::class, 'create'])->name('announcements.create');
-    Route::post('announcements', [Admin\AnnouncementController::class, 'store'])->name('announcements.store');
-    Route::get('announcements/{announcement}/edit', [Admin\AnnouncementController::class, 'edit'])->name('announcements.edit');
-    Route::put('announcements/{announcement}', [Admin\AnnouncementController::class, 'update'])->name('announcements.update');
-    Route::post('announcements/{announcement}/publish', [Admin\AnnouncementController::class, 'publish'])->name('announcements.publish');
-    Route::post('announcements/{announcement}/unpublish', [Admin\AnnouncementController::class, 'unpublish'])->name('announcements.unpublish');
-    Route::delete('announcements/{announcement}', [Admin\AnnouncementController::class, 'destroy'])->name('announcements.destroy');
-
     // Reports
-    Route::prefix('reports')->name('reports.')->group(function () {
+    Route::prefix('reports')->name('reports.')->middleware('permission:reports.viewAny')->group(function () {
         Route::get('/', [Admin\ReportController::class, 'index'])->name('index');
         Route::get('sales', [Admin\ReportController::class, 'sales'])->name('sales');
         Route::get('items', [Admin\ReportController::class, 'items'])->name('items');
         Route::get('inventory', [Admin\ReportController::class, 'inventory'])->name('inventory');
         Route::get('consumption-variance', [Admin\ReportController::class, 'consumptionVariance'])->name('consumption-variance');
-        Route::get('shifts', [Admin\ReportController::class, 'shifts'])->name('shifts');
         Route::get('end-of-day', [Admin\ReportController::class, 'endOfDay'])->name('end-of-day');
         Route::get('profit-loss', [Admin\ReportController::class, 'profitLoss'])->name('profit-loss');
-        Route::get('profit-loss/export.xlsx', [Admin\ReportController::class, 'profitLossExportXlsx'])->name('profit-loss.export.xlsx');
-        Route::get('profit-loss/export.pdf', [Admin\ReportController::class, 'profitLossExportPdf'])->name('profit-loss.export.pdf');
+        Route::get('profit-loss/export.xlsx', [Admin\ReportController::class, 'profitLossExportXlsx'])
+            ->middleware('permission:reports.export')->name('profit-loss.export.xlsx');
+        Route::get('profit-loss/export.pdf', [Admin\ReportController::class, 'profitLossExportPdf'])
+            ->middleware('permission:reports.export')->name('profit-loss.export.pdf');
         Route::get('menu-engineering', [Admin\ReportController::class, 'menuEngineering'])->name('menu-engineering');
         Route::get('reorder-suggestions', [Admin\ReportController::class, 'reorderSuggestions'])->name('reorder-suggestions');
         Route::post('reorder-suggestions/bulk-create-pos',
             [Admin\ReportController::class, 'createBulkReorderPOs'])->name('reorder-suggestions.bulk-create');
         Route::get('stock-valuation', [Admin\ReportController::class, 'stockValuation'])->name('stock-valuation');
         Route::get('branch-comparison', [Admin\ReportController::class, 'branchComparison'])->name('branch-comparison');
-        Route::get('sales-by-platform', [Admin\ReportController::class, 'salesByPlatform'])->name('sales-by-platform');
     });
 
     // Accounting review
     Route::prefix('accounting')->name('accounting.')->group(function () {
         Route::get('/', [Admin\AccountingController::class, 'index'])->name('index');
+        Route::post('tax-configuration', [Admin\AccountingController::class, 'storeTaxConfiguration'])->name('tax-configuration.store');
+        Route::delete('tax-configuration/{taxRate}', [Admin\AccountingController::class, 'destroyCustomerSalesTaxRate'])->name('tax-configuration.destroy');
+        Route::get('guide', [Admin\AccountingController::class, 'guide'])->name('guide');
         Route::get('journal', [Admin\AccountingController::class, 'journal'])->name('journal');
+        Route::get('ledger', [Admin\AccountingController::class, 'ledger'])->name('ledger');
         Route::get('journal/export.csv', [Admin\AccountingController::class, 'exportJournalCsv'])->name('journal.export.csv');
         Route::get('trial-balance', [Admin\AccountingController::class, 'trialBalance'])->name('trial-balance');
         Route::get('balance-sheet', [Admin\AccountingController::class, 'balanceSheet'])->name('balance-sheet');
@@ -392,23 +425,28 @@ Route::middleware(['auth', 'setup.complete', 'admin', 'branch'])->group(function
         Route::post('fixed-assets/{fixedAsset}/dispose', [Admin\FixedAssetController::class, 'dispose'])->name('fixed-assets.dispose');
         Route::get('opening-balances', [Admin\AccountingController::class, 'openingBalances'])->name('opening-balances');
         Route::post('opening-balances', [Admin\AccountingController::class, 'storeOpeningBalances'])->name('opening-balances.store');
+        Route::post('opening-balances/customer-debt', [Admin\AccountingController::class, 'storeCustomerOpeningDebt'])->name('opening-balances.customer-debt.store');
+        Route::post('opening-balances/customer-advance', [Admin\AccountingController::class, 'storeCustomerAdvanceOpeningBalance'])->name('opening-balances.customer-advance.store');
+        Route::post('opening-balances/supplier-debt', [Admin\AccountingController::class, 'storeSupplierOpeningDebt'])->name('opening-balances.supplier-debt.store');
         Route::get('periods', [Admin\AccountingController::class, 'periods'])->name('periods');
         Route::post('periods', [Admin\AccountingController::class, 'storePeriod'])->name('periods.store');
+        Route::put('periods/{period}', [Admin\AccountingController::class, 'updatePeriod'])->name('periods.update');
+        Route::delete('periods/{period}', [Admin\AccountingController::class, 'destroyPeriod'])->name('periods.destroy');
         Route::post('periods/{period}/close', [Admin\AccountingController::class, 'closePeriod'])->name('periods.close');
         Route::post('periods/{period}/reopen', [Admin\AccountingController::class, 'reopenPeriod'])->name('periods.reopen');
         Route::get('fiscal-years', [Admin\AccountingController::class, 'fiscalYears'])->name('fiscal-years');
         Route::post('fiscal-years', [Admin\AccountingController::class, 'storeFiscalYear'])->name('fiscal-years.store');
+        Route::put('fiscal-years/{year}', [Admin\AccountingController::class, 'updateFiscalYear'])->name('fiscal-years.update');
+        Route::delete('fiscal-years/{year}', [Admin\AccountingController::class, 'destroyFiscalYear'])->name('fiscal-years.destroy');
         Route::post('fiscal-years/{year}/close', [Admin\AccountingController::class, 'closeFiscalYear'])->name('fiscal-years.close');
         Route::post('fiscal-years/{year}/reopen', [Admin\AccountingController::class, 'reopenFiscalYear'])->name('fiscal-years.reopen');
-        Route::get('tax-jurisdictions', [Admin\AccountingController::class, 'taxJurisdictions'])->name('tax-jurisdictions');
-        Route::post('tax-jurisdictions', [Admin\AccountingController::class, 'storeTaxJurisdiction'])->name('tax-jurisdictions.store');
-        Route::delete('tax-jurisdictions/{jurisdiction}', [Admin\AccountingController::class, 'destroyTaxJurisdiction'])->name('tax-jurisdictions.destroy');
         Route::get('reconciliations', [Admin\AccountingController::class, 'reconciliations'])->name('reconciliations');
         Route::post('reconciliations', [Admin\AccountingController::class, 'storeReconciliation'])->name('reconciliations.store');
+        Route::post('reconciliations/{reconciliation}/resolve', [Admin\AccountingController::class, 'resolveReconciliation'])->name('reconciliations.resolve');
         Route::get('settlements', [Admin\AccountingController::class, 'settlements'])->name('settlements');
         Route::post('settlements/tax-payment', [Admin\AccountingController::class, 'storeTaxPayment'])->name('settlements.tax-payment');
         Route::post('settlements/tips-payout', [Admin\AccountingController::class, 'storeTipPayout'])->name('settlements.tips-payout');
-        Route::post('settlements/payment-clearing', [Admin\AccountingController::class, 'storePaymentClearingSettlement'])->name('settlements.payment-clearing');
+        Route::post('settlements/wallet-transfer', [Admin\AccountingController::class, 'storeWalletTransfer'])->name('settlements.wallet-transfer');
         // Manual journal entry — the bridge that lets accountants actually
         // post to their custom chart accounts (otherwise the chart is read-only).
         Route::get('manual-entry', [Admin\AccountingController::class, 'createManualEntry'])->name('manual-entry.create');

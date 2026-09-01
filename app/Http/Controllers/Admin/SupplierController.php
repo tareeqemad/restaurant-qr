@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Supplier;
+use App\Helpers\Money;
+use App\Helpers\Qty;
+use App\Support\AdminShell;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -53,15 +56,61 @@ class SupplierController extends Controller
             'linked'   => $scoped()->has('ingredients')->count(),
         ];
 
-        return view('admin.suppliers.index', compact('suppliers', 'stats'));
+        $user = $request->user();
+        $suppliers->through(fn (Supplier $supplier) => [
+            'id' => $supplier->id,
+            'name' => $supplier->name,
+            'contactPerson' => $supplier->contact_person,
+            'phone' => $supplier->phone,
+            'email' => $supplier->email,
+            'address' => $supplier->address,
+            'active' => (bool) $supplier->active,
+            'ingredientsCount' => (int) $supplier->ingredients_count,
+            'branches' => $supplier->branches->map(fn ($branch) => [
+                'id' => $branch->id,
+                'name' => $branch->localizedName(),
+            ])->values(),
+            'can' => [
+                'update' => (bool) $user?->can('update', $supplier),
+                'delete' => (bool) $user?->can('delete', $supplier),
+            ],
+            'urls' => [
+                'show' => route('admin.suppliers.show', $supplier),
+                'edit' => route('admin.suppliers.edit', $supplier),
+                'destroy' => route('admin.suppliers.destroy', $supplier),
+            ],
+        ]);
+
+        return AdminShell::render('Admin/Suppliers/Index', [
+            'suppliers' => $suppliers,
+            'stats' => $stats,
+            'filters' => [
+                'search' => (string) $request->get('search', ''),
+                'inactive' => $request->boolean('inactive'),
+            ],
+            'can' => ['create' => (bool) $user?->can('create', Supplier::class)],
+            'urls' => [
+                'index' => route('admin.suppliers.index'),
+                'create' => route('admin.suppliers.create'),
+            ],
+        ]);
     }
 
     public function create()
     {
         $this->authorize('create', Supplier::class);
-        return view('admin.suppliers.create', [
-            'branches' => $this->availableBranches(),
-        ]);
+        $user = auth()->user();
+        $defaultBranchId = \App\Support\BranchContext::current()
+            ?? optional($user?->primaryBranch())->id;
+
+        return AdminShell::render('Admin/Suppliers/Form', $this->formProps(
+            null,
+            $this->availableBranches(),
+            $defaultBranchId ? [(int) $defaultBranchId] : [],
+            $user?->isOwnerLevel()
+                ? \App\Models\Branch::where('is_active', true)->pluck('id')->all()
+                : ($user?->accessibleBranchIds() ?? []),
+        ));
     }
 
     public function store(Request $request)
@@ -92,12 +141,12 @@ class SupplierController extends Controller
             ? \App\Models\Branch::where('is_active', true)->pluck('id')->all()
             : ($user?->accessibleBranchIds() ?? []);
 
-        return view('admin.suppliers.edit', [
-            'supplier'           => $supplier,
-            'branches'           => $this->visibleBranches($supplier),
-            'selectedBranchIds'  => $supplier->branches->pluck('id')->all(),
-            'accessibleBranchIds'=> $accessibleIds,
-        ]);
+        return AdminShell::render('Admin/Suppliers/Form', $this->formProps(
+            $supplier,
+            $this->visibleBranches($supplier),
+            $supplier->branches->pluck('id')->all(),
+            $accessibleIds,
+        ));
     }
 
     public function update(Request $request, Supplier $supplier)
@@ -225,18 +274,141 @@ class SupplierController extends Controller
     public function show(Supplier $supplier)
     {
         $this->authorize('view', $supplier);
-        $supplier->load(['ingredients.baseUnit']);
+        $supplier->load(['ingredients.baseUnit', 'branches:id,name']);
+
+        $user = auth()->user();
+        $branchId = \App\Support\BranchContext::current();
+        if (! $branchId && $user && ! $user->isOwnerLevel()) {
+            $branchId = optional($user->primaryBranch())->id;
+        }
+        if ($branchId && ! $supplier->branches->contains('id', (int) $branchId)) {
+            abort(404);
+        }
 
         // Stock value is the per-location truth (sum of ingredient_stock ×
         // per-branch cost) rather than the legacy current_stock × global
         // cost_per_unit, which can drift on top of older seed data.
         $totals = [
             'ingredient_count' => $supplier->ingredients->count(),
-            'low_stock'        => $supplier->ingredients->filter(fn($i) => $i->isLowStock())->count(),
-            'stock_value'      => $supplier->ingredients->sum(fn($i) => $i->trackedValue()),
+            'low_stock'        => $supplier->ingredients->filter(function ($ingredient) use ($branchId) {
+                $stock = $branchId
+                    ? $ingredient->usableStockAtBranch((int) $branchId)
+                    : $ingredient->trackedUsableStock();
+                $threshold = $branchId
+                    ? $ingredient->reorderThresholdAtBranch((int) $branchId)
+                    : (float) $ingredient->reorder_threshold;
+
+                return $ingredient->track_stock && $threshold > 0 && $stock <= $threshold;
+            })->count(),
+            'stock_value'      => $supplier->ingredients->sum(fn($ingredient) => $branchId
+                ? $ingredient->valueAtBranch((int) $branchId)
+                : $ingredient->trackedValue()),
         ];
 
-        return view('admin.suppliers.show', compact('supplier', 'totals'));
+        $days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+
+        return AdminShell::render('Admin/Suppliers/Show', [
+            'supplier' => [
+                'id' => $supplier->id,
+                'name' => $supplier->name,
+                'contactPerson' => $supplier->contact_person,
+                'phone' => $supplier->phone,
+                'email' => $supplier->email,
+                'address' => $supplier->address,
+                'notes' => $supplier->notes,
+                'active' => (bool) $supplier->active,
+                'leadTimeDays' => $supplier->lead_time_days,
+                'paymentTermsDays' => $supplier->payment_terms_days,
+                'minimumOrderAmount' => $supplier->minimum_order_amount !== null
+                    ? Money::format($supplier->minimum_order_amount) : null,
+                'deliveryDays' => collect($supplier->delivery_days ?? [])
+                    ->map(fn ($day) => $days[(int) $day] ?? null)->filter()->values(),
+                'branches' => $supplier->branches->map(fn ($branch) => [
+                    'id' => (int) $branch->id,
+                    'name' => $branch->localizedName(),
+                ])->values(),
+            ],
+            'totals' => [
+                'ingredientCount' => $totals['ingredient_count'],
+                'lowStock' => $totals['low_stock'],
+                'stockValue' => Money::format($totals['stock_value']),
+            ],
+            'ingredients' => $supplier->ingredients->map(function ($ingredient) use ($branchId) {
+                $stock = $branchId
+                    ? $ingredient->usableStockAtBranch((int) $branchId)
+                    : $ingredient->trackedUsableStock();
+                $threshold = $branchId
+                    ? $ingredient->reorderThresholdAtBranch((int) $branchId)
+                    : (float) $ingredient->reorder_threshold;
+                $value = $branchId
+                    ? $ingredient->valueAtBranch((int) $branchId)
+                    : $ingredient->trackedValue();
+                $cost = $branchId
+                    ? $ingredient->costAtBranch((int) $branchId)
+                    : ($stock > 0 ? $value / $stock : (float) $ingredient->cost_per_unit);
+
+                return [
+                    'id' => $ingredient->id,
+                    'name' => $ingredient->name,
+                    'sku' => $ingredient->sku,
+                    'lowStock' => $ingredient->track_stock && $threshold > 0 && $stock <= $threshold,
+                    'stock' => Qty::format($stock).' '.($ingredient->baseUnit?->code ?? ''),
+                    'reorder' => Qty::format($threshold).' '.($ingredient->baseUnit?->code ?? ''),
+                    'unitCost' => Money::format($cost),
+                    'stockValue' => Money::format($value),
+                    'url' => route('admin.ingredients.edit', $ingredient),
+                ];
+            })->values(),
+            'scopeLabel' => $branchId
+                ? \App\Models\Branch::find($branchId)?->localizedName()
+                : 'كل الفروع',
+            'can' => ['update' => (bool) $user?->can('update', $supplier)],
+            'urls' => [
+                'index' => route('admin.suppliers.index'),
+                'edit' => route('admin.suppliers.edit', $supplier),
+                'prices' => route('admin.vendor-prices.supplier', $supplier),
+                'compare' => route('admin.vendor-prices.compare'),
+                'ingredients' => route('admin.ingredients.index'),
+                'purchaseOrders' => route('admin.purchase-orders.index', ['supplier_id' => $supplier->id]),
+                'newPurchaseOrder' => route('admin.purchase-orders.create'),
+                'invoices' => route('admin.supplier-invoices.index', ['supplier_id' => $supplier->id]),
+            ],
+        ]);
+    }
+
+    protected function formProps(?Supplier $supplier, $branches, array $selected, array $accessible): array
+    {
+        $editable = collect($accessible)->map(fn ($id) => (int) $id);
+
+        return [
+            'supplier' => [
+                'id' => $supplier?->id,
+                'name' => $supplier?->name ?? '',
+                'contactPerson' => $supplier?->contact_person ?? '',
+                'phone' => $supplier?->phone ?? '',
+                'email' => $supplier?->email ?? '',
+                'address' => $supplier?->address ?? '',
+                'notes' => $supplier?->notes ?? '',
+                'active' => $supplier ? (bool) $supplier->active : true,
+                'leadTimeDays' => $supplier?->lead_time_days,
+                'paymentTermsDays' => $supplier?->payment_terms_days,
+                'minimumOrderAmount' => $supplier?->minimum_order_amount,
+                'deliveryDays' => collect($supplier?->delivery_days ?? [])->map(fn ($day) => (int) $day)->values(),
+                'branchIds' => collect($selected)->map(fn ($id) => (int) $id)->values(),
+            ],
+            'branches' => collect($branches)->map(fn ($branch) => [
+                'id' => $branch->id,
+                'name' => $branch->localizedName(),
+                'editable' => $editable->contains((int) $branch->id),
+            ])->values(),
+            'currency' => config('restaurant.currency_symbol', '₪'),
+            'urls' => [
+                'index' => route('admin.suppliers.index'),
+                'submit' => $supplier
+                    ? route('admin.suppliers.update', $supplier)
+                    : route('admin.suppliers.store'),
+            ],
+        ];
     }
 
     protected function validated(Request $request): array

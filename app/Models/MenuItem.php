@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use App\Helpers\UnitConverter;
 use App\Models\Concerns\BelongsToBranch;
 use App\Models\Concerns\HasLocalizedFields;
 use App\Services\InventoryService;
@@ -22,8 +21,8 @@ class MenuItem extends Model
     use BelongsToBranch, HasFactory, HasLocalizedFields, SoftDeletes;
 
     protected $fillable = [
-        'branch_id', 'category_id', 'station_id', 'sku', 'slug', 'name', 'name_en',
-        'description', 'description_en', 'price', 'cost', 'image',
+        'branch_id', 'category_id', 'station_id', 'sku', 'slug', 'name',
+        'description', 'price', 'cost', 'image',
         'prep_time_minutes', 'calories', 'is_available', 'is_featured',
         'unavailable_reason', 'display_order',
     ];
@@ -35,12 +34,47 @@ class MenuItem extends Model
         'is_featured' => 'boolean',
     ];
 
+    /** Optional audit context supplied by the management form. */
+    public ?string $priceChangeReason = null;
+
+    public ?int $priceChangedByUserId = null;
+
     protected static function booted(): void
     {
         static::creating(function (self $m) {
             if (empty($m->slug)) {
-                $m->slug = Str::slug($m->name_en ?: $m->name) ?: 'item-'.uniqid();
+                $m->slug = Str::slug($m->name) ?: 'item-'.uniqid();
             }
+        });
+
+        static::created(function (self $item) {
+            MenuItemPriceHistory::create([
+                'branch_id' => $item->branch_id,
+                'menu_item_id' => $item->id,
+                'change_type' => MenuItemPriceHistory::INITIAL,
+                'old_price' => null,
+                'new_price' => (float) $item->price,
+                'reason' => 'السعر عند إنشاء صنف المنيو',
+                'changed_by_user_id' => $item->priceChangedByUserId ?? auth()->id(),
+                'changed_at' => now(),
+            ]);
+        });
+
+        static::updated(function (self $item) {
+            if (! $item->wasChanged('price')) {
+                return;
+            }
+
+            MenuItemPriceHistory::create([
+                'branch_id' => $item->branch_id,
+                'menu_item_id' => $item->id,
+                'change_type' => MenuItemPriceHistory::BASE_PRICE_CHANGE,
+                'old_price' => (float) $item->getOriginal('price'),
+                'new_price' => (float) $item->price,
+                'reason' => $item->priceChangeReason ?: 'تعديل سعر البيع الأساسي',
+                'changed_by_user_id' => $item->priceChangedByUserId ?? auth()->id(),
+                'changed_at' => now(),
+            ]);
         });
     }
 
@@ -125,6 +159,11 @@ class MenuItem extends Model
             ->orderBy('menu_item_modifier_group.display_order');
     }
 
+    public function priceHistory(): HasMany
+    {
+        return $this->hasMany(MenuItemPriceHistory::class)->latest('changed_at')->latest('id');
+    }
+
     public function resolvedStationId(): ?int
     {
         return $this->station_id ?? $this->category?->default_station_id;
@@ -167,7 +206,7 @@ class MenuItem extends Model
                 'menu_item_id' => $this->id,
                 'quantity' => $quantity,
                 'modifier_ids' => [],
-            ]]);
+            ]], (int) $this->branch_id);
     }
 
     /**
@@ -242,7 +281,7 @@ class MenuItem extends Model
      */
     public function costAtBranch(int $branchId): float
     {
-        $this->loadMissing(['recipeItems.ingredient.baseUnit']);
+        $this->loadMissing(['recipeItems.ingredient.baseUnit', 'recipeItems.ingredientUnit']);
 
         $total = 0.0;
         foreach ($this->recipeItems as $r) {
@@ -251,9 +290,10 @@ class MenuItem extends Model
                 continue;
             }
 
-            $qtyBase = UnitConverter::convert(
-                (float) $r->quantity, $r->unit_id, (int) $ing->base_unit_id
-            );
+            // RecipeItem owns the canonical conversion formula, including
+            // ingredient-specific pack/scoop units. Cost and stock deduction
+            // must never interpret the same recipe line differently.
+            $qtyBase = $r->quantityInBase();
             $total += $qtyBase * $ing->costAtBranch($branchId);
         }
 

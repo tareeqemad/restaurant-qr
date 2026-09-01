@@ -11,6 +11,7 @@ use App\Models\Unit;
 use App\Models\User;
 use App\Support\BranchContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 /**
@@ -201,11 +202,17 @@ class MenuItemRecipeUnitTest extends TestCase
             ])
             ->assertRedirect(route('admin.menu-items.create'));
 
-        // Follow the redirect back to the form and confirm the error renders.
+        $expectedError = session('errors')->first('recipe.0.unit_id');
+
+        // Follow the redirect back to the Inertia form and confirm the error
+        // remains part of its page props. The Vue shell escapes Arabic in the
+        // bootstrap JSON, so assert the component contract instead of HTML.
         $page = $this->actingAs($this->manager)->get(route('admin.menu-items.create'));
-        $page->assertOk();
-        $page->assertSee('لا تتوافق', false);            // inline + summary message
-        $page->assertSee('تعذّر حفظ الصنف', false);       // error summary header
+        $page->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/MenuItems/Form')
+            ->where('mode', 'create')
+            ->where('errors', fn ($errors) => collect($errors)->contains($expectedError))
+        );
     }
 
     public function test_compatible_unit_type_passes(): void
@@ -257,7 +264,7 @@ class MenuItemRecipeUnitTest extends TestCase
         ]);
     }
 
-    public function test_iu_referencing_a_missing_ingredient_unit_falls_back_not_500(): void
+    public function test_iu_referencing_a_missing_ingredient_unit_is_rejected(): void
     {
         $item = MenuItem::create([
             'category_id' => $this->category->id, 'name' => 'iu-bad', 'price' => 9,
@@ -272,14 +279,35 @@ class MenuItemRecipeUnitTest extends TestCase
             ],
         ]);
 
-        $response->assertSessionHasNoErrors();
-        $response->assertRedirect(route('admin.menu-items.index'));
-        // Falls back: base unit set, no bogus ingredient_unit_id.
-        $this->assertDatabaseHas('recipe_items', [
-            'menu_item_id' => $item->id,
-            'unit_id' => $this->unit->id,
-            'ingredient_unit_id' => null,
+        $response->assertSessionHasErrors('recipe.0.unit_id');
+        $this->assertDatabaseMissing('recipe_items', ['menu_item_id' => $item->id]);
+    }
+
+    public function test_legacy_bare_unit_id_still_enforces_measurement_type(): void
+    {
+        $countUnit = Unit::create([
+            'code' => 'pcs', 'name' => 'قطعة', 'unit_type' => 'count',
+            'factor_to_base' => 1, 'is_base' => true,
         ]);
+        $countIngredient = Ingredient::create([
+            'name' => 'كولا', 'base_unit_id' => $countUnit->id, 'active' => true,
+        ]);
+
+        $response = $this->actingAs($this->manager)->post(route('admin.menu-items.store'), [
+            'category_id' => $this->category->id,
+            'name' => 'وحدة قديمة خاطئة',
+            'price' => 5,
+            'recipe' => [[
+                'ingredient_id' => $countIngredient->id,
+                'quantity' => 1,
+                // Bare ids are accepted for legacy clients, but never bypass
+                // the family check (weight cannot describe a count ingredient).
+                'unit_id' => (string) $this->unit->id,
+            ]],
+        ]);
+
+        $response->assertSessionHasErrors('recipe.0.unit_id');
+        $this->assertDatabaseMissing('menu_items', ['name' => 'وحدة قديمة خاطئة']);
     }
 
     public function test_menu_index_does_not_500_on_mismatched_recipe_unit_types(): void
@@ -312,7 +340,10 @@ class MenuItemRecipeUnitTest extends TestCase
         $this->actingAs($this->manager)
             ->get(route('admin.menu-items.index'))
             ->assertOk()
-            ->assertSee('صنف وحدة غلط');
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/MenuItems/Index')
+                ->where('items.data.0.name', $item->name)
+            );
     }
 
     public function test_menu_index_does_not_500_when_a_recipe_ingredient_is_soft_deleted(): void
@@ -337,6 +368,9 @@ class MenuItemRecipeUnitTest extends TestCase
         $this->actingAs($this->manager)
             ->get(route('admin.menu-items.index'))
             ->assertOk()
-            ->assertSee('صنف بمكون محذوف');
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/MenuItems/Index')
+                ->where('items.data.0.name', $item->name)
+            );
     }
 }

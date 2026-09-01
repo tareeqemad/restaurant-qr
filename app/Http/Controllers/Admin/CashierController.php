@@ -4,14 +4,16 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
+use App\Models\InvoiceSplit;
 use App\Models\Order;
 use App\Models\OrderDiscount;
 use App\Models\Payment;
-use App\Models\Refund;
 use App\Models\TableSession;
 use App\Services\BillingService;
+use App\Services\InvoicePdfRenderer;
 use App\Services\OrderDiscountService;
-use Barryvdh\DomPDF\Facade\Pdf;
+use App\Support\PaymentMethods;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -19,62 +21,17 @@ use Illuminate\Validation\ValidationException;
 
 class CashierController extends Controller
 {
-    public function __construct(protected BillingService $billing) {}
-
-    public function index()
-    {
-        $this->authorize('viewAny', Payment::class);
-        $activeSessions = TableSession::with(['table', 'orders', 'invoice'])
-            ->where('status', 'active')
-            ->orderByDesc('last_activity_at')
-            ->get();
-
-        $recentInvoices = Invoice::with(['tableSession.table', 'order'])
-            ->whereDate('created_at', today())
-            ->latest()
-            ->limit(20)
-            ->get();
-
-        $todayPaid = Invoice::whereDate('created_at', today())->where('status', 'paid');
-        $stats = [
-            'active_sessions' => $activeSessions->count(),
-            'invoices_today'  => Invoice::whereDate('created_at', today())->count(),
-            'revenue_today'   => (float) (clone $todayPaid)->sum('total'),
-            // NET of same-day completed cash refunds — otherwise the drawer
-            // figure reads high on any day a cash refund was paid out.
-            'cash_today'      => (float) Payment::whereDate('created_at', today())
-                                                 ->where('method', 'cash')
-                                                 ->sum('amount')
-                                 - (float) Refund::whereDate('refunded_at', today())
-                                                 ->where('method', 'cash')
-                                                 ->where('status', 'completed')
-                                                 ->sum('amount'),
-        ];
-
-        return view('admin.cashier.index', compact('activeSessions', 'recentInvoices', 'stats'));
-    }
-
-    /**
-     * Permanent redirect alias for the retired classic cashier page.
-     *
-     * The server-rendered pay screen was merged into the live Volt dashboard
-     * (one screen does everything now: pay, discount, refund, settle, un-park,
-     * cancel, write-off, void, splits, pending transfers). This route survives
-     * so the waiter/tables-board «كاشير» deep-links and any old bookmarks land
-     * on the merged screen with the session pre-selected — zero board churn.
-     */
-    public function show(TableSession $session)
-    {
-        $this->authorize('viewAny', Payment::class);
-
-        return redirect()->route('admin.cashier.index', ['session' => $session->id]);
-    }
+    public function __construct(
+        protected BillingService $billing,
+        protected InvoicePdfRenderer $invoicePdf,
+    ) {}
 
     public function issue(TableSession $session)
     {
         $this->authorize('create', Payment::class);
         try {
             $invoice = $this->billing->issueInvoice($session, auth()->id());
+
             return redirect()->route('admin.cashier.index', ['session' => $session->id])->with('success', "تم إصدار الفاتورة {$invoice->number}");
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
@@ -86,7 +43,7 @@ class CashierController extends Controller
         $this->authorize('create', Payment::class);
         $data = $request->validate([
             'amount' => ['required', 'numeric', 'min:0.01'],
-            'method' => ['required', \App\Support\PaymentMethods::inRule()],
+            'method' => ['required', PaymentMethods::inRule()],
             'reference' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string'],
         ]);
@@ -103,6 +60,7 @@ class CashierController extends Controller
 
         try {
             $this->billing->addPayment($invoice, $data['amount'], $data['method'], auth()->id(), $data['reference'] ?? null, $data['notes'] ?? null);
+
             return back()->with('success', 'تم تسجيل الدفعة');
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
@@ -116,7 +74,7 @@ class CashierController extends Controller
      */
     public function voidPayment(Request $request, Payment $payment)
     {
-        $this->authorize('create', Payment::class);
+        $this->authorize('void', $payment);
         $data = $request->validate(['reason' => ['required', 'string', 'max:255']]);
         try {
             $this->billing->voidPayment($payment, auth()->id(), $data['reason']);
@@ -133,7 +91,7 @@ class CashierController extends Controller
 
     public function writeoff(Request $request, Invoice $invoice)
     {
-        $this->authorize('create', Payment::class);
+        $this->authorizePaymentAction('payments.writeoff');
         $data = $request->validate(['reason' => ['required', 'string']]);
         try {
             $this->billing->writeOffInvoice($invoice, auth()->id(), $data['reason']);
@@ -156,19 +114,21 @@ class CashierController extends Controller
      * `balance > 0` and `settled_on_account_at` set — the customer-debt
      * ledger queries (and dashboard widget) pick it up from there.
      *
-     * Refuses (via BillingService) if the invoice has no customer linked,
-     * has zero payments collected, or would exceed the customer's credit
-     * ceiling. Notes are optional but encouraged so the next cashier can
-     * see context next time the customer comes back to pay.
+     * Refuses (via BillingService) if the invoice has no customer linked or
+     * would exceed the customer's credit ceiling. A previous payment is not
+     * required: the full invoice or only its remainder can become debt.
      */
     public function settleOnAccount(Request $request, Invoice $invoice)
     {
-        $this->authorize('create', Payment::class);
-        $data = $request->validate(['notes' => ['nullable', 'string', 'max:500']]);
+        $this->authorizePaymentAction('payments.settle_on_account');
+        $data = $request->validate([
+            'notes' => ['nullable', 'string', 'max:500'],
+            'due_date' => ['nullable', 'date', 'after_or_equal:today'],
+        ]);
 
         try {
-            $this->billing->settleOnAccount($invoice, auth()->id(), $data['notes'] ?? null);
-            $message = 'تم تأجيل المتبقي كدين على الزبون. أُغلقت الجلسة.';
+            $this->billing->settleOnAccount($invoice, auth()->id(), $data['notes'] ?? null, $data['due_date'] ?? null);
+            $message = 'تم تسجيل رصيد الفاتورة ديناً على الزبون وإغلاق الجلسة.';
 
             return $this->redirectAfterInvoiceAction(
                 $request,
@@ -191,7 +151,7 @@ class CashierController extends Controller
      */
     public function unpark(Request $request, Invoice $invoice)
     {
-        $this->authorize('create', Payment::class);
+        $this->authorizePaymentAction('payments.settle_on_account');
         try {
             $this->billing->unparkSettleOnAccount($invoice, auth()->id());
         } catch (\Throwable $e) {
@@ -222,7 +182,7 @@ class CashierController extends Controller
 
     public function cancel(Request $request, Invoice $invoice)
     {
-        $this->authorize('create', Payment::class);
+        $this->authorizePaymentAction('payments.cancel_invoice');
         $data = $request->validate(['reason' => ['required', 'string']]);
         try {
             $this->billing->cancelInvoice($invoice, auth()->id(), $data['reason']);
@@ -243,16 +203,37 @@ class CashierController extends Controller
         // customer's name/phone and the full money trail, so it must not
         // be an unguarded GET for anyone who guesses an invoice id.
         $this->authorize('viewAny', Payment::class);
-        $invoice->load(['tableSession.table', 'tableSession.orders.items.modifiers', 'order.items.modifiers', 'payments']);
-        $pdf = Pdf::loadView('admin.cashier.invoice-pdf', compact('invoice'));
-        return $pdf->download($invoice->number.'.pdf');
+        $invoice->load([
+            'branch',
+            'issuer',
+            'tableSession.table',
+            'tableSession.orders.items.modifiers',
+            'order.items.modifiers',
+            'payments.receiver',
+        ]);
+        $binary = $this->invoicePdf->render($invoice);
+
+        return response($binary, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="'.$invoice->number.'.pdf"',
+            'Content-Length' => (string) strlen($binary),
+            'Cache-Control' => 'private, max-age=300',
+        ]);
     }
 
     public function print(Invoice $invoice)
     {
         // Mirrors pdf() — see the WHY there.
         $this->authorize('viewAny', Payment::class);
-        $invoice->load(['tableSession.table', 'tableSession.orders.items.modifiers', 'order.items.modifiers', 'payments']);
+        $invoice->load([
+            'branch',
+            'issuer',
+            'tableSession.table',
+            'tableSession.orders.items.modifiers',
+            'order.items.modifiers',
+            'payments.receiver',
+        ]);
+
         return view('admin.cashier.invoice-print', compact('invoice'));
     }
 
@@ -269,7 +250,7 @@ class CashierController extends Controller
             'splits' => ['required', 'array', 'min:2'],
             'splits.*.label' => ['nullable', 'string', 'max:255'],
             'splits.*.amount' => ['required', 'numeric', 'min:0.01'],
-            'splits.*.method' => ['required', \App\Support\PaymentMethods::inRule()],
+            'splits.*.method' => ['required', PaymentMethods::inRule()],
         ]);
 
         // Regroup guard: a paid split is anchored to a committed payment,
@@ -296,7 +277,7 @@ class CashierController extends Controller
         }
     }
 
-    public function paySplit(Request $request, Invoice $invoice, \App\Models\InvoiceSplit $split)
+    public function paySplit(Request $request, Invoice $invoice, InvoiceSplit $split)
     {
         $this->authorize('create', Payment::class);
         abort_unless($split->invoice_id === $invoice->id, 404);
@@ -347,6 +328,7 @@ class CashierController extends Controller
         $data = $this->validateDiscount($request);
         try {
             $service->applyToOrder($order, $data, $request->user());
+
             return back()->with('success', 'تم تطبيق الخصم');
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
@@ -359,6 +341,7 @@ class CashierController extends Controller
         $data = $this->validateDiscount($request);
         try {
             $service->applyToSession($session, $data, $request->user());
+
             return back()->with('success', 'تم تطبيق الخصم على الجلسة');
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
@@ -370,6 +353,7 @@ class CashierController extends Controller
         $this->authorize('remove', $discount);
         try {
             $service->remove($discount, $request->user());
+
             return back()->with('success', 'تم إزالة الخصم');
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
@@ -384,14 +368,14 @@ class CashierController extends Controller
     protected function validateDiscount(Request $request): array
     {
         return $request->validate([
-            'type'               => ['required', 'in:percent,fixed'],
-            'value'              => ['required', 'numeric', 'min:0.01'],
-            'reason'             => ['required', 'string', 'max:500'],
+            'type' => ['required', 'in:percent,fixed'],
+            'value' => ['required', 'numeric', 'min:0.01'],
+            'reason' => ['required', 'string', 'max:500'],
             'category_lookup_id' => ['nullable', 'integer', 'exists:lookups,id'],
-            'name'               => ['nullable', 'string', 'max:120'],
+            'name' => ['nullable', 'string', 'max:120'],
         ], [
-            'type.required'   => 'اختر نوع الخصم.',
-            'value.required'  => 'أدخل قيمة الخصم.',
+            'type.required' => 'اختر نوع الخصم.',
+            'value.required' => 'أدخل قيمة الخصم.',
             'reason.required' => 'سبب الخصم إلزامي.',
         ]);
     }
@@ -400,7 +384,7 @@ class CashierController extends Controller
      * Where to land the cashier after a deliberate money action (settle /
      * unpark / cancel / write-off).
      *
-     * The live Volt dashboard posts these classic forms with a hidden
+     * Compatibility form actions may send a hidden
      * `return_session` (a TableSession id). When it's present AND resolves to
      * a real session, bounce back to the ONE merged screen with that session's
      * checkout pre-selected (?session=ID) — the route is rebuilt server-side
@@ -411,7 +395,7 @@ class CashierController extends Controller
      * POSTing these same forms — the caller's own redirect stands via
      * `$fallback`, so the old page keeps working exactly as before.
      */
-    protected function redirectAfterInvoiceAction(Request $request, string $successMessage, \Closure $fallback): \Illuminate\Http\RedirectResponse
+    protected function redirectAfterInvoiceAction(Request $request, string $successMessage, \Closure $fallback): RedirectResponse
     {
         $sessionId = $request->integer('return_session');
 
@@ -422,5 +406,10 @@ class CashierController extends Controller
         }
 
         return $fallback();
+    }
+
+    private function authorizePaymentAction(string $permission): void
+    {
+        abort_unless(auth()->user()?->hasPermission($permission), 403);
     }
 }

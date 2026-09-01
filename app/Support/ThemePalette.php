@@ -10,8 +10,8 @@ class ThemePalette
     {
         $defaults = config('restaurant.theme', []);
 
-        $primaryDefault = $defaults['primary'] ?? '#164c37';
-        $darkDefault = $defaults['dark'] ?? '#0f2d22';
+        $primaryDefault = $defaults['primary'] ?? '#1f6b50';
+        $darkDefault = $defaults['dark'] ?? '#123f31';
         $headerDefault = $defaults['header'] ?? $primaryDefault;
         $accentDefault = $defaults['accent'] ?? '#b97818';
         $menuDefault = $defaults['menu'] ?? '#f7f8f5';
@@ -34,9 +34,9 @@ class ThemePalette
             'header' => $header,
             'accent' => $accent,
             'menu' => $menu,
-            'primary_rgb' => self::hexToRgb($primary, '22, 76, 55'),
-            'dark_rgb' => self::hexToRgb($dark, '15, 45, 34'),
-            'header_rgb' => self::hexToRgb($header, '22, 76, 55'),
+            'primary_rgb' => self::hexToRgb($primary, '31, 107, 80'),
+            'dark_rgb' => self::hexToRgb($dark, '18, 63, 49'),
+            'header_rgb' => self::hexToRgb($header, '31, 107, 80'),
             'accent_rgb' => self::hexToRgb($accent, '185, 120, 24'),
             'menu_rgb' => self::hexToRgb($menu, '247, 248, 245'),
             'primary_light' => self::mix($primary, '#ffffff', 0.24),

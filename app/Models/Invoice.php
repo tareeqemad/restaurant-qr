@@ -16,12 +16,12 @@ class Invoice extends Model
     protected $fillable = [
         'branch_id', 'number', 'table_session_id', 'table_number_snapshot', 'order_id', 'customer_id', 'issued_by_user_id',
         'subtotal', 'discount_total', 'tax_total', 'service_total', 'delivery_fee', 'tip',
-        'total', 'paid_total', 'refunded_total', 'balance', 'status',
+        'total', 'paid_total', 'refunded_total', 'credited_total', 'written_off_total', 'balance', 'status', 'is_opening_balance',
         'customer_name', 'customer_phone', 'notes',
         'issued_at', 'paid_at', 'cancelled_at',
         // Debt-ledger flags — set by BillingService::settleOnAccount when
         // a partially-paid invoice is parked on the customer's account.
-        'settled_on_account_at', 'settled_on_account_by_user_id',
+        'settled_on_account_at', 'settled_on_account_by_user_id', 'due_date', 'payment_terms_days',
     ];
 
     protected $casts = [
@@ -34,11 +34,16 @@ class Invoice extends Model
         'total' => 'decimal:2',
         'paid_total' => 'decimal:2',
         'refunded_total' => 'decimal:4',
+        'credited_total' => 'decimal:4',
+        'written_off_total' => 'decimal:4',
         'balance' => 'decimal:2',
         'issued_at' => 'datetime',
         'paid_at' => 'datetime',
         'cancelled_at' => 'datetime',
         'settled_on_account_at' => 'datetime',
+        'due_date' => 'date',
+        'payment_terms_days' => 'integer',
+        'is_opening_balance' => 'boolean',
     ];
 
     protected static function booted(): void
@@ -68,8 +73,12 @@ class Invoice extends Model
             $hasTableSession = ! is_null($m->table_session_id);
             $hasDirectOrder = ! is_null($m->order_id);
 
-            if ($hasTableSession === $hasDirectOrder) {
+            if (! $m->is_opening_balance && $hasTableSession === $hasDirectOrder) {
                 throw new \InvalidArgumentException('Invoice must belong to exactly one origin: table session or direct order.');
+            }
+
+            if ($m->is_opening_balance && ($hasTableSession || $hasDirectOrder)) {
+                throw new \InvalidArgumentException('Opening-balance invoices cannot be linked to an order or table session.');
             }
         });
     }
@@ -176,8 +185,9 @@ class Invoice extends Model
 
     /**
      * After a refund completes, the invoice's payment math changes:
-     *   netPaid    = paid_total − refunded_total
-     *   balance    = total − netPaid
+     *   adjustedTotal = total − credited_total
+     *   netPaid       = paid_total − refunded_total
+     *   balance       = adjustedTotal − netPaid
      *   status     = unpaid | partially_paid | paid (with refund nuance)
      *
      * Without this method, an invoice that's been refunded 30 of 100
@@ -193,7 +203,7 @@ class Invoice extends Model
     {
         $this->refresh();
         $net = $this->netPaid();
-        $balance = max(0, round((float) $this->total - $net, 2));
+        $balance = max(0, round($this->collectibleTotal() - $net, 2));
 
         // Status transitions after refund:
         //   - balance = 0 AND net > 0 → still "paid" (no money owed, all paid)
@@ -201,7 +211,8 @@ class Invoice extends Model
         //   - balance > 0 AND net = 0 → "issued" (fully refunded, but original invoice stands)
         //   - balance = 0 AND net = 0 → "cancelled" (everything reversed — leave as-is, manual decision)
         $status = match (true) {
-            $balance <= 0.001 && $net > 0      => 'paid',
+            $balance <= 0.001 && (float) $this->written_off_total > 0.001 => 'unpaid_writeoff',
+            $balance <= 0.001                  => 'paid',
             $balance > 0 && $net > 0           => 'partially_paid',
             $balance > 0 && $net <= 0.001      => 'issued',
             default                             => $this->status,   // leave anything weird untouched
@@ -212,7 +223,7 @@ class Invoice extends Model
             'status'   => $status,
             // Clear paid_at when balance reopens so the dashboards stop
             // showing a misleading "paid X minutes ago" timestamp.
-            'paid_at'  => $status === 'paid' ? $this->paid_at : null,
+            'paid_at'  => $status === 'paid' && $net > 0 ? $this->paid_at : null,
         ]);
     }
 
@@ -233,6 +244,11 @@ class Invoice extends Model
         return $this->belongsTo(User::class, 'issued_by_user_id');
     }
 
+    public function settledOnAccountBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'settled_on_account_by_user_id');
+    }
+
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);
@@ -243,16 +259,41 @@ class Invoice extends Model
         return $this->hasMany(Refund::class);
     }
 
+    public function creditNotes(): HasMany
+    {
+        return $this->hasMany(CreditNote::class);
+    }
+
     /** Net cash received = paid − refunded */
     public function netPaid(): float
     {
         return max(0, (float) $this->paid_total - (float) $this->refunded_total);
     }
 
+    /** Net sale value after posted credit notes. */
+    public function adjustedTotal(): float
+    {
+        return max(0, (float) $this->total - (float) $this->credited_total);
+    }
+
+    /** Receivable still collectible after credit notes and debt write-offs. */
+    public function collectibleTotal(): float
+    {
+        return max(0, $this->adjustedTotal() - (float) $this->written_off_total);
+    }
+
+    public function writeoffs(): HasMany
+    {
+        return $this->hasMany(DebtWriteoff::class);
+    }
+
     /** How much more can still be refunded */
     public function refundableBalance(): float
     {
-        return max(0, (float) $this->paid_total - (float) $this->refunded_total);
+        $uncreditedSale = max(0, (float) $this->total - (float) $this->credited_total);
+        $unreturnedPayments = max(0, (float) $this->paid_total - (float) $this->refunded_total);
+
+        return round(min($uncreditedSale, $unreturnedPayments), 2);
     }
 
     public function isFullyRefunded(): bool

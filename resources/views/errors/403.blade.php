@@ -1,9 +1,9 @@
 @extends('errors.layout')
 
-@section('title', '403')
+@section('title', 'وصول غير مسموح')
 @section('code', '403')
-@section('headline', 'ممنوع الوصول')
-@section('message', 'ما عندك صلاحية للوصول لهذه الصفحة. لو بتعتقد إن هذا خطأ، تواصل مع المدير.')
+@section('headline', 'هذه الصفحة تحتاج صلاحية مختلفة')
+@section('message', 'حسابك يعمل بشكل طبيعي، لكنه غير مخوّل لفتح هذه الصفحة. يمكنك الرجوع أو التواصل مع المدير إذا كنت تحتاجها لعملك.')
 
 @section('illustration')
     {{-- Closed padlock --}}
@@ -16,24 +16,12 @@
 @endsection
 
 @section('actions')
-    <a href="{{ url('/admin') }}" class="btn btn-primary">
+    <a href="{{ auth()->check() || request()->is('admin*') ? url('/admin') : url('/') }}" class="btn btn-primary">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
             <polyline points="9 22 9 12 15 12 15 22"/>
         </svg>
-        العودة للوحة التحكم
+        {{ auth()->check() || request()->is('admin*') ? 'لوحة التحكم' : 'الصفحة الرئيسية' }}
     </a>
-    @auth
-    <form method="POST" action="{{ route('logout') }}" style="display:inline;">
-        @csrf
-        <button type="submit" class="btn btn-ghost">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-                <polyline points="16 17 21 12 16 7"/>
-                <line x1="21" y1="12" x2="9" y2="12"/>
-            </svg>
-            تسجيل الخروج
-        </button>
-    </form>
-    @endauth
+    <button type="button" class="btn btn-ghost" data-error-back>الصفحة السابقة</button>
 @endsection

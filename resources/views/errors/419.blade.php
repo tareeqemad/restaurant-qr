@@ -1,9 +1,9 @@
 @extends('errors.layout')
 
-@section('title', '419')
+@section('title', 'انتهت صلاحية الجلسة')
 @section('code', '419')
 @section('headline', 'انتهت صلاحية الجلسة')
-@section('message', 'لحمايتك، انتهت صلاحية جلستك بسبب عدم النشاط. يرجى تسجيل الدخول من جديد للمتابعة.')
+@section('message', 'توقفت الجلسة بعد فترة من عدم النشاط لحماية بياناتك. حدّث الصفحة للمتابعة، وقد تحتاج لمسح رمز الطاولة من جديد.')
 
 @section('illustration')
     {{-- Hourglass --}}
@@ -16,12 +16,13 @@
 @endsection
 
 @section('actions')
-    <a href="{{ route('login') }}" class="btn btn-primary">
+    <button type="button" class="btn btn-primary" data-error-reload>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
             <polyline points="10 17 15 12 10 7"/>
             <line x1="15" y1="12" x2="3" y2="12"/>
         </svg>
-        تسجيل الدخول
-    </a>
+        تحديث الصفحة
+    </button>
+    <a href="{{ auth()->check() || request()->is('admin*') ? url('/admin') : url('/') }}" class="btn btn-ghost">{{ auth()->check() || request()->is('admin*') ? 'لوحة التحكم' : 'الصفحة الرئيسية' }}</a>
 @endsection

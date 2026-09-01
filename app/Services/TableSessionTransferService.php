@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Events\TableStatusChanged;
 use App\Helpers\SafeBroadcast;
 use App\Models\ActivityLog;
+use App\Models\Invoice;
 use App\Models\Order;
 use App\Models\Scopes\BranchScope;
 use App\Models\Table;
@@ -43,8 +44,19 @@ class TableSessionTransferService
                 throw new \RuntimeException('لا توجد جلسة نشطة على هذه الطاولة.');
             }
 
-            if ($session->invoice()->withoutGlobalScope(BranchScope::class)->where('status', '!=', 'cancelled')->exists()) {
-                throw new \RuntimeException('لا يمكن نقل الجلسة بعد إصدار الفاتورة. ألغِ الفاتورة أولاً إذا كان النقل ضرورياً.');
+            $invoice = Invoice::withoutGlobalScope(BranchScope::class)
+                ->where('table_session_id', $session->id)
+                ->where('status', '!=', 'cancelled')
+                ->latest('id')
+                ->lockForUpdate()
+                ->first();
+
+            // An issued or partially-paid bill is still part of the live
+            // session and moves with it. Once settlement is final, moving the
+            // party would rewrite an already-finished service record, so the
+            // cashier must reopen/correct that settlement first.
+            if ($invoice && in_array($invoice->status, ['paid', 'unpaid_writeoff'], true)) {
+                throw new \RuntimeException('لا يمكن نقل جلسة تم إقفال حسابها. صحّح التحصيل أولاً إذا كان النقل ضرورياً.');
             }
 
             $targetHasSession = TableSession::withoutGlobalScope(BranchScope::class)
@@ -53,7 +65,7 @@ class TableSessionTransferService
                 ->lockForUpdate()
                 ->exists();
 
-            if ($targetHasSession || $target->status !== 'available') {
+            if ($targetHasSession || $target->status !== 'available' || $target->needsCleaning()) {
                 throw new \RuntimeException('الطاولة الجديدة ليست متاحة.');
             }
 
@@ -66,19 +78,23 @@ class TableSessionTransferService
 
             $session->update([
                 'table_id' => $target->id,
+                'table_number_snapshot' => $target->number,
                 'last_activity_at' => now(),
             ]);
 
             Order::withoutGlobalScope(BranchScope::class)->where('table_session_id', $session->id)->update([
                 'table_id' => $target->id,
+                'table_number_snapshot' => $target->number,
                 'updated_at' => now(),
             ]);
 
-            // Bussing across a move. Transfer is rejected once an invoice
-            // exists, so the party still has live orders — they have been
-            // eating at $source and physically got up. It is the strongest
-            // dirty-table case there is, and without this the board would
-            // advertise a table of used plates as clean and seatable.
+            if ($invoice) {
+                $invoice->update(['table_number_snapshot' => $target->number]);
+            }
+
+            // The party has physically left $source. Even when an open bill
+            // follows the session, the old table must enter the cleaning
+            // queue instead of being advertised as clean and seatable.
             $source->update([
                 'status' => 'available',
                 'needs_cleaning_since' => now(),
@@ -102,6 +118,10 @@ class TableSessionTransferService
                     'target_table_id' => $target->id,
                     'target_table_number' => $target->number,
                     'transferred_by_user_id' => $userId,
+                    'moved_orders_count' => Order::withoutGlobalScope(BranchScope::class)
+                        ->where('table_session_id', $session->id)
+                        ->count(),
+                    'invoice_id' => $invoice?->id,
                 ]
             );
 

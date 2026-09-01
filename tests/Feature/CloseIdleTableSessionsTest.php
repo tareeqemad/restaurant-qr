@@ -216,6 +216,30 @@ class CloseIdleTableSessionsTest extends TestCase
             'Unpaid orders must still be routed through the cashier flow.');
     }
 
+    public function test_abandoned_qr_draft_uses_the_short_browsing_timeout(): void
+    {
+        $table = Table::create([
+            'branch_id' => $this->branch->id,
+            'number' => 'QR',
+            'capacity' => 2,
+            'status' => 'available',
+            'active' => true,
+        ]);
+        $session = TableSession::create([
+            'branch_id' => $this->branch->id,
+            'table_id' => $table->id,
+            'status' => 'active',
+            'opened_at' => now()->subMinutes(21),
+            'last_activity_at' => now()->subMinutes(21),
+        ]);
+
+        $this->artisan('table-sessions:close-idle')->assertExitCode(0);
+
+        $this->assertSame('closed', $session->fresh()->status);
+        $this->assertNull($session->fresh()->engaged_at);
+        $this->assertSame('available', $table->fresh()->status);
+    }
+
     // ─── helpers ──────────────────────────────────────────────────────
 
     protected function openSession(int $idleMinutes = 0): TableSession

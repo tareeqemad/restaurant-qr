@@ -31,6 +31,8 @@ use Illuminate\Support\Facades\Notification;
  */
 class PendingTransferService
 {
+    public function __construct(protected BillingService $billing) {}
+
     /**
      * @param  int|null  $recordedByUserId  null when the CUSTOMER declared it themselves.
      */
@@ -42,13 +44,14 @@ class PendingTransferService
         ?string $notes = null,
         ?string $phone = null,
         ?string $typedName = null,
+        ?string $proofPath = null,
     ): PendingTransfer {
         $session->loadMissing('invoice', 'table');
 
         $customer = null;
         $phone = trim((string) ($phone ?? ''));
         if ($phone !== '') {
-            $customer = Customer::findForLogin($phone);
+            $customer = Customer::findByPhone($phone);
         }
 
         // Display snapshot priority: matched customer → typed name → the
@@ -68,7 +71,7 @@ class PendingTransferService
         // lives HERE (not in one controller) so every entry point is covered.
         $transfer = DB::transaction(function () use (
             $session, $amount, $senderName, $displayName, $displayPhone,
-            $notes, $recordedByUserId, $customer
+            $notes, $recordedByUserId, $customer, $proofPath
         ) {
             TableSession::whereKey($session->id)->lockForUpdate()->first();
 
@@ -89,6 +92,7 @@ class PendingTransferService
                 'customer_name_snapshot'  => $displayName,
                 'customer_phone_snapshot' => $displayPhone,
                 'notes'                   => $notes,
+                'proof_path'              => $proofPath,
                 'status'                  => PendingTransfer::STATUS_PENDING,
                 'recorded_by_user_id'     => $recordedByUserId,
             ]);
@@ -104,14 +108,116 @@ class PendingTransferService
             return $t;
         });
 
-        // Side effects AFTER commit: notify the cashiers, refresh the sidebar
-        // badge, and push a live event so the cashier screen lights + chimes
-        // now instead of on the next poll (SafeBroadcast no-ops if Reverb down).
+        // Side effects AFTER commit: notify cashiers, refresh the sidebar,
+        // and touch the pulse so their next lightweight poll reloads the queue.
         $this->notifyCashiers($transfer);
         SidebarBadges::bust();
         SafeBroadcast::dispatch(new PendingTransferDeclared($transfer));
 
         return $transfer;
+    }
+
+    /**
+     * Confirm one declared transfer and turn it into an ordinary payment.
+     * Both the classic and Vue cashier use this transaction so invoice issue,
+     * double-submit protection, accounting, and audit behaviour cannot drift.
+     *
+     * @return array{transfer:PendingTransfer,invoice:\App\Models\Invoice,payment:\App\Models\Payment,remaining_balance:float}
+     */
+    public function verify(
+        PendingTransfer $transfer,
+        float $verifiedAmount,
+        int $verifiedByUserId,
+        ?string $verificationNotes = null,
+    ): array {
+        $result = DB::transaction(function () use ($transfer, $verifiedAmount, $verifiedByUserId, $verificationNotes) {
+            $locked = PendingTransfer::query()->whereKey($transfer->id)->lockForUpdate()->firstOrFail();
+            if (! $locked->isPending()) {
+                throw new \RuntimeException('هذا التحويل لم يعد بانتظار التأكيد.');
+            }
+
+            $session = $locked->tableSession()->lockForUpdate()->firstOrFail();
+            $invoice = $session->invoice()->where('status', '!=', 'cancelled')->latest()->first();
+            if (! $invoice) {
+                $invoice = $this->billing->issueInvoice($session, $verifiedByUserId);
+            }
+
+            $noteParts = ['تحويل بنكي من '.$locked->sender_name];
+            if ($locked->notes) {
+                $noteParts[] = $locked->notes;
+            }
+            if (filled($verificationNotes)) {
+                $noteParts[] = trim((string) $verificationNotes);
+            }
+
+            $payment = $this->billing->addPayment(
+                $invoice,
+                $verifiedAmount,
+                'transfer',
+                $verifiedByUserId,
+                $locked->sender_name,
+                implode(' — ', $noteParts),
+            );
+
+            $locked->update([
+                'status' => PendingTransfer::STATUS_VERIFIED,
+                'invoice_id' => $invoice->id,
+                'payment_id' => $payment->id,
+                'verified_by_user_id' => $verifiedByUserId,
+                'verified_at' => now(),
+                'verification_notes' => $verificationNotes,
+            ]);
+
+            $message = "تأكيد التحويل #{$locked->id} على الفاتورة {$invoice->number}";
+            if (abs($verifiedAmount - (float) $locked->amount) > 0.001) {
+                $message .= " (المُدّعى {$locked->amount} ← المؤكد {$verifiedAmount})";
+            }
+            ActivityLog::log('pending_transfer.verified', $message, $locked, [
+                'claimed' => (float) $locked->amount,
+                'verified' => $verifiedAmount,
+            ]);
+
+            return [
+                'transfer' => $locked->refresh(),
+                'invoice' => $invoice->refresh(),
+                'payment' => $payment,
+                'remaining_balance' => (float) $invoice->fresh()->balance,
+            ];
+        });
+
+        SidebarBadges::bust();
+
+        return $result;
+    }
+
+    public function reject(PendingTransfer $transfer, string $reason, int $rejectedByUserId): PendingTransfer
+    {
+        $rejected = DB::transaction(function () use ($transfer, $reason, $rejectedByUserId) {
+            $locked = PendingTransfer::query()->whereKey($transfer->id)->lockForUpdate()->firstOrFail();
+            if (! $locked->isPending()) {
+                throw new \RuntimeException('هذا التحويل لم يعد بانتظار التأكيد.');
+            }
+
+            $locked->update([
+                'status' => PendingTransfer::STATUS_REJECTED,
+                'verified_by_user_id' => $rejectedByUserId,
+                'rejected_at' => now(),
+                'rejection_reason' => $reason,
+            ]);
+
+            ActivityLog::log(
+                'pending_transfer.rejected',
+                "رفض التحويل #{$locked->id} — {$reason}",
+                $locked,
+                ['amount' => (float) $locked->amount],
+            );
+
+            return $locked->refresh();
+        });
+
+        SidebarBadges::bust();
+
+        return $rejected;
     }
 
     /**

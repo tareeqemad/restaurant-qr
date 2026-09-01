@@ -3,13 +3,17 @@
 namespace App\Services;
 
 use App\Models\ActivityLog;
+use App\Models\IngredientUnit;
+use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\PurchaseReceiptItem;
-use App\Models\Shift;
+use App\Models\Supplier;
 use App\Models\SupplierInvoice;
 use App\Models\SupplierInvoiceItem;
 use App\Models\SupplierPayment;
 use App\Services\Accounting\AccountingService;
+use App\Support\BranchContext;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -25,47 +29,158 @@ class SupplierInvoiceService
     public function create(array $data, ?int $userId = null): SupplierInvoice
     {
         return DB::transaction(function () use ($data, $userId) {
+            $invoiceDate = $data['invoice_date'] ?? now()->toDateString();
+            $purchaseOrder = ! empty($data['purchase_order_id'])
+                ? PurchaseOrder::withoutGlobalScopes()->findOrFail($data['purchase_order_id'])
+                : null;
+
+            $branchId = $purchaseOrder?->branch_id
+                ?: ($data['branch_id'] ?? BranchContext::current());
+            $user = $userId ? \App\Models\User::find($userId) : null;
+            if (! $branchId && $user) {
+                $branchId = $user->primaryBranch()?->id
+                    ?? $user->branches()->value('branches.id');
+                if (! $branchId && $user->isOwnerLevel()) {
+                    $branchId = \App\Models\Branch::active()->orderBy('display_order')->value('id');
+                }
+            }
+            $branchId = (int) $branchId;
+            if (! $branchId || ! \App\Models\Branch::active()->whereKey($branchId)->exists()) {
+                throw ValidationException::withMessages([
+                    'branch_id' => 'اختر فرعاً نشطاً لتسجيل فاتورة المورد عليه.',
+                ]);
+            }
+            if ($user && ! $user->belongsToBranch($branchId)) {
+                throw ValidationException::withMessages([
+                    'branch_id' => 'لا تملك صلاحية تسجيل فاتورة مورد على هذا الفرع.',
+                ]);
+            }
+
+            $supplier = Supplier::whereKey($data['supplier_id'])->where('active', true)->firstOrFail();
+            if (! $supplier->branches()->where('branches.id', $branchId)->exists()) {
+                throw ValidationException::withMessages([
+                    'supplier_id' => 'المورد المختار غير مرتبط بهذا الفرع.',
+                ]);
+            }
+            if ($purchaseOrder) {
+                if ((int) $purchaseOrder->branch_id !== $branchId
+                    || (int) $purchaseOrder->supplier_id !== (int) $supplier->id) {
+                    throw ValidationException::withMessages([
+                        'purchase_order_id' => 'أمر الشراء لا يطابق المورد والفرع المحددين.',
+                    ]);
+                }
+                if (! in_array($purchaseOrder->status, ['received', 'partially_received'], true)) {
+                    throw ValidationException::withMessages([
+                        'purchase_order_id' => 'لا يمكن فوترة أمر شراء قبل تسجيل استلام فعلي عليه.',
+                    ]);
+                }
+            }
+            $exchangeRates = app(ExchangeRateService::class);
+            $baseCurrency = $exchangeRates->baseCurrencyCode();
+            $currencyCode = $exchangeRates->normalizeCode(
+                $data['currency_code'] ?? $purchaseOrder?->currency_code ?? $baseCurrency
+            );
+
+            if ($purchaseOrder
+                && $purchaseOrder->currency_code
+                && $exchangeRates->normalizeCode($purchaseOrder->currency_code) !== $currencyCode) {
+                throw ValidationException::withMessages([
+                    'currency_code' => 'عملة فاتورة المورد يجب أن تطابق عملة أمر الشراء المرتبط.',
+                ]);
+            }
+
+            $exchangeRate = $currencyCode === $baseCurrency
+                ? 1.0
+                : (float) ($data['exchange_rate'] ?? $exchangeRates->rateFor($currencyCode, $baseCurrency, $invoiceDate));
+
+            if ($exchangeRate <= 0) {
+                throw ValidationException::withMessages(['exchange_rate' => 'سعر الصرف يجب أن يكون أكبر من صفر.']);
+            }
+
             $lines = collect($data['lines'] ?? [])
                 ->filter(fn ($line) => trim((string) ($line['description'] ?? '')) !== '');
 
-            $linesSubtotal = $lines->sum(fn ($line) =>
-                (float) ($line['quantity'] ?? 0) * (float) ($line['unit_price'] ?? 0)
-            );
-            $linesTax = $lines->sum(fn ($line) => (float) ($line['tax_total'] ?? 0));
-
-            $subtotal = $lines->isNotEmpty() ? $linesSubtotal : (float) ($data['subtotal'] ?? 0);
-            $taxTotal = $lines->isNotEmpty() ? $linesTax : (float) ($data['tax_total'] ?? 0);
-            $total = (float) ($data['total'] ?? ($subtotal + $taxTotal));
-            $invoiceDate = $data['invoice_date'] ?? now()->toDateString();
-            $dueDate = $data['due_date'] ?? null;
-            if (! $dueDate && ! empty($data['supplier_id'])) {
-                $terms = \App\Models\Supplier::whereKey($data['supplier_id'])->value('payment_terms_days');
-                if ($terms !== null) {
-                    $dueDate = \Carbon\Carbon::parse($invoiceDate)->addDays((int) $terms)->toDateString();
+            foreach ($lines as $line) {
+                if ((float) ($line['quantity'] ?? 0) <= 0
+                    || (float) ($line['unit_price'] ?? 0) < 0
+                    || (float) ($line['tax_total'] ?? 0) < 0) {
+                    throw ValidationException::withMessages([
+                        'lines' => 'كل بند فاتورة يحتاج كمية موجبة وسعراً وضريبة غير سالبين.',
+                    ]);
+                }
+                if (! empty($line['ingredient_id']) && empty($line['purchase_order_item_id'])) {
+                    throw ValidationException::withMessages([
+                        'lines' => 'البند المخزني يجب أن يرتبط ببند مستلم من أمر شراء؛ الفاتورة وحدها لا تضيف مخزوناً.',
+                    ]);
                 }
             }
 
-            $invoice = SupplierInvoice::create([
-                'number'            => $data['number'],
-                'supplier_id'       => $data['supplier_id'],
+            $linesSubtotal = $lines->sum(fn ($line) => round(
+                (float) ($line['quantity'] ?? 0) * (float) ($line['unit_price'] ?? 0),
+                4
+            ));
+            $linesTax = $lines->sum(fn ($line) => (float) ($line['tax_total'] ?? 0));
+
+            $subtotal = round($lines->isNotEmpty() ? $linesSubtotal : (float) ($data['subtotal'] ?? 0), 4);
+            $taxTotal = round($lines->isNotEmpty() ? $linesTax : (float) ($data['tax_total'] ?? 0), 4);
+            $total = round($subtotal + $taxTotal, 4);
+            if ($subtotal < 0 || $taxTotal < 0 || $total <= 0) {
+                throw ValidationException::withMessages([
+                    'total' => 'إجمالي فاتورة المورد يجب أن يكون أكبر من صفر ومطابقاً لمجموع البنود والضريبة.',
+                ]);
+            }
+            $dueDate = $data['due_date'] ?? null;
+            if (! $dueDate && ! empty($data['supplier_id'])) {
+                $terms = $supplier->payment_terms_days;
+                if ($terms !== null) {
+                    $dueDate = Carbon::parse($invoiceDate)->addDays((int) $terms)->toDateString();
+                }
+            }
+
+            $invoice = new SupplierInvoice([
+                'number' => $data['number'],
+                'supplier_id' => $data['supplier_id'],
                 'purchase_order_id' => $data['purchase_order_id'] ?? null,
-                'subtotal'          => $subtotal,
-                'tax_total'         => $taxTotal,
-                'total'             => $total,
-                'balance'           => $total,
-                'status'            => 'unpaid',
-                'invoice_date'      => $invoiceDate,
-                'due_date'          => $dueDate,
-                'notes'             => $data['notes'] ?? null,
-                'attachment_path'   => $data['attachment_path'] ?? null,
-                'created_by'        => $userId,
+                'currency_code' => $currencyCode,
+                'exchange_rate' => $exchangeRate,
+                'subtotal' => $subtotal,
+                'tax_total' => $taxTotal,
+                'total' => $total,
+                'balance' => $total,
+                'status' => 'unpaid',
+                'invoice_date' => $invoiceDate,
+                'due_date' => $dueDate,
+                'notes' => $data['notes'] ?? null,
+                'attachment_path' => $data['attachment_path'] ?? null,
+                'created_by' => $userId,
             ]);
+            $invoice->branch_id = $branchId;
+            $invoice->save();
 
             if ($lines->isNotEmpty()) {
                 $poItemIds = $lines->pluck('purchase_order_item_id')->filter()->map(fn ($id) => (int) $id)->all();
                 $poItems = $poItemIds
-                    ? PurchaseOrderItem::with('ingredient', 'unit')->whereIn('id', $poItemIds)->get()->keyBy('id')
+                    ? PurchaseOrderItem::with('ingredient', 'unit', 'ingredientUnit', 'purchaseOrder')
+                        ->whereIn('id', $poItemIds)->get()->keyBy('id')
                     : collect();
+
+                if ($purchaseOrder && count($poItemIds) !== $lines->count()) {
+                    throw ValidationException::withMessages([
+                        'lines' => 'كل بند في فاتورة أمر الشراء يجب أن يرتبط ببند من الأمر نفسه.',
+                    ]);
+                }
+                if (count($poItemIds) !== $poItems->count()) {
+                    throw ValidationException::withMessages([
+                        'lines' => 'أحد بنود أمر الشراء غير موجود أو غير متاح.',
+                    ]);
+                }
+                foreach ($poItems as $poItem) {
+                    if (! $purchaseOrder || (int) $poItem->purchase_order_id !== (int) $purchaseOrder->id) {
+                        throw ValidationException::withMessages([
+                            'lines' => 'لا يمكن خلط بنود من أوامر شراء مختلفة في فاتورة واحدة.',
+                        ]);
+                    }
+                }
 
                 // How much of each PO line has ALREADY been billed on earlier
                 // (non-cancelled) invoices. The variance must compare this
@@ -77,7 +192,9 @@ class SupplierInvoiceService
                     ? SupplierInvoiceItem::whereIn('purchase_order_item_id', $poItemIds)
                         ->whereHas('supplierInvoice', fn ($q) => $q->where('status', '!=', 'cancelled'))
                         ->groupBy('purchase_order_item_id')
-                        ->selectRaw('purchase_order_item_id, SUM(quantity) as qty')
+                        // received_qty is stored in the PO line's natural unit,
+                        // unlike quantity which may be cartons/cans on the bill.
+                        ->selectRaw('purchase_order_item_id, SUM(COALESCE(received_qty, quantity)) as qty')
                         ->pluck('qty', 'purchase_order_item_id')
                     : collect();
 
@@ -91,7 +208,7 @@ class SupplierInvoiceService
                 $receiptActuals = $poItemIds
                     ? PurchaseReceiptItem::whereIn('purchase_order_item_id', $poItemIds)
                         ->groupBy('purchase_order_item_id')
-                        ->selectRaw('purchase_order_item_id, SUM(subtotal) as total, SUM(quantity_received) as qty')
+                        ->selectRaw('purchase_order_item_id, SUM(subtotal) as total, SUM(quantity_received) as qty, SUM(quantity_in_base * unit_price_in_base) as base_total')
                         ->get()
                         ->keyBy('purchase_order_item_id')
                     : collect();
@@ -100,6 +217,12 @@ class SupplierInvoiceService
                     $poItem = ! empty($line['purchase_order_item_id'])
                         ? $poItems->get((int) $line['purchase_order_item_id'])
                         : null;
+
+                    if (! empty($line['purchase_order_item_id']) && ! $poItem) {
+                        throw ValidationException::withMessages([
+                            'lines' => 'بند الفاتورة لا ينتمي إلى أمر الشراء المحدد.',
+                        ]);
+                    }
 
                     $qty = (float) ($line['quantity'] ?? 0);
                     $unitPrice = (float) ($line['unit_price'] ?? 0);
@@ -114,11 +237,11 @@ class SupplierInvoiceService
                     // Unit factors — the PO line and the invoice line may use
                     // different pack sizes (24-can cartons vs single cans), so
                     // every quantity comparison below normalizes to base units.
-                    $poFactor  = $poItem && $poItem->ingredient_unit_id && $poItem->ingredientUnit
+                    $poFactor = $poItem && $poItem->ingredient_unit_id && $poItem->ingredientUnit
                         ? (float) $poItem->ingredientUnit->factor_to_base
                         : 1.0;
                     $invFactor = ! empty($line['ingredient_unit_id'])
-                        ? (float) (\App\Models\IngredientUnit::find($line['ingredient_unit_id'])?->factor_to_base ?? 1.0)
+                        ? (float) (IngredientUnit::find($line['ingredient_unit_id'])?->factor_to_base ?? 1.0)
                         : 1.0;
 
                     // You can only bill (and clear GRNI 2300 for) goods that were
@@ -146,10 +269,13 @@ class SupplierInvoiceService
                     // fall back to the PO price only when nothing was received yet
                     // (which preserves the original behaviour for un-overridden POs).
                     $actualUnitValue = $poItem ? (float) $poItem->unit_price : 0.0;
+                    $actualUnitBaseValue = $actualUnitValue * (float) ($poItem?->purchaseOrder?->exchange_rate ?: 1);
                     if ($poItem && ($ra = $receiptActuals->get($poItem->id)) && (float) $ra->qty > 0.0001) {
                         $actualUnitValue = (float) $ra->total / (float) $ra->qty;
+                        $actualUnitBaseValue = (float) $ra->base_total / (float) $ra->qty;
                     }
                     $receivedTotal = $receivedQty !== null ? round($receivedQty * $actualUnitValue, 4) : null;
+                    $receivedBaseTotal = $receivedQty !== null ? round($receivedQty * $actualUnitBaseValue, 4) : null;
 
                     // Quantity variance for display — in the natural unit when
                     // both sides match, else normalized to base units.
@@ -176,6 +302,7 @@ class SupplierInvoiceService
                         'total' => $lineTotal,
                         'received_qty' => $receivedQty,
                         'received_total' => $receivedTotal,
+                        'received_base_total' => $receivedBaseTotal,
                         'variance_qty' => $varianceQty,
                         'variance_total' => $receivedTotal !== null ? $lineTotal - $receivedTotal : null,
                         'notes' => $line['notes'] ?? null,
@@ -197,34 +324,57 @@ class SupplierInvoiceService
 
     public function recordPayment(SupplierInvoice $invoice, array $data, int $userId): SupplierPayment
     {
-        if ($invoice->status === 'cancelled') {
-            throw ValidationException::withMessages(['status' => 'لا يمكن تسديد فاتورة ملغاة.']);
-        }
         $amount = (float) ($data['amount'] ?? 0);
         if ($amount <= 0) {
             throw ValidationException::withMessages(['amount' => 'قيمة الدفعة يجب أن تكون أكبر من صفر.']);
         }
-        $balance = (float) $invoice->balance;
-        if ($amount > $balance + 0.0001) {
+
+        $method = $data['method'] ?? 'cash';
+        if (! in_array($method, ['cash', 'bank_transfer'], true)) {
             throw ValidationException::withMessages([
-                'amount' => "قيمة الدفعة ({$amount}) أكبر من المتبقي (".number_format($balance, 2).").",
+                'method' => 'الطرق المتاحة لسداد المورد هي النقد أو التحويل البنكي المباشر فقط.',
             ]);
         }
 
-        return DB::transaction(function () use ($invoice, $data, $amount, $userId) {
-            $shiftId = $data['shift_id'] ?? Shift::where('user_id', $userId)
-                ->whereNull('closed_at')
-                ->latest('opened_at')
-                ->value('id');
+        return DB::transaction(function () use ($invoice, $data, $amount, $userId, $method) {
+            // Re-read the live balance under a row lock. Two cashiers using
+            // stale screens can no longer overpay the same supplier invoice.
+            $invoice = SupplierInvoice::withoutGlobalScopes()
+                ->whereKey($invoice->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            if ($invoice->status === 'cancelled') {
+                throw ValidationException::withMessages(['status' => 'لا يمكن تسديد فاتورة ملغاة.']);
+            }
+            $balance = (float) $invoice->balance;
+            if ($amount > $balance + 0.0001) {
+                throw ValidationException::withMessages([
+                    'amount' => "قيمة الدفعة ({$amount}) أكبر من المتبقي (".number_format($balance, 2).').',
+                ]);
+            }
+
+            $paidOn = $data['paid_on'] ?? now()->toDateString();
+            $exchangeRates = app(ExchangeRateService::class);
+            $baseCurrency = $exchangeRates->baseCurrencyCode();
+            $currencyCode = $exchangeRates->normalizeCode($invoice->currency_code ?: $baseCurrency);
+            $exchangeRate = $currencyCode === $baseCurrency
+                ? 1.0
+                : (float) ($data['exchange_rate'] ?? $exchangeRates->rateFor($currencyCode, $baseCurrency, $paidOn));
+            if ($exchangeRate <= 0) {
+                throw ValidationException::withMessages([
+                    'exchange_rate' => 'سعر صرف دفعة المورد يجب أن يكون أكبر من صفر.',
+                ]);
+            }
 
             $payment = $invoice->payments()->create([
-                'amount'    => $amount,
-                'method'    => $data['method']    ?? 'cash',
+                'amount' => $amount,
+                'currency_code' => $currencyCode,
+                'exchange_rate' => $exchangeRate,
+                'method' => $method,
                 'reference' => $data['reference'] ?? null,
-                'paid_on'   => $data['paid_on']   ?? now()->toDateString(),
-                'notes'     => $data['notes']     ?? null,
-                'paid_by'   => $userId,
-                'shift_id'  => $shiftId,
+                'paid_on' => $paidOn,
+                'notes' => $data['notes'] ?? null,
+                'paid_by' => $userId,
             ]);
 
             $invoice->recomputeBalance();
@@ -243,20 +393,39 @@ class SupplierInvoiceService
 
     public function cancel(SupplierInvoice $invoice, string $reason, int $userId): SupplierInvoice
     {
-        if ($invoice->payments()->exists()) {
-            throw ValidationException::withMessages([
-                'status' => 'لا يمكن إلغاء فاتورة عليها دفعات. احذف الدفعات أولاً.',
-            ]);
-        }
-
         return DB::transaction(function () use ($invoice, $reason, $userId) {
+            $invoice = SupplierInvoice::withoutGlobalScopes()
+                ->whereKey($invoice->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            if ($invoice->status === 'cancelled') {
+                throw ValidationException::withMessages(['status' => 'الفاتورة ملغاة مسبقاً.']);
+            }
+            if ($invoice->payments()->lockForUpdate()->first()) {
+                throw ValidationException::withMessages([
+                    'status' => 'لا يمكن إلغاء فاتورة عليها دفعات. اعكس الدفعات أولاً من مسار محاسبي معتمد.',
+                ]);
+            }
+
             $invoice->update([
-                'status'       => 'cancelled',
+                'status' => 'cancelled',
                 'cancelled_at' => now(),
-                'notes'        => trim(($invoice->notes ?? '').' | إلغاء: '.$reason),
+                'notes' => trim(($invoice->notes ?? '').' | إلغاء: '.$reason),
             ]);
             ActivityLog::log('supplier_invoice.cancelled', "إلغاء فاتورة مورد {$invoice->number}: {$reason}", $invoice);
-            app(AccountingService::class)->reverseSupplierInvoiceCreated($invoice, $userId, $reason);
+            if ($invoice->is_opening_balance) {
+                app(AccountingService::class)->reverse(
+                    eventType: 'supplier_opening_debt_cancelled',
+                    source: $invoice,
+                    originalEventType: 'supplier_opening_debt',
+                    postedOn: now(),
+                    description: "عكس رصيد افتتاحي لمورد {$invoice->number}",
+                    createdBy: $userId,
+                    metadata: ['reason' => $reason],
+                );
+            } else {
+                app(AccountingService::class)->reverseSupplierInvoiceCreated($invoice, $userId, $reason);
+            }
 
             return $invoice->fresh();
         });

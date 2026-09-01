@@ -12,6 +12,7 @@ class AccountingPeriod extends Model
 
     protected $fillable = [
         'branch_id',
+        'fiscal_year_id',
         'name',
         'starts_on',
         'ends_on',
@@ -31,6 +32,11 @@ class AccountingPeriod extends Model
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    public function fiscalYear(): BelongsTo
+    {
+        return $this->belongsTo(FiscalYear::class);
     }
 
     public function closer(): BelongsTo

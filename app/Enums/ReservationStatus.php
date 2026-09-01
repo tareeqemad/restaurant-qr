@@ -55,7 +55,7 @@ enum ReservationStatus: string
         };
     }
 
-    /** Reservations a customer can still cancel from the portal. */
+    /** Reservations a customer can still cancel through a customer-facing channel. */
     public function isCancellableByCustomer(): bool
     {
         return in_array($this, [self::Pending, self::Confirmed], true);

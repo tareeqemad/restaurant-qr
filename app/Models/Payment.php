@@ -17,12 +17,21 @@ class Payment extends Model
     // not from BranchContext, since payments arrive from contexts where
     // the active branch may differ from the invoice's branch (queue
     // workers, customer portal paying for a takeaway).
-    protected $fillable = ['branch_id', 'invoice_id', 'method', 'amount', 'reference', 'received_by_user_id', 'shift_id', 'notes', 'paid_at'];
+    protected $fillable = [
+        'branch_id', 'invoice_id', 'method', 'amount', 'status', 'reference',
+        'received_by_user_id', 'notes', 'paid_at', 'voided_at', 'voided_by', 'void_reason',
+    ];
 
     protected $casts = [
         'amount' => 'decimal:2',
         'paid_at' => 'datetime',
+        'voided_at' => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        static::addGlobalScope('posted', fn ($query) => $query->where($query->qualifyColumn('status'), 'posted'));
+    }
 
     public function invoice(): BelongsTo
     {
@@ -34,8 +43,9 @@ class Payment extends Model
         return $this->belongsTo(User::class, 'received_by_user_id');
     }
 
-    public function shift(): BelongsTo
+    public function voider(): BelongsTo
     {
-        return $this->belongsTo(Shift::class);
+        return $this->belongsTo(User::class, 'voided_by');
     }
+
 }

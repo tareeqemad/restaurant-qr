@@ -9,7 +9,7 @@ class OrderPolicy extends BasePolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->hasAnyRole(['admin', 'manager', 'waiter', 'cashier', 'chef', 'bartender']);
+        return $user->hasPermission('orders.viewAny');
     }
 
     /**
@@ -19,8 +19,7 @@ class OrderPolicy extends BasePolicy
      */
     public function archive(User $user): bool
     {
-        return $user->hasAnyRole(['admin', 'manager', 'cashier'])
-            || $user->hasPermission('orders.archive');
+        return $user->hasPermission('orders.archive');
     }
 
     public function view(User $user, Order $order): bool
@@ -31,51 +30,51 @@ class OrderPolicy extends BasePolicy
 
     public function create(User $user): bool
     {
-        return $user->hasAnyRole(['admin', 'manager', 'waiter', 'cashier'])
-            || $user->hasPermission('orders.create');
+        return $user->hasPermission('orders.create');
     }
 
     public function approve(User $user, Order $order): bool
     {
-        return ($this->canManageFloorOrders($user) || $this->canManageCashierOrder($user, $order))
+        return $user->hasPermission('orders.approve')
+            && $this->withinCashierScope($user, $order)
             && $this->inUserBranch($user, $order);
     }
 
     public function cancel(User $user, Order $order): bool
     {
-        return ($this->canManageFloorOrders($user) || $this->canManageCashierOrder($user, $order))
+        return $user->hasPermission('orders.cancel')
+            && $this->withinCashierScope($user, $order)
             && $this->inUserBranch($user, $order);
     }
 
     public function edit(User $user, Order $order): bool
     {
-        return ($this->canManageFloorOrders($user) || $this->canManageCashierOrder($user, $order))
+        return $user->hasPermission('orders.edit')
+            && $this->withinCashierScope($user, $order)
             && $order->isEditable()
             && $this->inUserBranch($user, $order);
     }
 
     public function serve(User $user, Order $order): bool
     {
-        return $user->hasAnyRole(['admin', 'manager', 'waiter'])
+        return $user->hasPermission('orders.serve')
             && ! in_array($order->status, ['cancelled', 'completed'], true)
             && $this->inUserBranch($user, $order);
     }
 
     public function delete(User $user, Order $order): bool
     {
-        return ($user->isAdmin() || $user->isManager())
+        return $user->hasPermission('orders.delete')
             && $this->inUserBranch($user, $order);
     }
 
-    private function canManageFloorOrders(User $user): bool
+    private function withinCashierScope(User $user, Order $order): bool
     {
-        return $user->hasAnyRole(['admin', 'manager', 'waiter']);
-    }
+        if (! $user->isCashier()) {
+            return true;
+        }
 
-    private function canManageCashierOrder(User $user, Order $order): bool
-    {
-        return $user->hasAnyRole(['cashier'])
-            && $order->table_session_id === null
+        return $order->table_session_id === null
             && in_array($order->order_type, ['takeaway', 'delivery'], true);
     }
 }

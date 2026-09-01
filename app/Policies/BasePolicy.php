@@ -78,7 +78,7 @@ abstract class BasePolicy
             return (int) $model->branch_id;
         }
 
-        foreach (['invoice', 'order', 'shift', 'purchaseOrder', 'stockCount'] as $relation) {
+        foreach (['invoice', 'order', 'purchaseOrder', 'stockCount'] as $relation) {
             if (method_exists($model, $relation) && ($parent = $model->{$relation})) {
                 if (isset($parent->branch_id)) {
                     return (int) $parent->branch_id;

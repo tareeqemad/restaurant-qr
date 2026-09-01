@@ -13,11 +13,6 @@ class RuntimeConfig
             return;
         }
 
-        $market = Setting::get('market_profile');
-        if (Setting::get('setup_completed', false) && is_string($market) && array_key_exists($market, config('market.profiles', []))) {
-            config(['market.profile' => $market]);
-        }
-
         static::applyString('restaurant.menu_base_url', 'menu_base_url');
         static::applyString('restaurant.currency', 'sales_currency');
         static::applyString('restaurant.currency_symbol', 'currency_symbol');
@@ -30,10 +25,6 @@ class RuntimeConfig
         static::applyString('sync.branch_uuid', 'sync_branch_uuid');
         config(['sync.accept_token' => config('sync.token')]);
 
-        static::applyBool('license.enabled', 'license_enabled');
-        static::applyString('license.role', 'license_role');
-        static::applyString('license.cloud_url', 'license_cloud_url');
-        static::applyString('license.key', 'license_key');
     }
 
     private static function applyString(string $configKey, string $settingKey): void

@@ -19,7 +19,7 @@ class ReservationPolicy extends BasePolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->hasAnyRole(['admin', 'manager', 'waiter', 'cashier']);
+        return $user->hasPermission('reservations.viewAny');
     }
 
     public function view(User $user, Reservation $reservation): bool
@@ -30,37 +30,37 @@ class ReservationPolicy extends BasePolicy
 
     public function confirm(User $user, Reservation $reservation): bool
     {
-        return $user->hasAnyRole(['admin', 'manager', 'waiter'])
+        return $user->hasPermission('reservations.confirm')
             && $this->inUserBranch($user, $reservation);
     }
 
     public function seat(User $user, Reservation $reservation): bool
     {
-        return $user->hasAnyRole(['admin', 'manager', 'waiter'])
+        return $user->hasPermission('reservations.seat')
             && $this->inUserBranch($user, $reservation);
     }
 
     public function complete(User $user, Reservation $reservation): bool
     {
-        return $user->hasAnyRole(['admin', 'manager', 'waiter'])
+        return $user->hasPermission('reservations.complete')
             && $this->inUserBranch($user, $reservation);
     }
 
     public function cancel(User $user, Reservation $reservation): bool
     {
-        return $user->hasAnyRole(['admin', 'manager'])
+        return $user->hasPermission('reservations.cancel')
             && $this->inUserBranch($user, $reservation);
     }
 
     public function noShow(User $user, Reservation $reservation): bool
     {
-        return $user->hasAnyRole(['admin', 'manager'])
+        return $user->hasPermission('reservations.no_show')
             && $this->inUserBranch($user, $reservation);
     }
 
     public function update(User $user, Reservation $reservation): bool
     {
-        return $user->hasAnyRole(['admin', 'manager'])
+        return $user->hasPermission('reservations.update')
             && $this->inUserBranch($user, $reservation);
     }
 }

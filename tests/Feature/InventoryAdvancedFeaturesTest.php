@@ -54,6 +54,7 @@ class InventoryAdvancedFeaturesTest extends TestCase
         BranchContext::set($this->branch->id);
 
         Role::create(['name' => 'admin', 'label' => 'Admin', 'is_system' => true]);
+        $this->seed(\Database\Seeders\PermissionSeeder::class);
         $this->admin = User::create([
             'name' => 'Admin', 'username' => 'admin_t', 'password' => bcrypt('x'),
             'status' => 'active', 'primary_branch_id' => $this->branch->id, 'role' => 'admin',

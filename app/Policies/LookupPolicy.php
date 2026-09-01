@@ -18,23 +18,23 @@ class LookupPolicy extends BasePolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->isAdmin() || $user->hasPermission('lookups.viewAny');
+        return $user->hasPermission('lookups.viewAny');
     }
 
     public function create(User $user): bool
     {
-        return $user->isAdmin() || $user->hasPermission('lookups.create');
+        return $user->hasPermission('lookups.create');
     }
 
     public function update(User $user, Lookup $lookup): bool
     {
-        return $user->isAdmin() || $user->hasPermission('lookups.update');
+        return $user->hasPermission('lookups.update');
     }
 
     public function delete(User $user, Lookup $lookup): bool
     {
         // Even admin can't hard-delete a system row — controller catches
         // this and returns a 422; the policy only governs *attempting*.
-        return $user->isAdmin() || $user->hasPermission('lookups.delete');
+        return $user->hasPermission('lookups.delete');
     }
 }

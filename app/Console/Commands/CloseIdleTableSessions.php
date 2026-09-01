@@ -9,8 +9,8 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Auto-closes table sessions that have been idle beyond the configured
- * window (default: restaurant.order.session_idle_close_minutes = 240).
+ * Auto-closes abandoned QR drafts quickly while keeping a separate, longer
+ * safety window for real table visits.
  *
  * Without this sweep the only expiry the QR session ever had was the
  * CUSTOMER's cookie lifetime — the server-side row stayed `active`
@@ -35,39 +35,48 @@ use Illuminate\Support\Facades\Log;
 class CloseIdleTableSessions extends Command
 {
     protected $signature   = 'table-sessions:close-idle
-                              {--minutes= : Idle threshold in minutes (defaults to restaurant.order.session_idle_close_minutes)}
+                              {--minutes= : Override both idle thresholds in minutes}
                               {--dry-run : Report what would close without writing}';
 
-    protected $description = 'Close zero-exposure table sessions idle beyond the configured window (default 240 min)';
+    protected $description = 'Close idle QR drafts and zero-exposure table visits using separate thresholds';
 
     public function handle(BillingService $billing): int
     {
-        $minutes = (int) ($this->option('minutes')
-            ?: config('restaurant.order.session_idle_close_minutes', 240));
-        $minutes = max(1, $minutes);
+        $override = $this->option('minutes');
+        $browseMinutes = max(1, (int) ($override
+            ?: config('restaurant.order.browsing_session_idle_minutes', 20)));
+        $engagedMinutes = max(1, (int) ($override
+            ?: config('restaurant.order.session_idle_close_minutes', 240)));
         $dryRun  = (bool) $this->option('dry-run');
 
-        $threshold = now()->subMinutes($minutes);
+        $earliestThreshold = now()->subMinutes(min($browseMinutes, $engagedMinutes));
 
         // Last activity falls back to opened_at for legacy rows created
         // before the last_activity_at column existed.
         $query = TableSession::query()
             ->where('status', 'active')
-            ->where(function ($q) use ($threshold) {
-                $q->where('last_activity_at', '<=', $threshold)
-                  ->orWhere(function ($q2) use ($threshold) {
+            ->where(function ($q) use ($earliestThreshold) {
+                $q->where('last_activity_at', '<=', $earliestThreshold)
+                  ->orWhere(function ($q2) use ($earliestThreshold) {
                       $q2->whereNull('last_activity_at')
-                         ->where('opened_at', '<=', $threshold);
+                         ->where('opened_at', '<=', $earliestThreshold);
                   });
             });
 
         $closed  = 0;
         $skipped = [];   // table labels with money still on them
-        $reason  = "إغلاق تلقائي — تجاوزت الجلسة حد الخمول ({$minutes} دقيقة) بدون نشاط";
-
-        $query->orderBy('id')->chunkById(100, function ($sessions) use ($billing, $dryRun, $reason, &$closed, &$skipped) {
+        $query->orderBy('id')->chunkById(100, function ($sessions) use ($billing, $dryRun, $browseMinutes, $engagedMinutes, &$closed, &$skipped) {
             foreach ($sessions as $session) {
-                $idle = Duration::since($session->last_activity_at ?? $session->opened_at);
+                $lastActivity = $session->last_activity_at ?? $session->opened_at;
+                $minutes = $session->engaged_at ? $engagedMinutes : $browseMinutes;
+                if (! $lastActivity || $lastActivity->gt(now()->subMinutes($minutes))) {
+                    continue;
+                }
+
+                $idle = Duration::since($lastActivity);
+                $reason = $session->engaged_at
+                    ? "إغلاق تلقائي — تجاوزت الزيارة حد الخمول ({$minutes} دقيقة) بدون مستحقات"
+                    : "إغلاق تلقائي — انتهت مهلة تصفح QR ({$minutes} دقيقة) بدون طلب";
 
                 if (! $billing->isZeroExposure($session)) {
                     $skipped[] = $session->tableLabel();
@@ -102,7 +111,7 @@ class CloseIdleTableSessions extends Command
         if ($dryRun) {
             $this->warn("وضع التجربة (--dry-run): {$closed} جلسة كانت ستُغلق — لم يتم حفظ أي تغييرات.");
         } elseif ($closed === 0 && $skipped === []) {
-            $this->info("لا توجد جلسات خاملة تجاوزت {$minutes} دقيقة.");
+            $this->info("لا توجد مسودات تجاوزت {$browseMinutes} دقيقة أو زيارات تجاوزت {$engagedMinutes} دقيقة.");
         } else {
             $this->info("تم إغلاق {$closed} جلسة خاملة.");
         }

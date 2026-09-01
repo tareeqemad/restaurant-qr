@@ -7,11 +7,14 @@ use App\Models\Branch;
 use App\Models\Category;
 use App\Models\Ingredient;
 use App\Models\IngredientStock;
+use App\Models\InventoryMovement;
+use App\Models\JournalEntry;
 use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\RecipeItem;
 use App\Models\Role;
+use App\Models\Setting;
 use App\Models\StaffMealCharge;
 use App\Models\Station;
 use App\Models\StorageLocation;
@@ -37,9 +40,13 @@ class StaffMealAllowanceTest extends TestCase
     use RefreshDatabase;
 
     protected Branch $branch;
+
     protected User $manager;
+
     protected User $employee;
+
     protected MenuItem $burger;
+
     protected Table $table;
 
     protected function setUp(): void
@@ -49,9 +56,9 @@ class StaffMealAllowanceTest extends TestCase
         // Tax off — most tests assert exact money math.
         // Service ON so we can prove the staff-meal flow strips it
         // back out (see `service_is_excluded_from_staff_charge`).
-        \App\Models\Setting::put('tax_enabled',     false, 'billing', 'bool');
-        \App\Models\Setting::put('service_enabled', true,  'billing', 'bool');
-        \App\Models\Setting::put('service_rate',    10,    'billing', 'float');
+        Setting::put('tax_enabled', false, 'billing', 'bool');
+        Setting::put('service_enabled', true, 'billing', 'bool');
+        Setting::put('service_rate', 10, 'billing', 'float');
 
         $this->branch = Branch::create(['code' => 'sm', 'name' => 'SM', 'is_active' => true]);
         BranchContext::set($this->branch->id);
@@ -62,25 +69,25 @@ class StaffMealAllowanceTest extends TestCase
         $this->employee = $this->staff('emp_t', 'waiter');
         $this->employee->update(['monthly_meal_allowance' => 500]);
 
-        $gram = Unit::create(['code'=>'g','name'=>'g','unit_type'=>'weight','factor_to_base'=>1,'is_base'=>true]);
-        $pcs  = Unit::create(['code'=>'pcs','name'=>'pcs','unit_type'=>'count','factor_to_base'=>1,'is_base'=>true]);
-        $storage = StorageLocation::create(['branch_id'=>$this->branch->id,'code'=>'k','name'=>'K','is_default'=>true,'active'=>true]);
-        $kitchen = Station::create(['code'=>'kitchen','name'=>'Kitchen','storage_location_id'=>$storage->id,'active'=>true]);
-        $category = Category::create(['slug'=>'mains','name'=>'Mains','default_station_id'=>$kitchen->id,'active'=>true]);
+        $gram = Unit::create(['code' => 'g', 'name' => 'g', 'unit_type' => 'weight', 'factor_to_base' => 1, 'is_base' => true]);
+        $pcs = Unit::create(['code' => 'pcs', 'name' => 'pcs', 'unit_type' => 'count', 'factor_to_base' => 1, 'is_base' => true]);
+        $storage = StorageLocation::create(['branch_id' => $this->branch->id, 'code' => 'k', 'name' => 'K', 'is_default' => true, 'active' => true]);
+        $kitchen = Station::create(['code' => 'kitchen', 'name' => 'Kitchen', 'storage_location_id' => $storage->id, 'active' => true]);
+        $category = Category::create(['slug' => 'mains', 'name' => 'Mains', 'default_station_id' => $kitchen->id, 'active' => true]);
 
         $patty = Ingredient::create([
-            'name'=>'Patty','base_unit_id'=>$gram->id,'current_stock'=>10000,
-            'reorder_threshold'=>0,'cost_per_unit'=>1,'track_stock'=>true,'active'=>true,
+            'name' => 'Patty', 'base_unit_id' => $gram->id, 'current_stock' => 10000,
+            'reorder_threshold' => 0, 'cost_per_unit' => 1, 'track_stock' => true, 'active' => true,
         ]);
-        IngredientStock::create(['ingredient_id'=>$patty->id,'storage_location_id'=>$storage->id,'quantity'=>10000,'reorder_threshold'=>0]);
+        IngredientStock::create(['ingredient_id' => $patty->id, 'storage_location_id' => $storage->id, 'quantity' => 10000, 'reorder_threshold' => 0]);
 
         $this->burger = MenuItem::create([
-            'category_id'=>$category->id,'station_id'=>$kitchen->id,
-            'sku'=>'B-1','slug'=>'burger','name'=>'Burger','price'=>100,'is_available'=>true,
+            'category_id' => $category->id, 'station_id' => $kitchen->id,
+            'sku' => 'B-1', 'slug' => 'burger', 'name' => 'Burger', 'price' => 100, 'is_available' => true,
         ]);
-        RecipeItem::create(['menu_item_id'=>$this->burger->id,'ingredient_id'=>$patty->id,'quantity'=>100,'unit_id'=>$gram->id]);
+        RecipeItem::create(['menu_item_id' => $this->burger->id, 'ingredient_id' => $patty->id, 'quantity' => 100, 'unit_id' => $gram->id]);
 
-        $this->table = Table::create(['number'=>'1','capacity'=>4,'status'=>'occupied','active'=>true]);
+        $this->table = Table::create(['number' => '1', 'capacity' => 4, 'status' => 'occupied', 'active' => true]);
     }
 
     protected function tearDown(): void
@@ -97,10 +104,14 @@ class StaffMealAllowanceTest extends TestCase
 
         $charge = app(StaffMealService::class)->chargeOrder($order, $this->manager->id);
 
-        $this->assertSame(200.0, (float) $charge->amount);
+        $this->assertSame(0.0, (float) $charge->amount,
+            'The monthly allowance covers the meal; no employee receivable is created.');
         $this->assertSame($this->employee->id, $charge->user_id);
         $this->assertSame($order->id, $charge->order_id);
-        $this->assertNull($charge->settled_at, 'New charge starts OPEN (counts toward the tab).');
+        $this->assertNotNull($charge->settled_at);
+        $this->assertSame('allowance', $charge->settlement_method);
+        $this->assertSame(200.0, $charge->consumptionAmount());
+        $this->assertSame(200.0, $charge->coveredAmount());
 
         $this->assertSame(200.0, $this->employee->fresh()->staffMealUsedInMonth());
         $this->assertSame(300.0, $this->employee->fresh()->staffMealRemainingThisMonth());
@@ -111,7 +122,7 @@ class StaffMealAllowanceTest extends TestCase
         $this->actingAs($this->manager);
 
         $order = $this->placeStaffOrder($this->employee, qty: 1);
-        $first  = app(StaffMealService::class)->chargeOrder($order);
+        $first = app(StaffMealService::class)->chargeOrder($order);
         $second = app(StaffMealService::class)->chargeOrder($order->fresh());
 
         $this->assertSame($first->id, $second->id,
@@ -133,24 +144,26 @@ class StaffMealAllowanceTest extends TestCase
             'Remaining goes negative when the cap is exceeded.');
         $this->assertSame(100.0, (float) $summary['overflow'],
             'Overflow = used − allowance, clamped at zero.');
-        $this->assertSame(600.0, (float) $summary['outstanding'],
-            'Entire tab is open (nothing settled yet).');
+        $this->assertSame(100.0, (float) $summary['outstanding'],
+            'Only the portion above the allowance becomes employee debt.');
+        $this->assertSame(500.0, (float) $summary['covered']);
     }
 
     public function test_settle_walks_open_charges_fifo(): void
     {
         $this->actingAs($this->manager);
+        $this->employee->update(['monthly_meal_allowance' => 0]);
 
         // Three charges over time: 100, 200, 150 — total open 450.
-        foreach ([1, 2, 1] as $i => $qty) {
+        foreach ([1, 2, 2] as $i => $qty) {
             $order = $this->placeStaffOrder($this->employee, qty: $qty);
             app(StaffMealService::class)->chargeOrder($order);
             // Backdate the charge so FIFO ordering is deterministic
             // (else they'd all share the same now() timestamp).
             StaffMealCharge::where('order_id', $order->id)
-                ->update(['amount' => 100 * $qty + ($i === 2 ? 50 : 0), 'charged_at' => now()->subDays(3 - $i)]);
+                ->update(['charged_at' => now()->subDays(3 - $i)]);
         }
-        $this->assertSame(450.0, $this->employee->fresh()->staffMealOutstanding());
+        $this->assertSame(500.0, $this->employee->fresh()->staffMealOutstanding());
 
         // Pay 250 cash → fully settles charge #1 (100), fully settles
         // charge #2 (200) → leftover -50, so it should split charge #2
@@ -163,7 +176,7 @@ class StaffMealAllowanceTest extends TestCase
             settledByUserId: $this->manager->id,
         );
 
-        $this->assertSame(200.0, $this->employee->fresh()->staffMealOutstanding(),
+        $this->assertSame(250.0, $this->employee->fresh()->staffMealOutstanding(),
             '450 − 250 = 200 should remain open.');
 
         // The oldest charge (100) is fully settled.
@@ -183,7 +196,7 @@ class StaffMealAllowanceTest extends TestCase
     public function test_service_charge_is_excluded_from_staff_meal_amount_by_default(): void
     {
         $this->actingAs($this->manager);
-        \App\Models\Setting::put('staff_meal_include_service', false, 'staff_meals', 'bool');
+        Setting::put('staff_meal_include_service', false, 'staff_meals', 'bool');
 
         $order = $this->placeStaffOrder($this->employee, qty: 1);
         $this->assertGreaterThan(0, (float) $order->fresh()->service_total,
@@ -193,8 +206,9 @@ class StaffMealAllowanceTest extends TestCase
 
         $charge = app(StaffMealService::class)->chargeOrder($order);
 
-        $this->assertSame(100.0, (float) $charge->amount,
-            'With include_service=false, the tab is charged subtotal only.');
+        $this->assertSame(0.0, (float) $charge->amount);
+        $this->assertSame(100.0, $charge->consumptionAmount(),
+            'The allowance uses the service-free nominal value.');
         $this->assertSame(0.0, (float) $order->fresh()->service_total,
             'Order itself ends up service-free so reports / payroll match the tab.');
     }
@@ -206,13 +220,14 @@ class StaffMealAllowanceTest extends TestCase
     public function test_service_charge_is_kept_when_setting_is_enabled(): void
     {
         $this->actingAs($this->manager);
-        \App\Models\Setting::put('staff_meal_include_service', true, 'staff_meals', 'bool');
+        Setting::put('staff_meal_include_service', true, 'staff_meals', 'bool');
 
         $order = $this->placeStaffOrder($this->employee, qty: 1);
         $charge = app(StaffMealService::class)->chargeOrder($order);
 
-        $this->assertSame(110.0, (float) $charge->amount,
-            'With include_service=true, the tab gets the full total (incl. service).');
+        $this->assertSame(0.0, (float) $charge->amount);
+        $this->assertSame(110.0, $charge->consumptionAmount(),
+            'With include_service=true, the allowance uses the full total.');
         $this->assertGreaterThan(0, (float) $order->fresh()->service_total,
             'Order keeps the original service_total — operator chose to pool it.');
     }
@@ -220,6 +235,7 @@ class StaffMealAllowanceTest extends TestCase
     public function test_settle_refuses_overpayment(): void
     {
         $this->actingAs($this->manager);
+        $this->employee->update(['monthly_meal_allowance' => 0]);
         $order = $this->placeStaffOrder($this->employee, qty: 1);   // 100
         app(StaffMealService::class)->chargeOrder($order);
 
@@ -247,9 +263,10 @@ class StaffMealAllowanceTest extends TestCase
             recordedByUserId: $this->manager->id,
         );
 
-        $this->assertSame(200.0, (float) $charge->amount,
+        $this->assertSame(0.0, (float) $charge->amount,
             'Service stripped by default, so 2 × 100 subtotal = 200 lands on the tab.');
-        $this->assertSame($before + 200.0, $this->employee->fresh()->staffMealOutstanding());
+        $this->assertSame(200.0, $charge->consumptionAmount());
+        $this->assertSame($before, $this->employee->fresh()->staffMealOutstanding());
 
         $order = $charge->order;
         $this->assertSame(OrderStatus::Completed->value, $order->status,
@@ -259,7 +276,7 @@ class StaffMealAllowanceTest extends TestCase
 
         // Stock movement was created (1 'out' per OrderItem).
         $this->assertSame(1,
-            \App\Models\InventoryMovement::where('reference_type', OrderItem::class)
+            InventoryMovement::where('reference_type', OrderItem::class)
                 ->whereIn('reference_id', $order->items->pluck('id'))
                 ->where('type', 'out')
                 ->count());
@@ -279,7 +296,7 @@ class StaffMealAllowanceTest extends TestCase
             staff: $this->employee,
             lines: [['menu_item_id' => $this->burger->id, 'quantity' => 1]],
         );
-        $this->assertSame(100.0, (float) $charge1->amount);
+        $this->assertSame(100.0, $charge1->consumptionAmount());
 
         // Menu price doubles (supplier raised cost / restaurant raised
         // sell price); a NEW consumption hits the new price, the old
@@ -290,14 +307,71 @@ class StaffMealAllowanceTest extends TestCase
             staff: $this->employee,
             lines: [['menu_item_id' => $this->burger->id, 'quantity' => 1]],
         );
-        $this->assertSame(200.0, (float) $charge2->amount,
+        $this->assertSame(200.0, $charge2->consumptionAmount(),
             'New consumption gets the new price.');
 
-        $this->assertSame(100.0, (float) $charge1->fresh()->amount,
+        $this->assertSame(100.0, $charge1->fresh()->consumptionAmount(),
             'Old charge MUST stay at the historical price — snapshot is a snapshot.');
     }
 
     // ─── helpers ──────────────────────────────────────────────────────
+
+    public function test_staff_meal_inventory_cost_posts_to_employee_benefit_not_cogs(): void
+    {
+        $this->actingAs($this->manager);
+
+        $charge = app(StaffMealService::class)->quickConsume(
+            staff: $this->employee,
+            lines: [['menu_item_id' => $this->burger->id, 'quantity' => 1]],
+            recordedByUserId: $this->manager->id,
+        );
+
+        $movement = InventoryMovement::where('reference_type', OrderItem::class)
+            ->whereIn('reference_id', $charge->order->items->pluck('id'))
+            ->where('type', 'out')
+            ->firstOrFail();
+        $entry = JournalEntry::where('event_type', 'inventory_staff_meal_consumed')
+            ->where('source_type', $movement::class)
+            ->where('source_id', $movement->id)
+            ->with('lines.account')
+            ->first();
+
+        $this->assertNotNull($entry);
+        $debit = $entry->lines->firstWhere(fn ($line) => (float) $line->debit > 0);
+        $credit = $entry->lines->firstWhere(fn ($line) => (float) $line->credit > 0);
+        $this->assertSame('5060', $debit->account->code);
+        $this->assertSame('1200', $credit->account->code);
+        $this->assertEqualsWithDelta(100.0, (float) $debit->debit, 0.001);
+        $this->assertFalse(JournalEntry::where('event_type', 'inventory_cogs_recognized')
+            ->where('source_id', $movement->id)
+            ->exists());
+    }
+
+    public function test_served_staff_meal_cannot_be_cancelled_after_accounting_is_frozen(): void
+    {
+        $this->actingAs($this->manager);
+        $charge = app(StaffMealService::class)->quickConsume(
+            staff: $this->employee,
+            lines: [['menu_item_id' => $this->burger->id, 'quantity' => 1]],
+            recordedByUserId: $this->manager->id,
+        );
+        $movementCount = InventoryMovement::where('reference_type', OrderItem::class)
+            ->whereIn('reference_id', $charge->order->items->pluck('id'))
+            ->count();
+
+        try {
+            app(OrderService::class)->cancel($charge->order->fresh(), $this->manager->id, 'تصحيح متأخر');
+            $this->fail('A served staff meal must not reopen its stock/accounting footprint.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('التسوية أو الإعفاء', $exception->getMessage());
+        }
+
+        $this->assertSame(OrderStatus::Completed->value, $charge->order->fresh()->status);
+        $this->assertSame($movementCount, InventoryMovement::where('reference_type', OrderItem::class)
+            ->whereIn('reference_id', $charge->order->items->pluck('id'))
+            ->count());
+        $this->assertSame(1, StaffMealCharge::where('order_id', $charge->order_id)->count());
+    }
 
     protected function staff(string $username, string $role): User
     {
@@ -305,11 +379,12 @@ class StaffMealAllowanceTest extends TestCase
             'name' => ucfirst($username),
             'username' => $username,
             'password' => bcrypt('x'),
-            'status'   => 'active',
-            'role'     => $role,
+            'status' => 'active',
+            'role' => $role,
             'primary_branch_id' => $this->branch->id,
         ]);
         $u->branches()->attach($this->branch->id);
+
         return $u;
     }
 
@@ -317,16 +392,16 @@ class StaffMealAllowanceTest extends TestCase
     {
         $session = TableSession::create([
             'branch_id' => $this->branch->id,
-            'table_id'  => $this->table->id,
-            'token'     => 'staff-'.uniqid(),
-            'status'    => 'active',
+            'table_id' => $this->table->id,
+            'token' => 'staff-'.uniqid(),
+            'status' => 'active',
             'opened_at' => now(),
             'cover_count' => 1,
         ]);
 
         $order = app(OrderService::class)->createFromCart($session, [[
             'menu_item_id' => $this->burger->id,
-            'quantity'     => $qty,
+            'quantity' => $qty,
             'modifier_ids' => [],
         ]], createdByUserId: $this->manager->id);
 

@@ -13,7 +13,7 @@ class Station extends Model
     use BelongsToBranch, HasFactory;
 
     protected $fillable = [
-        'branch_id', 'code', 'name', 'name_en', 'color', 'icon',
+        'branch_id', 'code', 'name', 'color', 'icon',
         'storage_location_id', 'display_order', 'active',
     ];
 

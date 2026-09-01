@@ -13,18 +13,18 @@ use App\Models\Invoice;
 use App\Models\JournalEntry;
 use App\Models\Role;
 use App\Models\Setting;
-use App\Models\Shift;
 use App\Models\Supplier;
 use App\Models\SupplierInvoice;
 use App\Models\Table;
 use App\Models\TableSession;
-use App\Models\TaxJurisdiction;
 use App\Models\User;
 use App\Services\Accounting\AccountingService;
-use App\Services\SalesTaxService;
 use App\Support\BranchContext;
+use Database\Seeders\PermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Route;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class AccountingConceptsTest extends TestCase
@@ -32,6 +32,7 @@ class AccountingConceptsTest extends TestCase
     use RefreshDatabase;
 
     protected Branch $branch;
+
     protected User $admin;
 
     protected function setUp(): void
@@ -42,7 +43,7 @@ class AccountingConceptsTest extends TestCase
         BranchContext::set($this->branch->id);
 
         Role::firstOrCreate(['name' => 'admin'], ['label' => 'Admin', 'is_system' => true]);
-        $this->seed(\Database\Seeders\PermissionSeeder::class);
+        $this->seed(PermissionSeeder::class);
 
         $this->admin = User::create([
             'name' => 'Accounting Admin',
@@ -165,22 +166,18 @@ class AccountingConceptsTest extends TestCase
             'source' => 'test',
         ]);
 
-        $shift = Shift::create([
-            'user_id' => $this->admin->id,
-            'cash_opening' => 0,
-            'cash_closing' => 100,
-            'cash_sales' => 0,
-            'card_sales' => 0,
-            'other_sales' => 0,
-            'total_sales' => 0,
-            'expected_cash' => 0,
-            'cash_variance' => 100,
-            'status' => 'closed',
-            'opened_at' => now(),
-            'closed_at' => now(),
-        ]);
-
-        $entry = app(AccountingService::class)->recordShiftClosed($shift);
+        $entry = app(AccountingService::class)->post(
+            eventType: 'currency_conversion_probe',
+            source: null,
+            branchId: $this->branch->id,
+            postedOn: now(),
+            description: 'Currency conversion probe',
+            lines: [
+                ['account' => AccountingService::CASH, 'currency_code' => 'ILS', 'foreign_debit' => 100, 'foreign_credit' => 0],
+                ['account' => AccountingService::SALES_REVENUE, 'currency_code' => 'ILS', 'foreign_debit' => 0, 'foreign_credit' => 100],
+            ],
+            createdBy: $this->admin->id,
+        );
         $cashLine = $entry->lines->first(fn ($line) => $line->account?->code === AccountingService::CASH);
 
         $this->assertSame('USD', $entry->base_currency_code);
@@ -205,7 +202,7 @@ class AccountingConceptsTest extends TestCase
         ]);
         Currency::updateOrCreate(['code' => 'ILS'], [
             'name' => 'Shekel',
-            'symbol' => 'â‚ھ',
+            'symbol' => '₪',
             'rate_to_base' => 0.27,
             'is_base' => false,
             'is_active' => true,
@@ -229,22 +226,18 @@ class AccountingConceptsTest extends TestCase
             'source' => 'daily_update',
         ]);
 
-        $shift = Shift::create([
-            'user_id' => $this->admin->id,
-            'cash_opening' => 0,
-            'cash_closing' => 100,
-            'cash_sales' => 0,
-            'card_sales' => 0,
-            'other_sales' => 0,
-            'total_sales' => 0,
-            'expected_cash' => 0,
-            'cash_variance' => 100,
-            'status' => 'closed',
-            'opened_at' => '2026-05-15 08:00:00',
-            'closed_at' => '2026-05-15 18:00:00',
-        ]);
-
-        $entry = app(AccountingService::class)->recordShiftClosed($shift);
+        $entry = app(AccountingService::class)->post(
+            eventType: 'daily_rate_probe',
+            source: null,
+            branchId: $this->branch->id,
+            postedOn: '2026-05-15 18:00:00',
+            description: 'Daily rate probe',
+            lines: [
+                ['account' => AccountingService::CASH, 'currency_code' => 'ILS', 'foreign_debit' => 100, 'foreign_credit' => 0],
+                ['account' => AccountingService::SALES_REVENUE, 'currency_code' => 'ILS', 'foreign_debit' => 0, 'foreign_credit' => 100],
+            ],
+            createdBy: $this->admin->id,
+        );
         $cashLine = $entry->lines->first(fn ($line) => $line->account?->code === AccountingService::CASH);
 
         $this->assertEqualsWithDelta(0.28, (float) $cashLine->exchange_rate, 0.000001);
@@ -267,31 +260,27 @@ class AccountingConceptsTest extends TestCase
         ]);
         Currency::updateOrCreate(['code' => 'ILS'], [
             'name' => 'Shekel',
-            'symbol' => 'â‚ھ',
+            'symbol' => '₪',
             'rate_to_base' => 0.27,
             'is_base' => false,
             'is_active' => true,
         ]);
 
-        $shift = Shift::create([
-            'user_id' => $this->admin->id,
-            'cash_opening' => 0,
-            'cash_closing' => 100,
-            'cash_sales' => 0,
-            'card_sales' => 0,
-            'other_sales' => 0,
-            'total_sales' => 0,
-            'expected_cash' => 0,
-            'cash_variance' => 100,
-            'status' => 'closed',
-            'opened_at' => '2026-06-01 08:00:00',
-            'closed_at' => '2026-06-01 18:00:00',
-        ]);
-
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('لا يوجد سعر صرف صالح');
 
-        app(AccountingService::class)->recordShiftClosed($shift);
+        app(AccountingService::class)->post(
+            eventType: 'missing_rate_probe',
+            source: null,
+            branchId: $this->branch->id,
+            postedOn: '2026-06-01 18:00:00',
+            description: 'Missing rate probe',
+            lines: [
+                ['account' => AccountingService::CASH, 'currency_code' => 'ILS', 'foreign_debit' => 100, 'foreign_credit' => 0],
+                ['account' => AccountingService::SALES_REVENUE, 'currency_code' => 'ILS', 'foreign_debit' => 0, 'foreign_credit' => 100],
+            ],
+            createdBy: $this->admin->id,
+        );
     }
 
     public function test_closed_period_blocks_new_manual_journal_posting(): void
@@ -342,7 +331,7 @@ class AccountingConceptsTest extends TestCase
         ]);
     }
 
-    public function test_closing_period_posts_retained_earnings_entry_and_zeroes_nominal_accounts(): void
+    public function test_closing_period_locks_posting_without_zeroing_nominal_accounts(): void
     {
         app(AccountingService::class)->post(
             eventType: 'closing_revenue_probe',
@@ -385,20 +374,15 @@ class AccountingConceptsTest extends TestCase
 
         $period->refresh();
         $this->assertSame('closed', $period->status);
-        $this->assertNotNull($period->closing_journal_entry_id);
+        $this->assertNull($period->closing_journal_entry_id);
+        $this->assertSame(0, JournalEntry::where('event_type', 'period_closing')->count());
 
-        $closing = JournalEntry::with('lines.account')->findOrFail($period->closing_journal_entry_id);
-        $this->assertSame('period_closing', $closing->event_type);
-        $this->assertEqualsWithDelta(100, (float) $closing->lines->first(fn ($line) => $line->account?->code === AccountingService::SALES_REVENUE)?->debit, 0.01);
-        $this->assertEqualsWithDelta(35, (float) $closing->lines->first(fn ($line) => $line->account?->code === AccountingService::OPERATING_EXPENSES)?->credit, 0.01);
-        $this->assertEqualsWithDelta(65, (float) $closing->lines->first(fn ($line) => $line->account?->code === AccountingService::RETAINED_EARNINGS)?->credit, 0.01);
-
-        $this->assertEqualsWithDelta(0, $this->ledgerDebitMinusCredit(AccountingService::SALES_REVENUE, '2026-05-01', '2026-05-31'), 0.01);
-        $this->assertEqualsWithDelta(0, $this->ledgerDebitMinusCredit(AccountingService::OPERATING_EXPENSES, '2026-05-01', '2026-05-31'), 0.01);
-        $this->assertEqualsWithDelta(-65, $this->ledgerDebitMinusCredit(AccountingService::RETAINED_EARNINGS, '2026-05-01', '2026-05-31'), 0.01);
+        $this->assertEqualsWithDelta(-100, $this->ledgerDebitMinusCredit(AccountingService::SALES_REVENUE, '2026-05-01', '2026-05-31'), 0.01);
+        $this->assertEqualsWithDelta(35, $this->ledgerDebitMinusCredit(AccountingService::OPERATING_EXPENSES, '2026-05-01', '2026-05-31'), 0.01);
+        $this->assertEqualsWithDelta(0, $this->ledgerDebitMinusCredit(AccountingService::RETAINED_EARNINGS, '2026-05-01', '2026-05-31'), 0.01);
     }
 
-    public function test_reopening_period_reverses_the_closing_entry(): void
+    public function test_reopening_period_unlocks_posting_without_a_reversal_entry(): void
     {
         app(AccountingService::class)->post(
             eventType: 'reopen_closing_probe',
@@ -425,8 +409,6 @@ class AccountingConceptsTest extends TestCase
             ->post(route('admin.accounting.periods.close', $period))
             ->assertRedirect();
 
-        $closingEntryId = $period->refresh()->closing_journal_entry_id;
-
         $this->actingAs($this->admin)
             ->post(route('admin.accounting.periods.reopen', $period))
             ->assertRedirect()
@@ -436,8 +418,7 @@ class AccountingConceptsTest extends TestCase
         $this->assertSame('open', $period->status);
         $this->assertNull($period->closing_journal_entry_id);
 
-        $reversal = JournalEntry::where('event_type', 'period_closing_reversal')->firstOrFail();
-        $this->assertSame((int) $closingEntryId, (int) ($reversal->metadata['reverses_entry_id'] ?? 0));
+        $this->assertSame(0, JournalEntry::where('event_type', 'period_closing_reversal')->count());
         $this->assertEqualsWithDelta(-40, $this->ledgerDebitMinusCredit(AccountingService::SALES_REVENUE, '2026-06-01', '2026-06-30'), 0.01);
     }
 
@@ -493,12 +474,17 @@ class AccountingConceptsTest extends TestCase
         );
     }
 
-    public function test_closing_checklist_blocks_open_shift_before_period_close(): void
+    public function test_closing_checklist_blocks_active_table_session_before_period_close(): void
     {
-        Shift::create([
-            'user_id' => $this->admin->id,
-            'cash_opening' => 0,
-            'status' => 'open',
+        $table = Table::create([
+            'number' => 'CLOSE-1',
+            'capacity' => 4,
+            'status' => 'occupied',
+            'active' => true,
+        ]);
+        TableSession::create([
+            'table_id' => $table->id,
+            'status' => 'active',
             'opened_at' => '2026-09-10 09:00:00',
         ]);
 
@@ -516,45 +502,6 @@ class AccountingConceptsTest extends TestCase
             ->assertSessionHas('error');
 
         $this->assertSame('open', $period->refresh()->status);
-    }
-
-    public function test_us_sales_tax_uses_matching_jurisdiction_rule(): void
-    {
-        config(['market.profile' => 'us']);
-        Setting::put('tax_enabled', true, 'billing', 'bool');
-        Setting::put('tax_rate', 0, 'billing', 'float');
-
-        $this->branch->update([
-            'city' => 'New York',
-            'settings' => [
-                'tax_country' => 'US',
-                'tax_state' => 'NY',
-                'tax_city' => 'New York',
-                'tax_postal_code' => '10001',
-            ],
-        ]);
-
-        TaxJurisdiction::create([
-            'name' => 'US fallback',
-            'country' => 'US',
-            'rate' => 5,
-            'priority' => 100,
-            'is_default' => true,
-            'is_active' => true,
-        ]);
-        TaxJurisdiction::create([
-            'name' => 'NYC 10001',
-            'branch_id' => $this->branch->id,
-            'country' => 'US',
-            'state' => 'NY',
-            'city' => 'New York',
-            'postal_code' => '10001',
-            'rate' => 8.875,
-            'priority' => 1,
-            'is_active' => true,
-        ]);
-
-        $this->assertEqualsWithDelta(8.875, app(SalesTaxService::class)->rateForBranch($this->branch->id, '2026-05-31'), 0.0001);
     }
 
     public function test_balance_sheet_includes_current_earnings_from_ledger(): void
@@ -575,8 +522,12 @@ class AccountingConceptsTest extends TestCase
         $this->actingAs($this->admin)
             ->get(route('admin.accounting.balance-sheet', ['as_of' => now()->toDateString()]))
             ->assertOk()
-            ->assertSee('أرباح/خسائر جارية غير مقفلة')
-            ->assertSee('75.00');
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/Accounting/BalanceSheet')
+                ->where('metrics.currentEarnings', 75)
+                ->where('metrics.totalAssets', 75)
+                ->where('metrics.balanced', true)
+            );
     }
 
     public function test_reconciliation_records_book_statement_difference(): void
@@ -607,9 +558,26 @@ class AccountingConceptsTest extends TestCase
         $reconciliation = CashReconciliation::firstOrFail();
         $this->assertEqualsWithDelta(100, (float) $reconciliation->book_balance, 0.01);
         $this->assertEqualsWithDelta(-4, (float) $reconciliation->difference, 0.01);
+        $this->assertSame('variance', $reconciliation->status);
+
+        $expense = Account::where('code', AccountingService::OPERATING_EXPENSES)->firstOrFail();
+        $this->actingAs($this->admin)
+            ->post(route('admin.accounting.reconciliations.resolve', $reconciliation), [
+                'adjustment_account_id' => $expense->id,
+                'posted_on' => now()->toDateString(),
+                'notes' => 'عجز مثبت بعد مراجعة عدّ الصندوق وإيصالات الوردية',
+            ])->assertRedirect();
+
+        $reconciliation->refresh();
+        $this->assertSame('resolved', $reconciliation->status);
+        $this->assertNotNull($reconciliation->resolution_journal_entry_id);
+        $entry = JournalEntry::findOrFail($reconciliation->resolution_journal_entry_id);
+        $this->assertSame('reconciliation_adjustment', $entry->event_type);
+        $this->assertEntryAccountTotals($entry, AccountingService::OPERATING_EXPENSES, 4, 0);
+        $this->assertEntryAccountTotals($entry, AccountingService::CASH, 0, 4);
     }
 
-    public function test_accounting_settlement_forms_post_tax_tips_and_card_clearing_entries(): void
+    public function test_accounting_settlement_forms_post_tax_and_tips_without_payment_clearing(): void
     {
         $accounting = app(AccountingService::class);
 
@@ -640,7 +608,7 @@ class AccountingConceptsTest extends TestCase
                 'from' => '2026-05-01',
                 'to' => '2026-05-31',
                 'posted_on' => '2026-06-01',
-                'payment_method' => 'bank_transfer',
+                'payment_method' => 'transfer',
             ])
             ->assertRedirect(route('admin.accounting.journal', ['event_type' => 'tax_payment']));
 
@@ -674,44 +642,87 @@ class AccountingConceptsTest extends TestCase
         $this->assertEntryAccountTotals($tipsEntry, AccountingService::TIPS_PAYABLE, 12, 0);
         $this->assertEntryAccountTotals($tipsEntry, AccountingService::CASH, 0, 12);
 
-        $processorClearing = Account::create([
-            'code' => '1098',
-            'name' => 'Processor clearing',
-            'type' => 'asset',
-            'normal_balance' => 'debit',
-            'is_active' => true,
-        ]);
-        $bank = Account::where('code', AccountingService::BANK)->firstOrFail();
-        app()->forgetInstance(AccountingService::class);
+        $this->assertFalse(Route::has('admin.accounting.settlements.payment-clearing'));
+        $this->assertDatabaseHas('accounts', ['code' => AccountingService::PALPAY_WALLET, 'is_active' => true]);
+        $this->assertDatabaseHas('accounts', ['code' => AccountingService::JAWWAL_PAY_WALLET, 'is_active' => true]);
+        $this->assertDatabaseMissing('accounts', ['code' => '1040']);
+    }
+
+    public function test_accountant_can_transfer_wallet_balance_to_bank_without_overdrawing_it(): void
+    {
         $accounting = app(AccountingService::class);
 
         $accounting->post(
-            eventType: 'processor_clearing_probe',
+            eventType: 'wallet_balance_probe',
             source: null,
             branchId: $this->branch->id,
             postedOn: '2026-06-03',
-            description: 'Processor clearing probe',
+            description: 'PalPay balance probe',
             lines: [
-                ['account' => '1098', 'debit' => 100, 'credit' => 0],
-                ['account' => AccountingService::OPENING_BALANCE_EQUITY, 'debit' => 0, 'credit' => 100],
+                ['account' => AccountingService::PALPAY_WALLET, 'debit' => 50, 'credit' => 0],
+                ['account' => AccountingService::SALES_REVENUE, 'debit' => 0, 'credit' => 50],
             ],
             createdBy: $this->admin->id,
         );
 
-        $this->actingAs($this->admin)
-            ->post(route('admin.accounting.settlements.payment-clearing'), [
-                'posted_on' => '2026-06-03',
-                'clearing_account_id' => $processorClearing->id,
-                'deposit_account_id' => $bank->id,
-                'gross_amount' => 100,
-                'fee_amount' => 3,
-            ])
-            ->assertRedirect(route('admin.accounting.journal', ['event_type' => 'payment_clearing_settlement']));
+        $settlementsUrl = route('admin.accounting.settlements', ['as_of' => '2026-06-03']);
 
-        $settlementEntry = JournalEntry::where('event_type', 'payment_clearing_settlement')->with('lines.account')->firstOrFail();
-        $this->assertEntryAccountTotals($settlementEntry, AccountingService::BANK, 97, 0);
-        $this->assertEntryAccountTotals($settlementEntry, AccountingService::BANK_AND_CARD_FEES, 3, 0);
-        $this->assertEntryAccountTotals($settlementEntry, '1098', 0, 100);
+        $this->actingAs($this->admin)
+            ->get($settlementsUrl)
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/Accounting/Settlements')
+                ->has('wallets', 2)
+                ->where('wallets.0.method', 'palpay')
+                ->where('wallets.0.balance', 50)
+                ->where('wallets.0.transferable', true)
+                ->where('urls.walletTransfer', route('admin.accounting.settlements.wallet-transfer'))
+            );
+
+        $this->actingAs($this->admin)
+            ->post(route('admin.accounting.settlements.wallet-transfer'), [
+                'wallet_method' => 'palpay',
+                'posted_on' => '2026-06-03',
+                'amount' => 30,
+                'notes' => 'PalPay transfer reference 17',
+            ])
+            ->assertRedirect($settlementsUrl);
+
+        $entry = JournalEntry::where('event_type', 'wallet_to_bank')->with('lines.account')->firstOrFail();
+        $this->assertEntryAccountTotals($entry, AccountingService::BANK, 30, 0);
+        $this->assertEntryAccountTotals($entry, AccountingService::PALPAY_WALLET, 0, 30);
+        $this->assertEqualsWithDelta(20, $accounting->availableWalletBalance('palpay', $this->branch->id, '2026-06-03'), 0.01);
+
+        $this->actingAs($this->admin)
+            ->from($settlementsUrl)
+            ->post(route('admin.accounting.settlements.wallet-transfer'), [
+                'wallet_method' => 'palpay',
+                'posted_on' => '2026-06-03',
+                'amount' => 21,
+            ])
+            ->assertRedirect($settlementsUrl)
+            ->assertSessionHas('error');
+
+        $this->assertSame(1, JournalEntry::where('event_type', 'wallet_to_bank')->count());
+        $this->assertEqualsWithDelta(20, $accounting->availableWalletBalance('palpay', $this->branch->id, '2026-06-03'), 0.01);
+    }
+
+    public function test_settlements_screen_stays_available_when_an_old_database_has_no_wallet_account(): void
+    {
+        $wallet = Account::query()->where('code', AccountingService::PALPAY_WALLET)->firstOrFail();
+        DB::table('account_mappings')->where('account_id', $wallet->id)->delete();
+        $wallet->delete();
+
+        $this->actingAs($this->admin)
+            ->get(route('admin.accounting.settlements', ['as_of' => '2026-06-03']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/Accounting/Settlements')
+                ->where('wallets.0.method', 'palpay')
+                ->where('wallets.0.balance', 0)
+                ->where('wallets.0.configured', false)
+                ->where('wallets.0.transferable', false)
+            );
     }
 
     public function test_aging_report_lists_open_customer_and_supplier_balances(): void
@@ -776,10 +787,15 @@ class AccountingConceptsTest extends TestCase
         $this->actingAs($this->admin)
             ->get(route('admin.accounting.aging', ['as_of' => now()->toDateString()]))
             ->assertOk()
-            ->assertSee('Open Customer')
-            ->assertSee('Open Supplier')
-            ->assertSee('25.00 $')
-            ->assertSee('20.00 $');
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/Accounting/Aging')
+                ->has('arRows', 1)
+                ->where('arRows.0.party', 'Open Customer')
+                ->where('arRows.0.amount', 25)
+                ->has('apRows', 1)
+                ->where('apRows.0.party', 'Open Supplier')
+                ->where('apRows.0.amount', 20)
+            );
     }
 
     private function assertEntryAccountTotals(JournalEntry $entry, string $accountCode, float $expectedDebit, float $expectedCredit): void

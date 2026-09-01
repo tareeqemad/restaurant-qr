@@ -150,7 +150,8 @@ class CashierMergeGroupBDTest extends TestCase
 
         $invoice->refresh();
         $this->assertSame('issued', $invoice->status, 'Voiding the only payment must reopen the invoice.');
-        $this->assertSame(0, $invoice->payments()->count(), 'Void hard-deletes the payment row.');
+        $this->assertSame(0, $invoice->payments()->count(), 'Void excludes the payment from live collections.');
+        $this->assertDatabaseHas('payments', ['id' => $payment->id, 'status' => 'voided']);
         $this->assertEqualsWithDelta(0.0, (float) $invoice->paid_total, 0.001);
         $this->assertEqualsWithDelta(100.0, (float) $invoice->balance, 0.001);
     }

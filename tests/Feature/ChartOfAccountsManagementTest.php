@@ -8,12 +8,15 @@ use App\Models\Branch;
 use App\Models\JournalEntry;
 use App\Models\JournalLine;
 use App\Models\Role;
+use App\Models\Setting;
 use App\Models\User;
-use App\Services\Accounting\AccountService;
 use App\Services\Accounting\AccountingService;
+use App\Services\Accounting\AccountService;
 use App\Support\BranchContext;
+use Database\Seeders\PermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 /**
@@ -33,7 +36,9 @@ class ChartOfAccountsManagementTest extends TestCase
     use RefreshDatabase;
 
     protected Branch $branch;
+
     protected User $admin;
+
     protected User $cashier;
 
     protected function setUp(): void
@@ -42,9 +47,9 @@ class ChartOfAccountsManagementTest extends TestCase
 
         $this->branch = Branch::create(['code' => 'a', 'name' => 'A', 'is_active' => true]);
         BranchContext::set($this->branch->id);
-        Role::firstOrCreate(['name' => 'admin'],   ['label' => 'Admin', 'is_system' => true]);
+        Role::firstOrCreate(['name' => 'admin'], ['label' => 'Admin', 'is_system' => true]);
         Role::firstOrCreate(['name' => 'cashier'], ['label' => 'Cashier', 'is_system' => true]);
-        $this->seed(\Database\Seeders\PermissionSeeder::class);
+        $this->seed(PermissionSeeder::class);
 
         $this->admin = $this->user('a_chart', 'admin');
         $this->cashier = $this->user('c_chart', 'cashier');
@@ -338,22 +343,18 @@ class ChartOfAccountsManagementTest extends TestCase
 
     public function test_admin_can_open_the_simplified_accounting_center(): void
     {
-        $response = $this->actingAs($this->admin)
+        $this->actingAs($this->admin)
             ->get(route('admin.accounting.index'))
             ->assertOk()
-            ->assertSee('الأرباح والخسائر')
-            ->assertSee('دفتر القيود')
-            ->assertSee('الأرصدة الافتتاحية')
-            ->assertSee(route('admin.accounting.opening-balances'), false)
-            ->assertSee('إقفال الشهر')
-            ->assertSee('أدوات متقدمة جداً')
-            ->assertSee('الأصول الثابتة');
-
-        $this->assertStringContainsString(
-            'accounting-task accounting-task--primary',
-            $response->getContent(),
-            'opening balances should be a visible accountant task, not buried in advanced tools'
-        );
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/Accounting/Index')
+                ->where('urls.profitLoss', route('admin.reports.profit-loss'))
+                ->where('urls.journal', route('admin.accounting.journal'))
+                ->where('urls.openingBalances', route('admin.accounting.opening-balances'))
+                ->where('urls.fixedAssets', route('admin.accounting.fixed-assets.index'))
+                ->has('health')
+                ->has('tax')
+            );
     }
 
     public function test_cashier_cannot_open_the_accounting_center(): void
@@ -368,13 +369,28 @@ class ChartOfAccountsManagementTest extends TestCase
         $this->actingAs($this->admin);
 
         foreach ([
-            'admin.accounting.journal',
-            'admin.accounting.manual-entry.create',
-            'admin.accounting.trial-balance',
-            'admin.accounting.periods',
-            'admin.reports.profit-loss',
-        ] as $routeName) {
-            $this->get(route($routeName))->assertOk();
+            'admin.accounts.index' => 'Admin/Accounts/Index',
+            'admin.accounting.index' => 'Admin/Accounting/Index',
+            'admin.accounting.guide' => 'Admin/Accounting/Guide',
+            'admin.accounting.journal' => 'Admin/Accounting/Journal',
+            'admin.accounting.ledger' => 'Admin/Accounting/Ledger',
+            'admin.accounting.trial-balance' => 'Admin/Accounting/TrialBalance',
+            'admin.accounting.manual-entry.create' => 'Admin/Accounting/ManualEntry',
+            'admin.accounting.mappings' => 'Admin/Accounting/AccountMappings',
+            'admin.accounting.opening-balances' => 'Admin/Accounting/OpeningBalances',
+            'admin.accounting.periods' => 'Admin/Accounting/Periods',
+            'admin.accounting.fiscal-years' => 'Admin/Accounting/FiscalYears',
+            'admin.accounting.balance-sheet' => 'Admin/Accounting/BalanceSheet',
+            'admin.accounting.aging' => 'Admin/Accounting/Aging',
+            'admin.accounting.reconciliations' => 'Admin/Accounting/Reconciliations',
+            'admin.accounting.settlements' => 'Admin/Accounting/Settlements',
+            'admin.accounting.fixed-assets.index' => 'Admin/Accounting/FixedAssets',
+            'admin.accounting.fixed-assets.create' => 'Admin/Accounting/FixedAssetCreate',
+            'admin.reports.profit-loss' => 'Admin/Accounting/ProfitLoss',
+        ] as $routeName => $component) {
+            $this->get(route($routeName))
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page->component($component));
         }
     }
 
@@ -408,8 +424,59 @@ class ChartOfAccountsManagementTest extends TestCase
         $this->actingAs($this->admin)
             ->get(route('admin.accounting.mappings'))
             ->assertOk()
-            ->assertSee('posting_role_accounts[sales_revenue]', false)
-            ->assertSee('posting_role_accounts[cost_of_goods_sold]', false);
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/Accounting/AccountMappings')
+                ->where('postingGroups', fn ($groups) => collect($groups)
+                    ->flatMap(fn ($group) => $group['roles'])
+                    ->pluck('key')
+                    ->contains('sales_revenue')
+                    && collect($groups)
+                        ->flatMap(fn ($group) => $group['roles'])
+                        ->pluck('key')
+                        ->contains('cost_of_goods_sold'))
+            );
+    }
+
+    public function test_account_mappings_screen_exposes_real_payment_identifiers_separately_from_ledger_codes(): void
+    {
+        Setting::put('bank_account_number', '00123456789', 'payment_destinations', 'string');
+        Setting::put('palpay_wallet_number', '0592632026', 'payment_destinations', 'string');
+
+        $this->actingAs($this->admin)
+            ->get(route('admin.accounting.mappings'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/Accounting/AccountMappings')
+                ->where('paymentIdentifiers.bank_account_number', '00123456789')
+                ->where('paymentIdentifiers.palpay_wallet_number', '0592632026')
+                ->has('paymentMethods', fn (Assert $methods) => $methods
+                    ->where('0.fallback', '1000 — الصندوق')
+                    ->etc())
+            );
+    }
+
+    public function test_accountant_owned_mapping_endpoint_saves_and_clears_real_payment_identifiers(): void
+    {
+        $route = route('admin.accounting.mappings.store');
+
+        $this->actingAs($this->admin)
+            ->from(route('admin.accounting.mappings'))
+            ->post($route, [
+                'payment_identifiers' => [
+                    'bank_name' => 'بنك فلسطين',
+                    'bank_account_holder' => 'مطعم ريلاكس',
+                    'bank_account_number' => '00123456789',
+                    'bank_iban' => 'PS92PALS000000000000000000000',
+                    'palpay_wallet_number' => '0592632026',
+                    'jawwal_pay_wallet_number' => '',
+                ],
+            ])
+            ->assertRedirect(route('admin.accounting.mappings'))
+            ->assertSessionHas('success');
+
+        $this->assertSame('00123456789', Setting::get('bank_account_number'));
+        $this->assertSame('0592632026', Setting::get('palpay_wallet_number'));
+        $this->assertDatabaseMissing('settings', ['key' => 'jawwal_pay_wallet_number']);
     }
 
     public function test_posting_role_mapping_rejects_accounts_with_wrong_type(): void
@@ -450,27 +517,27 @@ class ChartOfAccountsManagementTest extends TestCase
             'type' => 'expense', 'normal_balance' => 'debit',
         ]);
         // Already-seeded cash account.
-        $cash = \App\Models\Account::where('code', '1000')->first();
+        $cash = Account::where('code', '1000')->first();
         $this->assertNotNull($cash, 'Cash account should exist from seeded migrations.');
 
         $this->actingAs($this->admin)
             ->post(route('admin.accounting.manual-entry.store'), [
-                'posted_on'   => now()->toDateString(),
+                'posted_on' => now()->toDateString(),
                 'description' => 'مصاريف تسويق نقدية',
                 'lines' => [
-                    ['account_id' => $marketing->id, 'debit'  => 200, 'credit' => 0],
-                    ['account_id' => $cash->id,      'debit'  => 0,   'credit' => 200],
+                    ['account_id' => $marketing->id, 'debit' => 200, 'credit' => 0],
+                    ['account_id' => $cash->id,      'debit' => 0,   'credit' => 200],
                 ],
             ])
             ->assertRedirect(route('admin.accounting.journal'));
 
-        $entry = \App\Models\JournalEntry::where('event_type', 'manual_journal')
+        $entry = JournalEntry::where('event_type', 'manual_journal')
             ->with('lines.account')
             ->latest('id')->first();
         $this->assertNotNull($entry, 'Manual journal MUST create a JournalEntry.');
         $this->assertCount(2, $entry->lines);
 
-        $debit  = $entry->lines->firstWhere(fn ($l) => $l->debit > 0);
+        $debit = $entry->lines->firstWhere(fn ($l) => $l->debit > 0);
         $credit = $entry->lines->firstWhere(fn ($l) => $l->credit > 0);
         $this->assertSame('9910', $debit->account->code, 'Debit lands on the user-created account.');
         $this->assertSame('1000', $credit->account->code, 'Credit lands on cash.');
@@ -479,8 +546,8 @@ class ChartOfAccountsManagementTest extends TestCase
 
     public function test_admin_can_post_multiple_manual_journals(): void
     {
-        $cash = \App\Models\Account::where('code', '1000')->first();
-        $bank = \App\Models\Account::where('code', '1010')->first();
+        $cash = Account::where('code', '1000')->first();
+        $bank = Account::where('code', '1010')->first();
 
         foreach ([25, 40] as $amount) {
             $this->actingAs($this->admin)
@@ -495,7 +562,7 @@ class ChartOfAccountsManagementTest extends TestCase
                 ->assertRedirect(route('admin.accounting.journal'));
         }
 
-        $this->assertSame(2, \App\Models\JournalEntry::where('event_type', 'manual_journal')->count(),
+        $this->assertSame(2, JournalEntry::where('event_type', 'manual_journal')->count(),
             'Manual journals are not idempotent by user; each approved posting is a separate journal entry.');
     }
 
@@ -559,7 +626,7 @@ class ChartOfAccountsManagementTest extends TestCase
         ]);
         app(AccountService::class)->setActive($inactive, false);
 
-        $cash = \App\Models\Account::where('code', '1000')->first();
+        $cash = Account::where('code', '1000')->first();
 
         $this->actingAs($this->admin)
             ->post(route('admin.accounting.manual-entry.store'), [
@@ -572,18 +639,18 @@ class ChartOfAccountsManagementTest extends TestCase
             ])
             ->assertSessionHas('error');
 
-        $this->assertSame(0, \App\Models\JournalEntry::where('event_type', 'manual_journal')->count());
+        $this->assertSame(0, JournalEntry::where('event_type', 'manual_journal')->count());
     }
 
     public function test_unbalanced_manual_entry_is_rejected(): void
     {
-        $cash = \App\Models\Account::where('code', '1000')->first();
-        $bank = \App\Models\Account::where('code', '1010')->first();
+        $cash = Account::where('code', '1000')->first();
+        $bank = Account::where('code', '1010')->first();
 
         // 100 DR but 50 CR → debits ≠ credits → AccountingService throws.
         $this->actingAs($this->admin)
             ->post(route('admin.accounting.manual-entry.store'), [
-                'posted_on'   => now()->toDateString(),
+                'posted_on' => now()->toDateString(),
                 'description' => 'بدون توازن',
                 'lines' => [
                     ['account_id' => $cash->id, 'debit' => 100, 'credit' => 0],
@@ -593,16 +660,16 @@ class ChartOfAccountsManagementTest extends TestCase
             ->assertSessionHas('error');
 
         $this->assertSame(0,
-            \App\Models\JournalEntry::where('event_type', 'manual_journal')->count(),
+            JournalEntry::where('event_type', 'manual_journal')->count(),
             'Unbalanced entries must NOT be persisted.');
     }
 
     public function test_cashier_cannot_post_manual_journal(): void
     {
-        $cash = \App\Models\Account::where('code', '1000')->first();
+        $cash = Account::where('code', '1000')->first();
         $this->actingAs($this->cashier)
             ->post(route('admin.accounting.manual-entry.store'), [
-                'posted_on'   => now()->toDateString(),
+                'posted_on' => now()->toDateString(),
                 'description' => 'محاولة من كاشير',
                 'lines' => [
                     ['account_id' => $cash->id, 'debit' => 50, 'credit' => 0],
@@ -617,14 +684,15 @@ class ChartOfAccountsManagementTest extends TestCase
     protected function user(string $username, string $role): User
     {
         $u = User::create([
-            'name'              => ucfirst($username),
-            'username'          => $username,
-            'password'          => bcrypt('x'),
-            'status'            => 'active',
-            'role'              => $role,
+            'name' => ucfirst($username),
+            'username' => $username,
+            'password' => bcrypt('x'),
+            'status' => 'active',
+            'role' => $role,
             'primary_branch_id' => $this->branch->id,
         ]);
         $u->branches()->attach($this->branch->id, ['is_primary' => true]);
+
         return $u;
     }
 }

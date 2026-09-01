@@ -14,7 +14,7 @@ class ModifierGroup extends Model
 {
     use BelongsToBranch, HasFactory, HasLocalizedFields;
 
-    protected $fillable = ['branch_id', 'slug', 'name', 'name_en', 'min_select', 'max_select', 'required', 'display_order', 'active'];
+    protected $fillable = ['branch_id', 'slug', 'name', 'min_select', 'max_select', 'required', 'display_order', 'active'];
 
     protected $casts = [
         'required' => 'boolean',
@@ -25,7 +25,7 @@ class ModifierGroup extends Model
     {
         static::creating(function (self $m) {
             if (empty($m->slug)) {
-                $m->slug = Str::slug($m->name_en ?: $m->name) ?: 'grp-'.uniqid();
+                $m->slug = Str::slug($m->name) ?: 'grp-'.uniqid();
             }
         });
     }

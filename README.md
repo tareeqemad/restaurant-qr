@@ -1,25 +1,17 @@
 # Restaurant QR
 
-مرجع تشغيل وبيع نظام المطاعم، شامل السوق العربي/الأمريكي، setup أول مرة، التراخيص، المزامنة، وبناء نسخة عميل جاهزة.
+مرجع تشغيل نظام المطعم العربي، من الإعداد الأولي إلى النشر والمزامنة وبناء نسخة تشغيل جاهزة.
 
-## الفكرة التجارية
+## فكرة التشغيل
 
-النظام يتم تسليمه للعميل كنسخة ديمو حسب السوق. العميل يدخل على `/login` ويجرب بيانات الديمو أولا بدون إجباره على setup. إذا أعجبه النظام ودفع، أنت تنشئ له ترخيص من لوحة التراخيص الخاصة بك، ثم يبقى لديه خيار `/setup` لتحويل نسخة الديمو إلى تشغيل حقيقي: يمسح بيانات الديمو ويبدأ ببيانات مطعمه الحقيقية.
-
-العميل لا يرى ولا يفهم:
-
-- `UUID / ULID` للفرع.
-- إعدادات الترخيص.
-- private license key.
-
-أنت فقط تتحكم بالترخيص، التجديد، الإيقاف، وعدد الفروع.
+يمكن تشغيل النظام ببيانات ديمو للتجربة، ثم استخدام `/setup` لتحويله إلى نسخة المطعم الحقيقية: تُمسح بيانات الديمو، ويُنشأ الفرع والمالك والإعدادات الأساسية من شاشة واحدة.
 
 ## المتطلبات
 
 - PHP 8.2+
 - Composer
 - Node.js و npm
-- MySQL أو SQLite حسب بيئة التشغيل
+- MySQL 8.0+ أو MariaDB متوافقة مع InnoDB؛ لا يدعم المشروع SQLite
 - PHP extensions المعتادة للارافيل، ويضاف لها:
   - `openssl`
   - `zip`
@@ -44,20 +36,9 @@ php artisan view:cache
 php artisan view:clear
 ```
 
-## السوق واللغة
+## اللغة والاتجاه
 
-مصدر اللغة والاتجاه هو `MARKET_PROFILE` فقط.
-
-```env
-MARKET_PROFILE=palestine
-```
-
-يعني:
-
-- `palestine`: عربي و RTL
-- `us`: إنجليزي و LTR
-
-لا يوجد زر تبديل لغة داخل النظام. نسخة العميل تظهر حسب السوق المضبوط في الكونفيج/ملف البيئة.
+النظام موجه للسوق العربي: الواجهة عربية والاتجاه RTL. العملة ورمزها وتسميات الفاتورة مرنة من إعدادات المطعم.
 
 ## Setup أول مرة
 
@@ -78,74 +59,6 @@ MARKET_PROFILE=palestine
 - يحدد عملة البيع، عملة الدفاتر المحاسبية، وسعر الصرف بينهما.
 - ينشئ السنة المالية الحالية حسب شهر/يوم بداية السنة المالية المختار.
 - يجهز UUID الفرع داخليا بدون عرضه للعميل.
-- يحفظ إعدادات الترخيص المجهزة مسبقا من النسخة، بدون أن يراها العميل.
-
-مهم: الترخيص ليس جزءا من قرار العميل داخل setup. الترخيص يتم تجهيزه من طرف صاحب البرنامج قبل تسليم النسخة.
-
-## سيرفر التراخيص الخاص بك
-
-تحتاج نسخة مركزية عندك فقط لإدارة التراخيص. مثال:
-
-```text
-https://licenses.your-domain.com
-```
-
-هذه النسخة تكون من نفس المشروع، لكن تضبط كـ License Cloud:
-
-```env
-APP_ENV=production
-APP_DEBUG=false
-APP_URL=https://licenses.your-domain.com
-
-LICENSE_ENABLED=true
-LICENSE_ROLE=cloud
-LICENSE_PRIVATE_KEY_PATH=storage/app/license/license-private.pem
-LICENSE_PUBLIC_KEY_PATH=storage/app/license/license-public.pem
-```
-
-ثم شغل:
-
-```bash
-php artisan migrate --force
-php artisan license:generate-keys
-php artisan storage:link
-php artisan optimize
-```
-
-بعدها افتح `/setup` مرة واحدة على سيرفر التراخيص، واعمل مستخدم أدمن خاص بك. من هناك تستخدم:
-
-```text
-/admin/licenses
-```
-
-لإنشاء وتجديد وإيقاف تراخيص العملاء.
-
-ممنوع نسخ `license-private.pem` لأي عميل.
-
-## إنشاء ترخيص لعميل دفع
-
-من سيرفر التراخيص:
-
-```text
-/admin/licenses
-```
-
-اعمل ترخيص جديد وحدد:
-
-- اسم العميل.
-- اسم المطعم.
-- مدة الترخيص: 6 شهور أو سنة.
-- مبلغ الدفع النقدي.
-- عدد الفروع المسموح.
-- ملاحظات داخلية إن وجدت.
-
-النظام يولد `LICENSE_KEY` مثل:
-
-```text
-RQ-XXXX-XXXX-XXXX
-```
-
-هذا المفتاح يوضع داخل نسخة العميل قبل التسليم.
 
 ## بناء باكج عميل للبيع
 
@@ -159,12 +72,8 @@ npm run build
 
 ```bash
 php artisan release:customer-package \
-  --license-key=RQ-PAID-CUSTOMER-001 \
-  --cloud-url=https://licenses.your-domain.com \
-  --market=us \
   --app-url=https://customer-domain.com \
   --app-name="Customer Restaurant" \
-  --public-key=storage/app/license/license-public.pem \
   --include-vendor \
   --force
 ```
@@ -173,12 +82,8 @@ php artisan release:customer-package \
 
 ```powershell
 php artisan release:customer-package `
-  --license-key=RQ-PAID-CUSTOMER-001 `
-  --cloud-url=https://licenses.your-domain.com `
-  --market=us `
   --app-url=https://customer-domain.com `
   --app-name="Customer Restaurant" `
-  --public-key=storage/app/license/license-public.pem `
   --include-vendor `
   --force
 ```
@@ -192,10 +97,6 @@ storage/app/releases/
 الباكج يحتوي:
 
 - `.env` جاهز للعميل.
-- `LICENSE_ROLE=branch`.
-- `LICENSE_KEY` الخاص بالعميل.
-- `LICENSE_CLOUD_URL` الخاص بسيرفر التراخيص عندك.
-- `storage/app/license/license-public.pem`.
 - دليل `CUSTOMER-DEPLOYMENT.md`.
 - ملف `release-manifest.json`.
 
@@ -203,15 +104,8 @@ storage/app/releases/
 
 - `.git`
 - `tests`
-- `license-private.pem`
 - ملفات cache/logs/runtime
 - مفاتيح خاصة
-
-إذا تريد تضمين قاعدة ديمو SQLite داخل الباكج:
-
-```bash
---include-sqlite-demo
-```
 
 إذا لم تستخدم `--include-vendor`، يجب تشغيل هذا على سيرفر العميل بعد فك الباكج:
 
@@ -227,16 +121,12 @@ composer install --no-dev --optimize-autoloader
 APP_ENV=production
 APP_DEBUG=false
 APP_URL=https://customer-domain.com
-
-MARKET_PROFILE=us
-
-LICENSE_ENABLED=true
-LICENSE_ROLE=branch
-LICENSE_CLOUD_URL=https://licenses.your-domain.com
-LICENSE_KEY=RQ-XXXX-XXXX-XXXX
-LICENSE_PUBLIC_KEY_PATH=storage/app/license/license-public.pem
-LICENSE_PRIVATE_KEY_PATH=
-LICENSE_SIGNING_SECRET=
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=restaurant_qr
+DB_USERNAME=restaurant_user
+DB_PASSWORD=change-me
 ```
 
 ثم على سيرفر العميل:
@@ -261,31 +151,9 @@ php artisan optimize
 
 ويحول نسخة الديمو إلى نسخة مطعمه الحقيقية.
 
-## التجديد النقدي
-
-عندما يدفع العميل:
-
-1. افتح سيرفر التراخيص الخاص بك.
-2. ادخل `/admin/licenses`.
-3. افتح ترخيص العميل.
-4. سجل تجديد 6 شهور أو سنة.
-5. أدخل المبلغ والمرجع والملاحظات.
-
-نسخة العميل تحدث حالتها عند أول فحص ترخيص مع وجود الإنترنت. إذا كان الإنترنت مقطوعا، النسخة تعمل من الكاش المحلي الموقع ضمن فترة السماح.
-
-## إيقاف أو نقل فرع
-
-كل ترخيص يسجل فروعه المفعلة حسب `branch_uuid`.
-
-في صفحة تفاصيل الترخيص ستجد "تفعيلات الفروع":
-
-- إذا العميل تجاوز عدد الفروع المسموح، يرفض سيرفر التراخيص التفعيل.
-- إذا العميل نقل النظام لجهاز جديد، يمكنك إيقاف تفعيل الفرع القديم ثم السماح للجديد.
-- `max_branches` يحدد عدد الفروع/النسخ المسموح لها باستخدام نفس الترخيص.
-
 ## المزامنة
 
-المزامنة اختيارية ومنفصلة عن الترخيص.
+المزامنة اختيارية، وتُترك معطلة في التثبيت أحادي الخادم.
 
 فرع العميل:
 
@@ -308,12 +176,6 @@ SYNC_TOKEN=secret-token
 
 عند توفر الإنترنت، الفرع يزامن تلقائيا. عند انقطاع الإنترنت، يسجل الحالة offline ويحاول مرة أخرى عند عودة الاتصال.
 
-تفاصيل أكثر في:
-
-```text
-docs/offline-sync-architecture.md
-```
-
 ## المحاسبة والقيود
 
 المحاسبة مبنية على دفتر القيود، وليس فقط على التقارير التشغيلية. المسارات الأساسية:
@@ -329,7 +191,6 @@ docs/offline-sync-architecture.md
 /admin/accounting/trial-balance
 /admin/accounting/balance-sheet
 /admin/accounting/tax-report
-/admin/accounting/tax-jurisdictions
 /admin/accounting/aging
 ```
 
@@ -383,35 +244,11 @@ php artisan backup:run
 
 ## الحماية وحدودها
 
-نظام الترخيص الحالي صحيح تجاريا وتقنيا من ناحية التوقيع:
-
-- private key يبقى عندك فقط.
-- العميل يأخذ public key فقط.
-- العميل لا يستطيع تزوير ترخيص موقع.
-- نسخ نفس المفتاح على أكثر من فرع مقيدة بـ `max_branches`.
-
-لكن إذا العميل عنده وصول كامل لملفات PHP ومعه مبرمج، يمكنه تعديل السورس وحذف فحص الترخيص. لا توجد حماية 100% عند تسليم السورس.
-
-للحماية الأقوى:
-
-- الأفضل SaaS: أنت تستضيف النظام والعميل لا يأخذ الكود.
-- أو استخدم ionCube / SourceGuardian لتشفير ملفات PHP الحساسة قبل التسليم.
-- لا تسلم repo كامل يحتوي `.git` أو مفاتيح خاصة.
-
-الملفات الحساسة التي تستحق التشفير عند توزيع on-prem:
-
-- `app/Services/Licensing`
-- `app/Http/Middleware/EnsureValidLicense.php`
-- `app/Http/Controllers/Api/LicenseCheckController.php`
-- أجزاء setup/release المرتبطة بالترخيص
+- لا تسلّم ملفات `.env` أو مفاتيح التطبيقات أو نسخ قواعد البيانات خارج مسار النشر المقصود.
+- لا يتضمن باكج التشغيل مجلد `.git` أو الاختبارات أو ملفات الكاش والسجلات.
+- استعمل HTTPS ونسخاً احتياطية دورية، وقيّد الوصول إلى لوحة الإدارة حسب الدور والفرع.
 
 ## أوامر مهمة
-
-توليد مفاتيح الترخيص على سيرفرك:
-
-```bash
-php artisan license:generate-keys
-```
 
 بناء باكج عميل:
 

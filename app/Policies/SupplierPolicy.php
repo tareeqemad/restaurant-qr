@@ -5,7 +5,7 @@ namespace App\Policies;
 use App\Models\Supplier;
 use App\Models\User;
 
-class SupplierPolicy
+class SupplierPolicy extends BasePolicy
 {
     /**
      * Inventory/purchasing management is admin/manager-only territory.
@@ -13,9 +13,7 @@ class SupplierPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->isOwnerLevel()
-            || $user->hasAnyRole(['admin', 'manager'])
-            || $user->hasPermission('suppliers.viewAny');
+        return $user->hasPermission('suppliers.viewAny');
     }
 
     public function view(User $user, Supplier $supplier): bool
@@ -25,22 +23,16 @@ class SupplierPolicy
 
     public function create(User $user): bool
     {
-        return $user->isOwnerLevel()
-            || $user->hasAnyRole(['admin', 'manager'])
-            || $user->hasPermission('suppliers.create');
+        return $user->hasPermission('suppliers.create');
     }
 
     public function update(User $user, Supplier $supplier): bool
     {
-        return $user->isOwnerLevel()
-            || $user->hasAnyRole(['admin', 'manager'])
-            || $user->hasPermission('suppliers.update');
+        return $user->hasPermission('suppliers.update');
     }
 
     public function delete(User $user, Supplier $supplier): bool
     {
-        return $user->isOwnerLevel()
-            || $user->isAdmin()
-            || $user->hasPermission('suppliers.delete');
+        return $user->hasPermission('suppliers.delete');
     }
 }

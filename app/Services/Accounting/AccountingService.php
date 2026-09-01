@@ -3,76 +3,120 @@
 namespace App\Services\Accounting;
 
 use App\Models\Account;
-use App\Models\AccountMapping;
 use App\Models\AccountingPeriod;
+use App\Models\AccountMapping;
 use App\Models\BranchTransferItem;
 use App\Models\Currency;
+use App\Models\CreditNote;
+use App\Models\CustomerAdvanceTransaction;
+use App\Models\DebtWriteoff;
 use App\Models\Expense;
+use App\Models\FiscalYear;
 use App\Models\FixedAsset;
 use App\Models\FixedAssetDepreciation;
-use App\Models\FiscalYear;
 use App\Models\IngredientBatch;
 use App\Models\InventoryMovement;
 use App\Models\Invoice;
 use App\Models\JournalEntry;
+use App\Models\JournalLine;
 use App\Models\OrderItem;
 use App\Models\Payment;
 use App\Models\PurchaseOrderItem;
 use App\Models\Refund;
 use App\Models\Setting;
-use App\Models\Shift;
-use App\Models\StockCountItem;
 use App\Models\SupplierInvoice;
 use App\Models\SupplierPayment;
 use App\Services\ExchangeRateService;
 use App\Support\MarketProfile;
+use App\Support\PaymentMethods;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class AccountingService
 {
     public const CASH = '1000';
+
     public const BANK = '1010';
-    public const CARD_CLEARING = '1020';
-    public const WALLET_CLEARING = '1030';
-    public const CUSTOMER_CREDIT_CLEARING = '1040';
+
+    public const PALPAY_WALLET = '1020';
+
+    public const JAWWAL_PAY_WALLET = '1030';
+
     public const ACCOUNTS_RECEIVABLE = '1100';
+
+    public const STAFF_MEAL_RECEIVABLE = '1110';
+
     public const INVENTORY_IN_TRANSIT = '1150';
+
+    public const INTERBRANCH_CURRENT = '1160';
+
     public const INVENTORY = '1200';
+
     public const INPUT_VAT = '1300';
+
     public const FIXED_ASSETS = '1500';
+
     public const ACCUMULATED_DEPRECIATION = '1590';
+
     public const ACCOUNTS_PAYABLE = '2000';
+
+    public const CUSTOMER_ADVANCES = '2150';
+
     public const OUTPUT_VAT = '2100';
+
+    public const PAYROLL_DEDUCTIONS = '2110';
+
     public const TIPS_PAYABLE = '2200';
+
     public const GOODS_RECEIVED_NOT_INVOICED = '2300';
+
     public const OPENING_BALANCE_EQUITY = '3010';
+
     public const RETAINED_EARNINGS = '3020';
+
     public const SALES_REVENUE = '4000';
+
     public const SERVICE_REVENUE = '4010';
+
     public const DELIVERY_REVENUE = '4020';
+
+    public const STAFF_MEAL_RECOVERY_REVENUE = '4030';
+
     public const SALES_DISCOUNTS = '4090';
+
     public const SALES_RETURNS = '4100';
+
     public const INVENTORY_ADJUSTMENT_GAIN = '4200';
-    public const CASH_OVER_SHORT_INCOME = '4210';
+
     public const FOREIGN_EXCHANGE_GAIN = '4220';
+
     public const FIXED_ASSET_DISPOSAL_GAIN = '4230';
+
     public const COST_OF_GOODS_SOLD = '5000';
+
     public const OPERATING_EXPENSES = '5100';
+
+    public const STAFF_MEAL_BENEFIT_EXPENSE = '5060';
+
     public const BAD_DEBT_EXPENSE = '5200';
-    public const BANK_AND_CARD_FEES = '5300';
+
     public const WASTE_EXPENSE = '5400';
+
     public const INVENTORY_SHRINKAGE_EXPENSE = '5410';
+
     public const PURCHASE_PRICE_VARIANCE = '5420';
+
     public const DEPRECIATION_EXPENSE = '5500';
-    public const CASH_SHORTAGE_EXPENSE = '5510';
+
     public const FOREIGN_EXCHANGE_LOSS = '5520';
+
     public const FIXED_ASSET_DISPOSAL_LOSS = '5530';
 
     private ?Collection $accounts = null;
+
     private ?Collection $accountMappings = null;
 
     public static function postingRoleDefinitions(): array
@@ -80,7 +124,7 @@ class AccountingService
         return [
             'cash_account' => [
                 'label' => 'الصندوق الافتراضي',
-                'description' => 'الصندوق المستخدم في فروقات الشفت والدفع النقدي عند عدم وجود ربط خاص لطريقة الدفع.',
+                'description' => 'الحساب الافتراضي للمبالغ المقبوضة والمدفوعة نقداً عند عدم وجود ربط خاص لطريقة الدفع.',
                 'default' => self::CASH,
                 'types' => ['asset'],
                 'group' => 'الأصول والنقد',
@@ -92,20 +136,6 @@ class AccountingService
                 'types' => ['asset'],
                 'group' => 'الأصول والنقد',
             ],
-            'wallet_clearing' => [
-                'label' => 'محافظ وتطبيقات التحصيل',
-                'description' => 'حساب التحصيل عبر تطبيقات أو محافظ قديمة عند استخدامها.',
-                'default' => self::WALLET_CLEARING,
-                'types' => ['asset'],
-                'group' => 'الأصول والنقد',
-            ],
-            'customer_credit_clearing' => [
-                'label' => 'مقاصة البيع الآجل',
-                'description' => 'حساب تسوية طرق دفع آجلة قديمة عند استخدامها.',
-                'default' => self::CUSTOMER_CREDIT_CLEARING,
-                'types' => ['asset'],
-                'group' => 'الأصول والنقد',
-            ],
             'accounts_receivable' => [
                 'label' => 'الذمم المدينة',
                 'description' => 'الطرف المدين عند إصدار الفواتير والطرف الدائن عند التحصيل أو الشطب.',
@@ -113,10 +143,24 @@ class AccountingService
                 'types' => ['asset'],
                 'group' => 'الذمم',
             ],
+            'staff_meal_receivable' => [
+                'label' => 'مستحقات وجبات الموظفين',
+                'description' => 'الجزء المتجاوز فقط من بدل الوجبة الشهري والمستحق فعلياً على الموظف.',
+                'default' => self::STAFF_MEAL_RECEIVABLE,
+                'types' => ['asset'],
+                'group' => 'الذمم',
+            ],
             'inventory_in_transit' => [
                 'label' => 'مخزون بالطريق',
                 'description' => 'مخزون التحويلات بين الفروع قبل إغلاق الاستلام.',
                 'default' => self::INVENTORY_IN_TRANSIT,
+                'types' => ['asset'],
+                'group' => 'المخزون',
+            ],
+            'interbranch_current' => [
+                'label' => 'الحساب الجاري بين الفروع',
+                'description' => 'حساب نظامي يقابل قيمة المخزون المنقول بين الفروع ويتعادل تلقائياً في العرض المجمع.',
+                'default' => self::INTERBRANCH_CURRENT,
                 'types' => ['asset'],
                 'group' => 'المخزون',
             ],
@@ -128,25 +172,25 @@ class AccountingService
                 'group' => 'المخزون',
             ],
             'input_vat' => [
-                'label' => 'ضريبة مدخلات',
-                'description' => 'ضريبة مشتريات وفواتير موردين قابلة للاسترداد.',
+                'label' => 'ضريبة فاتورة المورد',
+                'description' => 'ضريبة مشتريات تُدخل من فاتورة المورد إن وجدت؛ مستقلة عن فاتورة الزبون.',
                 'default' => self::INPUT_VAT,
                 'types' => ['asset'],
                 'group' => 'الضرائب',
             ],
             'fixed_assets' => [
-                'label' => 'Fixed assets',
-                'description' => 'Capitalized restaurant assets such as equipment, furniture, and fixtures.',
+                'label' => 'الأصول الثابتة',
+                'description' => 'معدات وأثاث وتجهيزات المطعم التي تُرسمل بدلاً من تحميلها كمصروف فوري.',
                 'default' => self::FIXED_ASSETS,
                 'types' => ['asset'],
-                'group' => 'Fixed assets',
+                'group' => 'الأصول الثابتة',
             ],
             'accumulated_depreciation' => [
-                'label' => 'Accumulated depreciation',
-                'description' => 'Contra-asset account used to accumulate posted fixed-asset depreciation.',
+                'label' => 'مجمع الإهلاك',
+                'description' => 'حساب مقابل للأصول يجمع الإهلاك المرحّل للأصول الثابتة.',
                 'default' => self::ACCUMULATED_DEPRECIATION,
                 'types' => ['asset'],
-                'group' => 'Fixed assets',
+                'group' => 'الأصول الثابتة',
             ],
             'accounts_payable' => [
                 'label' => 'الذمم الدائنة',
@@ -155,12 +199,26 @@ class AccountingService
                 'types' => ['liability'],
                 'group' => 'الذمم',
             ],
+            'customer_advances' => [
+                'label' => 'أرصدة الزبائن المقدمة',
+                'description' => 'التزام المطعم تجاه الزبائن عن مبالغ استلمها قبل استخدامها في فاتورة.',
+                'default' => self::CUSTOMER_ADVANCES,
+                'types' => ['liability'],
+                'group' => 'الذمم',
+            ],
             'output_vat' => [
-                'label' => 'ضريبة مخرجات',
-                'description' => 'ضريبة المبيعات المستحقة على الفواتير.',
+                'label' => 'ضريبة فاتورة الزبون',
+                'description' => 'ضريبة اختيارية على الفاتورة الصادرة من المطعم حسب تاريخ السريان.',
                 'default' => self::OUTPUT_VAT,
                 'types' => ['liability'],
                 'group' => 'الضرائب',
+            ],
+            'payroll_deductions' => [
+                'label' => 'خصومات الرواتب المستحقة',
+                'description' => 'الحساب المقابل عند تنفيذ خصم مستحق وجبة من راتب الموظف.',
+                'default' => self::PAYROLL_DEDUCTIONS,
+                'types' => ['liability'],
+                'group' => 'الالتزامات',
             ],
             'tips_payable' => [
                 'label' => 'إكراميات مستحقة',
@@ -211,6 +269,13 @@ class AccountingService
                 'types' => ['revenue'],
                 'group' => 'الإيرادات',
             ],
+            'staff_meal_recovery_revenue' => [
+                'label' => 'استرداد تكلفة وجبات الموظفين',
+                'description' => 'الجزء الذي يتجاوز بدل الموظف ويصبح مستحقاً عليه؛ لا يشمل الجزء الذي يتحمله المطعم.',
+                'default' => self::STAFF_MEAL_RECOVERY_REVENUE,
+                'types' => ['revenue'],
+                'group' => 'الإيرادات',
+            ],
             'sales_discounts' => [
                 'label' => 'خصومات المبيعات',
                 'description' => 'الخصومات والعروض ومسموحات المبيعات.',
@@ -232,31 +297,31 @@ class AccountingService
                 'types' => ['revenue'],
                 'group' => 'المخزون',
             ],
-            'cash_over_short_income' => [
-                'label' => 'فائض صندوق',
-                'description' => 'فروقات الصندوق الموجبة عند إغلاق الشفت.',
-                'default' => self::CASH_OVER_SHORT_INCOME,
-                'types' => ['revenue'],
-                'group' => 'الصندوق',
-            ],
             'foreign_exchange_gain' => [
-                'label' => 'Foreign exchange gain',
-                'description' => 'Gain recognized when a foreign-currency receivable or payable is settled at a different exchange rate.',
+                'label' => 'أرباح فروقات العملة',
+                'description' => 'ربح ينتج عند تحصيل ذمة أو سداد التزام أجنبي بسعر صرف مختلف.',
                 'default' => self::FOREIGN_EXCHANGE_GAIN,
                 'types' => ['revenue'],
-                'group' => 'Currencies',
+                'group' => 'العملات',
             ],
             'fixed_asset_disposal_gain' => [
-                'label' => 'Gain on fixed asset disposal',
-                'description' => 'Gain recognized when proceeds exceed the book value of a disposed fixed asset.',
+                'label' => 'ربح بيع أصل ثابت',
+                'description' => 'الفرق الموجب عندما تكون حصيلة بيع الأصل أعلى من قيمته الدفترية.',
                 'default' => self::FIXED_ASSET_DISPOSAL_GAIN,
                 'types' => ['revenue'],
-                'group' => 'Fixed assets',
+                'group' => 'الأصول الثابتة',
             ],
             'cost_of_goods_sold' => [
                 'label' => 'تكلفة البضاعة المباعة',
                 'description' => 'تكلفة المكونات المصروفة عند بيع الأصناف.',
                 'default' => self::COST_OF_GOODS_SOLD,
+                'types' => ['expense'],
+                'group' => 'التكاليف والمصاريف',
+            ],
+            'staff_meal_benefit_expense' => [
+                'label' => 'تكلفة وجبات ومنافع الموظفين',
+                'description' => 'التكلفة الفعلية للمكونات المصروفة في وجبات الموظفين، وفق حركة المخزون.',
+                'default' => self::STAFF_MEAL_BENEFIT_EXPENSE,
                 'types' => ['expense'],
                 'group' => 'التكاليف والمصاريف',
             ],
@@ -271,13 +336,6 @@ class AccountingService
                 'label' => 'ديون معدومة',
                 'description' => 'شطب ذمم مدينة غير محصلة.',
                 'default' => self::BAD_DEBT_EXPENSE,
-                'types' => ['expense'],
-                'group' => 'التكاليف والمصاريف',
-            ],
-            'bank_and_card_fees' => [
-                'label' => 'رسوم بنكية وبطاقات',
-                'description' => 'عمولات البنوك والبطاقات عند استخدامها في القيود.',
-                'default' => self::BANK_AND_CARD_FEES,
                 'types' => ['expense'],
                 'group' => 'التكاليف والمصاريف',
             ],
@@ -303,32 +361,25 @@ class AccountingService
                 'group' => 'المخزون',
             ],
             'depreciation_expense' => [
-                'label' => 'Depreciation expense',
-                'description' => 'Periodic depreciation expense posted for fixed assets.',
+                'label' => 'مصروف الإهلاك',
+                'description' => 'مصروف الإهلاك الدوري المرحّل للأصول الثابتة.',
                 'default' => self::DEPRECIATION_EXPENSE,
                 'types' => ['expense'],
-                'group' => 'Fixed assets',
-            ],
-            'cash_shortage_expense' => [
-                'label' => 'عجز صندوق',
-                'description' => 'فروقات الصندوق السالبة عند إغلاق الشفت.',
-                'default' => self::CASH_SHORTAGE_EXPENSE,
-                'types' => ['expense'],
-                'group' => 'الصندوق',
+                'group' => 'الأصول الثابتة',
             ],
             'foreign_exchange_loss' => [
-                'label' => 'Foreign exchange loss',
-                'description' => 'Loss recognized when a foreign-currency receivable or payable is settled at a different exchange rate.',
+                'label' => 'خسائر فروقات العملة',
+                'description' => 'خسارة تنتج عند تحصيل ذمة أو سداد التزام أجنبي بسعر صرف مختلف.',
                 'default' => self::FOREIGN_EXCHANGE_LOSS,
                 'types' => ['expense'],
-                'group' => 'Currencies',
+                'group' => 'العملات',
             ],
             'fixed_asset_disposal_loss' => [
-                'label' => 'Loss on fixed asset disposal',
-                'description' => 'Loss recognized when proceeds are below the book value of a disposed fixed asset.',
+                'label' => 'خسارة بيع أصل ثابت',
+                'description' => 'الفرق السالب عندما تكون حصيلة بيع الأصل أقل من قيمته الدفترية.',
                 'default' => self::FIXED_ASSET_DISPOSAL_LOSS,
                 'types' => ['expense'],
-                'group' => 'Fixed assets',
+                'group' => 'الأصول الثابتة',
             ],
         ];
     }
@@ -439,7 +490,7 @@ class AccountingService
     {
         $invoice->refresh();
 
-        $promoSavings  = $invoice->promoSavings();
+        $promoSavings = $invoice->promoSavings();
         $grossSubtotal = (float) $invoice->subtotal + $promoSavings;
         $totalDiscount = (float) $invoice->discount_total + $promoSavings;
 
@@ -478,17 +529,90 @@ class AccountingService
     {
         $payment->loadMissing('invoice');
 
+        $lines = $payment->method === PaymentMethods::CUSTOMER_ADVANCE
+            ? [
+                $this->debit($this->postingAccount('customer_advances'), (float) $payment->amount, 'استخدام رصيد مقدم للزبون'),
+                $this->credit($this->postingAccount('accounts_receivable'), (float) $payment->amount, 'تسوية ذمم الفاتورة من الرصيد المقدم'),
+            ]
+            : array_merge([
+                $this->debit($this->cashAccountForMethod($payment->method), (float) $payment->amount, 'تحصيل عبر '.$this->paymentMethodLabel($payment->method)),
+                $this->credit($this->postingAccount('accounts_receivable'), (float) $payment->amount, 'تسوية ذمم مدينة للعملاء'),
+            ], $this->receivableSettlementAdjustmentLines($payment));
+
         return $this->post(
-            eventType: 'payment_received',
+            eventType: $payment->method === PaymentMethods::CUSTOMER_ADVANCE
+                ? 'customer_advance_redeemed'
+                : 'payment_received',
             source: $payment,
             branchId: $payment->branch_id ?: $payment->invoice?->branch_id,
             postedOn: $payment->paid_at ?: $payment->created_at ?: now(),
             description: "تحصيل دفعة على فاتورة {$payment->invoice?->number}",
-            lines: array_merge([
-                $this->debit($this->cashAccountForMethod($payment->method), (float) $payment->amount, 'تحصيل عبر '.$this->paymentMethodLabel($payment->method)),
-                $this->credit($this->postingAccount('accounts_receivable'), (float) $payment->amount, 'تسوية ذمم مدينة للعملاء'),
-            ], $this->receivableSettlementAdjustmentLines($payment)),
+            lines: $lines,
             createdBy: $payment->received_by_user_id,
+        );
+    }
+
+    public function recordCustomerAdvanceDeposit(CustomerAdvanceTransaction $transaction): ?JournalEntry
+    {
+        $transaction->loadMissing('customer');
+
+        return $this->post(
+            eventType: 'customer_advance_deposited',
+            source: $transaction,
+            branchId: $transaction->branch_id,
+            postedOn: $transaction->occurred_at ?: now(),
+            description: 'إيداع رصيد مقدم للزبون '.$transaction->customer?->name,
+            lines: [
+                $this->debit($this->cashAccountForMethod($transaction->payment_method), (float) $transaction->amount, 'استلام الرصيد عبر '.$this->paymentMethodLabel($transaction->payment_method)),
+                $this->credit($this->postingAccount('customer_advances'), (float) $transaction->amount, 'التزام رصيد مقدم للزبون'),
+            ],
+            metadata: ['customer_id' => $transaction->customer_id],
+            createdBy: $transaction->created_by_user_id,
+        );
+    }
+
+    public function recordCustomerAdvanceOpeningBalance(CustomerAdvanceTransaction $transaction): ?JournalEntry
+    {
+        $transaction->loadMissing('customer');
+
+        return $this->post(
+            eventType: 'customer_advance_opening',
+            source: $transaction,
+            branchId: $transaction->branch_id,
+            postedOn: $transaction->occurred_at,
+            description: 'رصيد مقدم افتتاحي للزبون '.$transaction->customer?->name,
+            lines: [
+                $this->debit($this->postingAccount('opening_balance_equity'), (float) $transaction->amount, 'مقابل الرصيد المقدم الافتتاحي'),
+                $this->credit($this->postingAccount('customer_advances'), (float) $transaction->amount, 'التزام رصيد مقدم افتتاحي للزبون'),
+            ],
+            metadata: ['customer_id' => $transaction->customer_id],
+            createdBy: $transaction->created_by_user_id,
+        );
+    }
+
+    public function reverseCustomerAdvanceDeposit(
+        CustomerAdvanceTransaction $deposit,
+        CustomerAdvanceTransaction $reversal,
+        int $userId,
+        string $reason,
+    ): ?JournalEntry {
+        $original = JournalEntry::with('lines.account')
+            ->where('source_type', $deposit::class)
+            ->where('source_id', $deposit->id)
+            ->where('event_type', 'customer_advance_deposited')
+            ->first();
+
+        if (! $original) {
+            return null;
+        }
+
+        return $this->reverseEntry(
+            original: $original,
+            eventType: 'customer_advance_deposit_reversed_'.$reversal->id,
+            postedOn: $reversal->occurred_at ?: now(),
+            description: 'عكس إيداع رصيد مقدم — '.$reason,
+            metadata: ['reversal_transaction_id' => $reversal->id],
+            createdBy: $userId,
         );
     }
 
@@ -509,36 +633,60 @@ class AccountingService
         );
     }
 
+    public function recordDebtWriteoff(DebtWriteoff $writeoff): ?JournalEntry
+    {
+        return $this->post(
+            eventType: 'debt_writeoff_posted',
+            source: $writeoff,
+            branchId: $writeoff->branch_id,
+            postedOn: $writeoff->written_off_at ?: now(),
+            description: "شطب دين {$writeoff->number} على فاتورة {$writeoff->invoice?->number}",
+            lines: [
+                $this->debit($this->postingAccount('bad_debt_expense'), (float) $writeoff->amount, 'مصروف ديون معدومة'),
+                $this->credit($this->postingAccount('accounts_receivable'), (float) $writeoff->amount, 'تخفيض ذمم مدينة بالشطب'),
+            ],
+            metadata: ['reason' => $writeoff->reason],
+            createdBy: $writeoff->written_off_by,
+        );
+    }
+
+    public function reverseDebtWriteoff(DebtWriteoff $writeoff, int $userId, string $reason): ?JournalEntry
+    {
+        return $this->reverse(
+            eventType: 'debt_writeoff_reversed',
+            source: $writeoff,
+            originalEventType: 'debt_writeoff_posted',
+            postedOn: now(),
+            description: "عكس شطب دين {$writeoff->number}",
+            metadata: ['reason' => $reason],
+            createdBy: $userId,
+        );
+    }
+
     public function recordRefundCompleted(Refund $refund): ?JournalEntry
     {
-        $refund->loadMissing('invoice');
+        $refund->loadMissing('invoice', 'allocations');
         $invoice = $refund->invoice;
-        $amount  = (float) $refund->amount;
+        $amount = (float) $refund->amount;
 
-        // Split the refund across the SAME components the sale credited, in
-        // proportion to how much of the bill is being returned. Otherwise the
-        // full amount hit sales-returns (4100) alone and the VAT (2100), service
-        // (4010), delivery (4020) and tips (2200) baked into it were never
-        // relieved — the restaurant kept remitting tax on returned sales and the
-        // settlements screen let you pay out tips already handed back.
-        $total = $invoice ? (float) $invoice->total : 0.0;
-        $p = $total > 0.0001 ? $amount / $total : 0.0;
-
-        $taxPart      = $invoice ? round((float) $invoice->tax_total     * $p, 2) : 0.0;
-        $servicePart  = $invoice ? round((float) $invoice->service_total * $p, 2) : 0.0;
-        $deliveryPart = $invoice ? round((float) $invoice->delivery_fee  * $p, 2) : 0.0;
-        $tipPart      = $invoice ? round((float) $invoice->tip           * $p, 2) : 0.0;
-        // Revenue portion absorbs the rounding so debits sum EXACTLY to the cash out.
-        $revenuePart  = round($amount - $taxPart - $servicePart - $deliveryPart - $tipPart, 2);
-
+        // The credit note has already reduced revenue/VAT and credited A/R.
+        // This second document only settles that customer credit through the
+        // actual payout channels, preserving a clean invoice sub-ledger.
         $lines = [
-            $this->debit($this->postingAccount('sales_returns'), $revenuePart, 'مردودات ومسموحات مبيعات'),
+            $this->debit($this->postingAccount('accounts_receivable'), $amount, 'تسوية رصيد الإشعار الدائن للعميل'),
         ];
-        if ($taxPart > 0.0001)      $lines[] = $this->debit($this->postingAccount('output_vat'), $taxPart, 'عكس ضريبة مخرجات على المرتجع');
-        if ($servicePart > 0.0001)  $lines[] = $this->debit($this->postingAccount('service_revenue'), $servicePart, 'عكس رسوم خدمة على المرتجع');
-        if ($deliveryPart > 0.0001) $lines[] = $this->debit($this->postingAccount('delivery_revenue'), $deliveryPart, 'عكس رسوم توصيل على المرتجع');
-        if ($tipPart > 0.0001)      $lines[] = $this->debit($this->postingAccount('tips_payable'), $tipPart, 'عكس إكرامية مستحقة على المرتجع');
-        $lines[] = $this->credit($this->cashAccountForMethod($refund->method), $amount, 'صرف استرداد عبر '.$this->paymentMethodLabel($refund->method));
+        $allocations = $refund->allocations;
+        if ($allocations->isEmpty()) {
+            $allocations = collect([(object) ['method' => $refund->method, 'amount' => $amount]]);
+        }
+        foreach ($allocations as $allocation) {
+            $method = (string) $allocation->method;
+            $allocationAmount = (float) $allocation->amount;
+            $account = $method === PaymentMethods::CUSTOMER_ADVANCE
+                ? $this->postingAccount('customer_advances')
+                : $this->cashAccountForMethod($method);
+            $lines[] = $this->credit($account, $allocationAmount, 'صرف استرداد عبر '.$this->paymentMethodLabel($method));
+        }
 
         return $this->post(
             eventType: 'refund_completed',
@@ -551,8 +699,68 @@ class AccountingService
         );
     }
 
+    public function recordCreditNoteIssued(CreditNote $creditNote): ?JournalEntry
+    {
+        $lines = [
+            $this->debit($this->postingAccount('sales_returns'), (float) $creditNote->revenue_total, 'مردودات ومسموحات مبيعات'),
+        ];
+        if ((float) $creditNote->tax_total > 0.0001) {
+            $lines[] = $this->debit($this->postingAccount('output_vat'), (float) $creditNote->tax_total, 'عكس ضريبة مخرجات بإشعار دائن');
+        }
+        if ((float) $creditNote->service_total > 0.0001) {
+            $lines[] = $this->debit($this->postingAccount('service_revenue'), (float) $creditNote->service_total, 'عكس رسوم خدمة بإشعار دائن');
+        }
+        if ((float) $creditNote->delivery_total > 0.0001) {
+            $lines[] = $this->debit($this->postingAccount('delivery_revenue'), (float) $creditNote->delivery_total, 'عكس رسوم توصيل بإشعار دائن');
+        }
+        if ((float) $creditNote->tip_total > 0.0001) {
+            $lines[] = $this->debit($this->postingAccount('tips_payable'), (float) $creditNote->tip_total, 'عكس إكرامية بإشعار دائن');
+        }
+        $lines[] = $this->credit($this->postingAccount('accounts_receivable'), (float) $creditNote->total, 'تخفيض ذمة العميل بالإشعار الدائن');
+
+        return $this->post(
+            eventType: 'credit_note_issued',
+            source: $creditNote,
+            branchId: $creditNote->branch_id,
+            postedOn: $creditNote->issued_at ?: now(),
+            description: "إشعار دائن {$creditNote->number} على فاتورة {$creditNote->invoice?->number}",
+            lines: $lines,
+            metadata: ['kind' => $creditNote->kind, 'reason' => $creditNote->reason],
+            createdBy: $creditNote->issued_by,
+        );
+    }
+
+    public function reverseCreditNoteIssued(CreditNote $creditNote, int $userId, string $reason): ?JournalEntry
+    {
+        return $this->reverse(
+            eventType: 'credit_note_reversed',
+            source: $creditNote,
+            originalEventType: 'credit_note_issued',
+            postedOn: now(),
+            description: "عكس إشعار دائن {$creditNote->number}",
+            metadata: ['reason' => $reason],
+            createdBy: $userId,
+        );
+    }
+
+    public function reverseRefundCompleted(Refund $refund, int $userId, string $reason): ?JournalEntry
+    {
+        return $this->reverse(
+            eventType: 'refund_reversed',
+            source: $refund,
+            originalEventType: 'refund_completed',
+            postedOn: now(),
+            description: "عكس صرف استرداد {$refund->number}",
+            metadata: ['reason' => $reason],
+            createdBy: $userId,
+        );
+    }
+
     public function recordExpenseApproved(Expense $expense): ?JournalEntry
     {
+        $currencyCode = $this->normalizeCurrencyCode($expense->currency_code ?: $this->baseCurrencyCode());
+        $exchangeRate = (float) ($expense->exchange_rate ?: 1);
+
         return $this->post(
             eventType: 'expense_approved',
             source: $expense,
@@ -560,21 +768,31 @@ class AccountingService
             postedOn: $expense->expense_date ?: now(),
             description: "اعتماد مصروف {$expense->expense_number}",
             lines: [
-                $this->debit($this->expenseAccountFor($expense), (float) $expense->amount, $expense->description),
-                $this->credit($this->cashAccountForMethod($expense->payment_method), (float) $expense->amount, 'سداد عبر '.$this->paymentMethodLabel($expense->payment_method)),
+                $this->currencyDebit($this->expenseAccountFor($expense), (float) $expense->amount, $currencyCode, $exchangeRate, $expense->description),
+                $this->currencyCredit($this->cashAccountForMethod($expense->payment_method), (float) $expense->amount, $currencyCode, $exchangeRate, 'سداد عبر '.$this->paymentMethodLabel($expense->payment_method)),
             ],
             createdBy: $expense->approved_by_user_id,
+            currencyCode: $currencyCode,
+            exchangeRate: $exchangeRate,
         );
     }
 
     public function recordSupplierInvoiceCreated(SupplierInvoice $invoice): ?JournalEntry
     {
-        $invoice->loadMissing('items');
+        $invoice->loadMissing('items', 'purchaseOrder');
+
+        $currencyCode = $this->normalizeCurrencyCode($invoice->currency_code ?: $this->transactionCurrencyCode());
+        $exchangeRate = $invoice->currency_code
+            ? (float) ($invoice->exchange_rate ?: 1)
+            : $this->exchangeRateForCurrency($currencyCode, $this->baseCurrencyCode(), $invoice->invoice_date);
 
         $poItems = $invoice->items->whereNotNull('purchase_order_item_id');
-        $poReceivedSubtotal = (float) $poItems->sum(fn ($item) => (float) ($item->received_total ?? $item->subtotal));
-        $poInvoiceSubtotal = (float) $poItems->sum('subtotal');
-        $priceVariance = $this->round($poInvoiceSubtotal - $poReceivedSubtotal);
+        $poReceivedBaseSubtotal = (float) $poItems->sum(fn ($item) => (float) (
+            $item->received_base_total
+            ?? ((float) ($item->received_total ?? $item->subtotal) * (float) ($invoice->purchaseOrder?->exchange_rate ?: $exchangeRate))
+        ));
+        $poInvoiceBaseSubtotal = (float) $poItems->sum(fn ($item) => (float) $item->subtotal * $exchangeRate);
+        $priceVariance = $this->round($poInvoiceBaseSubtotal - $poReceivedBaseSubtotal);
 
         $inventorySubtotal = (float) $invoice->items
             ->whereNull('purchase_order_item_id')
@@ -585,14 +803,14 @@ class AccountingService
             : (float) $invoice->subtotal;
 
         $lines = [
-            $this->debit($this->postingAccount('grni'), $poReceivedSubtotal, 'تسوية استلامات مخزون غير مفوترة'),
+            $this->baseDebit($this->postingAccount('grni'), $poReceivedBaseSubtotal, 'تسوية استلامات مخزون غير مفوترة'),
             $priceVariance > 0
-                ? $this->debit($this->postingAccount('purchase_price_variance'), abs($priceVariance), 'فروقات أسعار مشتريات مدينة')
-                : $this->credit($this->postingAccount('purchase_price_variance'), abs($priceVariance), 'فروقات أسعار مشتريات دائنة'),
-            $this->debit($this->postingAccount('inventory'), $inventorySubtotal, 'إضافة مشتريات مخزنية من فاتورة مورد'),
-            $this->debit($this->postingAccount('operating_expenses'), $expenseSubtotal, 'مصروفات غير مخزنية من فاتورة مورد'),
-            $this->debit($this->postingAccount('input_vat'), (float) $invoice->tax_total, 'ضريبة قيمة مضافة - مدخلات'),
-            $this->credit($this->postingAccount('accounts_payable'), (float) $invoice->total, 'إثبات ذمم دائنة للمورد'),
+                ? $this->baseDebit($this->postingAccount('purchase_price_variance'), abs($priceVariance), 'فرق سعر شراء/صرف مدينة')
+                : $this->baseCredit($this->postingAccount('purchase_price_variance'), abs($priceVariance), 'فرق سعر شراء/صرف دائنة'),
+            $this->currencyDebit($this->postingAccount('inventory'), $inventorySubtotal, $currencyCode, $exchangeRate, 'إضافة مشتريات مخزنية من فاتورة مورد'),
+            $this->currencyDebit($this->postingAccount('operating_expenses'), $expenseSubtotal, $currencyCode, $exchangeRate, 'مصروفات غير مخزنية من فاتورة مورد'),
+            $this->currencyDebit($this->postingAccount('input_vat'), (float) $invoice->tax_total, $currencyCode, $exchangeRate, 'ضريبة قيمة مضافة - مدخلات'),
+            $this->currencyCredit($this->postingAccount('accounts_payable'), (float) $invoice->total, $currencyCode, $exchangeRate, 'إثبات ذمم دائنة للمورد'),
         ];
 
         return $this->post(
@@ -603,6 +821,50 @@ class AccountingService
             description: "إثبات فاتورة مورد {$invoice->number}",
             lines: $lines,
             createdBy: $invoice->created_by,
+            currencyCode: $currencyCode,
+            exchangeRate: $exchangeRate,
+        );
+    }
+
+    public function recordCustomerOpeningDebt(Invoice $invoice, ?int $userId = null): ?JournalEntry
+    {
+        $amount = (float) $invoice->total;
+
+        return $this->post(
+            eventType: 'customer_opening_debt',
+            source: $invoice,
+            branchId: $invoice->branch_id,
+            postedOn: $invoice->issued_at ?: now(),
+            description: "رصيد افتتاحي على الزبون {$invoice->customer_name}",
+            lines: [
+                $this->baseDebit($this->postingAccount('accounts_receivable'), $amount, 'ذمة عميل افتتاحية'),
+                $this->baseCredit($this->postingAccount('opening_balance_equity'), $amount, 'مقابل الرصيد الافتتاحي'),
+            ],
+            metadata: ['opening_balance' => true, 'customer_id' => $invoice->customer_id],
+            createdBy: $userId,
+        );
+    }
+
+    public function recordSupplierOpeningDebt(SupplierInvoice $invoice, ?int $userId = null): ?JournalEntry
+    {
+        $currencyCode = $this->normalizeCurrencyCode($invoice->currency_code ?: $this->baseCurrencyCode());
+        $exchangeRate = (float) ($invoice->exchange_rate ?: 1);
+        $amount = (float) $invoice->total;
+
+        return $this->post(
+            eventType: 'supplier_opening_debt',
+            source: $invoice,
+            branchId: $invoice->branch_id,
+            postedOn: $invoice->invoice_date ?: now(),
+            description: "رصيد افتتاحي لمورد {$invoice->supplier?->name}",
+            lines: [
+                $this->currencyDebit($this->postingAccount('opening_balance_equity'), $amount, $currencyCode, $exchangeRate, 'مقابل الرصيد الافتتاحي'),
+                $this->currencyCredit($this->postingAccount('accounts_payable'), $amount, $currencyCode, $exchangeRate, 'ذمة مورد افتتاحية'),
+            ],
+            metadata: ['opening_balance' => true, 'supplier_id' => $invoice->supplier_id],
+            createdBy: $userId,
+            currencyCode: $currencyCode,
+            exchangeRate: $exchangeRate,
         );
     }
 
@@ -623,6 +885,11 @@ class AccountingService
     {
         $payment->loadMissing('invoice');
 
+        $currencyCode = $this->normalizeCurrencyCode($payment->currency_code ?: $payment->invoice?->currency_code ?: $this->transactionCurrencyCode());
+        $exchangeRate = $payment->currency_code
+            ? (float) ($payment->exchange_rate ?: 1)
+            : $this->exchangeRateForCurrency($currencyCode, $this->baseCurrencyCode(), $payment->paid_on);
+
         return $this->post(
             eventType: 'supplier_payment_recorded',
             source: $payment,
@@ -630,10 +897,12 @@ class AccountingService
             postedOn: $payment->paid_on ?: $payment->created_at ?: now(),
             description: "سداد فاتورة مورد {$payment->invoice?->number}",
             lines: array_merge([
-                $this->debit($this->postingAccount('accounts_payable'), (float) $payment->amount, 'تسوية ذمم دائنة للمورد'),
-                $this->credit($this->cashAccountForMethod($payment->method), (float) $payment->amount, 'سداد عبر '.$this->paymentMethodLabel($payment->method)),
+                $this->currencyDebit($this->postingAccount('accounts_payable'), (float) $payment->amount, $currencyCode, $exchangeRate, 'تسوية ذمم دائنة للمورد'),
+                $this->currencyCredit($this->cashAccountForMethod($payment->method), (float) $payment->amount, $currencyCode, $exchangeRate, 'سداد عبر '.$this->paymentMethodLabel($payment->method)),
             ], $this->payableSettlementAdjustmentLines($payment)),
             createdBy: $payment->paid_by,
+            currencyCode: $currencyCode,
+            exchangeRate: $exchangeRate,
         );
     }
 
@@ -660,35 +929,6 @@ class AccountingService
             'in' => $this->postInventoryIn($movement, $amount, $description),
             default => null,
         };
-    }
-
-    public function recordShiftClosed(Shift $shift): ?JournalEntry
-    {
-        $variance = $this->round((float) $shift->cash_variance);
-        if (abs($variance) <= 0.009) {
-            return null;
-        }
-
-        $amount = abs($variance);
-        $lines = $variance > 0
-            ? [
-                $this->debit($this->postingAccount('cash_account'), $amount, 'زيادة فعلية في صندوق الشفت'),
-                $this->credit($this->postingAccount('cash_over_short_income'), $amount, 'فائض صندوق عند إغلاق الشفت'),
-            ]
-            : [
-                $this->debit($this->postingAccount('cash_shortage_expense'), $amount, 'عجز صندوق عند إغلاق الشفت'),
-                $this->credit($this->postingAccount('cash_account'), $amount, 'نقص فعلي في صندوق الشفت'),
-            ];
-
-        return $this->post(
-            eventType: 'shift_cash_variance',
-            source: $shift,
-            branchId: $shift->branch_id,
-            postedOn: $shift->closed_at ?: now(),
-            description: "تسوية فرق صندوق الشفت #{$shift->id}",
-            lines: $lines,
-            createdBy: auth()->id(),
-        );
     }
 
     public function recordTaxPayment(float $outputTax, float $inputTax, string $paymentMethod, ?int $branchId, mixed $postedOn, ?int $createdBy = null, array $metadata = []): ?JournalEntry
@@ -745,45 +985,81 @@ class AccountingService
         );
     }
 
-    public function recordPaymentClearingSettlement(Account $clearingAccount, Account $depositAccount, float $grossAmount, float $feeAmount, ?int $branchId, mixed $postedOn, ?int $createdBy = null, ?string $notes = null): ?JournalEntry
+    public function paymentAccountCode(string $paymentMethod): string
     {
-        if ($clearingAccount->type !== 'asset' || $depositAccount->type !== 'asset') {
-            throw new \RuntimeException('Payment clearing settlement requires asset accounts.');
+        return $this->cashAccountForMethod($paymentMethod);
+    }
+
+    public function availableWalletBalance(string $walletMethod, ?int $branchId, mixed $asOf): float
+    {
+        if (! in_array($walletMethod, ['palpay', 'jawwal_pay'], true)) {
+            throw new \RuntimeException('طريقة المحفظة غير صالحة.');
         }
 
-        $grossAmount = $this->round($grossAmount);
-        $feeAmount = $this->round(max(0, $feeAmount));
-        $netDeposit = $this->round($grossAmount - $feeAmount);
+        $accountCode = $this->cashAccountForMethod($walletMethod);
+        $account = Account::query()->where('code', $accountCode)->first();
+        if (! $account) {
+            return 0.0;
+        }
+        $totals = JournalLine::query()
+            ->selectRaw('COALESCE(SUM(journal_lines.debit), 0) as debit_total, COALESCE(SUM(journal_lines.credit), 0) as credit_total')
+            ->join('journal_entries', 'journal_entries.id', '=', 'journal_lines.journal_entry_id')
+            ->where('journal_lines.account_id', $account->id)
+            ->whereDate('journal_entries.posted_on', '<=', Carbon::parse($asOf)->toDateString())
+            ->when($branchId, fn ($query) => $query->where('journal_lines.branch_id', $branchId))
+            ->first();
 
-        if ($grossAmount <= 0 || $netDeposit < 0) {
-            throw new \RuntimeException('Settlement gross amount must be greater than the fee amount.');
+        return $this->round(max(0, (float) $totals->debit_total - (float) $totals->credit_total));
+    }
+
+    public function recordWalletTransfer(string $walletMethod, float $amount, ?int $branchId, mixed $postedOn, ?int $createdBy = null, ?string $notes = null): ?JournalEntry
+    {
+        if (! in_array($walletMethod, ['palpay', 'jawwal_pay'], true)) {
+            throw new \RuntimeException('طريقة المحفظة غير صالحة للتحويل إلى البنك.');
         }
 
-        $lines = [];
-        if ($netDeposit > 0) {
-            $lines[] = $this->baseDebit($depositAccount->code, $netDeposit, 'Net payment processor deposit');
+        $amount = $this->round($amount);
+        if ($amount <= 0) {
+            throw new \RuntimeException('مبلغ تحويل المحفظة يجب أن يكون أكبر من صفر.');
         }
-        if ($feeAmount > 0) {
-            $lines[] = $this->baseDebit($this->postingAccount('bank_and_card_fees'), $feeAmount, 'Payment processor fee');
-        }
-        $lines[] = $this->baseCredit($clearingAccount->code, $grossAmount, 'Clear payment processor receivable');
 
-        return $this->post(
-            eventType: 'payment_clearing_settlement',
-            source: null,
-            branchId: $branchId,
-            postedOn: $postedOn,
-            description: 'Payment clearing settlement',
-            lines: $lines,
-            metadata: [
-                'clearing_account_id' => $clearingAccount->id,
-                'deposit_account_id' => $depositAccount->id,
-                'gross_amount' => $grossAmount,
-                'fee_amount' => $feeAmount,
-                'notes' => $notes,
-            ],
-            createdBy: $createdBy,
-        );
+        $walletAccount = $this->cashAccountForMethod($walletMethod);
+        $bankAccount = $this->postingAccount('bank_account');
+        if ($walletAccount === $bankAccount) {
+            throw new \RuntimeException('المحفظة مرتبطة بحساب البنك نفسه؛ لا يوجد رصيد مستقل يحتاج إلى تحويل.');
+        }
+
+        return DB::transaction(function () use ($walletMethod, $walletAccount, $bankAccount, $amount, $branchId, $postedOn, $createdBy, $notes) {
+            // Serializing transfers on the wallet account prevents two accountant
+            // tabs from spending the same ledger balance at the same time.
+            $account = Account::query()->where('code', $walletAccount)->lockForUpdate()->first();
+            if (! $account) {
+                throw new \RuntimeException('حساب المحفظة غير مهيأ في شجرة الحسابات. راجع ربط العمليات أو بيانات التأسيس.');
+            }
+            $available = $this->availableWalletBalance($walletMethod, $branchId, $postedOn);
+            if ($amount > $available + 0.0001) {
+                throw new \RuntimeException('مبلغ التحويل أكبر من رصيد المحفظة المتاح.');
+            }
+
+            $walletLabel = $this->paymentMethodLabel($walletMethod);
+
+            return $this->post(
+                eventType: 'wallet_to_bank',
+                source: null,
+                branchId: $branchId,
+                postedOn: $postedOn,
+                description: 'تحويل '.$walletLabel.' إلى البنك',
+                lines: [
+                    $this->baseDebit($bankAccount, $amount, 'إيداع رصيد المحفظة في البنك'),
+                    $this->baseCredit($walletAccount, $amount, 'تحويل رصيد '.$walletLabel),
+                ],
+                metadata: array_filter([
+                    'wallet_method' => $walletMethod,
+                    'notes' => $notes,
+                ]),
+                createdBy: $createdBy,
+            );
+        });
     }
 
     public function recordFixedAssetAcquisition(FixedAsset $asset): ?JournalEntry
@@ -1126,6 +1402,18 @@ class AccountingService
         }
 
         if ($movement->reference_type === OrderItem::class) {
+            if ($this->isStaffMealMovement($movement)) {
+                return $this->postInventoryMovement(
+                    'inventory_staff_meal_consumed',
+                    $movement,
+                    $description,
+                    [
+                        $this->debit($this->postingAccount('staff_meal_benefit_expense'), $amount, 'تكلفة فعلية لوجبة موظف'),
+                        $this->credit($this->postingAccount('inventory'), $amount, 'صرف مكونات لوجبة موظف'),
+                    ],
+                );
+            }
+
             return $this->postInventoryMovement(
                 'inventory_cogs_recognized',
                 $movement,
@@ -1163,6 +1451,18 @@ class AccountingService
         }
 
         if ($movement->reference_type === OrderItem::class) {
+            if ($this->isStaffMealMovement($movement)) {
+                return $this->postInventoryMovement(
+                    'inventory_staff_meal_reversed',
+                    $movement,
+                    $description,
+                    [
+                        $this->debit($this->postingAccount('inventory'), $amount, 'إرجاع مكونات وجبة موظف إلى المخزون'),
+                        $this->credit($this->postingAccount('staff_meal_benefit_expense'), $amount, 'عكس تكلفة وجبة موظف'),
+                    ],
+                );
+            }
+
             return $this->postInventoryMovement(
                 'inventory_cogs_reversed',
                 $movement,
@@ -1216,7 +1516,13 @@ class AccountingService
     public function recordWasteReclassification(InventoryMovement $movement, string $description): ?JournalEntry
     {
         $amount = abs((float) $movement->total_cost);
-        if ($amount <= 0.0001) return null;
+        if ($amount <= 0.0001) {
+            return null;
+        }
+
+        $sourceExpense = $this->isStaffMealMovement($movement)
+            ? $this->postingAccount('staff_meal_benefit_expense')
+            : $this->postingAccount('cost_of_goods_sold');
 
         return $this->post(
             eventType: 'inventory_waste_reclassified',
@@ -1226,10 +1532,22 @@ class AccountingService
             description: $description,
             lines: [
                 $this->debit($this->postingAccount('waste_expense'), $amount, 'إعادة تصنيف تكلفة البيع كهدر'),
-                $this->credit($this->postingAccount('cost_of_goods_sold'), $amount, 'عكس تكلفة البضاعة المباعة'),
+                $this->credit($sourceExpense, $amount, 'عكس تصنيف التكلفة الأصلي قبل إثبات الهدر'),
             ],
             createdBy: $movement->user_id,
         );
+    }
+
+    private function isStaffMealMovement(InventoryMovement $movement): bool
+    {
+        if ($movement->reference_type !== OrderItem::class || ! $movement->reference instanceof OrderItem) {
+            return false;
+        }
+
+        $movement->reference->loadMissing('order:id,staff_consumer_employee_id,staff_consumer_user_id');
+
+        return (bool) ($movement->reference->order?->staff_consumer_employee_id
+            || $movement->reference->order?->staff_consumer_user_id);
     }
 
     private function postInventoryAdjustment(InventoryMovement $movement, float $amount, string $description): ?JournalEntry
@@ -1252,13 +1570,35 @@ class AccountingService
     private function postInventoryIn(InventoryMovement $movement, float $amount, string $description): ?JournalEntry
     {
         if ($movement->reference_type === BranchTransferItem::class) {
+            $item = BranchTransferItem::with('transfer')->find($movement->reference_id);
+            $sourceBranchId = $item?->transfer?->from_branch_id;
+
+            // Close the source branch's in-transit asset, then recognize the
+            // destination stock against the reciprocal current account. The
+            // current account nets to zero in the consolidated restaurant view,
+            // while each branch keeps a truthful standalone balance sheet.
+            if ($sourceBranchId) {
+                $this->post(
+                    eventType: 'inventory_transfer_source_closed',
+                    source: $movement,
+                    branchId: (int) $sourceBranchId,
+                    postedOn: $movement->occurred_at ?: now(),
+                    description: 'إغلاق مخزون محول بعد تأكيد الاستلام',
+                    lines: [
+                        $this->debit($this->postingAccount('interbranch_current'), $amount, 'رصيد جاري على فرع الوجهة'),
+                        $this->credit($this->postingAccount('inventory_in_transit'), $amount, 'إغلاق مخزون بالطريق'),
+                    ],
+                    createdBy: $movement->user_id,
+                );
+            }
+
             return $this->postInventoryMovement(
                 'inventory_transfer_received',
                 $movement,
                 $description,
                 [
                     $this->debit($this->postingAccount('inventory'), $amount, 'استلام مخزون من فرع آخر'),
-                    $this->credit($this->postingAccount('inventory_in_transit'), $amount, 'إغلاق مخزون محول بين الفروع'),
+                    $this->credit($this->postingAccount('interbranch_current'), $amount, 'رصيد جاري لصالح فرع المصدر'),
                 ],
             );
         }
@@ -1411,13 +1751,16 @@ class AccountingService
         }
 
         $baseCurrencyCode = $this->baseCurrencyCode();
-        $currencyCode = $this->transactionCurrencyCode();
+        $currencyCode = $this->normalizeCurrencyCode($payment->currency_code ?: $payment->invoice->currency_code ?: $this->transactionCurrencyCode());
         if ($currencyCode === $baseCurrencyCode) {
             return [];
         }
 
         $postedDate = Carbon::parse($payment->paid_on ?: $payment->created_at ?: now())->toDateString();
-        $currentBase = $this->round((float) $payment->amount * $this->exchangeRateForCurrency($currencyCode, $baseCurrencyCode, $postedDate));
+        $currentRate = $payment->currency_code
+            ? (float) ($payment->exchange_rate ?: 1)
+            : $this->exchangeRateForCurrency($currencyCode, $baseCurrencyCode, $postedDate);
+        $currentBase = $this->round((float) $payment->amount * $currentRate);
         $targetBase = $this->payableBaseClearAmount($payment);
         if ($targetBase <= 0) {
             return [];
@@ -1662,8 +2005,7 @@ class AccountingService
         // Load EVERY account, not just active ones. `is_active` controls
         // visibility in the chart editor and trial balance — it must NOT
         // gate the accounting service itself. Features whose accounts have
-        // been administratively deactivated (e.g. shift variance after the
-        // operator opts out) still post correctly, and the trial balance
+        // been administratively deactivated still post correctly, and the trial balance
         // separately surfaces any inactive account that ends up with a
         // non-zero balance so the books stay mathematically complete.
         $this->accounts ??= Account::all()->keyBy('code');
@@ -1704,20 +2046,15 @@ class AccountingService
 
     private function cashAccountForMethod(?string $method): string
     {
-        // No clearing accounts in this restaurant's flow — card/transfer
-        // both settle to the bank immediately and there are no platform
-        // fees to defer. Legacy 'app' / 'credit' / 'credit_note' values
-        // still resolve to the historical clearing accounts so old
-        // journal lines reconcile against their original codes; the
-        // active UI never produces them anymore (see CashierController
-        // validation: cash|card|transfer only).
+        // Bank transfer and Visa settle directly. Each wallet remains a real
+        // asset until the accountant records its later transfer to the bank.
         $fallback = match ($method) {
-            'cash'                                 => $this->postingAccount('cash_account'),
-            'card', 'transfer', 'bank_transfer',
-            'cheque'                               => $this->postingAccount('bank_account'),
-            'app'                                  => $this->postingAccount('wallet_clearing'),           // legacy
-            'credit', 'credit_note'                => $this->postingAccount('customer_credit_clearing'),  // legacy
-            default                                => $this->postingAccount('bank_account'),
+            'cash' => $this->postingAccount('cash_account'),
+            'palpay' => self::PALPAY_WALLET,
+            'jawwal_pay' => self::JAWWAL_PAY_WALLET,
+            'transfer', 'bank_transfer', 'card', 'app', 'credit',
+            'credit_note', 'cheque' => $this->postingAccount('bank_account'),
+            default => $this->postingAccount('bank_account'),
         };
 
         if (! $method) {
@@ -1741,6 +2078,11 @@ class AccountingService
             'card', 'transfer', 'bank_transfer', 'cheque', 'other' => $this->postingAccount('bank_account'),
             default => $this->postingAccount('bank_account'),
         };
+    }
+
+    public function accountForPostingRole(string $role): string
+    {
+        return $this->postingAccount($role);
     }
 
     private function postingAccount(string $role): string
@@ -1782,9 +2124,12 @@ class AccountingService
             'cash' => 'الصندوق',
             'card' => 'البنك (فيزا)',
             'transfer', 'bank_transfer' => 'تحويل بنكي',
+            'palpay' => 'محفظة PalPay',
+            'jawwal_pay' => 'محفظة Jawwal Pay',
             'cheque' => 'شيك',
             'app' => 'محفظة إلكترونية',           // legacy
             'credit' => 'بيع آجل',                 // legacy
+            'customer_advance' => 'رصيد مقدم للزبون',
             'credit_note' => 'إشعار دائن',         // legacy
             default => $method ?: 'غير محدد',
         };

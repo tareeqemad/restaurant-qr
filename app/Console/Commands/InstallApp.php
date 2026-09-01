@@ -5,7 +5,7 @@ namespace App\Console\Commands;
 use App\Enums\UserRole;
 use App\Models\User;
 use App\Services\DemoResetService;
-use Database\Seeders\SystemSeeder;
+use Database\Seeders\ProductionSeeder;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Hash;
  * Walks the operator through:
  *   1. Migrating the database (only if pending migrations exist).
  *   2. Wiping any existing demo data (with explicit confirmation).
- *   3. Seeding system reference data (roles, permissions, units, allergens).
+ *   3. Seeding system references + the preserved production menu catalogue.
  *   4. Creating the first Super Admin account interactively.
  *
  * Designed for first-time deployment on a client server. Idempotent — running
@@ -36,7 +36,7 @@ class InstallApp extends Command
         {--force : Skip the destructive-action confirmations}
         {--no-demo-wipe : Don\'t offer to wipe demo data even if it exists}';
 
-    protected $description = 'تثبيت إنتاجي تفاعلي: migrations + system seed + إنشاء أول مدير نظام.';
+    protected $description = 'تثبيت إنتاجي تفاعلي: schema + system/catalogue seed + إنشاء أول مدير نظام.';
 
     public function handle(DemoResetService $reset): int
     {
@@ -50,6 +50,7 @@ class InstallApp extends Command
         $this->task('فحص الـ migrations', function () {
             $exitCode = Artisan::call('migrate', ['--force' => true]);
             $this->line(Artisan::output());
+
             return $exitCode === 0;
         });
 
@@ -67,14 +68,16 @@ class InstallApp extends Command
                         '   حذفت %d فرع و %d مستخدم.',
                         $stats['branches'], $stats['users_deleted']
                     ));
+
                     return true;
                 });
             }
         }
 
-        // ── 3. System seed (idempotent) ──────────────────────────────
-        $this->task('زرع البيانات الأساسية (أدوار، صلاحيات، وحدات، مسببات الحساسية)', function () {
-            Artisan::call('db:seed', ['--class' => SystemSeeder::class, '--force' => true]);
+        // ── 3. Production seed (idempotent on a clean install) ───────
+        $this->task('زرع بيانات النظام ومنيو الإنتاج المحفوظ', function () {
+            Artisan::call('db:seed', ['--class' => ProductionSeeder::class, '--force' => true]);
+
             return true;
         });
 
@@ -85,26 +88,26 @@ class InstallApp extends Command
             $this->info("✓ يوجد مدير نظام بالفعل: {$existingSuperAdmin->name} ({$existingSuperAdmin->email})");
             $this->line('  استخدم بياناته لتسجيل الدخول. لو تنسيت كلمة المرور: ');
             $this->line('  <fg=yellow>php artisan tinker</> ثم:');
-            $this->line('  <fg=gray>User::find(' . $existingSuperAdmin->id . ')->update([\'password\' => Hash::make(\'كلمة-جديدة\')]);</>');
+            $this->line('  <fg=gray>User::find('.$existingSuperAdmin->id.')->update([\'password\' => Hash::make(\'كلمة-جديدة\')]);</>');
         } else {
             $this->newLine();
             $this->line('<fg=cyan;options=bold>إنشاء أول مدير نظام:</>');
 
-            $name     = $this->ask('الاسم الكامل', 'مدير النظام');
+            $name = $this->ask('الاسم الكامل', 'مدير النظام');
             $username = $this->ask('اسم المستخدم (للدخول)', 'admin');
-            $email    = $this->askValid('البريد الإلكتروني', fn ($v) => filter_var($v, FILTER_VALIDATE_EMAIL) !== false, 'بريد إلكتروني غير صالح.');
-            $phone    = $this->ask('رقم الهاتف (اختياري)', '');
+            $email = $this->askValid('البريد الإلكتروني', fn ($v) => filter_var($v, FILTER_VALIDATE_EMAIL) !== false, 'بريد إلكتروني غير صالح.');
+            $phone = $this->ask('رقم الهاتف (اختياري)', '');
             $password = $this->askValid('كلمة المرور (8 أحرف على الأقل)', fn ($v) => strlen($v) >= 8, 'كلمة المرور قصيرة جداً.', secret: true);
 
             DB::transaction(function () use ($name, $username, $email, $phone, $password) {
                 User::create([
-                    'name'     => $name,
+                    'name' => $name,
                     'username' => $username,
-                    'email'    => $email,
-                    'phone'    => $phone ?: null,
-                    'role'     => UserRole::SuperAdmin->value,
+                    'email' => $email,
+                    'phone' => $phone ?: null,
+                    'role' => UserRole::SuperAdmin->value,
                     'password' => Hash::make($password),
-                    'status'   => 'active',
+                    'status' => 'active',
                 ]);
             });
 
@@ -120,9 +123,10 @@ class InstallApp extends Command
         $this->newLine();
         $this->line('الخطوات التالية:');
         $this->line('  1. <fg=cyan>افتح /admin</> وسجّل دخول بحساب مدير النظام.');
-        $this->line('  2. أنشئ <fg=cyan>أول فرع</> من قائمة «الفروع».');
-        $this->line('  3. أضف محطات + طاولات + قائمة + موظفين للفرع.');
-        $this->line('  4. (اختياري) أضف فروع إضافية وانسخ القائمة بضغطة زر.');
+        $this->line('  2. راجع الفرع ومنيو الإنتاج المحفوظ من لوحة الإدارة.');
+        $this->line('  3. أضف الطاولات والموظفين وأرصدة المخزون الافتتاحية.');
+        $this->line('  4. انسخ مجلد <fg=cyan>storage/app/public</> القديم إن أردت الاحتفاظ بالصور المرفوعة.');
+        $this->line('  5. لتسليم نسخة تجريبية لعميل، استخدم <fg=cyan>/setup</> لاحقاً بعد موافقته؛ هذا الأمر مخصص لمشغّل الخادم.');
         $this->newLine();
 
         return self::SUCCESS;

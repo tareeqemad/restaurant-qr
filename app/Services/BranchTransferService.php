@@ -55,6 +55,16 @@ class BranchTransferService
             throw ValidationException::withMessages(['lines' => 'أضف بنداً واحداً على الأقل.']);
         }
 
+        $fromBranch = Branch::active()->find((int) $header['from_branch_id']);
+        $toBranch = Branch::active()->find((int) $header['to_branch_id']);
+        if (! $fromBranch || ! $toBranch) {
+            throw ValidationException::withMessages(['branches' => 'فرع المصدر والوجهة يجب أن يكونا نشطين.']);
+        }
+        $user = $userId ? \App\Models\User::find($userId) : null;
+        if ($user && ! $user->belongsToBranch((int) $fromBranch->id)) {
+            throw ValidationException::withMessages(['from_branch_id' => 'لا تملك صلاحية إخراج مخزون من فرع المصدر.']);
+        }
+
         return DB::transaction(function () use ($header, $lines, $userId) {
             $transfer = BranchTransfer::create([
                 'number'             => BranchTransfer::generateNumber(),
@@ -67,22 +77,37 @@ class BranchTransferService
 
             foreach ($lines as $line) {
                 $qty = (float) ($line['quantity_base'] ?? 0);
-                if ($qty <= 0) continue;
+                if ($qty <= 0) {
+                    throw ValidationException::withMessages(['lines' => 'كمية كل بند تحويل يجب أن تكون أكبر من صفر.']);
+                }
+
+                $ing = Ingredient::find($line['ingredient_id'] ?? null);
+                if (! $ing || ! $ing->track_stock) {
+                    throw ValidationException::withMessages(['lines' => 'أحد أصناف التحويل غير موجود أو غير متتبع مخزونياً.']);
+                }
+
+                $fromLocationId = $this->validatedTransferLocation(
+                    $line['from_location_id'] ?? null,
+                    (int) $header['from_branch_id'],
+                    'موقع مصدر التحويل'
+                );
+                $toLocationId = $this->validatedTransferLocation(
+                    $line['to_location_id'] ?? null,
+                    (int) $header['to_branch_id'],
+                    'موقع وجهة التحويل'
+                );
 
                 // Snapshot the unit cost at draft time. Source branch's
                 // weighted-average is used as the basis; receiving branch
                 // credits stock at this same cost (no fake markup).
-                $ing = Ingredient::find($line['ingredient_id']);
-                $unitCost = $ing
-                    ? $ing->costAtBranch((int) $header['from_branch_id'])
-                    : 0;
+                $unitCost = $ing->costAtBranch((int) $header['from_branch_id']);
 
                 BranchTransferItem::create([
                     'branch_transfer_id' => $transfer->id,
                     'ingredient_id'      => $line['ingredient_id'],
                     'quantity_base'      => $qty,
-                    'from_location_id'   => $line['from_location_id'] ?? null,
-                    'to_location_id'     => $line['to_location_id']   ?? null,
+                    'from_location_id'   => $fromLocationId,
+                    'to_location_id'     => $toLocationId,
                     'unit_cost'          => $unitCost,
                     'notes'              => $line['notes'] ?? null,
                 ]);
@@ -111,17 +136,44 @@ class BranchTransferService
         }
 
         return DB::transaction(function () use ($transfer, $userId) {
-            $items = $transfer->items()->with('ingredient')->get();
+            $transfer = BranchTransfer::whereKey($transfer->id)->lockForUpdate()->firstOrFail();
+            if (! $transfer->isDraft()) {
+                throw ValidationException::withMessages(['status' => 'يمكن إرسال المسودات فقط.']);
+            }
+            $actor = $userId ? \App\Models\User::find($userId) : null;
+            if ($actor && ! $actor->belongsToBranch((int) $transfer->from_branch_id)) {
+                throw ValidationException::withMessages(['from_branch_id' => 'لا تملك صلاحية إرسال مخزون من فرع المصدر.']);
+            }
+            $items = $transfer->items()->with('ingredient')->lockForUpdate()->get();
+            if ($items->isEmpty()) {
+                throw ValidationException::withMessages(['items' => 'لا توجد بنود للإرسال.']);
+            }
 
             // Pre-flight: validate every line's source has enough stock.
             // Done before any writes so a partial-send is impossible.
             foreach ($items as $item) {
+                $this->validatedTransferLocation($item->from_location_id, (int) $transfer->from_branch_id, 'موقع مصدر التحويل');
                 $available = $this->stockAtSource($item, $transfer->from_branch_id);
                 if ($available + 0.0001 < (float) $item->quantity_base) {
                     throw ValidationException::withMessages([
                         'stock' => "المخزون غير كافٍ للمكوّن «{$item->ingredient?->name}» في فرع المصدر "
                             . "({$available} متاح، مطلوب {$item->quantity_base})."
                     ]);
+                }
+                if ($item->ingredient?->tracks_expiry) {
+                    $traceable = (float) \App\Models\IngredientBatch::withoutGlobalScopes()
+                        ->where('branch_id', $transfer->from_branch_id)
+                        ->where('ingredient_id', $item->ingredient_id)
+                        ->where('storage_location_id', $item->from_location_id)
+                        ->where('remaining_qty', '>', 0)
+                        ->whereNotNull('expiry_date')
+                        ->whereDate('expiry_date', '>=', now()->toDateString())
+                        ->sum('remaining_qty');
+                    if ($traceable + 0.0001 < (float) $item->quantity_base) {
+                        throw ValidationException::withMessages([
+                            'stock' => "الكمية الصالحة ذات الدفعات الموثقة للمكون «{$item->ingredient->name}» غير كافية للتحويل.",
+                        ]);
+                    }
                 }
             }
 
@@ -169,13 +221,22 @@ class BranchTransferService
         }
 
         return DB::transaction(function () use ($transfer, $userId) {
-            $items = $transfer->items()->with('ingredient')->get();
+            $transfer = BranchTransfer::whereKey($transfer->id)->lockForUpdate()->firstOrFail();
+            if (! $transfer->isInTransit()) {
+                throw ValidationException::withMessages(['status' => 'يمكن استلام التحويلات الموجودة في الطريق فقط.']);
+            }
+            $actor = $userId ? \App\Models\User::find($userId) : null;
+            if ($actor && ! $actor->belongsToBranch((int) $transfer->to_branch_id)) {
+                throw ValidationException::withMessages(['to_branch_id' => 'لا تملك صلاحية استلام مخزون فرع الوجهة.']);
+            }
+            $items = $transfer->items()->with('ingredient')->lockForUpdate()->get();
 
             // Resolve destination location: per-line override → branch default
             // → branch's first active location. Without one, the IN movement
             // would land with NULL storage_location_id and the per-branch
             // stock view (joined through ingredient_stock) would never see it.
-            $fallbackLocId = StorageLocation::where('branch_id', $transfer->to_branch_id)
+            $fallbackLocId = StorageLocation::withoutGlobalScopes()
+                ->where('branch_id', $transfer->to_branch_id)
                 ->where('active', true)
                 ->orderByDesc('is_default')
                 ->orderBy('display_order')
@@ -189,7 +250,11 @@ class BranchTransferService
 
             BranchContext::forBranch($transfer->to_branch_id, function () use ($transfer, $items, $userId, $fallbackLocId) {
                 foreach ($items as $item) {
-                    $locId = $item->to_location_id ?: $fallbackLocId;
+                    $locId = $this->validatedTransferLocation(
+                        $item->to_location_id ?: $fallbackLocId,
+                        (int) $transfer->to_branch_id,
+                        'موقع وجهة التحويل'
+                    );
 
                     // Persist the resolved location on the line so the show
                     // page reflects where stock actually landed.
@@ -197,16 +262,63 @@ class BranchTransferService
                         $item->update(['to_location_id' => $locId]);
                     }
 
-                    $this->inventory->recordMovement(
-                        ingredient:        $item->ingredient,
-                        type:              'in',
-                        qtyBase:           (float) $item->quantity_base,
-                        unitCost:          (float) $item->unit_cost,
-                        reference:         $item,
-                        reason:            "تحويل بين الفروع — {$transfer->number} ← {$transfer->fromBranch->name}",
-                        userId:            $userId,
-                        storageLocationId: $locId,
-                    );
+                    $outLayers = InventoryMovement::withoutGlobalScopes()
+                        ->where('branch_id', $transfer->from_branch_id)
+                        ->where('reference_type', BranchTransferItem::class)
+                        ->where('reference_id', $item->id)
+                        ->where('type', 'out')
+                        ->orderBy('id')
+                        ->lockForUpdate()
+                        ->get();
+
+                    if ($outLayers->isEmpty()) {
+                        throw ValidationException::withMessages([
+                            'items' => "لا توجد حركات خروج موثقة لبند التحويل {$item->id}.",
+                        ]);
+                    }
+                    $layerQty = (float) $outLayers->sum('quantity_in_base');
+                    if (abs($layerQty - (float) $item->quantity_base) > 0.0001) {
+                        throw ValidationException::withMessages([
+                            'items' => "طبقات مخزون بند التحويل {$item->id} لا تطابق كميته.",
+                        ]);
+                    }
+
+                    foreach ($outLayers as $outLayer) {
+                        $sourceBatch = $outLayer->batch_id
+                            ? \App\Models\IngredientBatch::withoutGlobalScopes()
+                                ->withTrashed()->find($outLayer->batch_id)
+                            : null;
+
+                        if ($item->ingredient->tracks_expiry && ! $sourceBatch?->expiry_date) {
+                            throw ValidationException::withMessages([
+                                'items' => "لا يمكن استلام «{$item->ingredient->name}» دون بيانات دفعة وصلاحية من المصدر.",
+                            ]);
+                        }
+
+                        $destinationBatch = app(BatchInventoryService::class)->createBatchOnReceipt(
+                            ingredient: $item->ingredient,
+                            qtyBase: (float) $outLayer->quantity_in_base,
+                            unitCost: (float) $outLayer->unit_cost,
+                            expiryDate: $sourceBatch?->expiry_date?->toDateString(),
+                            batchNumber: $sourceBatch?->batch_number,
+                            source: $item,
+                            notes: "تحويل {$transfer->number} من {$transfer->fromBranch->name}",
+                            storageLocationId: $locId,
+                            allowExpired: true,
+                        );
+
+                        $this->inventory->recordMovement(
+                            ingredient:        $item->ingredient,
+                            type:              'in',
+                            qtyBase:           (float) $outLayer->quantity_in_base,
+                            unitCost:          (float) $outLayer->unit_cost,
+                            reference:         $item,
+                            reason:            "تحويل بين الفروع — {$transfer->number} ← {$transfer->fromBranch->name}",
+                            userId:            $userId,
+                            batchId:           $destinationBatch->id,
+                            storageLocationId: $locId,
+                        );
+                    }
                 }
             });
 
@@ -242,22 +354,67 @@ class BranchTransferService
         }
 
         return DB::transaction(function () use ($transfer, $reason, $userId) {
+            $transfer = BranchTransfer::whereKey($transfer->id)->lockForUpdate()->firstOrFail();
+            if ($transfer->isReceived() || $transfer->isCancelled()) {
+                throw ValidationException::withMessages([
+                    'status' => 'لا يمكن إلغاء تحويل مستلم أو ملغي مسبقاً.',
+                ]);
+            }
+            $actor = $userId ? \App\Models\User::find($userId) : null;
+            if ($actor && ! $actor->belongsToBranch((int) $transfer->from_branch_id)) {
+                throw ValidationException::withMessages(['from_branch_id' => 'لا تملك صلاحية إلغاء تحويل فرع المصدر.']);
+            }
             $needsReversal = $transfer->isInTransit();
 
             if ($needsReversal) {
                 $items = $transfer->items()->with('ingredient')->get();
                 BranchContext::forBranch($transfer->from_branch_id, function () use ($transfer, $items, $userId) {
                     foreach ($items as $item) {
-                        $this->inventory->recordMovement(
-                            ingredient:        $item->ingredient,
-                            type:              'return',
-                            qtyBase:           (float) $item->quantity_base,
-                            unitCost:          (float) $item->unit_cost,
-                            reference:         $item,
-                            reason:            "إلغاء تحويل {$transfer->number} — إعادة المخزون للمصدر",
-                            userId:            $userId,
-                            storageLocationId: $item->from_location_id,
+                        $sourceLocationId = $this->validatedTransferLocation(
+                            $item->from_location_id,
+                            (int) $transfer->from_branch_id,
+                            'موقع مصدر التحويل'
                         );
+                        $outLayers = InventoryMovement::withoutGlobalScopes()
+                            ->where('branch_id', $transfer->from_branch_id)
+                            ->where('reference_type', BranchTransferItem::class)
+                            ->where('reference_id', $item->id)
+                            ->where('type', 'out')
+                            ->orderBy('id')
+                            ->lockForUpdate()
+                            ->get();
+                        if (abs((float) $outLayers->sum('quantity_in_base') - (float) $item->quantity_base) > 0.0001) {
+                            throw ValidationException::withMessages([
+                                'items' => "تعذر مطابقة طبقات المخزون لإلغاء بند التحويل {$item->id}.",
+                            ]);
+                        }
+
+                        foreach ($outLayers as $outLayer) {
+                            $sourceBatch = $outLayer->batch_id
+                                ? \App\Models\IngredientBatch::withoutGlobalScopes()
+                                    ->withTrashed()->whereKey($outLayer->batch_id)->lockForUpdate()->first()
+                                : null;
+                            if ($sourceBatch) {
+                                if ($sourceBatch->trashed()) {
+                                    $sourceBatch->restore();
+                                }
+                                $sourceBatch->update([
+                                    'remaining_qty' => (float) $sourceBatch->remaining_qty + (float) $outLayer->quantity_in_base,
+                                ]);
+                            }
+
+                            $this->inventory->recordMovement(
+                                ingredient:        $item->ingredient,
+                                type:              'return',
+                                qtyBase:           (float) $outLayer->quantity_in_base,
+                                unitCost:          (float) $outLayer->unit_cost,
+                                reference:         $item,
+                                reason:            "إلغاء تحويل {$transfer->number} — إعادة المخزون للمصدر",
+                                userId:            $userId,
+                                batchId:           $sourceBatch?->id,
+                                storageLocationId: $sourceLocationId,
+                            );
+                        }
                     }
                 });
             }
@@ -275,6 +432,26 @@ class BranchTransferService
 
             return $transfer->fresh('items.ingredient', 'fromBranch', 'toBranch');
         });
+    }
+
+    /** Resolve an explicit location, or the branch default, and enforce ownership. */
+    protected function validatedTransferLocation($locationId, int $branchId, string $label): int
+    {
+        $query = StorageLocation::withoutGlobalScopes()
+            ->where('branch_id', $branchId)
+            ->where('active', true);
+
+        $location = $locationId
+            ? (clone $query)->whereKey((int) $locationId)->first()
+            : (clone $query)->orderByDesc('is_default')->orderBy('display_order')->first();
+
+        if (! $location) {
+            throw ValidationException::withMessages([
+                'locations' => "{$label} غير موجود أو لا يتبع الفرع المحدد.",
+            ]);
+        }
+
+        return (int) $location->id;
     }
 
     /** Stock available for an item at the source branch (filtered by from_location_id when set). */

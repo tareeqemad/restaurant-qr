@@ -2,11 +2,14 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Helpers\Qty;
 use App\Http\Controllers\Controller;
 use App\Models\Ingredient;
 use App\Models\IngredientStock;
+use App\Models\Setting;
 use App\Models\StorageLocation;
 use App\Services\LocationInventoryService;
+use App\Support\AdminShell;
 use App\Support\BranchContext;
 use Illuminate\Http\Request;
 
@@ -20,15 +23,45 @@ class StorageLocationController extends Controller
 
         $locations = StorageLocation::with('branch:id,name')
             ->withCount('ingredientStocks')
+            // Mirrors destroy()'s guard exactly (any row with quantity > 0
+            // blocks the delete). Shipping it as a flag lets the card say so
+            // BEFORE the click instead of bouncing the user with a flash.
+            ->withCount(['ingredientStocks as stocked_rows_count' => fn ($q) => $q->where('quantity', '>', 0)])
             ->orderBy('display_order')
             ->get();
 
-        foreach ($locations as $loc) {
-            $loc->stock_value = $loc->stockValue();
-            $loc->low_stock_count = $this->service->lowStockAtLocation($loc)->count();
-        }
+        // create/update/delete all resolve to InventoryPolicy::manage.
+        $canManage = $request->user()?->can('create', Ingredient::class) ?? false;
 
-        return view('admin.storage-locations.index', compact('locations'));
+        return AdminShell::render('Admin/StorageLocations/Index', [
+            'locations' => $locations->map(fn ($loc) => [
+                'id' => (int) $loc->id,
+                'name' => $loc->name,
+                'code' => $loc->code,
+                'description' => $loc->description,
+                // The card head paints a gradient from this colour; an empty
+                // string would emit broken CSS, so fall back like the Blade did.
+                'color' => $loc->color ?: '#0F4731',
+                'isDefault' => (bool) $loc->is_default,
+                'active' => (bool) $loc->active,
+                'branchName' => $loc->branch?->name,
+                'ingredientsCount' => (int) $loc->ingredient_stocks_count,
+                'lowStockCount' => $this->service->lowStockAtLocation($loc)->count(),
+                'stockValue' => (float) $loc->stockValue(),
+                'blocksDelete' => (int) $loc->stocked_rows_count > 0,
+                'urls' => [
+                    'show' => route('admin.storage-locations.show', $loc),
+                    'edit' => route('admin.storage-locations.edit', $loc),
+                    'destroy' => route('admin.storage-locations.destroy', $loc),
+                ],
+            ])->values()->all(),
+            'can' => ['manage' => $canManage],
+            'currency' => $this->currencyProp(),
+            'urls' => [
+                'create' => route('admin.storage-locations.create'),
+                'transfer' => route('admin.storage-locations.transfer-form'),
+            ],
+        ]);
     }
 
     public function show(StorageLocation $storageLocation)
@@ -40,16 +73,52 @@ class StorageLocationController extends Controller
             ->get()
             ->sortBy('ingredient.name');
 
-        return view('admin.storage-locations.show', [
-            'location' => $storageLocation,
-            'stocks'   => $stocks,
+        return AdminShell::render('Admin/StorageLocations/Show', [
+            'location' => [
+                'id' => (int) $storageLocation->id,
+                'name' => $storageLocation->name,
+            ],
+            'stocks' => $stocks->map(function (IngredientStock $s) {
+                $ing = $s->ingredient;
+                $cost = (float) ($ing?->cost_per_unit ?? 0);
+
+                return [
+                    'id' => (int) $s->id,
+                    'name' => $ing?->name ?? '—',
+                    'unitCode' => $ing?->baseUnit?->code ?? '',
+                    // Qty::format trims trailing zeros off the 4-decimal
+                    // storage precision — same helper the Blade called.
+                    'quantityLabel' => Qty::format($s->quantity),
+                    'thresholdLabel' => Qty::format($s->reorder_threshold),
+                    'costLabel' => Qty::format($cost),
+                    'value' => (float) $s->quantity * $cost,
+                    'isLow' => $s->isLowStock(),
+                ];
+            })->values()->all(),
+            'currency' => $this->currencyProp(),
+            'urls' => [
+                'index' => route('admin.storage-locations.index'),
+                'purchaseOrder' => route('admin.purchase-orders.create'),
+                'supplierInvoice' => route('admin.supplier-invoices.create'),
+                'transfer' => route('admin.storage-locations.transfer-form'),
+                'branchTransfers' => route('admin.branch-transfers.index'),
+                'stockCount' => route('admin.stock-counts.create'),
+                'waste' => route('admin.waste.create'),
+            ],
         ]);
     }
 
     public function create()
     {
         $this->authorize('create', Ingredient::class);
-        return view('admin.storage-locations.create');
+
+        return AdminShell::render('Admin/StorageLocations/Form', [
+            'location' => null,
+            'urls' => [
+                'index' => route('admin.storage-locations.index'),
+                'submit' => route('admin.storage-locations.store'),
+            ],
+        ]);
     }
 
     public function store(Request $request)
@@ -90,7 +159,24 @@ class StorageLocationController extends Controller
     public function edit(StorageLocation $storageLocation)
     {
         $this->authorize('create', Ingredient::class);
-        return view('admin.storage-locations.edit', ['location' => $storageLocation]);
+
+        return AdminShell::render('Admin/StorageLocations/Form', [
+            'location' => [
+                'id' => (int) $storageLocation->id,
+                'code' => $storageLocation->code,
+                'name' => $storageLocation->name,
+                'icon' => $storageLocation->icon,
+                'color' => $storageLocation->color,
+                'description' => $storageLocation->description,
+                'isDefault' => (bool) $storageLocation->is_default,
+                'active' => (bool) $storageLocation->active,
+                'displayOrder' => (int) $storageLocation->display_order,
+            ],
+            'urls' => [
+                'index' => route('admin.storage-locations.index'),
+                'submit' => route('admin.storage-locations.update', $storageLocation),
+            ],
+        ]);
     }
 
     public function update(Request $request, StorageLocation $storageLocation)
@@ -116,7 +202,7 @@ class StorageLocationController extends Controller
     }
 
     /** Transfer stock between locations */
-    public function transferForm()
+    public function transferForm(Request $request)
     {
         $this->authorize('viewAny', Ingredient::class);
 
@@ -137,20 +223,48 @@ class StorageLocationController extends Controller
             ->orderBy('name')
             ->get();
 
-        // Per-location stock map — lets the JS filter the ingredient
+        // Per-location stock map — lets the client filter the ingredient
         // dropdown to only those that actually have qty > 0 at the chosen
         // source, and surface the available quantity inline.
+        //
+        // Restricted to the locations this user can actually pick. The map
+        // used to be built over the WHOLE table, so the payload carried
+        // every other branch's per-location quantities even though the
+        // dropdowns are branch-scoped and could never address them.
         $stockByLocation = \DB::table('ingredient_stock')
+            ->whereIn('storage_location_id', $locations->pluck('id'))
             ->select('storage_location_id', 'ingredient_id', 'quantity')
             ->get()
             ->groupBy('storage_location_id')
-            ->map(fn ($g) => $g->mapWithKeys(fn ($r) => [$r->ingredient_id => (float) $r->quantity]))
+            // Cast both levels to objects so json_encode can never turn a
+            // numeric-keyed map into a positional array on the client.
+            ->map(fn ($g) => (object) $g->mapWithKeys(fn ($r) => [$r->ingredient_id => (float) $r->quantity])->toArray())
             ->toArray();
 
-        return view('admin.storage-locations.transfer', [
-            'locations'       => $locations,
-            'ingredients'     => $ingredients,
-            'stockByLocation' => $stockByLocation,
+        return AdminShell::render('Admin/StorageLocations/Transfer', [
+            'locations' => $locations->map(fn ($l) => [
+                'id' => (int) $l->id,
+                'name' => $l->name,
+                'branchId' => (int) $l->branch_id,
+                'branchName' => $l->branch?->name ?? '',
+                'isDefault' => (bool) $l->is_default,
+            ])->values()->all(),
+            'ingredients' => $ingredients->map(fn ($i) => [
+                'id' => (int) $i->id,
+                'name' => $i->name,
+                'unitCode' => $i->baseUnit?->code ?? '',
+                'globalThreshold' => (float) ($i->reorder_threshold ?? 0),
+            ])->values()->all(),
+            'stockByLocation' => (object) $stockByLocation,
+            // transferStore authorizes `manage`, not `viewAny` — a chef or
+            // bartender can OPEN this screen but the write would 403. The
+            // Blade offered them a live submit button anyway.
+            'can' => ['transfer' => $request->user()?->can('manage', Ingredient::class) ?? false],
+            'urls' => [
+                'index' => route('admin.storage-locations.index'),
+                'store' => route('admin.storage-locations.transfer-store'),
+                'branchTransferCreate' => route('admin.branch-transfers.create'),
+            ],
         ]);
     }
 
@@ -193,5 +307,14 @@ class StorageLocationController extends Controller
             'active'        => ['boolean'],
             'display_order' => ['nullable', 'integer', 'min:0'],
         ]);
+    }
+
+    /** Same source Money::format reads, so both screens agree on the symbol. */
+    protected function currencyProp(): array
+    {
+        return [
+            'symbol' => Setting::get('currency_symbol', config('restaurant.currency_symbol', '₪')),
+            'decimals' => 2,
+        ];
     }
 }

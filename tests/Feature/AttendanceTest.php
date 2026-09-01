@@ -4,10 +4,13 @@ namespace Tests\Feature;
 
 use App\Models\Attendance;
 use App\Models\Branch;
+use App\Models\Role;
 use App\Models\User;
 use App\Support\BranchContext;
+use Database\Seeders\PermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 /**
@@ -25,9 +28,13 @@ class AttendanceTest extends TestCase
     use RefreshDatabase;
 
     protected Branch $branchA;
+
     protected Branch $branchB;
+
     protected User $waiter;
+
     protected User $managerA;
+
     protected User $managerB;
 
     protected function setUp(): void
@@ -38,18 +45,26 @@ class AttendanceTest extends TestCase
         $this->branchA = Branch::create(['code' => 'a', 'name' => 'Branch A', 'is_active' => true]);
         $this->branchB = Branch::create(['code' => 'b', 'name' => 'Branch B', 'is_active' => true]);
 
-        $this->waiter   = $this->makeUser('waiter1', 'waiter',  $this->branchA);
-        $this->managerA = $this->makeUser('mgr_a',   'manager', $this->branchA);
-        $this->managerB = $this->makeUser('mgr_b',   'manager', $this->branchB);
+        foreach (['manager', 'waiter'] as $roleName) {
+            Role::firstOrCreate(['name' => $roleName], [
+                'label' => $roleName,
+                'is_system' => true,
+            ]);
+        }
+        $this->seed(PermissionSeeder::class);
+
+        $this->waiter = $this->makeUser('waiter1', 'waiter', $this->branchA);
+        $this->managerA = $this->makeUser('mgr_a', 'manager', $this->branchA);
+        $this->managerB = $this->makeUser('mgr_b', 'manager', $this->branchB);
     }
 
     protected function makeUser(string $username, string $role, Branch $branch): User
     {
         $u = User::create([
-            'name'     => 'User ' . $username,
+            'name' => 'User '.$username,
             'username' => $username,
-            'role'     => $role,
-            'status'   => 'active',
+            'role' => $role,
+            'status' => 'active',
             'password' => Hash::make('test'),
         ]);
         $u->branches()->attach($branch->id, ['is_primary' => true, 'joined_at' => now()]);
@@ -67,10 +82,10 @@ class AttendanceTest extends TestCase
         $this->post('/admin/attendance/clock-in')->assertRedirect();
 
         $this->assertDatabaseHas('attendances', [
-            'user_id'      => $this->waiter->id,
-            'branch_id'    => $this->branchA->id,
+            'user_id' => $this->waiter->id,
+            'branch_id' => $this->branchA->id,
             'clock_out_at' => null,
-            'source'       => 'self',
+            'source' => 'self',
         ]);
     }
 
@@ -126,7 +141,7 @@ class AttendanceTest extends TestCase
         $att->refresh();
         $this->assertNotNull($att->clock_out_at);
         $this->assertGreaterThanOrEqual(58, $att->worked_minutes);
-        $this->assertLessThanOrEqual(62,  $att->worked_minutes);
+        $this->assertLessThanOrEqual(62, $att->worked_minutes);
     }
 
     public function test_clock_out_no_op_when_nothing_open(): void
@@ -153,13 +168,39 @@ class AttendanceTest extends TestCase
             'Manager A leaked into branch B attendance.');
     }
 
+    public function test_manager_attendance_screen_uses_the_vue_workspace(): void
+    {
+        $attendance = $this->buildAttendance(
+            $this->branchA->id,
+            $this->waiter->id,
+            inAt: now()->subHour(),
+        );
+
+        $this->actingAs($this->managerA);
+        BranchContext::set($this->branchA->id);
+
+        $this->get(route('admin.attendance.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/Attendance/Index')
+                ->where('attendances.data.0.id', $attendance->id)
+                ->where('attendances.data.0.employee.name', $this->waiter->name)
+                ->where('attendances.data.0.open', true)
+                ->where('attendances.data.0.can.update', true)
+                ->where('attendances.data.0.can.delete', false)
+                ->where('stats.openNow', 1)
+                ->where('can.create', true)
+                ->has('urls.export')
+            );
+    }
+
     public function test_manager_b_cannot_edit_branch_a_attendance(): void
     {
         $att = $this->buildAttendance($this->branchA->id, $this->waiter->id);
 
         $this->actingAs($this->managerB);
         $this->put("/admin/attendance/{$att->id}", [
-            'user_id'     => $this->waiter->id,
+            'user_id' => $this->waiter->id,
             'clock_in_at' => now()->toDateTimeString(),
         ])->assertForbidden();
     }
@@ -170,17 +211,18 @@ class AttendanceTest extends TestCase
         BranchContext::set($this->branchA->id);
 
         $this->post('/admin/attendance', [
-            'user_id'     => $this->waiter->id,
+            'user_id' => $this->waiter->id,
             'clock_in_at' => now()->subHours(3)->format('Y-m-d H:i:s'),
-            'clock_out_at'=> now()->subHour()->format('Y-m-d H:i:s'),
+            'clock_out_at' => now()->subHour()->format('Y-m-d H:i:s'),
             'break_minutes' => 15,
-            'notes'       => 'forgot to clock in',
+            'notes' => 'forgot to clock in',
+            'correction_reason' => 'نسي الموظف تسجيل الحضور',
         ])->assertRedirect();
 
         $this->assertDatabaseHas('attendances', [
             'user_id' => $this->waiter->id,
             'branch_id' => $this->branchA->id,
-            'source'  => 'manager_added',
+            'source' => 'manager_added',
             'edited_by_user_id' => $this->managerA->id,
         ]);
 
@@ -191,11 +233,30 @@ class AttendanceTest extends TestCase
         $this->assertLessThanOrEqual(107, $att->worked_minutes);
     }
 
+    public function test_manager_cannot_create_attendance_for_another_branch_employee(): void
+    {
+        $this->actingAs($this->managerA);
+        BranchContext::set($this->branchA->id);
+
+        $this->post('/admin/attendance', [
+            'user_id' => $this->managerB->id,
+            'clock_in_at' => now()->subHour()->format('Y-m-d H:i:s'),
+            'clock_out_at' => now()->format('Y-m-d H:i:s'),
+            'break_minutes' => 0,
+            'correction_reason' => 'تصحيح إداري',
+        ])->assertSessionHasErrors('user_id');
+
+        $this->assertDatabaseMissing('attendances', [
+            'user_id' => $this->managerB->id,
+            'branch_id' => $this->branchA->id,
+        ]);
+    }
+
     // ─── Model helpers ────────────────────────────────────────────────
 
     public function test_duration_label_handles_open_and_closed(): void
     {
-        $open   = $this->buildAttendance($this->branchA->id, $this->waiter->id,
+        $open = $this->buildAttendance($this->branchA->id, $this->waiter->id,
             inAt: now()->subMinutes(75));
         $closed = $this->buildAttendance($this->branchA->id, $this->waiter->id,
             inAt: now()->subHours(2),
@@ -206,6 +267,105 @@ class AttendanceTest extends TestCase
         $this->assertFalse($closed->isOpen());
         $this->assertSame('1 س', $closed->durationLabel());
         $this->assertStringContainsString('س', $open->durationLabel());
+    }
+
+    public function test_manager_cannot_create_overlapping_attendance(): void
+    {
+        $day = now()->startOfDay();
+        $this->buildAttendance(
+            $this->branchA->id,
+            $this->waiter->id,
+            inAt: $day->copy()->addHours(8),
+            outAt: $day->copy()->addHours(12),
+            workedMinutes: 240,
+        );
+
+        $this->actingAs($this->managerA);
+        BranchContext::set($this->branchA->id);
+
+        $this->post('/admin/attendance', [
+            'user_id' => $this->waiter->id,
+            'clock_in_at' => $day->copy()->addHours(11)->format('Y-m-d H:i:s'),
+            'clock_out_at' => $day->copy()->addHours(13)->format('Y-m-d H:i:s'),
+            'break_minutes' => 0,
+            'correction_reason' => 'إضافة منسية',
+        ])->assertSessionHasErrors('clock_in_at');
+
+        $this->assertSame(1, Attendance::withoutGlobalScopes()
+            ->where('user_id', $this->waiter->id)->count());
+    }
+
+    public function test_stale_command_sends_forgotten_checkout_to_review_without_guessing_hours(): void
+    {
+        $attendance = $this->buildAttendance(
+            $this->branchA->id,
+            $this->waiter->id,
+            inAt: now()->subHours(30),
+        );
+
+        $this->artisan('attendance:close-stale')->assertSuccessful();
+
+        $attendance->refresh();
+        $this->assertTrue($attendance->needsReview());
+        $this->assertSame(0, $attendance->worked_minutes);
+        $this->assertTrue($attendance->clock_out_at->equalTo($attendance->clock_in_at));
+        $this->assertStringContainsString('مراجعة', (string) $attendance->notes);
+    }
+
+    public function test_new_clock_in_quarantines_a_stale_open_record_then_starts_a_clean_shift(): void
+    {
+        $stale = $this->buildAttendance(
+            $this->branchA->id,
+            $this->waiter->id,
+            inAt: now()->subHours(30),
+        );
+
+        $this->actingAs($this->waiter);
+        BranchContext::set($this->branchA->id);
+
+        $this->post('/admin/attendance/clock-in')
+            ->assertRedirect()
+            ->assertSessionHas('warning');
+
+        $stale->refresh();
+        $this->assertTrue($stale->needsReview());
+        $this->assertSame(0, $stale->worked_minutes);
+        $this->assertSame(1, Attendance::withoutGlobalScopes()
+            ->where('user_id', $this->waiter->id)
+            ->whereNull('clock_out_at')
+            ->count());
+    }
+
+    public function test_manager_correction_approves_a_review_record_with_real_hours_and_audit(): void
+    {
+        $attendance = $this->buildAttendance(
+            $this->branchA->id,
+            $this->waiter->id,
+            inAt: now()->subHours(30),
+        );
+        $attendance->markNeedsReview('نسي تسجيل الانصراف');
+
+        $this->actingAs($this->managerA);
+        BranchContext::set($this->branchA->id);
+
+        $clockIn = now()->subHours(8)->startOfMinute();
+        $clockOut = now()->subHour()->startOfMinute();
+        $this->put("/admin/attendance/{$attendance->id}", [
+            'user_id' => $this->waiter->id,
+            'clock_in_at' => $clockIn->format('Y-m-d H:i:s'),
+            'clock_out_at' => $clockOut->format('Y-m-d H:i:s'),
+            'break_minutes' => 30,
+            'correction_reason' => 'تأكيد وقت الانصراف مع الموظف',
+        ])->assertRedirect();
+
+        $attendance->refresh();
+        $this->assertSame(Attendance::SOURCE_MANAGER, $attendance->source);
+        $this->assertSame(390, $attendance->worked_minutes);
+        $this->assertDatabaseHas('activity_logs', [
+            'event' => 'attendance.updated',
+            'subject_id' => $attendance->id,
+            'causer_id' => $this->managerA->id,
+        ]);
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────
@@ -222,11 +382,11 @@ class AttendanceTest extends TestCase
         ?int $workedMinutes = null,
     ): Attendance {
         $att = new Attendance([
-            'user_id'        => $userId,
-            'clock_in_at'    => $inAt  ?? now(),
-            'clock_out_at'   => $outAt,
+            'user_id' => $userId,
+            'clock_in_at' => $inAt ?? now(),
+            'clock_out_at' => $outAt,
             'worked_minutes' => $workedMinutes,
-            'source'         => 'self',
+            'source' => 'self',
         ]);
         $att->branch_id = $branchId;
         $att->save();

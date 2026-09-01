@@ -98,10 +98,18 @@ class AlertsService
         }
 
         // 5) Low-stock items — warning
-        $lowStock = Ingredient::where('track_stock', true)
-            ->whereColumn('current_stock', '<=', 'reorder_threshold')
-            ->where('current_stock', '>', 0)
-            ->count();
+        $branchId = \App\Support\BranchContext::current();
+        $trackedIngredients = Ingredient::where('track_stock', true)->get();
+        $lowStock = $trackedIngredients->filter(function ($ingredient) use ($branchId) {
+            $stock = $branchId
+                ? $ingredient->usableStockAtBranch($branchId)
+                : $ingredient->trackedUsableStock();
+            $threshold = $branchId
+                ? $ingredient->reorderThresholdAtBranch($branchId)
+                : (float) $ingredient->reorder_threshold;
+
+            return $stock > 0 && $threshold > 0 && $stock <= $threshold;
+        })->count();
         if ($lowStock > 0) {
             $alerts[] = [
                 'severity' => 'warning',
@@ -115,9 +123,11 @@ class AlertsService
         }
 
         // 6) Out of stock items — critical
-        $outOfStock = Ingredient::where('track_stock', true)
-            ->where('current_stock', '<=', 0)
-            ->count();
+        $outOfStock = $trackedIngredients->filter(fn ($ingredient) =>
+            ($branchId
+                ? $ingredient->usableStockAtBranch($branchId)
+                : $ingredient->trackedUsableStock()) <= 0
+        )->count();
         if ($outOfStock > 0) {
             $alerts[] = [
                 'severity' => 'critical',
@@ -125,7 +135,7 @@ class AlertsService
                 'title'    => 'مكونات نفذت',
                 'message'  => "{$outOfStock} مكون خرج من المخزون تماماً — قد يمنع اعتماد طلبات.",
                 'count'    => $outOfStock,
-                'route'    => route('admin.ingredients.index'),
+                'route'    => route('admin.ingredients.index', ['status' => 'out']),
                 'cta'      => 'عرضها',
             ];
         }

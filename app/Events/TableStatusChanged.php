@@ -26,8 +26,9 @@ class TableStatusChanged implements ShouldBroadcastNow
     public function broadcastOn(): array
     {
         return [
-            new PrivateChannel('waiters'),
-            new PrivateChannel('cashiers'),
+            new PrivateChannel('branch.'.$this->table->branch_id.'.waiters'),
+            new PrivateChannel('branch.'.$this->table->branch_id.'.cashiers'),
+            new PrivateChannel('owners'),
         ];
     }
 

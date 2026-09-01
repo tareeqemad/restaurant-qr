@@ -15,9 +15,33 @@ class CurrencySeeder extends Seeder
         DB::transaction(function () {
             $baseCode = strtoupper((string) Setting::get('accounting_base_currency', MarketProfile::currency()));
             $baseSymbol = (string) Setting::get('accounting_currency_symbol', MarketProfile::currencySymbol());
-            $baseName = MarketProfile::isUs() ? 'US Dollar' : 'شيكل';
 
             Currency::query()->update(['is_base' => false]);
+
+            // A small restaurant in this market works with shekels and
+            // dollars even when sales are recorded in one base currency.
+            // Keep any accountant-entered exchange rate on re-seed.
+            foreach ([
+                'ILS' => ['name' => 'شيكل', 'symbol' => '₪', 'display_order' => 1],
+                'USD' => ['name' => 'دولار أمريكي', 'symbol' => '$', 'display_order' => 2],
+            ] as $code => $defaults) {
+                Currency::firstOrCreate(
+                    ['code' => $code],
+                    [
+                        ...$defaults,
+                        'rate_to_base' => 1.000000,
+                        'is_base' => false,
+                        'is_active' => true,
+                    ],
+                );
+            }
+
+            $baseName = match ($baseCode) {
+                'ILS' => 'شيكل',
+                'USD' => 'دولار أمريكي',
+                'JOD' => 'دينار أردني',
+                default => $baseCode,
+            };
 
             Currency::updateOrCreate(
                 ['code' => $baseCode],
@@ -27,7 +51,7 @@ class CurrencySeeder extends Seeder
                     'rate_to_base' => 1.000000,
                     'is_base' => true,
                     'is_active' => true,
-                    'display_order' => 1,
+                    'display_order' => $baseCode === 'USD' ? 2 : 1,
                     'rate_updated_at' => now(),
                 ]
             );

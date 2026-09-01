@@ -2,61 +2,47 @@
 
 namespace App\Models;
 
+use App\Models\Scopes\BranchScope;
+use App\Services\LoyaltyService;
+use App\Support\PhoneNumber;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Foundation\Auth\User as Authenticatable;
-use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\DB;
 
 /**
- * Authenticated diner. Lives in a separate table from staff Users and uses
- * a separate auth guard ("customer") so the two domains never share a
- * session or a permission model.
- *
- * Login identity:
- *   - Phone is canonical (Arabic-market norm, used on register form).
- *   - Email is optional but unique when present.
- *   - findForLogin() lets the controller accept either as the identifier.
+ * Internal diner file. Customers never authenticate; staff and QR ordering
+ * resolve this record by its canonical phone number.
  */
-class Customer extends Authenticatable
+class Customer extends Model
 {
-    use HasFactory, Notifiable, SoftDeletes;
+    use HasFactory, SoftDeletes;
 
     protected $fillable = [
         'name',
         'phone',
         'email',
-        'password',
         'avatar',
         'birthday',
         'gender',
         'preferences',
         'default_branch_id',
         'credit_limit',
+        'advance_balance',
         'loyalty_customer_id',
-        'phone_verified_at',
-        'email_verified_at',
-        'last_login_at',
         'status',
         'blocked_reason',
-    ];
-
-    protected $hidden = [
-        'password',
-        'remember_token',
     ];
 
     protected function casts(): array
     {
         return [
-            'birthday'          => 'date',
-            'preferences'       => 'array',
-            'credit_limit'      => 'decimal:2',
-            'phone_verified_at' => 'datetime',
-            'email_verified_at' => 'datetime',
-            'last_login_at'     => 'datetime',
-            'password'          => 'hashed',
+            'birthday' => 'date',
+            'preferences' => 'array',
+            'credit_limit' => 'decimal:2',
+            'advance_balance' => 'decimal:2',
         ];
     }
 
@@ -93,6 +79,11 @@ class Customer extends Authenticatable
         return $this->hasMany(Invoice::class)->latest('issued_at');
     }
 
+    public function advanceTransactions(): HasMany
+    {
+        return $this->hasMany(CustomerAdvanceTransaction::class)->latest('id');
+    }
+
     /** All table sessions linked to this customer (their visit history). */
     public function tableSessions(): HasMany
     {
@@ -104,27 +95,17 @@ class Customer extends Authenticatable
         return $this->belongsTo(LoyaltyCustomer::class);
     }
 
-    // ========== Auth helpers ==========
-
-    /**
-     * Resolve a customer for login by phone OR email — whatever they typed.
-     * Normalises phone to digits-only so "+970-59…" matches "97059…".
-     */
-    public static function findForLogin(string $identifier): ?self
+    public static function findByPhone(string $phone, bool $withTrashed = false): ?self
     {
-        $identifier = trim($identifier);
-        if ($identifier === '') {
+        $canonical = PhoneNumber::normalize($phone);
+        if ($canonical === '') {
             return null;
         }
 
-        if (str_contains($identifier, '@')) {
-            return static::where('email', $identifier)->first();
-        }
+        $query = $withTrashed ? static::withTrashed() : static::query();
+        $matches = $query->whereIn('phone', PhoneNumber::lookupVariants($phone))->get();
 
-        $digits = preg_replace('/\D+/', '', $identifier) ?? '';
-        return static::where('phone', $identifier)
-            ->orWhere('phone', $digits)
-            ->first();
+        return $matches->firstWhere('phone', $canonical) ?? $matches->first();
     }
 
     public function isActive(): bool
@@ -173,7 +154,7 @@ class Customer extends Authenticatable
         // actually settles — otherwise a debt at another branch is invisible
         // to the cashier while their payment silently lands on it.
         return (float) $this->invoices()
-            ->withoutGlobalScope(\App\Models\Scopes\BranchScope::class)
+            ->withoutGlobalScope(BranchScope::class)
             ->whereNotNull('settled_on_account_at')
             ->where('balance', '>', 0)
             ->whereNotIn('status', ['cancelled', 'unpaid_writeoff'])
@@ -211,47 +192,34 @@ class Customer extends Authenticatable
     public function getInitialAttribute(): string
     {
         $name = trim((string) $this->name);
+
         return $name === '' ? '?' : mb_substr($name, 0, 1, 'UTF-8');
     }
 
     // ========== Cashier-side creation ==========
 
-    /**
-     * Create a Customer at the counter — name + phone are mandatory, the
-     * password is a random 6-digit PIN we hand back to the cashier ONCE in
-     * plain text so they can read it to the diner (or write it on the
-     * receipt). The diner uses {phone, PIN} to log into the portal and is
-     * expected to change the password from their account settings.
-     *
-     * Phone normalisation is delegated to LoyaltyService since the same
-     * "digits-only" rule is used across both auth identifiers and loyalty
-     * lookups; keeping the rule in one place stops them from drifting apart.
-     *
-     * Returns: [Customer model, plaintext PIN]. Caller MUST surface the PIN
-     * immediately — once flushed from memory it cannot be recovered (only
-     * reset via the standard portal reset flow).
-     *
-     * @return array{0: Customer, 1: string}
-     */
+    /** @return array{0: Customer} */
     public static function createFromCashier(
-        string  $name,
-        string  $phone,
+        string $name,
+        string $phone,
         ?string $email = null,
-        ?int    $defaultBranchId = null,
+        ?int $defaultBranchId = null,
     ): array {
-        $normalizedPhone = preg_replace('/\D+/', '', trim($phone)) ?? $phone;
+        $normalizedPhone = PhoneNumber::normalize($phone);
 
-        $pin = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        $customer = DB::transaction(function () use ($name, $normalizedPhone, $email, $defaultBranchId) {
+            $loyalty = app(LoyaltyService::class)->findOrCreate($normalizedPhone, $name, $email);
 
-        $customer = static::create([
-            'name'              => $name,
-            'phone'             => $normalizedPhone,
-            'email'             => $email,
-            'password'          => $pin,           // hashed by the cast
-            'default_branch_id' => $defaultBranchId,
-            'status'            => 'active',
-        ]);
+            return static::create([
+                'name' => $name,
+                'phone' => $normalizedPhone,
+                'email' => $email,
+                'default_branch_id' => $defaultBranchId,
+                'loyalty_customer_id' => $loyalty->id,
+                'status' => 'active',
+            ]);
+        });
 
-        return [$customer, $pin];
+        return [$customer];
     }
 }

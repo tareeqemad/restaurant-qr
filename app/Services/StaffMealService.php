@@ -6,21 +6,23 @@ use App\Enums\OrderItemStatus;
 use App\Enums\OrderStatus;
 use App\Exceptions\StaffMealLimitException;
 use App\Models\ActivityLog;
+use App\Models\Employee;
 use App\Models\Order;
-use App\Models\OrderItem;
 use App\Models\Setting;
 use App\Models\StaffMealCharge;
 use App\Models\StaffMealMonthClosure;
 use App\Models\User;
 use App\Services\Accounting\AccountingService;
 use App\Support\BranchContext;
+use Carbon\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
  * Staff meal allowance — runs every employee's monthly tab.
  *
  * Lifecycle of a staff order:
- *   1. Waiter creates an order with `staff_consumer_user_id` set (no
+ *   1. Waiter creates an order with `staff_consumer_employee_id` set (no
  *      `customer_id` — this is an internal consumption).
  *   2. Order flows through the kitchen normally (approve → preparing
  *      → ready → served). Inventory deducts at the configured stage.
@@ -57,10 +59,13 @@ use Illuminate\Support\Facades\DB;
  */
 class StaffMealService
 {
-    public const POLICY_ALLOW_LOG        = 'allow_log';
-    public const POLICY_WARN             = 'warn';
+    public const POLICY_ALLOW_LOG = 'allow_log';
+
+    public const POLICY_WARN = 'warn';
+
     public const POLICY_REQUIRE_APPROVAL = 'require_approval';
-    public const POLICY_BLOCK            = 'block';
+
+    public const POLICY_BLOCK = 'block';
 
     public function __construct(protected ?AccountingService $accounting = null) {}
 
@@ -81,19 +86,27 @@ class StaffMealService
      *   - ceiling:   ['outstanding', 'cap', 'headroom', 'over_by']
      *   - policy:    active policy string
      */
-    public function previewLimitCheck(User $staff, float $amount, ?float $alreadyOpenAmount = 0.0): array
+    public function previewLimitCheck(Employee|User $staff, float $amount, ?float $alreadyOpenAmount = 0.0): array
     {
+        $staff = $this->employee($staff);
         $policy = (string) Setting::get('staff_meal_over_limit_policy', self::POLICY_WARN);
+
+        // Editing an already-open order must check only the net increase,
+        // otherwise the same cart value is counted twice by the preview.
+        $netAmount = round(max(0, $amount - max(0, (float) $alreadyOpenAmount)), 2);
 
         $allowanceCap = $staff->monthly_meal_allowance !== null ? (float) $staff->monthly_meal_allowance : null;
         $allowanceUsed = $staff->staffMealUsedInMonth();
         $allowanceRemaining = $allowanceCap !== null ? round($allowanceCap - $allowanceUsed, 2) : null;
-        $allowanceOver = $allowanceRemaining !== null ? max(0, $amount - $allowanceRemaining) : 0;
+        $employeeDue = $allowanceRemaining !== null
+            ? round(max(0, $netAmount - max(0, $allowanceRemaining)), 2)
+            : $netAmount;
+        $allowanceOver = $employeeDue;
 
         $ceilingCap = $staff->meal_debt_ceiling !== null ? (float) $staff->meal_debt_ceiling : null;
         $ceilingOutstanding = $staff->staffMealOutstanding();
         $ceilingHeadroom = $ceilingCap !== null ? round($ceilingCap - $ceilingOutstanding, 2) : null;
-        $ceilingOver = $ceilingHeadroom !== null ? max(0, $amount - $ceilingHeadroom) : 0;
+        $ceilingOver = $ceilingHeadroom !== null ? max(0, $employeeDue - $ceilingHeadroom) : 0;
 
         // The hard ceiling decides block-eligibility; the soft monthly
         // allowance only ever warns (it's expected to overflow into the
@@ -106,15 +119,15 @@ class StaffMealService
 
         if ($hardOver) {
             $status = match ($policy) {
-                self::POLICY_BLOCK            => 'blocked',
+                self::POLICY_BLOCK => 'blocked',
                 self::POLICY_REQUIRE_APPROVAL => 'requires_approval',
-                self::POLICY_WARN             => 'warn',
-                default                       => 'warn',
+                self::POLICY_WARN => 'warn',
+                default => 'warn',
             };
             $reason = sprintf(
                 'الموظف يتجاوز سقف الدين المسموح بـ %s. (الدين القائم: %s | السقف: %s)',
                 number_format($ceilingOver, 2),
-                number_format($ceilingOutstanding + $amount, 2),
+                number_format($ceilingOutstanding + $employeeDue, 2),
                 number_format($ceilingCap, 2),
             );
         } elseif ($softOver) {
@@ -130,20 +143,22 @@ class StaffMealService
         }
 
         return [
-            'status'   => $status,
-            'reason'   => $reason,
-            'policy'   => $policy,
+            'status' => $status,
+            'reason' => $reason,
+            'policy' => $policy,
             'allowance' => [
-                'cap'       => $allowanceCap,
-                'used'      => round($allowanceUsed, 2),
+                'cap' => $allowanceCap,
+                'used' => round($allowanceUsed, 2),
                 'remaining' => $allowanceRemaining,
-                'over_by'   => round($allowanceOver, 2),
+                'over_by' => round($allowanceOver, 2),
+                'covered_by_restaurant' => round($netAmount - $employeeDue, 2),
+                'employee_due' => $employeeDue,
             ],
             'ceiling' => [
-                'cap'         => $ceilingCap,
+                'cap' => $ceilingCap,
                 'outstanding' => round($ceilingOutstanding, 2),
-                'headroom'    => $ceilingHeadroom,
-                'over_by'     => round($ceilingOver, 2),
+                'headroom' => $ceilingHeadroom,
+                'over_by' => round($ceilingOver, 2),
             ],
         ];
     }
@@ -153,7 +168,7 @@ class StaffMealService
      * outcomes (warn / requires_approval) just log to ActivityLog and
      * proceed — the manager-PIN flow happens at the UI layer.
      */
-    protected function enforceLimit(User $staff, float $amount, ?int $approverUserId = null): array
+    protected function enforceLimit(Employee $staff, float $amount, ?int $approverUserId = null): array
     {
         $check = $this->previewLimitCheck($staff, $amount);
 
@@ -167,7 +182,11 @@ class StaffMealService
             );
         }
 
-        if ($check['status'] === 'requires_approval' && ! $approverUserId) {
+        $approver = $approverUserId ? User::find($approverUserId) : null;
+        $validApprover = $approver
+            && ($approver->isManagementLevel() || $approver->hasPermission('staff_meals.waive'));
+
+        if ($check['status'] === 'requires_approval' && ! $validApprover) {
             throw new StaffMealLimitException(
                 staff: $staff,
                 limitType: 'debt_ceiling',
@@ -190,26 +209,26 @@ class StaffMealService
      * multiple times — re-runs are short-circuited by the existence of
      * a charge row for that order.
      *
-     * @param int|null $approverUserId Manager who approved the over-limit
-     *                                 charge (only needed when the active
-     *                                 policy is `require_approval`).
+     * @param  int|null  $approverUserId  Manager who approved the over-limit
+     *                                    charge (only needed when the active
+     *                                    policy is `require_approval`).
      */
     /**
-     * @param bool $isGift  When true, the order is recorded but settled
-     *                      immediately as method='gift' — the kitchen
-     *                      still cooked, inventory still deducted, but
-     *                      NOTHING lands on the employee's tab. Used
-     *                      for birthday meals, employee-of-the-month
-     *                      rewards, retention gifts. Limit checks are
-     *                      skipped — a gift can't push the employee
-     *                      over their ceiling because it's not debt.
-     * @param string|null $giftReason  Free-text reason stored on the
-     *                                 charge.notes for the audit trail.
+     * @param  bool  $isGift  When true, the order is recorded but settled
+     *                        immediately as method='gift' — the kitchen
+     *                        still cooked, inventory still deducted, but
+     *                        NOTHING lands on the employee's tab. Used
+     *                        for birthday meals, employee-of-the-month
+     *                        rewards, retention gifts. Limit checks are
+     *                        skipped — a gift can't push the employee
+     *                        over their ceiling because it's not debt.
+     * @param  string|null  $giftReason  Free-text reason stored on the
+     *                                   charge.notes for the audit trail.
      */
     public function chargeOrder(Order $order, ?int $settledByUserId = null, ?int $approverUserId = null, bool $isGift = false, ?string $giftReason = null): StaffMealCharge
     {
-        if (! $order->staff_consumer_user_id) {
-            throw new \InvalidArgumentException('هذا الطلب غير معرَّف كطلب موظف (staff_consumer_user_id فارغ).');
+        if (! $order->staff_consumer_employee_id && ! $order->staff_consumer_user_id) {
+            throw new \InvalidArgumentException('هذا الطلب غير معرَّف كطلب موظف.');
         }
 
         if ($order->status === OrderStatus::Cancelled->value) {
@@ -220,9 +239,17 @@ class StaffMealService
         // re-running just returns the existing row. Check OUTSIDE the
         // transaction so we don't enforce limits on a re-run.
         $existing = StaffMealCharge::where('order_id', $order->id)->first();
-        if ($existing) return $existing;
+        if ($existing) {
+            return $existing;
+        }
 
         return DB::transaction(function () use ($order, $settledByUserId, $approverUserId, $isGift, $giftReason) {
+            $order = Order::whereKey($order->id)->lockForUpdate()->firstOrFail();
+            $existing = StaffMealCharge::where('order_id', $order->id)->first();
+            if ($existing) {
+                return $existing;
+            }
+
             // Service charge handling for staff meals is operator-
             // configurable via the `staff_meal_include_service` setting.
             //   false (default) → strip service from the tab (the
@@ -241,7 +268,7 @@ class StaffMealService
                 // Without this, an order would silently drop, say, 11 ש"ח
                 // of service charge and nobody could tell why.
                 $strippedAmount = (float) $order->service_total;
-                $strippedRate   = (float) $order->service_rate;
+                $strippedRate = (float) $order->service_rate;
                 $order->update(['service_rate' => 0]);
                 app(OrderService::class)->recalculateTotals($order);
                 $order->refresh();
@@ -249,67 +276,63 @@ class StaffMealService
                 ActivityLog::log(
                     'staff_meal.service_stripped',
                     "تم خصم رسوم الخدمة ({$strippedRate}% = "
-                        .number_format($strippedAmount, 2)." ش.إ) "
+                        .number_format($strippedAmount, 2).' ش.إ) '
                         ."من طلب الموظف {$order->number} قبل احتسابه على البدل",
                     $order,
                     [
-                        'service_rate_before'  => $strippedRate,
+                        'service_rate_before' => $strippedRate,
                         'service_total_before' => $strippedAmount,
                         'reason' => 'staff_meal_include_service=false',
                     ],
                 );
             }
 
-            $amount = (float) $order->total;
-            $staff  = User::findOrFail($order->staff_consumer_user_id);
+            $consumptionAmount = round((float) $order->total, 2);
+            $staff = $order->staff_consumer_employee_id
+                ? Employee::findOrFail($order->staff_consumer_employee_id)
+                : $this->employee(User::findOrFail($order->staff_consumer_user_id));
+            if (! $order->staff_consumer_employee_id) {
+                $order->update(['staff_consumer_employee_id' => $staff->id]);
+            }
 
             // Gifts skip limit enforcement — they're free meals, not
             // debt, so they can't push the employee over a ceiling.
             // Regular charges run the full block/warn/approve gauntlet.
             $check = $isGift
-                ? ['status' => 'gift', 'allowance' => ['over_by' => 0], 'ceiling' => ['over_by' => 0]]
-                : $this->enforceLimit($staff, $amount, $approverUserId);
+                ? ['status' => 'gift', 'allowance' => ['over_by' => 0, 'employee_due' => 0, 'covered_by_restaurant' => $consumptionAmount], 'ceiling' => ['over_by' => 0]]
+                : $this->enforceLimit($staff, $consumptionAmount, $approverUserId);
+
+            // The monthly allowance is a restaurant-paid employee benefit.
+            // Only its excess is a receivable from the employee. The nominal
+            // consumption remains frozen on the linked order for reporting.
+            $employeeDue = $isGift ? 0.0 : round((float) ($check['allowance']['employee_due'] ?? 0), 2);
+            $coveredByRestaurant = round($consumptionAmount - $employeeDue, 2);
+            $automaticallyCovered = $employeeDue <= 0.001;
 
             $charge = StaffMealCharge::create([
-                'branch_id'         => $order->branch_id,
-                'user_id'           => $staff->id,
-                'order_id'          => $order->id,
-                'amount'            => $amount,
-                'charged_at'        => now(),
-                'settled_at'        => $isGift ? now() : null,
-                'settled_by_user_id'=> $isGift ? ($settledByUserId ?? auth()->id()) : null,
-                'settlement_method' => $isGift ? 'gift' : null,
-                'notes'             => $isGift
+                'branch_id' => $order->branch_id,
+                'employee_id' => $staff->id,
+                'user_id' => $staff->user_id,
+                'order_id' => $order->id,
+                'amount' => $employeeDue,
+                'charged_at' => now(),
+                'settled_at' => $automaticallyCovered ? now() : null,
+                'settled_by_user_id' => $automaticallyCovered ? ($settledByUserId ?? auth()->id()) : null,
+                'settlement_method' => $isGift ? 'gift' : ($automaticallyCovered ? 'allowance' : null),
+                'notes' => $isGift
                     ? trim('وجبة مجانية. '.($giftReason ?? ''))
-                    : null,
+                    : ($coveredByRestaurant > 0
+                        ? 'يغطي المطعم '.number_format($coveredByRestaurant, 2).' من قيمة الوجبة ضمن البدل الشهري.'
+                        : null),
             ]);
 
-            if (! in_array($order->status, [
-                OrderStatus::Completed->value,
-                OrderStatus::Cancelled->value,
-            ], true)) {
-                $order->update([
-                    'status'       => OrderStatus::Completed->value,
-                    'completed_at' => now(),
-                ]);
+            // Only excess above the allowance becomes a receivable/recovery.
+            // The physical ingredient cost is posted by InventoryService.
+            if ($employeeDue > 0.001) {
+                $this->postChargeAccounting($charge);
             }
 
-            // Post the journal entry (DR expense, CR receivable). Failures
-            // here are non-fatal — accounting can be reposted later, but
-            // the operational charge must succeed so the kitchen records
-            // stay consistent.
-            $this->postChargeAccounting($charge);
-
-            // For a gift, ALSO post the gift settlement leg so the
-            // receivable nets to zero in one shot and 5060 carries
-            // the giveaway expense for reporting.
-            if ($isGift) {
-                $this->postSettlementAccounting($charge);
-            }
-
-            // Threshold notifications only matter for actual debt-
-            // bearing charges. Gifts don't count toward the employee's
-            // usage of their monthly allowance.
+            // Gifts are reported separately and never create a receivable.
             if (! $isGift) {
                 $this->maybeNotifyThreshold($staff->fresh(), $charge);
             }
@@ -322,15 +345,17 @@ class StaffMealService
                     : "تم احتساب طلب {$order->number} على بدل الوجبات للموظف {$staff->name}",
                 $charge,
                 [
-                    'amount'      => $amount,
-                    'is_gift'     => $isGift,
-                    'reason'      => $giftReason,
-                    'remaining'   => $staff->fresh()->staffMealRemainingThisMonth(),
+                    'consumption_amount' => $consumptionAmount,
+                    'covered_by_restaurant' => $coveredByRestaurant,
+                    'employee_due' => $employeeDue,
+                    'is_gift' => $isGift,
+                    'reason' => $giftReason,
+                    'remaining' => $staff->fresh()->staffMealRemainingThisMonth(),
                     'outstanding' => $staff->fresh()->staffMealOutstanding(),
-                    'over_limit'  => ($check['allowance']['over_by'] ?? 0) > 0
-                                  || ($check['ceiling']['over_by']   ?? 0) > 0,
+                    'over_limit' => ($check['allowance']['over_by'] ?? 0) > 0
+                                  || ($check['ceiling']['over_by'] ?? 0) > 0,
                     'policy_status' => $check['status'],
-                    'approver'    => $approverUserId,
+                    'approver' => $approverUserId,
                 ]
             );
 
@@ -383,39 +408,42 @@ class StaffMealService
             // FULL waiver → just settle the existing row.
             if (abs($current - $amount) < 0.01) {
                 $charge->update([
-                    'settled_at'         => now(),
+                    'settled_at' => now(),
                     'settled_by_user_id' => $userId,
-                    'settlement_method'  => $method,
-                    'notes'              => trim(($charge->notes ?? '').' '.($reason ?? '')) ?: null,
+                    'settlement_method' => $method,
+                    'notes' => trim(($charge->notes ?? '').' '.($reason ?? '')) ?: null,
                 ]);
                 $this->postSettlementAccounting($charge->fresh());
                 $this->logWaiver($charge, $amount, $method, $reason);
+
                 return $charge->fresh();
             }
 
             // PARTIAL waiver → split: original keeps (current - amount),
             // new row carries `amount` already settled.
             $waived = StaffMealCharge::create([
-                'branch_id'         => $charge->branch_id,
-                'user_id'           => $charge->user_id,
-                'order_id'          => $charge->order_id,
-                'amount'            => $amount,
-                'charged_at'        => $charge->charged_at,
-                'settled_at'        => now(),
-                'settled_by_user_id'=> $userId,
+                'branch_id' => $charge->branch_id,
+                'employee_id' => $charge->employee_id,
+                'user_id' => $charge->user_id,
+                'order_id' => $charge->order_id,
+                'amount' => $amount,
+                'charged_at' => $charge->charged_at,
+                'settled_at' => now(),
+                'settled_by_user_id' => $userId,
                 'settlement_method' => $method,
-                'notes'             => trim('إعفاء جزئي. '.($reason ?? '')),
+                'notes' => trim('إعفاء جزئي. '.($reason ?? '')),
             ]);
             $charge->update(['amount' => round($current - $amount, 2)]);
             $this->postSettlementAccounting($waived);
             $this->logWaiver($waived, $amount, $method, $reason);
+
             return $waived;
         });
     }
 
     protected function logWaiver(StaffMealCharge $charge, float $amount, string $method, ?string $reason): void
     {
-        $staff = $charge->user;
+        $staff = $charge->employee;
         $label = $method === 'gift' ? 'إعفاء/هدية' : 'شطب';
         ActivityLog::log(
             'staff_meal.waived',
@@ -429,8 +457,9 @@ class StaffMealService
     // Settle (FIFO)
     // ───────────────────────────────────────────────────────────────
 
-    public function settle(User $staff, float $amount, string $method = 'cash', ?int $settledByUserId = null, ?string $notes = null, ?StaffMealMonthClosure $closure = null): array
+    public function settle(Employee|User $staff, float $amount, string $method = 'cash', ?int $settledByUserId = null, ?string $notes = null, ?StaffMealMonthClosure $closure = null, ?array $chargeIds = null): array
     {
+        $staff = $this->employee($staff);
         if ($amount <= 0.001) {
             throw new \InvalidArgumentException('قيمة التسوية يجب أن تكون أكبر من صفر.');
         }
@@ -439,8 +468,15 @@ class StaffMealService
             throw new \InvalidArgumentException('طريقة التسوية غير مدعومة: '.$method);
         }
 
-        return DB::transaction(function () use ($staff, $amount, $method, $settledByUserId, $notes, $closure) {
-            $outstanding = $staff->staffMealOutstanding();
+        return DB::transaction(function () use ($staff, $amount, $method, $settledByUserId, $notes, $closure, $chargeIds) {
+            $chargesQuery = StaffMealCharge::where('employee_id', $staff->id)
+                ->whereNull('settled_at')
+                ->when($chargeIds !== null, fn ($query) => $query->whereIn('id', $chargeIds))
+                ->orderBy('charged_at')
+                ->lockForUpdate();
+            $charges = $chargesQuery->get();
+            $outstanding = round((float) $charges->sum('amount'), 2);
+
             if ($amount - $outstanding > 0.01) {
                 throw new \RuntimeException(sprintf(
                     'قيمة التسوية (%s) أكبر من إجمالي المستحق (%s) للموظف %s.',
@@ -450,75 +486,50 @@ class StaffMealService
                 ));
             }
 
-            $charges = StaffMealCharge::where('user_id', $staff->id)
-                ->whereNull('settled_at')
-                ->orderBy('charged_at')
-                ->lockForUpdate()
-                ->get();
-
             $remaining = round($amount, 2);
             $settled = [];
 
             foreach ($charges as $charge) {
-                if ($remaining <= 0.001) break;
+                if ($remaining <= 0.001) {
+                    break;
+                }
 
                 $charged = round((float) $charge->amount, 2);
                 if ($remaining + 0.001 >= $charged) {
                     // Whole charge fits → settle it fully.
                     $charge->update([
-                        'settled_at'         => now(),
+                        'settled_at' => now(),
                         'settled_by_user_id' => $settledByUserId,
-                        'settlement_method'  => $method,
-                        'month_closure_id'   => $closure?->id,
-                        'notes'              => trim(($charge->notes ?? '').' '.($notes ?? '')) ?: null,
+                        'settlement_method' => $method,
+                        'month_closure_id' => $closure?->id,
+                        'notes' => trim(($charge->notes ?? '').' '.($notes ?? '')) ?: null,
                     ]);
                     $this->postSettlementAccounting($charge);
                     $remaining = round($remaining - $charged, 2);
                     $settled[] = $charge->id;
+
                     continue;
                 }
 
                 // Partial settlement: split the row in two so the audit
                 // trail keeps the original order reference intact.
                 $split = StaffMealCharge::create([
-                    'branch_id'         => $charge->branch_id,
-                    'user_id'           => $charge->user_id,
-                    'order_id'          => $charge->order_id,
-                    'amount'            => $remaining,
-                    'charged_at'        => $charge->charged_at,
-                    'settled_at'        => now(),
-                    'settled_by_user_id'=> $settledByUserId,
+                    'branch_id' => $charge->branch_id,
+                    'employee_id' => $charge->employee_id,
+                    'user_id' => $charge->user_id,
+                    'order_id' => $charge->order_id,
+                    'amount' => $remaining,
+                    'charged_at' => $charge->charged_at,
+                    'settled_at' => now(),
+                    'settled_by_user_id' => $settledByUserId,
                     'settlement_method' => $method,
-                    'month_closure_id'  => $closure?->id,
-                    'notes'             => trim('تسوية جزئية. '.($notes ?? '')),
+                    'month_closure_id' => $closure?->id,
+                    'notes' => trim('تسوية جزئية. '.($notes ?? '')),
                 ]);
                 $charge->update(['amount' => round($charged - $remaining, 2)]);
                 $this->postSettlementAccounting($split);
+                $settled[] = $split->id;
                 $remaining = 0;
-            }
-
-            // A CASH settlement puts money into the settling user's drawer.
-            // Mirror it as a shift pay_in so the shift-close reconciliation
-            // expects that cash — without it, every cash meal settlement shows
-            // up as a phantom drawer surplus. If the settler has no open shift
-            // (a back-office / manager settlement), nothing is recorded: the
-            // cash never passed through a cashier drawer.
-            if ($method === 'cash' && $settledByUserId) {
-                $cashApplied = round($amount - $remaining, 2);
-                $openShift = \App\Models\Shift::where('user_id', $settledByUserId)
-                    ->where('status', 'open')
-                    ->latest('opened_at')
-                    ->first();
-                if ($cashApplied > 0.001 && $openShift) {
-                    \App\Models\CashMovement::create([
-                        'branch_id' => $openShift->branch_id,
-                        'shift_id'  => $openShift->id,
-                        'type'      => 'pay_in',
-                        'amount'    => $cashApplied,
-                        'reason'    => "تسوية بدل وجبات نقداً — {$staff->name}",
-                        'user_id'   => $settledByUserId,
-                    ]);
-                }
             }
 
             ActivityLog::log(
@@ -536,8 +547,9 @@ class StaffMealService
     // Quick consume — same as before but routes through enforceLimit
     // ───────────────────────────────────────────────────────────────
 
-    public function quickConsume(User $staff, array $lines, ?int $recordedByUserId = null, ?string $notes = null, ?int $approverUserId = null, bool $isGift = false, ?string $giftReason = null): StaffMealCharge
+    public function quickConsume(Employee|User $staff, array $lines, ?int $recordedByUserId = null, ?string $notes = null, ?int $approverUserId = null, bool $isGift = false, ?string $giftReason = null): StaffMealCharge
     {
+        $staff = $this->employee($staff);
         if (empty($lines)) {
             throw new \InvalidArgumentException('قائمة الأصناف فارغة.');
         }
@@ -558,7 +570,7 @@ class StaffMealService
             $inventory = app(InventoryService::class);
             $stockCheck = collect($lines)->map(fn ($l) => [
                 'menu_item_id' => (int) $l['menu_item_id'],
-                'quantity'     => (float) $l['quantity'],
+                'quantity' => (float) $l['quantity'],
                 'modifier_ids' => [],
             ])->all();
             $issues = $inventory->checkStockForOrderPreview($stockCheck);
@@ -571,16 +583,17 @@ class StaffMealService
             }
 
             $order = Order::create([
-                'branch_id'              => $branchId,
-                'order_type'             => 'takeaway',
-                'order_source'           => 'other',
-                'status'                 => OrderStatus::Pending->value,
-                'staff_consumer_user_id' => $staff->id,
-                'created_by_user_id'     => $recordedByUserId ?? auth()->id(),
-                'submitted_at'           => now(),
-                'customer_notes'         => $notes,
-                'tax_rate'               => 0,
-                'service_rate'           => 0,
+                'branch_id' => $branchId,
+                'order_type' => 'takeaway',
+                'order_source' => 'other',
+                'status' => OrderStatus::Pending->value,
+                'staff_consumer_employee_id' => $staff->id,
+                'staff_consumer_user_id' => $staff->user_id,
+                'created_by_user_id' => $recordedByUserId ?? auth()->id(),
+                'submitted_at' => now(),
+                'customer_notes' => $notes,
+                'tax_rate' => 0,
+                'service_rate' => 0,
             ]);
 
             $orders = app(OrderService::class);
@@ -588,14 +601,14 @@ class StaffMealService
             foreach ($lines as $line) {
                 $oi = $orders->addItem($order, [
                     'menu_item_id' => (int) $line['menu_item_id'],
-                    'quantity'     => (float) $line['quantity'],
+                    'quantity' => (float) $line['quantity'],
                     'modifier_ids' => [],
-                    'notes'        => $line['notes'] ?? null,
+                    'notes' => $line['notes'] ?? null,
                 ]);
                 $oi->update([
-                    'status'      => OrderItemStatus::Served->value,
+                    'status' => OrderItemStatus::Served->value,
                     'approved_at' => now(),
-                    'served_at'   => now(),
+                    'served_at' => now(),
                 ]);
                 $inventory->ensureDeducted($oi->fresh());
             }
@@ -603,12 +616,12 @@ class StaffMealService
             $orders->recalculateTotals($order);
 
             $order->update([
-                'status'         => OrderStatus::Completed->value,
-                'approved_at'    => now(),
+                'status' => OrderStatus::Completed->value,
+                'approved_at' => now(),
                 'approved_by_user_id' => $recordedByUserId ?? auth()->id(),
-                'ready_at'       => now(),
-                'delivered_at'   => now(),
-                'completed_at'   => now(),
+                'ready_at' => now(),
+                'delivered_at' => now(),
+                'completed_at' => now(),
             ]);
 
             return $this->chargeOrder($order->fresh(), $recordedByUserId, $approverUserId, $isGift, $giftReason);
@@ -630,19 +643,21 @@ class StaffMealService
      * existing closure unchanged — important for accountants who
      * re-print the sheet after the books are closed.
      *
-     * @param int|null $branchId  Null = close across all branches at once
-     *                            (only the owner-level dashboard does this).
+     * @param  int|null  $branchId  Null = close across all branches at once
+     *                              (only the owner-level dashboard does this).
      */
-    public function closeMonth(\Carbon\Carbon $month, ?int $branchId, string $method = 'payroll_deduction', ?int $closedByUserId = null, ?string $notes = null): StaffMealMonthClosure
+    public function closeMonth(Carbon $month, ?int $branchId, string $method = 'payroll_deduction', ?int $closedByUserId = null, ?string $notes = null): StaffMealMonthClosure
     {
         $monthStart = $month->copy()->startOfMonth();
-        $monthEnd   = $month->copy()->endOfMonth();
+        $monthEnd = $month->copy()->endOfMonth();
 
         // Idempotency: one closure per (branch, month).
         $existing = StaffMealMonthClosure::where('branch_id', $branchId)
             ->whereDate('month', $monthStart->toDateString())
             ->first();
-        if ($existing) return $existing;
+        if ($existing) {
+            return $existing;
+        }
 
         return DB::transaction(function () use ($monthStart, $monthEnd, $branchId, $method, $closedByUserId, $notes) {
             // Collect every employee with open charges in this month.
@@ -659,50 +674,53 @@ class StaffMealService
                 // "month X closed (no charges)" rather than letting a
                 // manager re-click and wonder if anything happened.
                 return StaffMealMonthClosure::create([
-                    'branch_id'         => $branchId,
-                    'month'             => $monthStart->toDateString(),
-                    'method'            => $method,
-                    'total_amount'      => 0,
-                    'staff_count'       => 0,
-                    'charge_count'      => 0,
+                    'branch_id' => $branchId,
+                    'month' => $monthStart->toDateString(),
+                    'method' => $method,
+                    'total_amount' => 0,
+                    'staff_count' => 0,
+                    'charge_count' => 0,
                     'closed_by_user_id' => $closedByUserId,
-                    'closed_at'         => now(),
-                    'notes'             => $notes,
+                    'closed_at' => now(),
+                    'notes' => $notes,
                 ]);
             }
 
-            $total      = round((float) $openCharges->sum('amount'), 2);
-            $staffCount = $openCharges->pluck('user_id')->unique()->count();
-            $count      = $openCharges->count();
+            $total = round((float) $openCharges->sum('amount'), 2);
+            $staffCount = $openCharges->pluck('employee_id')->unique()->count();
+            $count = $openCharges->count();
 
             $closure = StaffMealMonthClosure::create([
-                'branch_id'         => $branchId,
-                'month'             => $monthStart->toDateString(),
-                'method'            => $method,
-                'total_amount'      => $total,
-                'staff_count'       => $staffCount,
-                'charge_count'      => $count,
+                'branch_id' => $branchId,
+                'month' => $monthStart->toDateString(),
+                'method' => $method,
+                'total_amount' => $total,
+                'staff_count' => $staffCount,
+                'charge_count' => $count,
                 'closed_by_user_id' => $closedByUserId,
-                'closed_at'         => now(),
-                'notes'             => $notes,
+                'closed_at' => now(),
+                'notes' => $notes,
             ]);
 
             // Settle every open charge in one shot. We call settle()
             // per employee instead of bulk-updating because:
             //   1. settle() handles the FIFO + accounting side effects
             //   2. ActivityLog gets per-employee rows for traceability
-            $byUser = $openCharges->groupBy('user_id');
-            foreach ($byUser as $userId => $charges) {
-                $staff = User::find($userId);
-                if (! $staff) continue;
+            $byEmployee = $openCharges->groupBy('employee_id');
+            foreach ($byEmployee as $employeeId => $charges) {
+                $staff = Employee::find($employeeId);
+                if (! $staff) {
+                    continue;
+                }
                 $sum = round((float) $charges->sum('amount'), 2);
                 $this->settle(
-                    staff:           $staff,
-                    amount:          $sum,
-                    method:          $method,
+                    staff: $staff,
+                    amount: $sum,
+                    method: $method,
                     settledByUserId: $closedByUserId,
-                    notes:           "إقفال شهري {$monthStart->format('Y-m')} #".$closure->id,
-                    closure:         $closure,
+                    notes: "إقفال شهري {$monthStart->format('Y-m')} #".$closure->id,
+                    closure: $closure,
+                    chargeIds: $charges->pluck('id')->all(),
                 );
             }
 
@@ -721,49 +739,80 @@ class StaffMealService
     // Reporting
     // ───────────────────────────────────────────────────────────────
 
-    public function monthSummary(User $staff, ?\Carbon\Carbon $month = null): array
+    public function monthSummary(Employee|User $staff, ?Carbon $month = null, ?int $branchId = null): array
     {
+        $staff = $this->employee($staff);
         $month = $month?->copy()->startOfMonth() ?? now()->startOfMonth();
-        $end   = $month->copy()->endOfMonth();
+        $end = $month->copy()->endOfMonth();
 
         $allowance = $staff->monthly_meal_allowance !== null
             ? (float) $staff->monthly_meal_allowance
             : null;
 
-        $usedThisMonth = (float) StaffMealCharge::query()
-            ->where('user_id', $staff->id)
-            ->whereNull('settled_at')
-            ->whereBetween('charged_at', [$month, $end])
-            ->sum('amount');
+        $monthCharges = StaffMealCharge::query()
+            ->where('employee_id', $staff->id)
+            ->whereBetween('charged_at', [$month, $end]);
+        if ($branchId !== null) {
+            $monthCharges->where('branch_id', $branchId);
+        }
+
+        $monthCharges = $monthCharges->with('order:id,total')->get();
+        $orderGroups = $monthCharges->groupBy(
+            fn (StaffMealCharge $charge) => $charge->order_id ? 'order:'.$charge->order_id : 'charge:'.$charge->id
+        );
+        $regularGroups = $orderGroups->reject(function (Collection $charges) {
+            $createdAsGift = $charges->every(
+                fn (StaffMealCharge $charge) => $charge->settlement_method === 'gift'
+            ) && (float) $charges->sum('amount') <= 0.001;
+
+            return $createdAsGift;
+        });
+        $usedThisMonth = (float) $regularGroups->sum(function (Collection $charges) {
+            $first = $charges->first();
+
+            return (float) ($first->order?->total ?? $charges->sum('amount'));
+        });
+        $employeeDueThisMonth = (float) $regularGroups->sum(
+            fn (Collection $charges) => (float) $charges->sum('amount')
+        );
+        $coveredThisMonth = max(0, $usedThisMonth - $employeeDueThisMonth);
 
         // Gifts/waivers given in the month — value of meals the
         // employee got "on the house" that DIDN'T touch their tab.
         // Tracked separately so management can see giveaways vs.
         // actual consumption at a glance.
-        $giftedThisMonth = (float) StaffMealCharge::query()
-            ->where('user_id', $staff->id)
+        $giftedThisMonth = (float) $monthCharges
             ->where('settlement_method', 'gift')
-            ->whereBetween('charged_at', [$month, $end])
-            ->sum('amount');
+            ->sum(fn (StaffMealCharge $charge) => (float) $charge->amount > 0
+                ? (float) $charge->amount
+                : (float) ($charge->order?->total ?? 0));
 
-        $outstanding = $staff->staffMealOutstanding();
-        $overflow    = $allowance !== null ? max(0, $usedThisMonth - $allowance) : 0;
+        $outstandingQuery = StaffMealCharge::query()
+            ->where('employee_id', $staff->id)
+            ->whereNull('settled_at');
+        if ($branchId !== null) {
+            $outstandingQuery->where('branch_id', $branchId);
+        }
+        $outstanding = (float) $outstandingQuery->sum('amount');
+        $overflow = $employeeDueThisMonth;
+        $usagePct = $allowance !== null && $allowance > 0
+            ? round($usedThisMonth / $allowance * 100, 1)
+            : null;
+        $ceiling = $staff->meal_debt_ceiling !== null ? (float) $staff->meal_debt_ceiling : null;
 
         return [
-            'month'         => $month->format('Y-m'),
-            'allowance'     => $allowance,
-            'used'          => round($usedThisMonth, 2),
-            'gifted'        => round($giftedThisMonth, 2),
-            'remaining'     => $allowance !== null ? round($allowance - $usedThisMonth, 2) : null,
-            'overflow'      => round($overflow, 2),
-            'outstanding'   => round($outstanding, 2),
-            'ceiling'       => $staff->meal_debt_ceiling !== null ? (float) $staff->meal_debt_ceiling : null,
-            'ceiling_headroom' => $staff->staffMealCeilingHeadroom(),
-            'usage_pct'     => $staff->staffMealUsagePct(),
-            'charge_count'  => StaffMealCharge::where('user_id', $staff->id)
-                                ->whereNull('settled_at')
-                                ->whereBetween('charged_at', [$month, $end])
-                                ->count(),
+            'month' => $month->format('Y-m'),
+            'allowance' => $allowance,
+            'used' => round($usedThisMonth, 2),
+            'covered' => round($coveredThisMonth, 2),
+            'gifted' => round($giftedThisMonth, 2),
+            'remaining' => $allowance !== null ? round($allowance - $usedThisMonth, 2) : null,
+            'overflow' => round($overflow, 2),
+            'outstanding' => round($outstanding, 2),
+            'ceiling' => $ceiling,
+            'ceiling_headroom' => $ceiling !== null ? round($ceiling - $outstanding, 2) : null,
+            'usage_pct' => $usagePct,
+            'charge_count' => $regularGroups->count(),
         ];
     }
 
@@ -772,23 +821,30 @@ class StaffMealService
      * specific closure. Returns one row per employee:
      *   - name, monthly_meal_allowance, used, overflow, charges_count
      */
-    public function payrollSheet(StaffMealMonthClosure $closure): \Illuminate\Support\Collection
+    public function payrollSheet(StaffMealMonthClosure $closure): Collection
     {
         return StaffMealCharge::query()
             ->where('month_closure_id', $closure->id)
-            ->with('user:id,name,role,monthly_meal_allowance')
+            ->with(['employee:id,user_id,name,job_title,monthly_meal_allowance', 'employee.user:id,name,role', 'order:id,total'])
             ->get()
-            ->groupBy('user_id')
+            ->groupBy('employee_id')
             ->map(function ($charges) {
-                $user = $charges->first()->user;
+                $employee = $charges->first()->employee;
                 $total = round((float) $charges->sum('amount'), 2);
-                $cap   = $user?->monthly_meal_allowance !== null ? (float) $user->monthly_meal_allowance : null;
+                $consumption = round((float) $charges->whereNotNull('order_id')
+                    ->unique('order_id')
+                    ->sum(fn (StaffMealCharge $charge) => (float) ($charge->order?->total ?? $charge->amount)), 2);
+                $cap = $employee?->monthly_meal_allowance !== null ? (float) $employee->monthly_meal_allowance : null;
+
                 return [
-                    'user'           => $user,
-                    'total'          => $total,
-                    'allowance'      => $cap,
-                    'overflow'       => $cap !== null ? max(0, round($total - $cap, 2)) : 0,
-                    'charges_count'  => $charges->count(),
+                    'employee' => $employee,
+                    'user' => $employee?->user,
+                    'total' => $total,
+                    'consumption' => $consumption,
+                    'covered' => max(0, round($consumption - $total, 2)),
+                    'allowance' => $cap,
+                    'overflow' => $total,
+                    'charges_count' => $charges->count(),
                 ];
             })
             ->sortByDesc('total')
@@ -800,50 +856,36 @@ class StaffMealService
     // ───────────────────────────────────────────────────────────────
 
     /**
-     * Post the journal entry when a staff meal is charged. Standard
-     * double-entry: a receivable is created and recognized as internal
-     * meal revenue.
+     * Recognize only the portion due from the employee:
+     *   DR 1110 staff receivable
+     *   CR 4030 staff-meal recovery
      *
-     *   DR 1110 مستحقات على الموظفين (retail amount)
-     *   CR 4030 إيرادات بدل وجبات الموظفين (retail amount)
-     *
-     * Why 4030 (revenue) and not 5050 (expense)?
-     *   - The food cost is ALREADY in 5000 COGS via inventory deduction.
-     *   - Charging the meal at retail creates a real receivable, mirrored
-     *     by recognizing the corresponding retail value as internal
-     *     revenue — the SAME pattern a customer invoice uses (DR 1100 /
-     *     CR 4000).
-     *   - When the employee pays back (cash / payroll), 4030 stays at
-     *     retail and 1110 is cleared. Net P&L = retail - COGS = margin.
-     *   - For a gift, the receivable is cleared into 5060 perks expense.
-     *     Net P&L = 5060 (retail) + 5000 (cogs) - 4030 (retail) = COGS.
-     *     The "loss" is just the food cost, not a phantom amount.
-     *
-     * Safe against missing chart of accounts (returns null silently
-     * and logs a notice). Idempotent per charge via the event_type +
-     * source uniqueness inside AccountingService::post.
+     * The restaurant-funded portion is not a retail sale. Its actual
+     * ingredient cost is posted from the inventory movement to 5060.
      */
     protected function postChargeAccounting(StaffMealCharge $charge): void
     {
         $accounting = $this->accounting ?? app(AccountingService::class);
 
         try {
+            $receivable = $accounting->accountForPostingRole('staff_meal_receivable');
+            $recoveryRevenue = $accounting->accountForPostingRole('staff_meal_recovery_revenue');
             $accounting->post(
-                eventType:   'staff_meal_charged',
-                source:      $charge,
-                branchId:    $charge->branch_id,
-                postedOn:    $charge->charged_at,
-                description: "بدل وجبات الموظف #{$charge->user_id} — مرجع طلب #{$charge->order_id}",
+                eventType: 'staff_meal_charged',
+                source: $charge,
+                branchId: $charge->branch_id,
+                postedOn: $charge->charged_at,
+                description: "بدل وجبات الموظف #{$charge->employee_id} — مرجع طلب #{$charge->order_id}",
                 lines: [
-                    ['account' => '1110', 'debit' => (float) $charge->amount, 'credit' => 0, 'description' => 'استحقاق على الموظف'],
-                    ['account' => '4030', 'debit' => 0, 'credit' => (float) $charge->amount, 'description' => 'إيراد وجبة موظف بالقيمة الاسمية'],
+                    ['account' => $receivable, 'debit' => (float) $charge->amount, 'credit' => 0, 'description' => 'الجزء المتجاوز من بدل الموظف'],
+                    ['account' => $recoveryRevenue, 'debit' => 0, 'credit' => (float) $charge->amount, 'description' => 'استرداد الجزء المتجاوز من بدل الوجبة'],
                 ],
                 createdBy: $charge->settled_by_user_id,
             );
         } catch (\Throwable $e) {
             \Log::warning('staff_meal.accounting.charge_failed', [
                 'charge_id' => $charge->id,
-                'error'     => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
         }
     }
@@ -861,42 +903,47 @@ class StaffMealService
      */
     protected function postSettlementAccounting(StaffMealCharge $charge): void
     {
-        if (! $charge->settled_at) return;
+        if (! $charge->settled_at) {
+            return;
+        }
         $accounting = $this->accounting ?? app(AccountingService::class);
 
         $debitAccount = match ($charge->settlement_method) {
-            'cash'              => '1000',
-            'payroll_deduction' => '2110',
-            'writeoff'          => '5200',
-            'gift'              => '5060',
-            default             => '1000',
+            'cash' => $accounting->accountForPostingRole('cash_account'),
+            'payroll_deduction' => $accounting->accountForPostingRole('payroll_deductions'),
+            'writeoff' => $accounting->accountForPostingRole('bad_debt_expense'),
+            // A voluntary waiver reverses the recovery revenue. The actual
+            // ingredient cost was already recorded as employee-benefit expense.
+            'gift' => $accounting->accountForPostingRole('staff_meal_recovery_revenue'),
+            default => $accounting->accountForPostingRole('cash_account'),
         };
         $description = match ($charge->settlement_method) {
-            'cash'              => 'تسوية نقدية لبدل وجبات الموظف',
+            'cash' => 'تسوية نقدية لبدل وجبات الموظف',
             'payroll_deduction' => 'خصم من راتب الموظف لبدل الوجبات',
-            'writeoff'          => 'إعدام مستحق بدل وجبات (تنازل إداري)',
-            'gift'              => 'وجبة مجانية/هدية للموظف',
-            default             => 'تسوية بدل وجبات الموظف',
+            'writeoff' => 'إعدام مستحق بدل وجبات (تنازل إداري)',
+            'gift' => 'وجبة مجانية/هدية للموظف',
+            default => 'تسوية بدل وجبات الموظف',
         };
 
         try {
+            $receivable = $accounting->accountForPostingRole('staff_meal_receivable');
             $accounting->post(
-                eventType:   'staff_meal_settled_'.$charge->settlement_method,
-                source:      $charge,
-                branchId:    $charge->branch_id,
-                postedOn:    $charge->settled_at,
+                eventType: 'staff_meal_settled_'.$charge->settlement_method,
+                source: $charge,
+                branchId: $charge->branch_id,
+                postedOn: $charge->settled_at,
                 description: $description,
                 lines: [
                     ['account' => $debitAccount, 'debit' => (float) $charge->amount, 'credit' => 0, 'description' => $description],
-                    ['account' => '1110',         'debit' => 0, 'credit' => (float) $charge->amount, 'description' => 'تسوية استحقاق على الموظف'],
+                    ['account' => $receivable, 'debit' => 0, 'credit' => (float) $charge->amount, 'description' => 'تسوية استحقاق على الموظف'],
                 ],
                 createdBy: $charge->settled_by_user_id,
             );
         } catch (\Throwable $e) {
             \Log::warning('staff_meal.accounting.settle_failed', [
                 'charge_id' => $charge->id,
-                'method'    => $charge->settlement_method,
-                'error'     => $e->getMessage(),
+                'method' => $charge->settlement_method,
+                'error' => $e->getMessage(),
             ]);
         }
     }
@@ -912,31 +959,39 @@ class StaffMealService
      * badges/banners. We dedupe per (user, threshold, month) so the
      * 4th charge doesn't spam four 80%-alerts.
      */
-    protected function maybeNotifyThreshold(User $staff, StaffMealCharge $charge): void
+    protected function maybeNotifyThreshold(Employee $staff, StaffMealCharge $charge): void
     {
-        if ($staff->monthly_meal_allowance === null) return;
+        if ($staff->monthly_meal_allowance === null) {
+            return;
+        }
         $pct = $staff->staffMealUsagePct();
-        if ($pct === null) return;
+        if ($pct === null) {
+            return;
+        }
 
         $threshold = match (true) {
             $pct >= 120 => 120,
             $pct >= 100 => 100,
-            $pct >= 80  => 80,
-            default     => null,
+            $pct >= 80 => 80,
+            default => null,
         };
-        if ($threshold === null) return;
+        if ($threshold === null) {
+            return;
+        }
 
         // Dedupe: did we already fire THIS threshold for THIS user in
         // THIS month? ActivityLog uses metadata.threshold for the key.
         $month = now()->format('Y-m');
         $already = ActivityLog::query()
             ->where('event', 'staff_meal.threshold')
-            ->where('subject_type', User::class)
+            ->where('subject_type', Employee::class)
             ->where('subject_id', $staff->id)
             ->where('created_at', '>=', now()->startOfMonth())
             ->get()
             ->contains(fn ($log) => (int) ($log->properties['threshold'] ?? 0) >= $threshold);
-        if ($already) return;
+        if ($already) {
+            return;
+        }
 
         $severity = $threshold === 80 ? 'تنبيه' : ($threshold === 100 ? 'تحذير' : 'تجاوز');
         ActivityLog::log(
@@ -945,11 +1000,17 @@ class StaffMealService
             $staff,
             [
                 'threshold' => $threshold,
-                'pct'       => $pct,
-                'used'      => round($staff->staffMealUsedInMonth(), 2),
+                'pct' => $pct,
+                'used' => round($staff->staffMealUsedInMonth(), 2),
                 'allowance' => (float) $staff->monthly_meal_allowance,
                 'charge_id' => $charge->id,
             ],
         );
+    }
+
+    /** Resolve legacy user callers into the new employee source of truth. */
+    protected function employee(Employee|User $staff): Employee
+    {
+        return $staff instanceof Employee ? $staff : Employee::fromUser($staff);
     }
 }

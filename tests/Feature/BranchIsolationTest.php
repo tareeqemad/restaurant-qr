@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Events\OrderCreated;
 use App\Models\Branch;
 use App\Models\Order;
 use App\Models\Role;
@@ -96,6 +97,33 @@ class BranchIsolationTest extends TestCase
         $table->branch_id = $branchId;
 
         return $table;
+    }
+
+    public function test_realtime_order_channels_are_branch_scoped(): void
+    {
+        $order = $this->fakeOrder($this->branchA->id);
+        $order->setRelation('tableSession', null);
+
+        $names = collect((new OrderCreated($order))->broadcastOn())->pluck('name')->all();
+
+        $this->assertContains('private-branch.'.$this->branchA->id.'.waiters', $names);
+        $this->assertContains('private-owners', $names);
+        $this->assertNotContains('private-waiters', $names);
+    }
+
+    public function test_regular_staff_without_a_branch_is_denied_admin_access(): void
+    {
+        $orphan = User::create([
+            'name' => 'Orphan Staff',
+            'username' => 'orphan_staff',
+            'role' => 'cashier',
+            'status' => 'active',
+            'password' => bcrypt('test'),
+        ]);
+
+        $this->actingAs($orphan)
+            ->get(route('admin.dashboard'))
+            ->assertForbidden();
     }
 
     // ─── 1. ID tampering — policies must reject cross-branch lookups ────

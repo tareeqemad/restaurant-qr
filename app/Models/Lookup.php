@@ -18,14 +18,9 @@ use Illuminate\Support\Facades\Cache;
  * should match by `code` (system rows) or by `id` if it was manually
  * configured.
  *
- * Branch scoping is HYBRID, not all-or-nothing:
- *   - Some groups are GLOBAL (`branch_id IS NULL`) — e.g.
- *     `expense_categories` shared across the company.
- *   - Other groups are PER-BRANCH (`branch_id IS NOT NULL`) — e.g.
- *     `zones` where each branch has its own indoor/outdoor/balcony list.
- * The trait isn't applied here because that would force every row to
- * carry a branch; instead `Lookup::for($group)` decides the right scope
- * by group.
+ * Group metadata and scope live in `lookup_groups`; the operational rows
+ * stay here so changing a label never changes the foreign key stored by
+ * expenses, discounts, tables or inventory movements.
  *
  * `Lookup::for($group)` is the dropdown helper — cached per-request so
  * a screen with N category badges doesn't run N queries.
@@ -34,26 +29,14 @@ class Lookup extends Model
 {
     use HasFactory, SoftDeletes;
 
-    /**
-     * Groups whose rows are scoped to a single branch. Anything not in this
-     * list is treated as global (branch_id IS NULL).
-     *
-     * `zones` used to live here, but operations want them shared across
-     * branches — "indoor / outdoor / VIP" mean the same thing everywhere
-     * and re-creating them per-branch was just busywork. Tables still
-     * carry their own zone_lookup_id so seating layouts stay independent
-     * per branch; only the dictionary of zone names is global now.
-     */
-    public const PER_BRANCH_GROUPS = [];
-
     protected $fillable = [
         'branch_id', 'group', 'code', 'label', 'color', 'icon',
         'display_order', 'is_active', 'is_system',
     ];
 
     protected $casts = [
-        'is_active'     => 'boolean',
-        'is_system'     => 'boolean',
+        'is_active' => 'boolean',
+        'is_system' => 'boolean',
         'display_order' => 'integer',
     ];
 
@@ -63,14 +46,15 @@ class Lookup extends Model
      * Active rows for a group, ordered for display. Cached per group + branch
      * for the current request so dropdowns + badge lookups are cheap.
      *
-     * For per-branch groups (e.g. `zones`), only rows belonging to the active
+     * For per-branch groups, only rows belonging to the active
      * branch are returned. For global groups, only rows where `branch_id IS
      * NULL` are returned. This prevents accidental cross-branch leakage when
      * a Super-Admin views several branches in one session.
      */
     public static function for(string $group): Collection
     {
-        $branchId = in_array($group, static::PER_BRANCH_GROUPS, true)
+        $perBranch = LookupGroup::isPerBranch($group);
+        $branchId = $perBranch
             ? BranchContext::current()
             : null;
 
@@ -84,7 +68,7 @@ class Lookup extends Model
         return Cache::remember($cacheKey, now()->addMinutes(5),
             fn () => static::query()
                 ->where('group', $group)
-                ->when(in_array($group, static::PER_BRANCH_GROUPS, true),
+                ->when($perBranch,
                     fn ($q) => $q->where('branch_id', $branchId),
                     fn ($q) => $q->whereNull('branch_id'),
                 )
@@ -107,7 +91,7 @@ class Lookup extends Model
 
         // Per-branch entries — iterate the actual branch IDs in the DB so
         // this scales beyond the legacy hardcoded 50 ceiling.
-        foreach (\App\Models\Branch::pluck('id') as $branchId) {
+        foreach (Branch::pluck('id') as $branchId) {
             Cache::forget("lookups.active.{$group}.{$branchId}");
         }
     }
@@ -151,33 +135,20 @@ class Lookup extends Model
         if (str_starts_with($this->color, '#')) {
             return "background:{$this->color}1a;color:{$this->color};border:1px solid {$this->color}40;";
         }
+
         return "background:var(--bs-{$this->color}-bg-subtle);color:var(--bs-{$this->color});";
     }
 
-    /** All groups currently in use — drives the tab bar in the admin UI. */
+    /** Group metadata is reference data; the constants page reads the same source. */
     public static function knownGroups(): array
     {
-        return [
-            'expense_categories' => [
-                'label'    => 'تصنيفات المصروفات',
-                'icon'     => 'bi-cash-coin',
-                'subtitle' => 'تظهر في قائمة "التصنيف" عند إضافة مصروف جديد.',
-            ],
-            'zones' => [
-                'label'    => 'مناطق الطاولات',
-                'icon'     => 'bi-geo-alt-fill',
-                'subtitle' => 'مناطق المطعم (داخلي / VIP / تراس…) — تظهر عند إنشاء طاولة وفي شاشة الطاولات.',
-            ],
-            'discount_categories' => [
-                'label'    => 'تصنيفات الخصومات',
-                'icon'     => 'bi-percent',
-                'subtitle' => 'تظهر في قائمة "السبب" عند إضافة خصم على فاتورة من شاشة الكاشير.',
-            ],
-            'waste_reasons' => [
-                'label'    => 'أسباب الهدر',
-                'icon'     => 'bi-trash3-fill',
-                'subtitle' => 'تظهر في قائمة "السبب" عند تسجيل هدر مخزون. تساعدك في تحليل أسباب الهدر لاحقاً وفي تقارير المخزون.',
-            ],
-        ];
+        return LookupGroup::catalogue()
+            ->mapWithKeys(fn (LookupGroup $group) => [$group->code => [
+                'label' => $group->label,
+                'icon' => $group->icon ?: 'bi-list-ul',
+                'subtitle' => $group->subtitle ?: '',
+                'scope' => $group->scope,
+            ]])
+            ->all();
     }
 }

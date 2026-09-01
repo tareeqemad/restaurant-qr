@@ -11,6 +11,7 @@ use App\Services\SmsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
+use Inertia\Inertia;
 
 /**
  * Forgot-password flow for staff (admins, cashiers, waiters…).
@@ -44,9 +45,15 @@ class ForgotPasswordController extends Controller
 
     protected const TEMP_LENGTH = 8;
 
-    public function show()
+    public function show(Request $request)
     {
-        return view('auth.forgot-password');
+        Inertia::setRootView('inertia');
+
+        return Inertia::render('Auth/ForgotPassword', [
+            'brand' => ['name' => Brand::name(), 'logo' => Brand::logoUrl()],
+            'routes' => ['submit' => route('password.email'), 'login' => route('login')],
+            'oldIdentifier' => (string) $request->old('identifier', ''),
+        ]);
     }
 
     public function store(Request $request, SmsService $sms)
@@ -166,12 +173,12 @@ class ForgotPasswordController extends Controller
      *   {brand}     → site name
      *   {password}  → the freshly generated temporary password
      *   {login_url} → absolute URL to the staff login screen
-     * Missing or empty setting falls back to the English default below.
+     * Missing or empty setting falls back to the Arabic default below.
      */
     protected function formatMessage(User $user, string $password): string
     {
         $template = trim((string) Setting::get('sms_template_forgot_staff'))
-            ?: "{brand}\nYour account password has been changed.\nNew password: {password}\nLogin: {login_url}";
+            ?: "{brand}\nتم تغيير كلمة مرور حسابك.\nكلمة المرور الجديدة: {password}\nرابط الدخول: {login_url}";
 
         return strtr($template, [
             '{brand}' => Brand::name(),

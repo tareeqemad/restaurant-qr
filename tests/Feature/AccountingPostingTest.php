@@ -2,25 +2,24 @@
 
 namespace Tests\Feature;
 
+use App\Models\Account;
+use App\Models\AccountMapping;
 use App\Models\Branch;
 use App\Models\Category;
 use App\Models\Currency;
 use App\Models\CurrencyExchangeRate;
+use App\Models\Expense;
 use App\Models\Ingredient;
 use App\Models\IngredientStock;
 use App\Models\Invoice;
 use App\Models\JournalEntry;
 use App\Models\JournalLine;
-use App\Models\Account;
-use App\Models\AccountMapping;
-use App\Models\Expense;
 use App\Models\Lookup;
 use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Payment;
 use App\Models\Setting;
-use App\Models\Shift;
 use App\Models\StorageLocation;
 use App\Models\Supplier;
 use App\Models\SupplierInvoice;
@@ -42,7 +41,9 @@ class AccountingPostingTest extends TestCase
     use RefreshDatabase;
 
     protected Branch $branch;
+
     protected User $cashier;
+
     protected TableSession $session;
 
     protected function setUp(): void
@@ -302,42 +303,71 @@ class AccountingPostingTest extends TestCase
     /**
      * Visa/card payments settle instantly to the restaurant's bank account.
      * Confirms AccountingService routes method='card' to 1010 (Bank) and
-     * NOT the legacy 1020 (Card Clearing) account — which is now inactive
-     * per the 2026_05_19_120000 migration.
+     * NOT either wallet asset account.
      */
     public function test_card_payment_posts_directly_to_bank_account_not_clearing(): void
     {
         $invoice = Invoice::create([
-            'branch_id'        => $this->branch->id,
+            'branch_id' => $this->branch->id,
             'table_session_id' => $this->session->id,
-            'subtotal'         => 80,
-            'tax_total'        => 0,
-            'service_total'    => 0,
-            'total'            => 80,
-            'balance'          => 80,
-            'status'           => 'issued',
-            'issued_at'        => now(),
+            'subtotal' => 80,
+            'tax_total' => 0,
+            'service_total' => 0,
+            'total' => 80,
+            'balance' => 80,
+            'status' => 'issued',
+            'issued_at' => now(),
         ]);
 
-        $payment = \App\Models\Payment::create([
-            'branch_id'           => $this->branch->id,
-            'invoice_id'          => $invoice->id,
-            'method'              => 'card',
-            'amount'              => 80,
+        $payment = Payment::create([
+            'branch_id' => $this->branch->id,
+            'invoice_id' => $invoice->id,
+            'method' => 'card',
+            'amount' => 80,
             'received_by_user_id' => $this->cashier->id,
-            'paid_at'             => now(),
+            'paid_at' => now(),
         ]);
 
         $entry = app(AccountingService::class)->recordPaymentReceived($payment);
 
         $this->assertEntryBalances($entry->load('lines.account'));
-        // The whole 80 should land on Bank 1010, not Card Clearing 1020.
+        // The whole 80 lands on Bank 1010, never on a wallet balance.
         $this->assertLineAmount($entry, AccountingService::BANK, 'debit', 80);
-        $cardClearingLine = $entry->lines->first(
-            fn ($line) => $line->account?->code === AccountingService::CARD_CLEARING,
+        $walletLine = $entry->lines->first(
+            fn ($line) => in_array($line->account?->code, [AccountingService::PALPAY_WALLET, AccountingService::JAWWAL_PAY_WALLET], true),
         );
-        $this->assertNull($cardClearingLine,
-            'Card payments must NOT touch the (now inactive) 1020 clearing account.');
+        $this->assertNull($walletLine, 'Card payments must not touch wallet balances.');
+    }
+
+    public function test_wallet_payment_stays_in_wallet_until_accountant_transfers_it(): void
+    {
+        $invoice = Invoice::create([
+            'branch_id' => $this->branch->id,
+            'table_session_id' => $this->session->id,
+            'subtotal' => 60,
+            'tax_total' => 0,
+            'service_total' => 0,
+            'total' => 60,
+            'balance' => 60,
+            'status' => 'issued',
+            'issued_at' => now(),
+        ]);
+
+        $payment = Payment::create([
+            'branch_id' => $this->branch->id,
+            'invoice_id' => $invoice->id,
+            'method' => 'palpay',
+            'amount' => 60,
+            'received_by_user_id' => $this->cashier->id,
+            'paid_at' => now(),
+        ]);
+
+        $entry = app(AccountingService::class)->recordPaymentReceived($payment)->load('lines.account');
+
+        $this->assertEntryBalances($entry);
+        $this->assertLineAmount($entry, AccountingService::PALPAY_WALLET, 'debit', 60);
+        $bankLine = $entry->lines->first(fn ($line) => $line->account?->code === AccountingService::BANK);
+        $this->assertNull($bankLine, 'Wallet receipts must not reach the bank before the accountant transfers them.');
     }
 
     public function test_payment_method_account_mapping_overrides_default_bank_account(): void
@@ -349,9 +379,10 @@ class AccountingPostingTest extends TestCase
             'normal_balance' => 'debit',
             'is_active' => true,
         ]);
-        AccountMapping::create([
+        AccountMapping::updateOrCreate([
             'context' => AccountMapping::CONTEXT_PAYMENT_METHOD,
             'key' => 'card',
+        ], [
             'account_id' => $visaDeposits->id,
         ]);
 
@@ -367,7 +398,7 @@ class AccountingPostingTest extends TestCase
             'issued_at' => now(),
         ]);
 
-        $payment = \App\Models\Payment::create([
+        $payment = Payment::create([
             'branch_id' => $this->branch->id,
             'invoice_id' => $invoice->id,
             'method' => 'card',
@@ -473,11 +504,13 @@ class AccountingPostingTest extends TestCase
             'normal_balance' => 'debit',
             'is_active' => true,
         ]);
-        AccountMapping::create([
-            'context' => AccountMapping::CONTEXT_EXPENSE_CATEGORY,
-            'key' => AccountMapping::keyForLookup($category),
-            'account_id' => $utilities->id,
-        ]);
+        AccountMapping::updateOrCreate(
+            [
+                'context' => AccountMapping::CONTEXT_EXPENSE_CATEGORY,
+                'key' => AccountMapping::keyForLookup($category),
+            ],
+            ['account_id' => $utilities->id],
+        );
 
         $expense = Expense::create([
             'branch_id' => $this->branch->id,
@@ -601,27 +634,6 @@ class AccountingPostingTest extends TestCase
         $this->assertEqualsWithDelta(65.0, $report['profit']['net_profit'], 0.01);
     }
 
-    public function test_shift_cash_variance_creates_accounting_entry(): void
-    {
-        $shift = Shift::create([
-            'branch_id' => $this->branch->id,
-            'user_id' => $this->cashier->id,
-            'cash_opening' => 100,
-            'cash_closing' => 112,
-            'expected_cash' => 100,
-            'cash_variance' => 12,
-            'status' => 'closed',
-            'opened_at' => now()->subHours(2),
-            'closed_at' => now(),
-        ]);
-
-        $entry = app(AccountingService::class)->recordShiftClosed($shift);
-
-        $this->assertEntryBalances($entry->load('lines.account'));
-        $this->assertLineAmount($entry, AccountingService::CASH, 'debit', 12);
-        $this->assertLineAmount($entry, AccountingService::CASH_OVER_SHORT_INCOME, 'credit', 12);
-    }
-
     public function test_accounting_service_rejects_negative_journal_line_amounts(): void
     {
         $this->expectException(\RuntimeException::class);
@@ -648,7 +660,7 @@ class AccountingPostingTest extends TestCase
             'description' => 'two-sided line probe',
             'status' => 'posted',
         ]);
-        $cash = \App\Models\Account::where('code', AccountingService::CASH)->firstOrFail();
+        $cash = Account::where('code', AccountingService::CASH)->firstOrFail();
 
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessageMatches('/مدينا ودائنا|both debit and credit/u');

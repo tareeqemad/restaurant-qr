@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Support\BranchContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class SupplierInvoiceIndexFilterTest extends TestCase
@@ -73,9 +74,17 @@ class SupplierInvoiceIndexFilterTest extends TestCase
                 'to' => '2026-05-31',
             ]));
 
-        $response->assertOk();
-        $response->assertSee('INV-DUE-MAY');
-        $response->assertDontSee('INV-DUE-JUN');
+        $response->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/SupplierInvoices/Index')
+                ->has('invoices.data', 1)
+                ->where('invoices.data.0.number', 'INV-DUE-MAY')
+                ->where('invoices.data.0.can.pay', true)
+                ->where('invoices.data.0.can.cancel', true)
+                ->where('filters.dateField', 'due_date')
+                ->where('filters.from', '2026-05-01')
+                ->where('filters.to', '2026-05-31')
+            );
     }
 
     public function test_reversed_from_to_dates_are_normalized(): void
@@ -91,9 +100,14 @@ class SupplierInvoiceIndexFilterTest extends TestCase
                 'to' => '2026-05-01',
             ]));
 
-        $response->assertOk();
-        $response->assertSee('INV-SWAPPED-RANGE');
-        $response->assertDontSee('INV-OUTSIDE-RANGE');
+        $response->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/SupplierInvoices/Index')
+                ->has('invoices.data', 1)
+                ->where('invoices.data.0.number', 'INV-SWAPPED-RANGE')
+                ->where('filters.from', '2026-05-01')
+                ->where('filters.to', '2026-05-31')
+            );
     }
 
     public function test_text_search_does_not_search_supplier_name(): void
@@ -106,8 +120,29 @@ class SupplierInvoiceIndexFilterTest extends TestCase
                 'search' => 'Test Supplier',
             ]));
 
-        $response->assertOk();
-        $response->assertDontSee('INV-NUMBER-ONLY');
+        $response->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/SupplierInvoices/Index')
+                ->has('invoices.data', 0)
+                ->where('filters.search', 'Test Supplier')
+            );
+    }
+
+    public function test_invoice_due_today_is_not_marked_overdue(): void
+    {
+        $this->invoice('INV-DUE-TODAY', '2026-05-01', '2026-05-15');
+
+        $this->actingAs($this->manager)
+            ->withSession(['active_branch_id' => $this->branch->id])
+            ->get(route('admin.supplier-invoices.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/SupplierInvoices/Index')
+                ->where('invoices.data.0.number', 'INV-DUE-TODAY')
+                ->where('invoices.data.0.overdue', false)
+                ->where('invoices.data.0.dueInDays', 0)
+                ->where('stats.overdue', 0)
+            );
     }
 
     protected function invoice(string $number, string $invoiceDate, string $dueDate): SupplierInvoice

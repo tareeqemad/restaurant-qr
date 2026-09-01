@@ -2,8 +2,11 @@
 
 namespace App\Services;
 
+use App\Enums\OrderItemStatus;
+use App\Models\Customer;
 use App\Models\MenuItem;
 use App\Models\MenuPromotion;
+use App\Models\Order;
 use App\Support\BranchContext;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -38,28 +41,27 @@ class PromotionService
      * in time. Returns null when no promo applies (the item is at full
      * menu price).
      *
-     * @param string|null $channel  Order source (qr/cashier/waiter/etc.)
-     *                              used to filter promos that opted out
-     *                              of certain channels. Null = no filter
-     *                              (callers without channel context).
-     * @param \App\Models\Customer|null $customer  Active customer (if any).
-     *                              Used to gate birthday-month promos.
-     *                              Guests fail any audience-restricted
-     *                              promo silently.
+     * @param  string|null  $channel  Order source (qr/cashier/waiter/etc.)
+     *                                used to filter promos that opted out
+     *                                of certain channels. Null = no filter
+     *                                (callers without channel context).
+     * @param  Customer|null  $customer  Active customer (if any).
+     *                                   Used to gate birthday-month promos.
+     *                                   Guests fail any audience-restricted
+     *                                   promo silently.
      */
-    public function resolveForItem(MenuItem $item, ?Carbon $when = null, ?int $branchId = null, ?string $channel = null, ?\App\Models\Customer $customer = null): ?MenuPromotion
+    public function resolveForItem(MenuItem $item, ?Carbon $when = null, ?int $branchId = null, ?string $channel = null, ?Customer $customer = null): ?MenuPromotion
     {
-        $when     ??= now();
+        $when ??= now();
         $branchId ??= BranchContext::current();
-        $cacheKey   = sprintf('%d:%s:%s:%s:%s', $item->id, $branchId ?? 'all', $channel ?? '_', $customer?->id ?? '_', $when->format('Y-m-d_H_i'));
+        $cacheKey = sprintf('%d:%s:%s:%s:%s', $item->id, $branchId ?? 'all', $channel ?? '_', $customer?->id ?? '_', $when->format('Y-m-d_H_i'));
         if (array_key_exists($cacheKey, $this->cache)) {
             return $this->cache[$cacheKey];
         }
 
         // Hot-path query: every active promotion that could match this
         // (item, branch) — the schedule filter still happens in PHP via
-        // isLiveAt() because day-of-week + time-of-day logic isn't
-        // portable across SQLite (used in tests) and MySQL.
+        // isLiveAt() so the full schedule logic stays in one domain method.
         //
         // MenuPromotion does NOT use BelongsToBranch (chain-wide null
         // rows coexist with branch-specific rows) — so we write the
@@ -68,15 +70,17 @@ class PromotionService
             ->where('active', true)
             ->where(function ($q) use ($branchId) {
                 $q->whereNull('branch_id');
-                if ($branchId) $q->orWhere('branch_id', $branchId);
+                if ($branchId) {
+                    $q->orWhere('branch_id', $branchId);
+                }
             })
             ->where(function ($q) use ($item) {
                 $q->where(function ($q2) use ($item) {
                     $q2->where('target_type', MenuPromotion::TARGET_MENU_ITEM)
-                       ->where('target_id', $item->id);
+                        ->where('target_id', $item->id);
                 })->orWhere(function ($q2) use ($item) {
                     $q2->where('target_type', MenuPromotion::TARGET_CATEGORY)
-                       ->where('target_id', $item->category_id);
+                        ->where('target_id', $item->category_id);
                 });
             })
             ->get()
@@ -124,6 +128,7 @@ class PromotionService
     public function effectivePriceFor(MenuItem $item, ?Carbon $when = null, ?int $branchId = null, ?string $channel = null): float
     {
         $promo = $this->resolveForItem($item, $when, $branchId, $channel);
+
         return $promo ? $promo->applyTo((float) $item->price) : (float) $item->price;
     }
 
@@ -139,9 +144,11 @@ class PromotionService
      */
     public function resolveBulk(Collection $items, ?Carbon $when = null, ?int $branchId = null, ?string $channel = null): array
     {
-        if ($items->isEmpty()) return [];
+        if ($items->isEmpty()) {
+            return [];
+        }
 
-        $when     ??= now();
+        $when ??= now();
         $branchId ??= BranchContext::current();
 
         $itemIds = $items->pluck('id')->all();
@@ -152,23 +159,31 @@ class PromotionService
             ->where('active', true)
             ->where(function ($q) use ($branchId) {
                 $q->whereNull('branch_id');
-                if ($branchId) $q->orWhere('branch_id', $branchId);
+                if ($branchId) {
+                    $q->orWhere('branch_id', $branchId);
+                }
             })
             ->where(function ($q) use ($itemIds, $categoryIds) {
                 $q->where(function ($q2) use ($itemIds) {
                     $q2->where('target_type', MenuPromotion::TARGET_MENU_ITEM)
-                       ->whereIn('target_id', $itemIds);
+                        ->whereIn('target_id', $itemIds);
                 });
                 if (! empty($categoryIds)) {
                     $q->orWhere(function ($q2) use ($categoryIds) {
                         $q2->where('target_type', MenuPromotion::TARGET_CATEGORY)
-                           ->whereIn('target_id', $categoryIds);
+                            ->whereIn('target_id', $categoryIds);
                     });
                 }
             })
             ->get()
             ->filter(fn (MenuPromotion $p) => $p->isLiveAt($when))
-            ->filter(fn (MenuPromotion $p) => $p->allowsChannel($channel));
+            ->filter(fn (MenuPromotion $p) => $p->allowsChannel($channel))
+            // Keep the bulk resolver honest with resolveForItem(): a capped,
+            // customer-specific or cart-level BXGY campaign must not appear
+            // as a direct price on the catalogue card.
+            ->filter(fn (MenuPromotion $p) => $p->matchesAudience(null, $when))
+            ->filter(fn (MenuPromotion $p) => ! $p->isExhausted())
+            ->filter(fn (MenuPromotion $p) => ! $p->isBxgy());
 
         $out = [];
         foreach ($items as $item) {
@@ -176,6 +191,7 @@ class PromotionService
 
             if ($matches->isEmpty()) {
                 $out[$item->id] = ['promotion' => null, 'price' => (float) $item->price];
+
                 continue;
             }
 
@@ -188,9 +204,10 @@ class PromotionService
 
             $out[$item->id] = [
                 'promotion' => $winner,
-                'price'     => $winner->applyTo((float) $item->price),
+                'price' => $winner->applyTo((float) $item->price),
             ];
         }
+
         return $out;
     }
 
@@ -215,7 +232,7 @@ class PromotionService
      * is removed first, then recomputed. Safe to call after any cart
      * mutation (add, remove, qty change).
      */
-    public function applyBxgyToOrder(\App\Models\Order $order): void
+    public function applyBxgyToOrder(Order $order): void
     {
         // Clear stale BXGY discounts so we recompute cleanly.
         $order->discounts()->where('reason', 'like', 'BXGY:%')->delete();
@@ -229,28 +246,34 @@ class PromotionService
             ->whereNotNull('bxgy_get_qty')
             ->where(function ($q) use ($branchId) {
                 $q->whereNull('branch_id');
-                if ($branchId) $q->orWhere('branch_id', $branchId);
+                if ($branchId) {
+                    $q->orWhere('branch_id', $branchId);
+                }
             })
             ->where(function ($q) {
                 $q->whereNull('channels');
-                // channel filter handled in PHP below — JSON contains is
-                // unwieldy across MySQL/SQLite.
+                // The channel filter is handled in PHP below so all channel
+                // rules stay in MenuPromotion::allowsChannel().
             })
             ->get()
             ->filter(fn (MenuPromotion $p) => $p->isLiveAt($now))
             ->filter(fn (MenuPromotion $p) => $p->allowsChannel($order->order_source));
 
-        if ($bxgyPromos->isEmpty()) return;
+        if ($bxgyPromos->isEmpty()) {
+            return;
+        }
 
         $items = $order->items()
-            ->where('status', '!=', \App\Enums\OrderItemStatus::Cancelled->value)
+            ->where('status', '!=', OrderItemStatus::Cancelled->value)
             ->with('menuItem')
             ->get();
 
         foreach ($bxgyPromos as $promo) {
             // Eligible lines for this promo (item or category target).
             $eligible = $items->filter(fn ($i) => $i->menuItem && $promo->appliesToItem($i->menuItem));
-            if ($eligible->isEmpty()) continue;
+            if ($eligible->isEmpty()) {
+                continue;
+            }
 
             // Expand each line into per-piece (qty=1) tuples so we can
             // pick "the cheapest N" precisely.
@@ -259,30 +282,36 @@ class PromotionService
                 for ($i = 0; $i < (int) $line->quantity; $i++) {
                     $pieces->push([
                         'unit_price' => (float) $line->unit_price + (float) $line->modifiers_total,
-                        'line_id'    => $line->id,
+                        'line_id' => $line->id,
                     ]);
                 }
             }
             $buyQty = (int) $promo->bxgy_buy_qty;
             $getQty = (int) $promo->bxgy_get_qty;
             $blockSize = $buyQty + $getQty;
-            if ($blockSize <= 0) continue;
+            if ($blockSize <= 0) {
+                continue;
+            }
 
             $blockCount = intdiv($pieces->count(), $blockSize);
-            if ($blockCount === 0) continue;
+            if ($blockCount === 0) {
+                continue;
+            }
 
             // Number of free pieces total + their value (cheapest-first).
             $freePieceCount = $blockCount * $getQty;
             $cheapest = $pieces->sortBy('unit_price')->take($freePieceCount);
             $savings = round((float) $cheapest->sum('unit_price'), 2);
-            if ($savings <= 0) continue;
+            if ($savings <= 0) {
+                continue;
+            }
 
             $order->discounts()->create([
                 'name_snapshot' => "{$promo->name} (اشترِ {$buyQty} خذ {$getQty})",
-                'type'          => 'fixed',
-                'value'         => $savings,
-                'amount'        => $savings,
-                'reason'        => "BXGY:{$promo->name} (اشترِ {$buyQty} خذ {$getQty})",
+                'type' => 'fixed',
+                'value' => $savings,
+                'amount' => $savings,
+                'reason' => "BXGY:{$promo->name} (اشترِ {$buyQty} خذ {$getQty})",
                 'applied_by_user_id' => $order->created_by_user_id,
             ]);
         }

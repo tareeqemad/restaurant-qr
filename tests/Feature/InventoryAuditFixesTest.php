@@ -36,7 +36,7 @@ use Tests\TestCase;
  * Regressions for the 2026-07 inventory audit (verified HIGH/MEDIUM findings):
  *  - FIFO tie-break determinism
  *  - menu cost applies yield_pct + rolls up composites
- *  - unapprove→re-approve re-deducts stock (net-aware ensureDeducted)
+ *  - approval is reversible before prep; restarting prep never double-deducts
  *  - stock-count finalize sets-to-counted against live stock
  *  - location transfer moves batch layers
  *  - supplier invoice blocked before receipt (GRNI integrity)
@@ -144,9 +144,9 @@ class InventoryAuditFixesTest extends TestCase
         $this->assertEqualsWithDelta(1.025, app(RecipeCostService::class)->costForMenuItem($item->fresh('recipeItems.ingredient')), 0.01);
     }
 
-    /** unapprove then re-approve must re-deduct — the first 'out' being present
-     *  must NOT make ensureDeducted skip (that leaked free stock). */
-    public function test_reapprove_after_unapprove_rededucts_stock(): void
+    /** Approval itself no longer touches stock. The first kitchen start deducts;
+     *  undoing and restarting that prep tap must not deduct the same line twice. */
+    public function test_reapprove_then_restart_preparation_deducts_stock_only_once(): void
     {
         $patty = $this->ing('Patty', $this->gram, stock: 1000);
         $item = $this->menuItemUsing($patty, 150);
@@ -157,13 +157,19 @@ class InventoryAuditFixesTest extends TestCase
         $order = $orders->createFromCart($session, [['menu_item_id' => $item->id, 'quantity' => 1, 'modifier_ids' => []]]);
 
         $orders->approve($order, $this->admin->id);
-        $this->assertEqualsWithDelta(850.0, (float) $patty->fresh()->current_stock, 0.001, 'First approve deducts 150.');
+        $this->assertEqualsWithDelta(1000.0, (float) $patty->fresh()->current_stock, 0.001, 'Approval only queues the order.');
 
         $orders->unapprove($order->fresh(), $this->admin->id);
-        $this->assertEqualsWithDelta(1000.0, (float) $patty->fresh()->current_stock, 0.001, 'Unapprove restores 150.');
+        $this->assertEqualsWithDelta(1000.0, (float) $patty->fresh()->current_stock, 0.001, 'Unapprove before prep has no stock effect.');
 
         $orders->approve($order->fresh(), $this->admin->id);
-        $this->assertEqualsWithDelta(850.0, (float) $patty->fresh()->current_stock, 0.001, 'Re-approve must deduct again (was leaking).');
+        $line = $order->items()->first();
+        $orders->startPreparing($line, $this->admin->id);
+        $this->assertEqualsWithDelta(850.0, (float) $patty->fresh()->current_stock, 0.001, 'Starting prep deducts 150.');
+
+        $orders->revertItemStart($line->fresh(), $this->admin->id);
+        $orders->startPreparing($line->fresh(), $this->admin->id);
+        $this->assertEqualsWithDelta(850.0, (float) $patty->fresh()->current_stock, 0.001, 'Restarting prep must not double-deduct.');
     }
 
     /** Finalize must SET stock to the counted qty against LIVE stock, not replay
@@ -224,13 +230,14 @@ class InventoryAuditFixesTest extends TestCase
     public function test_supplier_invoice_blocked_before_receipt(): void
     {
         $supplier = Supplier::create(['name' => 'Acme', 'is_active' => true]);
+        $supplier->branches()->attach($this->branch->id);
         $ing = $this->ing('Flour', $this->gram, stock: 0);
         $po = PurchaseOrder::create(['number' => 'PO-1', 'supplier_id' => $supplier->id, 'branch_id' => $this->branch->id, 'status' => 'sent', 'order_date' => today()->toDateString()]);
         $poItem = PurchaseOrderItem::create(['purchase_order_id' => $po->id, 'ingredient_id' => $ing->id, 'unit_id' => $this->gram->id,
             'quantity_ordered' => 100, 'quantity_received' => 0, 'unit_price' => 10]);
 
         $this->expectException(ValidationException::class);
-        $this->expectExceptionMessageMatches('/تتجاوز المستلَم/u');
+        $this->expectExceptionMessageMatches('/قبل تسجيل استلام فعلي/u');
         app(SupplierInvoiceService::class)->create([
             'number' => 'SI-1', 'supplier_id' => $supplier->id, 'purchase_order_id' => $po->id,
             'lines' => [[

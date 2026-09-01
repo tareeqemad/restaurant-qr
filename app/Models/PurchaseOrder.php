@@ -15,20 +15,21 @@ class PurchaseOrder extends Model
 
     protected $fillable = [
         'branch_id',
-        'number', 'supplier_id', 'status',
+        'number', 'supplier_id', 'status', 'currency_code', 'exchange_rate',
         'subtotal', 'tax_total', 'total',
         'expected_at', 'sent_at', 'received_at', 'cancelled_at', 'cancel_reason',
         'notes', 'created_by', 'approved_by', 'approved_at', 'received_by',
     ];
 
     protected $casts = [
-        'subtotal'     => 'decimal:4',
-        'tax_total'    => 'decimal:4',
-        'total'        => 'decimal:4',
-        'expected_at'  => 'date',
-        'sent_at'      => 'datetime',
-        'approved_at'  => 'datetime',
-        'received_at'  => 'datetime',
+        'subtotal' => 'decimal:4',
+        'tax_total' => 'decimal:4',
+        'total' => 'decimal:4',
+        'exchange_rate' => 'decimal:8',
+        'expected_at' => 'date',
+        'sent_at' => 'datetime',
+        'approved_at' => 'datetime',
+        'received_at' => 'datetime',
         'cancelled_at' => 'datetime',
     ];
 
@@ -114,10 +115,21 @@ class PurchaseOrder extends Model
         if ($this->items->isEmpty()) {
             return false;
         }
+
         return $this->items->every(function ($line) {
             $received = (float) $line->quantity_received;
-            if ($received <= 0) return true; // nothing to invoice yet
-            $invoiced = (float) $line->supplierInvoiceItems->sum('quantity');
+            if ($received <= 0) {
+                return true;
+            } // nothing to invoice yet
+            // A cancelled supplier invoice has already been reversed in the
+            // ledger, so its lines must not close the operational purchasing
+            // loop. Keeping it in this sum used to hide the "register invoice"
+            // action even though GRNI was open again.
+            $invoiced = (float) $line->supplierInvoiceItems
+                ->filter(fn ($item) => ! $item->relationLoaded('supplierInvoice')
+                    || $item->supplierInvoice?->status !== 'cancelled')
+                ->sum(fn ($item) => (float) ($item->received_qty ?? $item->quantity));
+
             return $invoiced + 0.0001 >= $received;
         });
     }
@@ -145,27 +157,37 @@ class PurchaseOrder extends Model
         return max(0, (float) $this->total - $this->receivedValue());
     }
 
+    public function baseTotal(): float
+    {
+        return round((float) $this->total * (float) ($this->exchange_rate ?: 1), 4);
+    }
+
+    public function formatMoney(float|int|string|null $amount): string
+    {
+        return number_format((float) $amount, 2).' '.($this->currency_code ?: 'ILS');
+    }
+
     public function statusLabel(): string
     {
         return match ($this->status) {
-            'draft'              => 'مسودة',
-            'sent'               => 'مُرسل',
+            'draft' => 'مسودة',
+            'sent' => 'مُرسل',
             'partially_received' => 'مستلم جزئياً',
-            'received'           => 'مستلم',
-            'cancelled'          => 'ملغي',
-            default              => $this->status,
+            'received' => 'مستلم',
+            'cancelled' => 'ملغي',
+            default => $this->status,
         };
     }
 
     public function statusColor(): string
     {
         return match ($this->status) {
-            'draft'              => 'secondary',
-            'sent'               => 'info',
+            'draft' => 'secondary',
+            'sent' => 'info',
             'partially_received' => 'warning',
-            'received'           => 'success',
-            'cancelled'          => 'danger',
-            default              => 'light',
+            'received' => 'success',
+            'cancelled' => 'danger',
+            default => 'light',
         };
     }
 

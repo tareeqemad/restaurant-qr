@@ -10,21 +10,16 @@ use ZipArchive;
 class BuildCustomerRelease extends Command
 {
     protected $signature = 'release:customer-package
-        {--license-key= : Customer LICENSE_KEY from your license cloud}
-        {--cloud-url= : Your license cloud URL, e.g. https://licenses.example.com}
-        {--market=palestine : Market profile: palestine or us}
         {--app-url=http://localhost : Customer app URL}
         {--app-name=Restaurant QR : Customer app name}
-        {--public-key= : Public key PEM path to ship with the customer package}
         {--output= : Output zip path}
         {--include-vendor : Include vendor/ in the package}
-        {--include-sqlite-demo : Include database/database.sqlite if present}
         {--compress : Compress zip entries for a smaller package; default stores entries for faster packaging}
         {--sync-cloud-url= : Optional sync cloud URL for branch nodes}
         {--sync-token= : Optional sync token for branch nodes}
         {--force : Overwrite output zip if it already exists}';
 
-    protected $description = 'Build a sanitized customer production package with license settings and public key only.';
+    protected $description = 'Build a sanitized customer production package.';
 
     private array $excludedDirectories = [
         '.git',
@@ -73,11 +68,7 @@ class BuildCustomerRelease extends Command
             throw new RuntimeException('The PHP zip extension is required to build customer packages.');
         }
 
-        $licenseKey = $this->requiredOption('license-key');
-        $cloudUrl = rtrim($this->requiredOption('cloud-url'), '/');
-        $market = $this->market();
-        $publicKeyPath = $this->publicKeyPath();
-        $outputPath = $this->outputPath($market);
+        $outputPath = $this->outputPath();
 
         if (is_file($outputPath) && ! $this->option('force')) {
             $this->error('Output package already exists. Re-run with --force or choose a different --output path.');
@@ -87,7 +78,7 @@ class BuildCustomerRelease extends Command
 
         $this->ensureDirectory(dirname($outputPath));
 
-        $zip = new ZipArchive();
+        $zip = new ZipArchive;
         if ($zip->open($outputPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
             throw new RuntimeException('Unable to create release zip: '.$outputPath);
         }
@@ -95,10 +86,9 @@ class BuildCustomerRelease extends Command
         $root = base_path();
         $this->addProjectFiles($zip, $root, $outputPath);
         $this->addRuntimeDirectories($zip);
-        $this->addGeneratedEnv($zip, $licenseKey, $cloudUrl, $market);
-        $this->addPublicKey($zip, $publicKeyPath);
-        $this->addDeploymentGuide($zip, $licenseKey, $cloudUrl, $market);
-        $this->addManifest($zip, $licenseKey, $cloudUrl, $market);
+        $this->addGeneratedEnv($zip);
+        $this->addDeploymentGuide($zip);
+        $this->addManifest($zip);
 
         $zip->close();
 
@@ -134,6 +124,7 @@ class BuildCustomerRelease extends Command
 
             if ($file->isDir()) {
                 $zip->addEmptyDir($relativePath);
+
                 continue;
             }
 
@@ -151,14 +142,6 @@ class BuildCustomerRelease extends Command
 
         if ($relativePath === '') {
             return false;
-        }
-
-        if (str_starts_with($relativePath, 'storage/app/license/')) {
-            return true;
-        }
-
-        if ($relativePath === 'database/database.sqlite' && ! $this->option('include-sqlite-demo')) {
-            return true;
         }
 
         if ($relativePath === 'vendor' && ! $this->option('include-vendor')) {
@@ -188,10 +171,6 @@ class BuildCustomerRelease extends Command
             return true;
         }
 
-        if (str_contains($relativePath, '/license-private.pem') || str_contains($relativePath, 'LICENSE_PRIVATE_KEY')) {
-            return true;
-        }
-
         return false;
     }
 
@@ -199,7 +178,6 @@ class BuildCustomerRelease extends Command
     {
         foreach ([
             'storage/app',
-            'storage/app/license',
             'storage/framework/cache',
             'storage/framework/cache/data',
             'storage/framework/sessions',
@@ -211,7 +189,7 @@ class BuildCustomerRelease extends Command
         }
     }
 
-    private function addGeneratedEnv(ZipArchive $zip, string $licenseKey, string $cloudUrl, string $market): void
+    private function addGeneratedEnv(ZipArchive $zip): void
     {
         $env = is_file(base_path('.env.example'))
             ? (string) file_get_contents(base_path('.env.example'))
@@ -224,16 +202,6 @@ class BuildCustomerRelease extends Command
             'APP_DEBUG' => 'false',
             'APP_URL' => $this->option('app-url'),
             'APP_FORCE_HTTPS' => str_starts_with((string) $this->option('app-url'), 'https://') ? 'true' : 'false',
-            'MARKET_PROFILE' => $market,
-            'LICENSE_ENABLED' => 'true',
-            'LICENSE_ROLE' => 'branch',
-            'LICENSE_CLOUD_URL' => $cloudUrl,
-            'LICENSE_KEY' => $licenseKey,
-            'LICENSE_PRIVATE_KEY_PATH' => '',
-            'LICENSE_PUBLIC_KEY_PATH' => 'storage/app/license/license-public.pem',
-            'LICENSE_PRIVATE_KEY' => '',
-            'LICENSE_PUBLIC_KEY' => '',
-            'LICENSE_SIGNING_SECRET' => '',
         ];
 
         if ($this->option('sync-cloud-url') || $this->option('sync-token')) {
@@ -250,26 +218,14 @@ class BuildCustomerRelease extends Command
         $this->addString($zip, '.env', $env);
     }
 
-    private function addPublicKey(ZipArchive $zip, string $publicKeyPath): void
+    private function addDeploymentGuide(ZipArchive $zip): void
     {
-        $contents = file_get_contents($publicKeyPath);
-        if ($contents === false) {
-            throw new RuntimeException('Unable to read public key: '.$publicKeyPath);
-        }
-
-        $this->addString($zip, 'storage/app/license/license-public.pem', $contents);
-    }
-
-    private function addDeploymentGuide(ZipArchive $zip, string $licenseKey, string $cloudUrl, string $market): void
-    {
-        $guide = <<<MD
+        $guide = <<<'MD'
 # Customer Deployment
 
 This package is prepared for a customer node.
 
-- Market: {$market}
-- License cloud: {$cloudUrl}
-- License key: {$licenseKey}
+- Interface: Arabic / RTL
 
 ## Install
 
@@ -287,29 +243,18 @@ php artisan optimize
 5. Open `/login` and let the customer try the demo data first.
 6. When the customer decides to go live, open `/setup` to wipe demo data and create the real restaurant setup.
 
-## License Rules
-
-- This customer node contains only `storage/app/license/license-public.pem`.
-- Never copy `license-private.pem` to a customer server.
-- Renewals and suspensions are controlled from your license cloud.
-- If the customer moves servers, revoke or reactivate the branch activation from the license details page.
-
 MD;
 
         $this->addString($zip, 'CUSTOMER-DEPLOYMENT.md', $guide);
     }
 
-    private function addManifest(ZipArchive $zip, string $licenseKey, string $cloudUrl, string $market): void
+    private function addManifest(ZipArchive $zip): void
     {
         $manifest = [
             'generated_at' => now()->toIso8601String(),
-            'market' => $market,
+            'locale' => 'ar',
             'app_url' => $this->option('app-url'),
-            'license_cloud_url' => $cloudUrl,
-            'license_key' => $licenseKey,
             'includes_vendor' => (bool) $this->option('include-vendor'),
-            'includes_sqlite_demo' => (bool) $this->option('include-sqlite-demo'),
-            'contains_private_license_key' => false,
         ];
 
         $this->addString($zip, 'release-manifest.json', json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL);
@@ -334,49 +279,12 @@ MD;
         }
     }
 
-    private function requiredOption(string $name): string
-    {
-        $value = trim((string) $this->option($name));
-        if ($value === '') {
-            throw new RuntimeException('Missing required option: --'.$name);
-        }
-
-        return $value;
-    }
-
-    private function market(): string
-    {
-        $market = trim((string) $this->option('market'));
-        if (! in_array($market, ['palestine', 'us'], true)) {
-            throw new RuntimeException('Invalid market. Use --market=palestine or --market=us.');
-        }
-
-        return $market;
-    }
-
-    private function publicKeyPath(): string
-    {
-        $path = trim((string) ($this->option('public-key') ?: config('license.public_key_path') ?: 'storage/app/license/license-public.pem'));
-        $path = $this->absolutePath($path);
-
-        if (! is_file($path) || ! is_readable($path)) {
-            throw new RuntimeException('Public key file does not exist or is not readable: '.$path);
-        }
-
-        $contents = (string) file_get_contents($path);
-        if (! str_contains($contents, '-----BEGIN PUBLIC KEY-----')) {
-            throw new RuntimeException('Public key file is not a valid PEM public key: '.$path);
-        }
-
-        return $path;
-    }
-
-    private function outputPath(string $market): string
+    private function outputPath(): string
     {
         $output = trim((string) $this->option('output'));
         if ($output === '') {
             $slug = Str::slug((string) $this->option('app-name')) ?: 'restaurant-qr';
-            $output = storage_path('app/releases/'.$slug.'-'.$market.'-'.now()->format('Ymd-His').'.zip');
+            $output = storage_path('app/releases/'.$slug.'-'.now()->format('Ymd-His').'.zip');
         }
 
         return $this->absolutePath($output);

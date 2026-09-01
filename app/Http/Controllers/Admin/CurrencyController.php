@@ -13,9 +13,9 @@ class CurrencyController extends Controller
 {
     public function index()
     {
-        // Currencies UI has moved into /admin/settings (Currencies tab).
-        // Any old bookmark to /admin/currencies now lands on the right tab.
-        return redirect(route('admin.settings.index').'#tab-currencies', 302);
+        // Currency management lives inside the single billing workspace.
+        // Keep old bookmarks useful without exposing a retired tab name.
+        return redirect(route('admin.settings.index').'#billing', 302);
     }
 
     public function store(Request $request)

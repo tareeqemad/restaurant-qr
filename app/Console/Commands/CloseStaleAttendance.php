@@ -3,100 +3,69 @@
 namespace App\Console\Commands;
 
 use App\Models\Attendance;
-use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Auto-closes attendance records that have been open longer than the
- * configured stale window (default: 24 hours). A staffer who forgets to
- * clock out leaves the system counting indefinitely — meaningless for
- * payroll, distorts the live "currently working" widget, and inflates
- * worked-minutes reports.
- *
- * Strategy:
- *   • Stale shifts are clamped to clock_in + 12h (a generous full shift)
- *     rather than `now()`, so payroll isn't credited for the unattended
- *     time between actual departure and the cron sweep.
- *   • source = 'auto_closed' marks the row so reports can tell apart
- *     manager corrections from cron sweeps.
- *   • notes get a stamped Arabic explanation for audit visibility.
- *
- * Idempotent: each shift only ever crosses the stale boundary once.
+ * Forgotten checkouts must stop the live counter without creating fictional
+ * paid hours. A quarantined row contributes zero until a manager corrects it.
  */
 class CloseStaleAttendance extends Command
 {
-    protected $signature   = 'attendance:close-stale
-                              {--hours=24 : Open shifts older than this are considered stale}
-                              {--shift-cap=12 : Cap worked hours credited to the auto-closed shift}
-                              {--dry : Report what would change without writing}';
+    protected $signature = 'attendance:close-stale
+                            {--hours=24 : Open records older than this need review}
+                            {--dry : Report what would change without writing}';
 
-    protected $description = 'Close attendance shifts left open beyond the stale window (default 24h)';
+    protected $description = 'Move forgotten attendance records to manager review without crediting guessed hours';
 
     public function handle(): int
     {
-        $hours    = max(1, (int) $this->option('hours'));
-        $shiftCap = max(1, (int) $this->option('shift-cap'));
-        $dry      = (bool) $this->option('dry');
-
+        $hours = max(1, (int) $this->option('hours'));
+        $dry = (bool) $this->option('dry');
         $threshold = now()->subHours($hours);
-
-        $stale = Attendance::open()
-            ->where('clock_in_at', '<=', $threshold)
-            ->get();
-
-        if ($stale->isEmpty()) {
-            $this->info('لا توجد جلسات حضور معلّقة تجاوزت ' . $hours . ' ساعة.');
-            return self::SUCCESS;
-        }
-
-        $this->info("معالجة {$stale->count()} جلسة حضور معلّقة (أقدم من {$hours} ساعة)...");
-
+        $matched = 0;
         $closed = 0;
 
-        DB::transaction(function () use ($stale, $shiftCap, $dry, &$closed) {
-            foreach ($stale as $att) {
-                $clockOut = $att->clock_in_at->copy()->addHours($shiftCap);
+        Attendance::query()
+            ->open()
+            ->where('clock_in_at', '<=', $threshold)
+            ->orderBy('id')
+            ->chunkById(100, function ($rows) use ($hours, $dry, &$matched, &$closed) {
+                foreach ($rows as $row) {
+                    $matched++;
 
-                // Never stamp clock_out in the future — clamp to now if
-                // the shift cap would land beyond the current moment
-                // (only relevant if hours < shift-cap — defensive).
-                if ($clockOut->greaterThan(now())) {
-                    $clockOut = now();
+                    if ($dry) {
+                        $this->line("#{$row->id} — الموظف {$row->user_id} — سيُنقل للمراجعة");
+
+                        continue;
+                    }
+
+                    $changed = DB::transaction(function () use ($row, $hours) {
+                        $locked = Attendance::query()->whereKey($row->id)->lockForUpdate()->first();
+                        if (! $locked?->isOpen()) {
+                            return false;
+                        }
+
+                        $stamp = now()->format('Y/m/d H:i');
+                        $locked->markNeedsReview(
+                            "[مراجعة مطلوبة {$stamp}] بقي السجل مفتوحاً أكثر من {$hours} ساعة؛ لم تُحتسب ساعات تقديرية."
+                        );
+
+                        return true;
+                    }, 3);
+
+                    if ($changed) {
+                        $closed++;
+                    }
                 }
+            });
 
-                $minutes = max(0, (int) round(
-                    $att->clock_in_at->diffInSeconds($clockOut) / 60
-                ) - (int) $att->break_minutes);
-
-                $stamp = Carbon::now()->format('Y-m-d H:i');
-                $note  = "[إغلاق تلقائي {$stamp}] تجاوز {$hours} ساعة بدون انصراف. تم احتساب الورديّة بحد أقصى {$shiftCap} ساعة.";
-
-                $existingNote = trim((string) $att->notes);
-                $merged = $existingNote === ''
-                    ? $note
-                    : ($existingNote . "\n" . $note);
-
-                if ($dry) {
-                    $this->line("  • #{$att->id} user={$att->user_id} → ينغلق على {$clockOut->format('Y-m-d H:i')} ({$minutes} د)");
-                    continue;
-                }
-
-                $att->update([
-                    'clock_out_at'   => $clockOut,
-                    'worked_minutes' => $minutes,
-                    'source'         => 'auto_closed',
-                    'notes'          => $merged,
-                ]);
-
-                $closed++;
-            }
-        });
-
-        if ($dry) {
-            $this->warn('وضع التجربة (--dry): لم يتم حفظ أي تغييرات.');
+        if ($matched === 0) {
+            $this->info("لا توجد سجلات مفتوحة تجاوزت {$hours} ساعة.");
+        } elseif ($dry) {
+            $this->warn("وضع المعاينة: {$matched} سجل يحتاج مراجعة، دون حفظ تغييرات.");
         } else {
-            $this->info("تم إغلاق {$closed} جلسة بنجاح.");
+            $this->info("نُقل {$closed} سجل إلى المراجعة دون احتساب ساعات غير مؤكدة.");
         }
 
         return self::SUCCESS;

@@ -4,6 +4,7 @@ namespace App\Helpers;
 
 use App\Models\Currency;
 use App\Models\Setting;
+use App\Services\SalesTaxService;
 
 class Money
 {
@@ -37,9 +38,11 @@ class Money
 
     public static function applyTax(float $subtotal, ?float $rate = null): array
     {
-        $hasExplicitRate = $rate !== null;
-        $rate = $rate ?? (float) Setting::get('tax_rate', config('restaurant.tax.rate', 16));
-        $enabled = $hasExplicitRate ? $rate > 0 : (bool) Setting::get('tax_enabled', config('restaurant.tax.enabled', true));
+        // An explicit rate is an immutable snapshot already stored on an
+        // order/invoice. Without one, resolve the live switch + effective
+        // date so helper callers cannot accidentally charge tax too early.
+        $rate = $rate ?? app(SalesTaxService::class)->rateForBranch();
+        $enabled = $rate > 0;
 
         if (! $enabled || $rate <= 0) {
             return ['tax' => 0.0, 'rate' => 0.0];

@@ -19,8 +19,7 @@ class CustomerPolicy extends BasePolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->hasAnyRole(['admin', 'manager', 'cashier'])
-            || $user->hasPermission('customers.viewAny');
+        return $user->hasPermission('customers.viewAny');
     }
 
     public function view(User $user, Customer $customer): bool
@@ -28,20 +27,33 @@ class CustomerPolicy extends BasePolicy
         return $this->viewAny($user);
     }
 
+    public function create(User $user): bool
+    {
+        return $user->hasPermission('customers.create');
+    }
+
     public function update(User $user, Customer $customer): bool
     {
-        return $user->hasAnyRole(['admin', 'manager'])
-            || $user->hasPermission('customers.update');
+        return $user->hasPermission('customers.update');
+    }
+
+    public function manageCredit(User $user, Customer $customer): bool
+    {
+        return $user->hasPermission('customers.manage_credit');
+    }
+
+    public function notify(User $user, Customer $customer): bool
+    {
+        return $user->hasPermission('customers.notify');
     }
 
     public function block(User $user, Customer $customer): bool
     {
-        return $user->hasAnyRole(['admin', 'manager'])
-            || $user->hasPermission('customers.block');
+        return $user->hasPermission('customers.block');
     }
 
     public function delete(User $user, Customer $customer): bool
     {
-        return $user->isAdmin() || $user->hasPermission('customers.delete');
+        return $user->hasPermission('customers.delete');
     }
 }

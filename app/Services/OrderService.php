@@ -5,9 +5,11 @@ namespace App\Services;
 use App\Enums\OrderItemStatus;
 use App\Enums\OrderSource;
 use App\Enums\OrderStatus;
+use App\Enums\UserRole;
 use App\Events\OrderCreated;
 use App\Events\OrderItemStatusChanged;
 use App\Events\OrderStatusChanged;
+use App\Events\TableStatusChanged;
 use App\Helpers\Money;
 use App\Helpers\SafeBroadcast;
 use App\Models\ActivityLog;
@@ -19,12 +21,19 @@ use App\Models\MenuItem;
 use App\Models\MenuPromotion;
 use App\Models\Modifier;
 use App\Models\Order;
+use App\Models\OrderChangeRequest;
 use App\Models\OrderItem;
+use App\Models\OrderItemIngredientExclusion;
 use App\Models\OrderItemModifier;
+use App\Models\PendingTransfer;
 use App\Models\Scopes\BranchScope;
 use App\Models\Setting;
+use App\Models\StaffMealCharge;
+use App\Models\Table;
 use App\Models\TableSession;
+use App\Models\User;
 use App\Support\BranchContext;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class OrderService
@@ -50,11 +59,11 @@ class OrderService
      */
     public function inventoryDeductionStage(): string
     {
-        $stage = (string) Setting::get('inventory_deduction_stage', config('restaurant.inventory.deduction_stage', 'approve'));
+        $stage = (string) Setting::get('inventory_deduction_stage', config('restaurant.inventory.deduction_stage', 'preparing'));
 
         return in_array($stage, ['approve', 'preparing', 'ready', 'served'], true)
             ? $stage
-            : 'approve';
+            : 'preparing';
     }
 
     protected function lockOrderItemForWorkflow(OrderItem $item): OrderItem
@@ -93,6 +102,19 @@ class OrderService
                 'action' => $action,
                 'status' => $item->status,
             ]));
+        }
+
+        $hasPendingChange = OrderChangeRequest::query()
+            ->where('order_id', $item->order_id)
+            ->where('status', OrderChangeRequest::STATUS_PENDING)
+            ->where(function ($query) use ($item) {
+                $query->whereNull('order_item_id')
+                    ->orWhere('order_item_id', $item->id);
+            })
+            ->exists();
+
+        if ($hasPendingChange) {
+            throw new \RuntimeException('يوجد طلب تعديل من الزبون لهذا الصنف. انتظر قرار الجرسون قبل متابعة التنفيذ.');
         }
     }
 
@@ -209,14 +231,63 @@ class OrderService
         }
     }
 
-    public function createFromCart(TableSession $session, array $cart, ?int $createdByUserId = null, ?string $customerNotes = null): Order
-    {
+    public function createFromCart(
+        TableSession $session,
+        array $cart,
+        ?int $createdByUserId = null,
+        ?string $customerNotes = null,
+        ?string $orderingDeviceHash = null,
+    ): Order {
         $this->assertModifierRulesSatisfied($cart);
 
-        $order = DB::transaction(function () use ($session, $cart, $createdByUserId, $customerNotes) {
+        $tableStatusBefore = null;
+        $order = DB::transaction(function () use ($session, $cart, $createdByUserId, $customerNotes, $orderingDeviceHash, &$tableStatusBefore) {
             $session = TableSession::whereKey($session->id)->lockForUpdate()->firstOrFail();
+
+            // Two phones may build drafts before either submits. Claiming is
+            // therefore done under the same row lock and transaction as the
+            // order. The losing phone gets no order and no partial claim.
+            if ($orderingDeviceHash) {
+                if ($session->ordering_device_hash
+                    && ! hash_equals($session->ordering_device_hash, $orderingDeviceHash)) {
+                    throw new \RuntimeException(
+                        'هذه الجلسة تُدار من الهاتف الذي أرسل أول طلب. اطلب الإضافة من صاحب الهاتف أو من الجرسون.',
+                        409,
+                    );
+                }
+
+                if (! $session->ordering_device_hash) {
+                    $session->update(['ordering_device_hash' => $orderingDeviceHash]);
+                }
+            }
+
             if ($session->invoice()->where('status', '!=', 'cancelled')->exists()) {
                 throw new \RuntimeException('الفاتورة صدرت بالفعل. أي طلب إضافي يحتاج إلغاء الفاتورة الحالية من الكاشير أولاً.');
+            }
+            if (PendingTransfer::where('table_session_id', $session->id)->pending()->exists()) {
+                throw new \RuntimeException('يوجد تحويل بنكي بانتظار التحقق. لا يمكن تغيير الحساب قبل أن يؤكده أو يرفضه الكاشير.');
+            }
+
+            // A QR scan only opens a browsing session. The first REAL order
+            // atomically claims the physical table. The session passed to
+            // this service remains the source of truth for the bill; legacy
+            // data may contain another active session, so occupying the table
+            // must not invalidate an otherwise valid current order.
+            $table = Table::withoutGlobalScopes()->whereKey($session->table_id)->lockForUpdate()->firstOrFail();
+            if ($table->status === 'out_of_service') {
+                throw new \RuntimeException('هذه الطاولة خارج الخدمة حاليًا. اطلب مساعدة الجرسون.');
+            }
+
+            $previousTableStatus = $session->engage($createdByUserId);
+            $tableStatusBefore = $previousTableStatus !== 'occupied' ? $previousTableStatus : null;
+
+            // A later round reopens a bill request that has not produced an
+            // invoice yet. All rounds remain on the same table visit.
+            if ($session->bill_requested_at) {
+                $session->update([
+                    'bill_requested_at' => null,
+                    'bill_request_note' => null,
+                ]);
             }
 
             $order = Order::create([
@@ -257,114 +328,25 @@ class OrderService
             return $order;
         });
 
-        // Notify admins/cashiers/waiters AFTER commit — never inside the
+        // Notify the responsible floor waiter AFTER commit — never inside the
         // transaction, otherwise a rollback leaves orphan notifications.
+        if ($tableStatusBefore !== null && $order->table) {
+            SafeBroadcast::dispatch(new TableStatusChanged($order->table->refresh(), $tableStatusBefore));
+        }
         app(NotifyService::class)->newOrder($order);
 
         return $order;
     }
 
     /**
-     * Create an order placed from the customer portal — no table, no session.
-     *
-     * Type is one of:
-     *   - 'takeaway'  → customer picks up at the branch (no delivery_address)
-     *   - 'delivery'  → restaurant delivers (delivery_address required)
-     *
-     * Inventory is pre-checked the same way as dine-in via the calling
-     * controller; this service only persists the order. The new row is
-     * stamped with `order_source = portal` so reports + KDS badges can
-     * distinguish it from dine-in tickets at a glance.
-     *
-     * @param  array<int,array<string,mixed>>  $cart  same shape as createFromCart
-     * @param  array{customer_notes?:?string, delivery_address?:?string, customer_address_id?:?int, scheduled_for?:?string}  $opts
-     */
-    public function createRemoteOrder(
-        Customer $customer,
-        Branch $branch,
-        string $type,
-        array $cart,
-        array $opts = [],
-    ): Order {
-        if (! in_array($type, ['takeaway', 'delivery'], true)) {
-            throw new \InvalidArgumentException("Order type must be 'takeaway' or 'delivery'.");
-        }
-        if ($type === 'delivery' && empty($opts['delivery_address'])) {
-            throw new \InvalidArgumentException('Delivery orders require an address.');
-        }
-
-        $this->assertModifierRulesSatisfied($cart);
-
-        // Pin the branch so BelongsToBranch stamps the order + items correctly
-        // — this matters because the customer's request flow doesn't go
-        // through SetActiveBranch (no admin auth).
-        $order = BranchContext::forBranch($branch->id, function () use ($customer, $branch, $type, $cart, $opts) {
-            return DB::transaction(function () use ($customer, $branch, $type, $cart, $opts) {
-                // Snapshot the delivery fee at creation time — see migration
-                // header for why we don't read it back from settings later.
-                $deliveryFee = $type === 'delivery' ? $branch->deliveryFee() : 0.0;
-
-                $order = Order::create([
-                    'table_id' => null,
-                    'table_session_id' => null,
-                    'customer_id' => $customer->id,
-                    'customer_name' => $customer->name,
-                    'customer_phone' => $customer->phone,
-                    'customer_address_id' => $opts['customer_address_id'] ?? null,
-                    'order_type' => $type,
-                    'order_source' => OrderSource::Portal->value,
-                    'status' => OrderStatus::Pending->value,
-                    'created_by_user_id' => null,           // placed by the customer themselves
-                    'customer_notes' => $opts['customer_notes'] ?? null,
-                    'delivery_address' => $opts['delivery_address'] ?? null,
-                    'scheduled_for' => $opts['scheduled_for'] ?? null,
-                    'submitted_at' => now(),
-                    'delivery_fee' => $deliveryFee,
-                    'tax_rate' => $this->configuredTaxRate(),
-                    'service_rate' => 0,                    // no service charge on remote orders
-                ]);
-
-                foreach ($cart as $row) {
-                    $this->addItem($order, $row);
-                }
-
-                $this->recalculateTotals($order);
-                $this->refreshEta($order);
-
-                ActivityLog::log('order.created',
-                    "طلب {$type} عبر التطبيق #{$order->number} للزبون {$customer->name}",
-                    $order,
-                    [
-                        'items_count' => $order->items()->count(),
-                        'subtotal' => (float) $order->subtotal,
-                        'delivery_fee' => $deliveryFee,
-                        'type' => $type,
-                    ]
-                );
-
-                $order = $order->refresh()->load('items', 'customer');
-                SafeBroadcast::dispatch(new OrderCreated($order));
-
-                return $order;
-            });
-        });
-
-        app(NotifyService::class)->newOrder($order);
-
-        return $order;
-    }
-
-    /**
-     * Create a staff-entered order that is not attached to a table: phone,
-     * takeaway counter, delivery, or third-party platform. The kitchen/bar
-     * receive it like any other order, while billing can issue an invoice
-     * directly against the order instead of a table session.
+     * Create a staff-entered phone order that is not attached to a table. The
+     * kitchen/bar receive it like any other order, while billing can issue an
+     * invoice directly against the order instead of a table session.
      *
      * @param  array<int,array<string,mixed>>  $cart
      * @param array{
      *   customer_name?:?string, customer_phone?:?string, customer_address_id?:?int, customer_notes?:?string,
      *   delivery_address?:?string, delivery_fee?:float|string|null,
-     *   external_reference?:?string, delivery_receiver?:?string, platform_commission_pct?:float|string|null,
      *   scheduled_for?:?string
      * } $opts
      */
@@ -395,11 +377,6 @@ class OrderService
                     ? Money::round((float) ($opts['delivery_fee'] ?? $branch->deliveryFee()))
                     : 0.0;
 
-                $commission = $opts['platform_commission_pct'] ?? null;
-                if ($commission === null || $commission === '') {
-                    $commission = $orderSource->defaultCommission();
-                }
-
                 $order = Order::create([
                     'table_id' => null,
                     'table_session_id' => null,
@@ -409,9 +386,6 @@ class OrderService
                     'customer_address_id' => $opts['customer_address_id'] ?? null,
                     'order_type' => $type,
                     'order_source' => $orderSource->value,
-                    'external_reference' => $opts['external_reference'] ?? null,
-                    'delivery_receiver' => $opts['delivery_receiver'] ?? null,
-                    'platform_commission_pct' => (float) $commission,
                     'status' => OrderStatus::Pending->value,
                     'created_by_user_id' => $createdByUserId,
                     'customer_notes' => $opts['customer_notes'] ?? null,
@@ -453,8 +427,156 @@ class OrderService
         return $order;
     }
 
+    /**
+     * Replace a pending QR round with the version confirmed at the table,
+     * then fire that exact version to its stations in the same transaction.
+     *
+     * @param  array<int,array<string,mixed>>  $cart
+     * @param  array<int,int>  $expectedChangeRequestIds
+     */
+    public function reviewAndApprovePending(
+        Order $order,
+        array $cart,
+        ?string $customerNotes,
+        int $userId,
+        string $expectedVersion,
+        array $expectedChangeRequestIds = [],
+    ): Order {
+        $this->assertModifierRulesSatisfied($cart);
+
+        return DB::transaction(function () use (
+            $order,
+            $cart,
+            $customerNotes,
+            $userId,
+            $expectedVersion,
+            $expectedChangeRequestIds,
+        ) {
+            $locked = Order::with([
+                'items.modifiers',
+                'items.exclusions',
+                'tableSession.invoice',
+                'changeRequests' => fn ($query) => $query
+                    ->where('status', OrderChangeRequest::STATUS_PENDING),
+            ])->whereKey($order->id)->lockForUpdate()->firstOrFail();
+
+            if ($locked->status !== OrderStatus::Pending->value) {
+                throw new \RuntimeException('عولجت هذه الجولة من موظف آخر. حدّث لوحة الصالة.', 409);
+            }
+
+            try {
+                $expected = Carbon::parse($expectedVersion);
+            } catch (\Throwable) {
+                throw new \RuntimeException('نسخة الطلب غير صالحة. أعد فتح المراجعة.', 409);
+            }
+
+            if (! $locked->updated_at || ! $locked->updated_at->equalTo($expected)) {
+                throw new \RuntimeException('تغيّرت الجولة أثناء المراجعة. أعد فتحها لترى النسخة الأحدث.', 409);
+            }
+
+            $actualChangeIds = $locked->changeRequests->pluck('id')->map(fn ($id) => (int) $id)->sort()->values()->all();
+            $expectedIds = collect($expectedChangeRequestIds)->map(fn ($id) => (int) $id)->sort()->values()->all();
+            if ($actualChangeIds !== $expectedIds) {
+                throw new \RuntimeException('وصل تعديل جديد من الزبون أثناء المراجعة. أعد فتح الجولة وراجعه معه.', 409);
+            }
+
+            if ($locked->tableSession?->invoice && $locked->tableSession->invoice->status !== 'cancelled') {
+                throw new \RuntimeException('صدرت فاتورة للجلسة. ألغِ الفاتورة من الكاشير قبل تعديل الطلب.');
+            }
+
+            $existing = $locked->items
+                ->where('status', OrderItemStatus::Pending->value)
+                ->keyBy('id');
+            $keptIds = [];
+
+            // Add replacements before removing their originals. This keeps a
+            // promotion claimed by the same order from consuming a second use.
+            foreach ($cart as $row) {
+                $existingId = (int) ($row['order_item_id'] ?? 0);
+                $line = $existingId > 0 ? $existing->get($existingId) : null;
+
+                if ($existingId > 0 && ! $line) {
+                    throw new \RuntimeException('تغيّر أحد الأصناف أثناء المراجعة. أعد فتح الجولة.', 409);
+                }
+
+                $requestedModifierIds = collect($row['modifier_ids'] ?? [])
+                    ->map(fn ($id) => (int) $id)->filter()->unique()->sort()->values()->all();
+                $existingModifierIds = $line
+                    ? $line->modifiers->pluck('modifier_id')->map(fn ($id) => (int) $id)->filter()->unique()->sort()->values()->all()
+                    : [];
+                $requestedExclusionIds = collect($row['excluded_ingredient_ids'] ?? [])
+                    ->map(fn ($id) => (int) $id)->filter()->unique()->sort()->values()->all();
+                $existingExclusionIds = $line
+                    ? $line->exclusions->pluck('ingredient_id')->map(fn ($id) => (int) $id)->filter()->unique()->sort()->values()->all()
+                    : [];
+                $sameConfiguration = $line
+                    && (int) $line->menu_item_id === (int) $row['menu_item_id']
+                    && $existingModifierIds === $requestedModifierIds
+                    && $existingExclusionIds === $requestedExclusionIds;
+
+                if ($sameConfiguration) {
+                    $quantity = max(1, (int) $row['quantity']);
+                    $line->update([
+                        'quantity' => $quantity,
+                        'notes' => $row['notes'] ?? null,
+                        'subtotal' => ((float) $line->unit_price + (float) $line->modifiers_total) * $quantity,
+                    ]);
+                    $keptIds[] = (int) $line->id;
+
+                    continue;
+                }
+
+                $created = $this->addItem($locked, $row);
+                $keptIds[] = (int) $created->id;
+            }
+
+            foreach ($existing as $line) {
+                if (in_array((int) $line->id, $keptIds, true)) {
+                    continue;
+                }
+
+                $line->modifiers()->delete();
+                $line->exclusions()->delete();
+                $line->delete();
+            }
+
+            if ($locked->items()->where('status', '!=', OrderItemStatus::Cancelled->value)->count() === 0) {
+                throw new \RuntimeException('لا يمكن اعتماد جولة فارغة. أضف صنفاً واحداً على الأقل.');
+            }
+
+            if ($actualChangeIds !== []) {
+                OrderChangeRequest::whereIn('id', $actualChangeIds)->update([
+                    'status' => OrderChangeRequest::STATUS_APPROVED,
+                    'handled_by_user_id' => $userId,
+                    'resolution_note' => 'تم استيعاب التعديل ضمن النسخة التي راجعها الجرسون مع الزبون على الطاولة.',
+                    'handled_at' => now(),
+                ]);
+            }
+
+            $locked->update(['customer_notes' => $customerNotes]);
+            $this->recalculateTotals($locked);
+            $this->refreshEta($locked);
+
+            ActivityLog::log(
+                'order.reviewed_at_table',
+                "مراجعة واعتماد الطلب {$locked->number} مع الزبون على الطاولة",
+                $locked,
+                [
+                    'items_count' => $locked->items()->where('status', '!=', OrderItemStatus::Cancelled->value)->count(),
+                    'merged_change_requests' => $actualChangeIds,
+                ],
+            );
+
+            $approved = $this->approve($locked->fresh()->load('items', 'tableSession'), $userId);
+
+            return $approved->fresh()->load('items.modifiers', 'items.exclusions', 'tableSession');
+        });
+    }
+
     public function addItem(Order $order, array $row): OrderItem
     {
+        $this->assertStaffMealAllocationOpen($order);
+
         $item = MenuItem::with(['category', 'station', 'recipeItems.ingredient'])->findOrFail($row['menu_item_id']);
 
         if (! $item->is_available) {
@@ -464,6 +586,17 @@ class OrderService
         $quantity = max(1, (float) ($row['quantity'] ?? 1));
         $modifierIds = $row['modifier_ids'] ?? [];
         $modifiers = Modifier::with('group')->whereIn('id', $modifierIds)->get();
+        $requestedExclusionIds = collect($row['excluded_ingredient_ids'] ?? [])
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->unique();
+        $removableIngredients = $item->recipeItems
+            ->filter(fn ($recipe) => $recipe->ingredient !== null)
+            ->keyBy(fn ($recipe) => (int) $recipe->ingredient_id);
+        $unknownExclusions = $requestedExclusionIds->diff($removableIngredients->keys()->map(fn ($id) => (int) $id));
+        if ($unknownExclusions->isNotEmpty()) {
+            throw new \RuntimeException("أحد المكوّنات المستبعدة لا ينتمي إلى وصفة «{$item->name}». أعد فتح الصنف.");
+        }
 
         $modifiersTotal = (float) $modifiers->sum('price_delta');
         // Snapshot the EFFECTIVE price at order time. If a promo is live,
@@ -535,7 +668,6 @@ class OrderService
             'menu_item_id' => $item->id,
             'station_id' => $item->resolvedStationId(),
             'name_snapshot' => $item->name,
-            'name_en_snapshot' => $item->name_en,
             'quantity' => $quantity,
             'unit_price' => $unitPrice,
             'unit_price_original' => $hasPromo ? $menuPrice : null,
@@ -564,6 +696,14 @@ class OrderService
                 'name_snapshot' => $isFree ? $m->name.' (هدية مع العرض)' : $m->name,
                 'price_delta' => $isFree ? 0 : $m->price_delta,
                 'price_delta_original' => $isFree ? $m->price_delta : null,
+            ]);
+        }
+        foreach ($requestedExclusionIds as $ingredientId) {
+            $recipe = $removableIngredients->get((int) $ingredientId);
+            OrderItemIngredientExclusion::create([
+                'order_item_id' => $oi->id,
+                'ingredient_id' => (int) $ingredientId,
+                'name_snapshot' => $recipe->ingredient->localizedName(),
             ]);
         }
         // If any modifier was zeroed out, re-sum + re-snapshot the line
@@ -696,6 +836,10 @@ class OrderService
                 throw new \RuntimeException('لا يمكن اعتماد طلب حالته: '.$order->statusLabel());
             }
 
+            if ($order->changeRequests()->where('status', OrderChangeRequest::STATUS_PENDING)->exists()) {
+                throw new \RuntimeException('الزبون طلب تعديلاً على هذه الجولة. عالج التعديل أولاً ثم اعتمد الطلب.');
+            }
+
             // ── Safety: verify every tracked ingredient has enough stock BEFORE
             // we start deducting. If not, throw with a clear message listing which
             // ingredients are short. The transaction rollback leaves nothing changed.
@@ -726,7 +870,11 @@ class OrderService
 
             if ($order->tableSession) {
                 $sessionUpdates = [];
-                if (empty($order->tableSession->assigned_waiter_id)) {
+                $approverIsWaiter = User::query()
+                    ->whereKey($userId)
+                    ->where('role', UserRole::Waiter->value)
+                    ->exists();
+                if (empty($order->tableSession->assigned_waiter_id) && $approverIsWaiter) {
                     $sessionUpdates['assigned_waiter_id'] = $userId;
                 }
                 if ($sessionUpdates) {
@@ -896,7 +1044,9 @@ class OrderService
             // (payment no longer completes undelivered orders — see
             // BillingService::addPayment).
             if ($target === OrderStatus::Delivered->value) {
-                $this->completeIfPrepaid($order);
+                if (! $this->completeStaffMealIfDelivered($order)) {
+                    $this->completeIfPrepaid($order);
+                }
             }
 
             ActivityLog::log("order.{$target}", "تحديث حالة الطلب {$order->number} إلى {$target}", $order);
@@ -911,6 +1061,7 @@ class OrderService
     {
         $order = DB::transaction(function () use ($order, $userId, $reason) {
             $this->assertInvoiceCanStillChange($order);
+            $this->assertStaffMealAllocationOpen($order);
 
             $previous = $order->status;
             $userId = $userId ?: null;
@@ -976,6 +1127,7 @@ class OrderService
             if ($item->status === OrderItemStatus::Cancelled->value) {
                 return $item;
             }
+            $this->assertStaffMealAllocationOpen($item->order);
             $userId = $userId ?: null;
             $previousItemStatus = $item->status;
 
@@ -1077,7 +1229,7 @@ class OrderService
     /** @see startPreparing() for the $broadcast batching contract. */
     public function markItemReady(OrderItem $item, bool $broadcast = true): OrderItem
     {
-        return DB::transaction(function () use ($item, $broadcast) {
+        $item = DB::transaction(function () use ($item, $broadcast) {
             $item = $this->lockOrderItemForWorkflow($item);
             $this->assertItemCanMove($item, OrderItemStatus::Preparing->value, 'mark_ready');
 
@@ -1096,6 +1248,14 @@ class OrderService
 
             return $item->refresh();
         });
+
+        if ($broadcast) {
+            app(NotifyService::class)->orderReady(
+                $item->order->refresh()->load('items.station', 'table')
+            );
+        }
+
+        return $item;
     }
 
     // ─── KDS undo (mis-tap reverts) ───────────────────────────────────────
@@ -1210,9 +1370,10 @@ class OrderService
         $this->assertInvoiceCanStillChange($item->order);
     }
 
-    public function markItemServed(OrderItem $item, int $userId): OrderItem
+    /** @see startPreparing() for the $broadcast batching contract. */
+    public function markItemServed(OrderItem $item, int $userId, bool $broadcast = true): OrderItem
     {
-        return DB::transaction(function () use ($item, $userId) {
+        return DB::transaction(function () use ($item, $userId, $broadcast) {
             $item = $this->lockOrderItemForWorkflow($item);
             $this->assertItemCanMove($item, OrderItemStatus::Ready->value, 'mark_served');
 
@@ -1225,8 +1386,10 @@ class OrderService
             if ($this->inventoryDeductionStage() === 'served') {
                 $this->inventory->ensureDeducted($item);
             }
-            $this->syncOrderStatus($item->order);
-            $this->broadcastItemChange($item, $previous);
+            $this->syncOrderStatus($item->order, $broadcast);
+            if ($broadcast) {
+                $this->broadcastItemChange($item, $previous);
+            }
 
             return $item->refresh();
         });
@@ -1264,12 +1427,15 @@ class OrderService
         if ($active->every(fn ($i) => $i->status === OrderItemStatus::Served->value)) {
             $order->update(['status' => OrderStatus::Delivered->value, 'delivered_at' => now()]);
             $newStatus = OrderStatus::Delivered->value;
+            if ($this->completeStaffMealIfDelivered($order)) {
+                $newStatus = OrderStatus::Completed->value;
+            }
             // Prepaid takeaway/delivery: the money was collected in full
             // BEFORE the kitchen finished (addPayment leaves the ticket on
             // its kitchen lifecycle instead of completing it). Serving the
             // last line was the final milestone — close the ticket so the
             // diner sees «مكتمل» and the boards drop it.
-            if ($this->completeIfPrepaid($order)) {
+            if ($newStatus !== OrderStatus::Completed->value && $this->completeIfPrepaid($order)) {
                 $newStatus = OrderStatus::Completed->value;
             }
         } elseif ($active->every(fn ($i) => in_array($i->status, [OrderItemStatus::Ready->value, OrderItemStatus::Served->value]))) {
@@ -1318,23 +1484,35 @@ class OrderService
     }
 
     /**
-     * Close a fully-delivered STANDALONE order whose invoice is already
-     * settled (prepaid takeaway/delivery, or a fully-comped zero-total
-     * ticket). Payment deliberately no longer completes an undelivered
+     * Close a fully-delivered order whose invoice is already settled.
+     * Payment deliberately no longer completes an undelivered
      * order (BillingService::addPayment gates on Delivered — completing a
      * paid-but-uncooked ticket made it vanish from the KDS/waiter boards),
      * so the serve-side transitions call this to finish the job once the
      * food is actually handed over.
      *
-     * Dine-in session orders are excluded on purpose — their completion is
-     * closeOrdersAndSession's job at settle time.
+     * For dine-in, serving the final line closes the paid session and frees
+     * the table. For takeaway/delivery, only this order is completed.
      *
      * Returns TRUE when the order was promoted to Completed.
      */
     protected function completeIfPrepaid(Order $order): bool
     {
         if ($order->table_session_id) {
-            return false;
+            $invoice = Invoice::withoutGlobalScope(BranchScope::class)
+                ->where('table_session_id', $order->table_session_id)
+                ->where(function ($query) {
+                    $query->whereIn('status', ['paid', 'unpaid_writeoff'])
+                        ->orWhereNotNull('settled_on_account_at');
+                })
+                ->latest()
+                ->first();
+
+            if (! $invoice) {
+                return false;
+            }
+
+            return app(BillingService::class)->closeSettledSessionIfFulfilled($invoice);
         }
 
         // Unscoped on purpose: the invoice carries the ORDER's branch and
@@ -1364,6 +1542,38 @@ class OrderService
         return true;
     }
 
+    /**
+     * A staff meal has no customer invoice. Once every line is handed over,
+     * freeze its allowance/debt allocation and close the operational ticket.
+     * This keeps it visible to the kitchen until it is actually prepared and
+     * prevents the old bug where charging at submit made the order disappear.
+     */
+    protected function completeStaffMealIfDelivered(Order $order): bool
+    {
+        if (! $order->isStaffMeal()) {
+            return false;
+        }
+
+        app(StaffMealService::class)->chargeOrder(
+            $order->refresh(),
+            settledByUserId: $order->created_by_user_id,
+            approverUserId: $order->approved_by_user_id ?: $order->created_by_user_id,
+        );
+
+        $order->update([
+            'status' => OrderStatus::Completed->value,
+            'completed_at' => now(),
+        ]);
+
+        ActivityLog::log(
+            'staff_meal.completed',
+            "اكتملت وجبة الموظف في الطلب {$order->number} بعد تسليم كل الأصناف",
+            $order,
+        );
+
+        return true;
+    }
+
     protected function assertInvoiceCanStillChange(Order $order): void
     {
         $order->loadMissing('tableSession.invoice', 'invoice');
@@ -1371,6 +1581,22 @@ class OrderService
 
         if ($invoice && ! in_array($invoice->status, ['cancelled'], true)) {
             throw new \RuntimeException('لا يمكن تعديل الطلب بعد إصدار الفاتورة. ألغِ الفاتورة أولاً من الكاشير ثم عدّل الطلب.');
+        }
+    }
+
+    /**
+     * Once a staff meal is physically served, its allowance/debt allocation
+     * and inventory expense are frozen together. Subsequent corrections use
+     * settlement/waiver; reopening the food order would desynchronise stock.
+     */
+    protected function assertStaffMealAllocationOpen(Order $order): void
+    {
+        if (! $order->isStaffMeal()) {
+            return;
+        }
+
+        if (StaffMealCharge::where('order_id', $order->id)->exists()) {
+            throw new \RuntimeException('تم تسليم وجبة الموظف وإقفال أثرها المخزني. استخدم التسوية أو الإعفاء لتصحيح المستحق، ولا تعدّل الطلب المسلّم.');
         }
     }
 }

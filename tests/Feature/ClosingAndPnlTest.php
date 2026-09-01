@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\AccountingPeriod;
 use App\Models\Branch;
 use App\Models\FiscalYear;
 use App\Models\JournalEntry;
@@ -11,13 +10,13 @@ use App\Models\User;
 use App\Services\Accounting\AccountingService;
 use App\Services\Reports\ProfitLossReport;
 use App\Support\BranchContext;
+use Database\Seeders\PermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * #25 — the ledger P&L must exclude BOTH the monthly period close and the
- *       annual fiscal-year close, or an income statement that spans the close
- *       date shows zero revenue/expense.
+ * #25 — the ledger P&L must exclude the annual fiscal-year close, or an
+ *       income statement that spans the close date shows zero revenue/expense.
  * #26 — closing entries must not be reversible from the journal screen; undoing
  *       a close is only correct via the Reopen flow.
  */
@@ -26,6 +25,7 @@ class ClosingAndPnlTest extends TestCase
     use RefreshDatabase;
 
     protected Branch $branch;
+
     protected User $admin;
 
     protected function setUp(): void
@@ -36,7 +36,7 @@ class ClosingAndPnlTest extends TestCase
         BranchContext::set($this->branch->id);
 
         Role::firstOrCreate(['name' => 'admin'], ['label' => 'Admin', 'is_system' => true]);
-        $this->seed(\Database\Seeders\PermissionSeeder::class);
+        $this->seed(PermissionSeeder::class);
 
         $this->admin = User::create([
             'name' => 'Admin', 'username' => 'cp-admin', 'role' => 'admin',
@@ -93,16 +93,16 @@ class ClosingAndPnlTest extends TestCase
     {
         $this->postSale('2026-09-15', 50);
 
-        $period = AccountingPeriod::create([
-            'branch_id' => $this->branch->id, 'name' => 'Sep 2026',
-            'starts_on' => '2026-09-01', 'ends_on' => '2026-09-30', 'status' => 'open',
+        $year = FiscalYear::create([
+            'branch_id' => $this->branch->id, 'name' => 'FY 2026',
+            'starts_on' => '2026-01-01', 'ends_on' => '2026-12-31', 'status' => 'open',
         ]);
         $this->actingAs($this->admin)
-            ->post(route('admin.accounting.periods.close', $period))
+            ->post(route('admin.accounting.fiscal-years.close', $year))
             ->assertSessionHas('success');
 
-        $closing = JournalEntry::findOrFail($period->refresh()->closing_journal_entry_id);
-        $this->assertSame('period_closing', $closing->event_type);
+        $closing = JournalEntry::findOrFail($year->refresh()->closing_journal_entry_id);
+        $this->assertSame('fiscal_year_closing', $closing->event_type);
 
         // Try to reverse the closing entry from the journal screen → rejected.
         $this->actingAs($this->admin)

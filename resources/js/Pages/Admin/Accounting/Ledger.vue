@@ -1,0 +1,30 @@
+<script setup>
+import { reactive } from 'vue'
+import { Head, router } from '@inertiajs/vue3'
+import AdminLayout from '../../../Layouts/AdminLayout.vue'
+import PageHeader from '../../../Components/Ui/PageHeader.vue'
+import Pagination from '../../../Components/Ui/Pagination.vue'
+import AccountingNav from '../../../Components/Accounting/AccountingNav.vue'
+import AccountingPanel from '../../../Components/Accounting/AccountingPanel.vue'
+defineOptions({layout:AdminLayout})
+const props=defineProps({currency:Object,accounts:Array,account:Object,lines:Object,filters:Object,summary:Object,urls:Object})
+const form=reactive({...props.filters})
+function visit(){router.get(props.urls.index,{account_id:form.accountId,from:form.from,to:form.to},{preserveState:true,preserveScroll:true})}
+function money(v){return `${new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.abs(Number(v||0)))} ${props.currency.symbol}`}
+function balance(v){const n=Number(v||0);return Math.abs(n)<.0001?`0.00 ${props.currency.symbol}`:`${money(n)} ${n>0?'مدين':'دائن'}`}
+</script>
+<template>
+<Head title="دفتر الأستاذ"/><PageHeader title="دفتر الأستاذ" icon="bi-journal-bookmark-fill" subtitle="كشف حساب واحد مع رصيده السابق والجاري"/><AccountingNav :urls="urls" active="ledger"/>
+<form class="ledger-filter" @submit.prevent="visit"><label class="account-pick"><span>الحساب</span><select v-model="form.accountId" class="form-select" required><option v-for="item in accounts" :key="item.id" :value="item.id">{{item.code}} — {{item.name}}{{item.active?'':' (معطّل)'}}</option></select></label><label><span>من</span><input v-model="form.from" type="date" class="form-control"></label><label><span>إلى</span><input v-model="form.to" type="date" class="form-control"></label><button class="btn btn-primary"><i class="bi bi-search"></i> عرض</button></form>
+<template v-if="account">
+<div class="ledger-summary"><article class="account"><small>الحساب</small><strong>{{account.code}} — {{account.name}}</strong></article><article><small>الرصيد السابق</small><strong>{{balance(summary.opening)}}</strong></article><article><small>حركة مدين</small><strong class="debit">{{money(summary.debit)}}</strong></article><article><small>حركة دائن</small><strong class="credit">{{money(summary.credit)}}</strong></article><article class="closing"><small>رصيد نهاية المدة</small><strong>{{balance(summary.closing)}}</strong></article></div>
+<AccountingPanel title="حركات الحساب" :description="`${lines?.total||0} حركة في المدة`" icon="bi-list-columns-reverse" compact>
+<div v-if="lines?.data?.length" class="ledger-list"><div class="ledger-head"><span>التاريخ</span><span>القيد</span><span>البيان</span><span>مدين</span><span>دائن</span><span>الرصيد</span></div><article v-if="lines.current_page===1" class="opening"><time>{{filters.from}}</time><span>—</span><strong>رصيد سابق</strong><span></span><span></span><bdi>{{balance(summary.opening)}}</bdi></article><article v-for="line in lines.data" :key="line.id"><time>{{line.date}}</time><a :href="line.journalUrl">{{line.entryNumber}}</a><div><strong>{{line.description}}</strong><small>{{line.entryDescription}}<template v-if="line.creator"> · بواسطة {{line.creator}}</template></small></div><bdi class="debit">{{line.debit?money(line.debit):'—'}}</bdi><bdi class="credit">{{line.credit?money(line.credit):'—'}}</bdi><bdi>{{balance(line.runningBalance)}}</bdi></article></div>
+<div v-else class="empty"><i class="bi bi-journal-x"></i><strong>لا توجد حركة</strong><span>لا توجد قيود على هذا الحساب ضمن المدة.</span></div><template #footer><Pagination v-if="lines?.links" :links="lines.links"/></template></AccountingPanel>
+</template><div v-else class="empty empty--page"><i class="bi bi-diagram-3"></i><strong>شجرة الحسابات فارغة</strong><a :href="urls.accounts">أنشئ الحسابات أولاً</a></div>
+</template>
+<style scoped>
+.ledger-filter{display:grid;grid-template-columns:minmax(260px,1fr) 170px 170px auto;align-items:end;gap:9px;margin-bottom:10px;padding:12px;border:1px solid #dfe7e2;border-radius:14px;background:#fff}.ledger-filter label{display:grid;gap:4px}.ledger-filter label>span{color:#6f7d74;font-size:.67rem;font-weight:800}.ledger-summary{display:grid;grid-template-columns:1.6fr repeat(4,1fr);gap:8px;margin-bottom:10px}.ledger-summary article{display:grid;align-content:center;min-height:78px;padding:11px 12px;border:1px solid #dfe7e2;border-radius:13px;background:#fff}.ledger-summary small{color:#7c8981;font-size:.64rem}.ledger-summary strong{font-size:.76rem}.ledger-summary .closing{border-color:#9fc9ac;background:#f1f8f3}.debit{color:#087842}.credit{color:#b64242}.ledger-list{overflow-x:auto}.ledger-head,.ledger-list article{display:grid;grid-template-columns:90px 145px minmax(260px,1fr) 105px 105px 135px;align-items:center;gap:9px;min-width:850px;padding:9px 14px}.ledger-head{color:#718078;background:#f7f9f7;font-size:.64rem;font-weight:850}.ledger-list article{border-bottom:1px solid #edf1ee;font-size:.68rem}.ledger-list article:last-child{border:0}.ledger-list article.opening{background:#fbfcfb}.ledger-list time{color:#748178}.ledger-list article>a{color:#1f6b50;font-weight:850}.ledger-list article>div{display:grid}.ledger-list article>div strong{font-size:.7rem}.ledger-list article>div small{color:#88948c;font-size:.61rem}.ledger-list bdi{text-align:end;font-weight:800}.empty{display:grid;justify-items:center;gap:5px;padding:50px 15px;color:#849088;text-align:center}.empty i{font-size:1.6rem}.empty strong{color:#4b5b51}.empty span,.empty a{font-size:.68rem}.empty a{color:#1f6b50;font-weight:800}.empty--page{border:1px solid #dfe7e2;border-radius:15px;background:#fff}
+@media(max-width:1000px){.ledger-filter{grid-template-columns:1fr 1fr auto}.account-pick{grid-column:1/-1}.ledger-summary{grid-template-columns:repeat(2,1fr)}.ledger-summary .account,.ledger-summary .closing{grid-column:1/-1}}
+@media(max-width:560px){.ledger-filter{grid-template-columns:1fr}.account-pick{grid-column:auto}.ledger-summary{grid-template-columns:1fr}.ledger-summary .account,.ledger-summary .closing{grid-column:auto}}
+</style>

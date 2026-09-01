@@ -10,10 +10,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
- * Expense entry — branch-scoped, three-state approval workflow,
- * auto-bridged into the cashier's till on approval when paid in cash.
+ * Expense entry — branch-scoped, three-state approval workflow.
  *
- *   pending_approval → approved (creates cash_movement if cash)
+ *   pending_approval → approved (posts the accounting effect)
  *                    → rejected (with reason)
  *
  * The static `nextNumber()` helper produces EXP-YYYYMMDD-NNNN sequences
@@ -31,14 +30,14 @@ class Expense extends Model
         'description',
         'notes',
         'amount',
+        'currency_code',
+        'exchange_rate',
         'payment_method',
         'payment_reference',
         'vendor_name',
         'supplier_id',
         'attachment_path',
         'expense_date',
-        'shift_id',
-        'cash_movement_id',
         'status',
         'rejection_reason',
         'created_by_user_id',
@@ -48,6 +47,7 @@ class Expense extends Model
 
     protected $casts = [
         'amount'        => 'decimal:2',
+        'exchange_rate' => 'decimal:8',
         'expense_date'  => 'date',
         'approved_at'   => 'datetime',
     ];
@@ -108,11 +108,6 @@ class Expense extends Model
         return $this->belongsTo(User::class, 'approved_by_user_id');
     }
 
-    public function shift(): BelongsTo
-    {
-        return $this->belongsTo(Shift::class);
-    }
-
     public function supplier(): BelongsTo
     {
         return $this->belongsTo(Supplier::class);
@@ -126,11 +121,6 @@ class Expense extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(Lookup::class, 'expense_category_id')->withTrashed();
-    }
-
-    public function cashMovement(): BelongsTo
-    {
-        return $this->belongsTo(CashMovement::class);
     }
 
     // ─── Scopes ────────────────────────────────────────────────────
@@ -197,11 +187,18 @@ class Expense extends Model
         return self::PAYMENT_METHODS[$this->payment_method] ?? $this->payment_method;
     }
 
+    public function baseAmount(): float
+    {
+        return round((float) $this->amount * (float) ($this->exchange_rate ?: 1), 4);
+    }
+
+    public function formatMoney(?float $amount = null): string
+    {
+        return number_format($amount ?? (float) $this->amount, 2).' '.($this->currency_code ?: 'ILS');
+    }
+
     public const PAYMENT_METHODS = [
         'cash'           => 'نقداً',
-        'card'           => 'بطاقة',
         'bank_transfer'  => 'تحويل بنكي',
-        'cheque'         => 'شيك',
-        'other'          => 'أخرى',
     ];
 }

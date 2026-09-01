@@ -2,8 +2,8 @@
 
 namespace App\Services\Reports;
 
-use App\Models\Expense;
 use App\Models\AccountMapping;
+use App\Models\Expense;
 use App\Models\InventoryMovement;
 use App\Models\Invoice;
 use App\Models\JournalEntry;
@@ -12,7 +12,6 @@ use App\Models\OrderDiscount;
 use App\Models\Refund;
 use App\Services\Accounting\AccountingService;
 use App\Support\BranchContext;
-use App\Support\MarketProfile;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -37,23 +36,30 @@ use Illuminate\Support\Facades\DB;
 class ProfitLossReport
 {
     public string $from;
+
     public string $to;
+
     public string $start;     // 'Y-m-d 00:00:00'
+
     public string $end;       // 'Y-m-d 23:59:59'
-    public ?int   $branchId;
-    public bool   $usePerBranchCost;
+
+    public ?int $branchId;
+
+    public bool $usePerBranchCost;
+
     public string $source;
+
     protected ?array $postingRoleCodes = null;
 
     public function __construct(string $from, string $to, ?int $branchId = null, bool $usePerBranchCost = false, string $source = 'ledger')
     {
-        $this->from             = $from;
-        $this->to               = $to;
-        $this->start            = $from.' 00:00:00';
-        $this->end              = $to.' 23:59:59';
-        $this->branchId         = $branchId;
+        $this->from = $from;
+        $this->to = $to;
+        $this->start = $from.' 00:00:00';
+        $this->end = $to.' 23:59:59';
+        $this->branchId = $branchId;
         $this->usePerBranchCost = $usePerBranchCost && $branchId;
-        $this->source           = $source === 'operations' ? 'operations' : 'ledger';
+        $this->source = $source === 'operations' ? 'operations' : 'ledger';
     }
 
     /**
@@ -88,16 +94,16 @@ class ProfitLossReport
             COALESCE(SUM(paid_total),0)      as total_collected
         ')->first();
 
-        $grossSales       = (float) $totals->gross_sales;
-        $discountsTotal   = (float) $totals->discounts_total;
-        $netSales         = max(0, $grossSales - $discountsTotal);
-        $taxCollected     = (float) $totals->tax_collected;
+        $grossSales = (float) $totals->gross_sales;
+        $discountsTotal = (float) $totals->discounts_total;
+        $netSales = max(0, $grossSales - $discountsTotal);
+        $taxCollected = (float) $totals->tax_collected;
         $serviceCollected = (float) $totals->service_collected;
-        $tipCollected     = (float) $totals->tip_collected;
-        $deliveryCollected= (float) $totals->delivery_collected;
-        $totalBilled      = (float) $totals->total_billed;
-        $totalCollected   = (float) $totals->total_collected;
-        $invoiceCount     = (int)   $totals->invoice_count;
+        $tipCollected = (float) $totals->tip_collected;
+        $deliveryCollected = (float) $totals->delivery_collected;
+        $totalBilled = (float) $totals->total_billed;
+        $totalCollected = (float) $totals->total_collected;
+        $invoiceCount = (int) $totals->invoice_count;
 
         // Unpaid receivables — issued but not yet paid (still inside period)
         $unpaidQuery = Invoice::whereBetween('issued_at', [$this->start, $this->end])
@@ -124,114 +130,104 @@ class ProfitLossReport
         $expensesQuery = Expense::whereBetween('expense_date', [$this->from, $this->to])
             ->where('status', 'approved');
         $expensesQuery = $this->scopeEloquent($expensesQuery, 'expenses.branch_id');
-        $expensesTotal = (float) (clone $expensesQuery)->sum('amount');
+        $expensesTotal = (float) ((clone $expensesQuery)
+            ->selectRaw('COALESCE(SUM(amount * COALESCE(exchange_rate, 1)), 0) as base_total')
+            ->value('base_total') ?? 0);
 
-        // ─── 5. Platform commissions ────────────────────────────────────
-        // External delivery platforms (Talabat / Careem / Uber) charge a
-        // % of order total. Stored on each order; multiply through.
-        $ordersForCommissionQuery = DB::table('orders')
-            ->whereBetween('created_at', [$this->start, $this->end])
-            ->whereNotIn('status', ['cancelled']);
-        $ordersForCommissionQuery = $this->scopeRaw($ordersForCommissionQuery, 'orders.branch_id');
-        $platformCommission = (float) ($ordersForCommissionQuery
-            ->selectRaw('COALESCE(SUM(total * platform_commission_pct / 100),0) as commission')
-            ->value('commission') ?? 0);
-
-        // ─── 6. Refunds (issued back to customers in the period) ────────
+        // ─── 5. Refunds (issued back to customers in the period) ────────
         $refundsQuery = Refund::whereBetween('refunded_at', [$this->start, $this->end])
             ->whereIn('status', ['processed', 'pending']);
         $refundsTotal = (float) $this->scopeRefunds($refundsQuery)->sum('amount');
 
-        // ─── 7. The profit ladder ───────────────────────────────────────
+        // ─── 6. The profit ladder ───────────────────────────────────────
         // gross_profit = net_sales − cogs − waste
-        // operating_profit = gross_profit − expenses − platform_commission
+        // operating_profit = gross_profit − expenses
         // net_profit = operating_profit − refunds
         // Margins always vs. net_sales (income earned on items).
-        $grossProfit     = $netSales - $cogs - $wasteCost;
-        $operatingProfit = $grossProfit - $expensesTotal - $platformCommission;
-        $netProfit       = $operatingProfit - $refundsTotal;
+        $grossProfit = $netSales - $cogs - $wasteCost;
+        $operatingProfit = $grossProfit - $expensesTotal;
+        $netProfit = $operatingProfit - $refundsTotal;
 
-        $grossMarginPct  = $netSales > 0 ? ($grossProfit / $netSales) * 100 : 0;
+        $grossMarginPct = $netSales > 0 ? ($grossProfit / $netSales) * 100 : 0;
         $operatingMarginPct = $netSales > 0 ? ($operatingProfit / $netSales) * 100 : 0;
-        $netMarginPct    = $netSales > 0 ? ($netProfit / $netSales) * 100 : 0;
+        $netMarginPct = $netSales > 0 ? ($netProfit / $netSales) * 100 : 0;
 
-        $averageTicket   = $invoiceCount > 0 ? $totalCollected / $invoiceCount : 0;
-        $daysCount       = max(1, Carbon::parse($this->from)->diffInDays(Carbon::parse($this->to)) + 1);
-        $dailyAverage    = $totalCollected / $daysCount;
+        $averageTicket = $invoiceCount > 0 ? $totalCollected / $invoiceCount : 0;
+        $daysCount = max(1, Carbon::parse($this->from)->diffInDays(Carbon::parse($this->to)) + 1);
+        $dailyAverage = $totalCollected / $daysCount;
 
-        // ─── 8. Daily trend (for charts) ────────────────────────────────
+        // ─── 7. Daily trend (for charts) ────────────────────────────────
         $trend = $this->dailyTrend();
 
-        // ─── 9. Discount breakdowns ─────────────────────────────────────
+        // ─── 8. Discount breakdowns ─────────────────────────────────────
         $discountsByCategory = $this->discountsByCategory();
-        $discountsByCashier  = $this->discountsByCashier();
-        $discountsCount      = (int) (clone $this->discountsBaseQuery())->count();
+        $discountsByCashier = $this->discountsByCashier();
+        $discountsCount = (int) (clone $this->discountsBaseQuery())->count();
 
-        // ─── 10. Expense breakdowns ─────────────────────────────────────
+        // ─── 9. Expense breakdowns ──────────────────────────────────────
         $expensesByCategory = $this->expensesByCategory($expensesQuery);
-        $expensesByMethod   = $this->expensesByMethod($expensesQuery);
-        $recentExpenses     = (clone $expensesQuery)
+        $expensesByMethod = $this->expensesByMethod($expensesQuery);
+        $recentExpenses = (clone $expensesQuery)
             ->with(['category', 'creator'])
             ->orderByDesc('expense_date')
             ->orderByDesc('id')
             ->limit(10)
             ->get();
 
-        // ─── 11. Top profitable items ───────────────────────────────────
+        // ─── 10. Top profitable items ───────────────────────────────────
         $topItems = $this->topItems();
 
         return [
             'period' => [
-                'from'        => $this->from,
-                'to'          => $this->to,
-                'days'        => $daysCount,
-                'branch_id'   => $this->branchId,
+                'from' => $this->from,
+                'to' => $this->to,
+                'days' => $daysCount,
+                'branch_id' => $this->branchId,
                 'per_branch_cost' => $this->usePerBranchCost,
-                'source'      => $this->source,
+                'source' => $this->source,
             ],
             'sales' => [
-                'gross_sales'        => round($grossSales, 2),
-                'discounts_total'    => round($discountsTotal, 2),
-                'net_sales'          => round($netSales, 2),
-                'tax_collected'      => round($taxCollected, 2),
-                'service_collected'  => round($serviceCollected, 2),
-                'tip_collected'      => round($tipCollected, 2),
+                'gross_sales' => round($grossSales, 2),
+                'discounts_total' => round($discountsTotal, 2),
+                'net_sales' => round($netSales, 2),
+                'tax_collected' => round($taxCollected, 2),
+                'service_collected' => round($serviceCollected, 2),
+                'tip_collected' => round($tipCollected, 2),
                 'delivery_collected' => round($deliveryCollected, 2),
-                'total_billed'       => round($totalBilled, 2),
-                'total_collected'    => round($totalCollected, 2),
-                'unpaid_balance'     => round($unpaidBalance, 2),
-                'invoice_count'      => $invoiceCount,
-                'average_ticket'     => round($averageTicket, 2),
-                'daily_average'      => round($dailyAverage, 2),
+                'total_billed' => round($totalBilled, 2),
+                'total_collected' => round($totalCollected, 2),
+                'unpaid_balance' => round($unpaidBalance, 2),
+                'invoice_count' => $invoiceCount,
+                'average_ticket' => round($averageTicket, 2),
+                'daily_average' => round($dailyAverage, 2),
             ],
             'costs' => [
-                'cogs'                => round($cogs, 2),
-                'waste'               => round($wasteCost, 2),
-                'expenses'            => round($expensesTotal, 2),
-                'platform_commission' => round($platformCommission, 2),
-                'refunds'             => round($refundsTotal, 2),
+                'cogs' => round($cogs, 2),
+                'waste' => round($wasteCost, 2),
+                'expenses' => round($expensesTotal, 2),
+                'refunds' => round($refundsTotal, 2),
             ],
             'profit' => [
-                'gross_profit'         => round($grossProfit, 2),
-                'operating_profit'     => round($operatingProfit, 2),
-                'net_profit'           => round($netProfit, 2),
-                'gross_margin_pct'     => round($grossMarginPct, 2),
+                'gross_profit' => round($grossProfit, 2),
+                'operating_profit' => round($operatingProfit, 2),
+                'net_profit' => round($netProfit, 2),
+                'gross_margin_pct' => round($grossMarginPct, 2),
                 'operating_margin_pct' => round($operatingMarginPct, 2),
-                'net_margin_pct'       => round($netMarginPct, 2),
+                'net_margin_pct' => round($netMarginPct, 2),
             ],
             'discounts' => [
-                'count'        => $discountsCount,
-                'total'        => round($discountsTotal, 2),
-                'by_category'  => $discountsByCategory,
-                'by_cashier'   => $discountsByCashier,
+                'count' => $discountsCount,
+                'total' => round($discountsTotal, 2),
+                'by_category' => $discountsByCategory,
+                'by_cashier' => $discountsByCashier,
             ],
             'expenses_breakdown' => [
                 'by_category' => $expensesByCategory,
-                'by_method'   => $expensesByMethod,
-                'recent'      => $recentExpenses,
+                'by_method' => $expensesByMethod,
+                'recent' => $recentExpenses,
             ],
-            'trend'    => $trend,
-            'top_items'=> $topItems,
+            'trend' => $trend,
+            'top_items' => $topItems,
         ];
     }
 
@@ -252,56 +248,55 @@ class ProfitLossReport
 
         return [
             'period' => [
-                'from'        => $this->from,
-                'to'          => $this->to,
-                'days'        => $daysCount,
-                'branch_id'   => $this->branchId,
+                'from' => $this->from,
+                'to' => $this->to,
+                'days' => $daysCount,
+                'branch_id' => $this->branchId,
                 'per_branch_cost' => false,
-                'source'      => 'ledger',
+                'source' => 'ledger',
             ],
             'sales' => [
-                'gross_sales'        => round($pieces['gross_sales'], 2),
-                'discounts_total'    => round($pieces['discounts_total'], 2),
-                'net_sales'          => round($pieces['net_sales'], 2),
-                'tax_collected'      => round($this->ledgerNetAny($rows, $this->postingRoleCodes('output_vat'), 'credit'), 2),
-                'service_collected'  => round($this->ledgerNetAny($rows, $this->postingRoleCodes('service_revenue'), 'credit'), 2),
-                'tip_collected'      => round($this->ledgerNetAny($rows, $this->postingRoleCodes('tips_payable'), 'credit'), 2),
+                'gross_sales' => round($pieces['gross_sales'], 2),
+                'discounts_total' => round($pieces['discounts_total'], 2),
+                'net_sales' => round($pieces['net_sales'], 2),
+                'tax_collected' => round($this->ledgerNetAny($rows, $this->postingRoleCodes('output_vat'), 'credit'), 2),
+                'service_collected' => round($this->ledgerNetAny($rows, $this->postingRoleCodes('service_revenue'), 'credit'), 2),
+                'tip_collected' => round($this->ledgerNetAny($rows, $this->postingRoleCodes('tips_payable'), 'credit'), 2),
                 'delivery_collected' => round($this->ledgerNetAny($rows, $this->postingRoleCodes('delivery_revenue'), 'credit'), 2),
-                'total_billed'       => round($totalBilled, 2),
-                'total_collected'    => round($totalCollected, 2),
-                'unpaid_balance'     => round($unpaidBalance, 2),
-                'invoice_count'      => $invoiceCount,
-                'average_ticket'     => round($averageTicket, 2),
-                'daily_average'      => round($dailyAverage, 2),
+                'total_billed' => round($totalBilled, 2),
+                'total_collected' => round($totalCollected, 2),
+                'unpaid_balance' => round($unpaidBalance, 2),
+                'invoice_count' => $invoiceCount,
+                'average_ticket' => round($averageTicket, 2),
+                'daily_average' => round($dailyAverage, 2),
             ],
             'costs' => [
-                'cogs'                => round($pieces['cogs'], 2),
-                'waste'               => round($pieces['waste'], 2),
-                'expenses'            => round($pieces['expenses'], 2),
-                'platform_commission' => round($pieces['platform_commission'], 2),
-                'refunds'             => round($pieces['refunds'], 2),
+                'cogs' => round($pieces['cogs'], 2),
+                'waste' => round($pieces['waste'], 2),
+                'expenses' => round($pieces['expenses'], 2),
+                'refunds' => round($pieces['refunds'], 2),
             ],
             'profit' => [
-                'gross_profit'         => round($pieces['gross_profit'], 2),
-                'operating_profit'     => round($pieces['operating_profit'], 2),
-                'net_profit'           => round($pieces['net_profit'], 2),
-                'gross_margin_pct'     => round($pieces['gross_margin_pct'], 2),
+                'gross_profit' => round($pieces['gross_profit'], 2),
+                'operating_profit' => round($pieces['operating_profit'], 2),
+                'net_profit' => round($pieces['net_profit'], 2),
+                'gross_margin_pct' => round($pieces['gross_margin_pct'], 2),
                 'operating_margin_pct' => round($pieces['operating_margin_pct'], 2),
-                'net_margin_pct'       => round($pieces['net_margin_pct'], 2),
+                'net_margin_pct' => round($pieces['net_margin_pct'], 2),
             ],
             'discounts' => [
-                'count'        => (int) collect($this->ledgerContraBreakdown($rows))->sum('count'),
-                'total'        => round($pieces['discounts_total'], 2),
-                'by_category'  => $this->ledgerContraBreakdown($rows),
-                'by_cashier'   => [],
+                'count' => (int) collect($this->ledgerContraBreakdown($rows))->sum('count'),
+                'total' => round($pieces['discounts_total'], 2),
+                'by_category' => $this->ledgerContraBreakdown($rows),
+                'by_cashier' => [],
             ],
             'expenses_breakdown' => [
                 'by_category' => $this->ledgerExpensesByAccount($rows),
-                'by_method'   => [],
-                'recent'      => collect(),
+                'by_method' => [],
+                'recent' => collect(),
             ],
-            'trend'    => $this->ledgerDailyTrend(),
-            'top_items'=> collect(),
+            'trend' => $this->ledgerDailyTrend(),
+            'top_items' => collect(),
         ];
     }
 
@@ -397,11 +392,10 @@ class ProfitLossReport
 
         $cogs = $this->ledgerNetAny($rows, $this->postingRoleCodes('cost_of_goods_sold'), 'debit');
         $waste = $this->ledgerNetAny($rows, $this->postingRoleCodes('waste_expense'), 'debit');
-        $platformCommission = $this->ledgerNetAny($rows, $this->postingRoleCodes('bank_and_card_fees'), 'debit');
-        $expenses = $expenseTotal - $cogs - $waste - $platformCommission;
+        $expenses = $expenseTotal - $cogs - $waste;
 
         $grossProfit = $netSales - $cogs - $waste;
-        $operatingProfit = $grossProfit - $expenses - $platformCommission;
+        $operatingProfit = $grossProfit - $expenses;
         $netProfit = $operatingProfit - $refunds;
 
         return [
@@ -411,7 +405,6 @@ class ProfitLossReport
             'cogs' => $cogs,
             'waste' => $waste,
             'expenses' => $expenses,
-            'platform_commission' => $platformCommission,
             'refunds' => $refunds,
             'gross_profit' => $grossProfit,
             'operating_profit' => $operatingProfit,
@@ -535,7 +528,6 @@ class ProfitLossReport
         $excluded = collect([
             ...$this->postingRoleCodes('cost_of_goods_sold'),
             ...$this->postingRoleCodes('waste_expense'),
-            ...$this->postingRoleCodes('bank_and_card_fees'),
         ])->unique()->values()->all();
 
         return collect($rows)
@@ -586,13 +578,13 @@ class ProfitLossReport
             $pieces = $this->ledgerPieces($rowsByDay->get($day, collect()));
 
             $days->push([
-                'date'      => $day,
-                'label'     => Carbon::parse($day)->locale(MarketProfile::lang())->isoFormat('ddd D/M'),
+                'date' => $day,
+                'label' => Carbon::parse($day)->locale('ar')->isoFormat('ddd D/M'),
                 'net_sales' => round($pieces['net_sales'], 2),
                 'collected' => round((float) ($collectedByDay[$day] ?? 0), 2),
-                'cogs'      => round($pieces['cogs'], 2),
-                'expenses'  => round($pieces['expenses'], 2),
-                'profit'    => round($pieces['net_profit'], 2),
+                'cogs' => round($pieces['cogs'], 2),
+                'expenses' => round($pieces['expenses'], 2),
+                'profit' => round($pieces['net_profit'], 2),
             ]);
 
             $cursor->addDay();
@@ -616,9 +608,12 @@ class ProfitLossReport
             $cogs = 0.0;
             foreach ($rows as $r) {
                 $item = $items->get($r->menu_item_id);
-                if (! $item) continue;
+                if (! $item) {
+                    continue;
+                }
                 $cogs += (float) $r->qty * $item->costAtBranch($this->branchId);
             }
+
             return $cogs;
         }
 
@@ -660,13 +655,13 @@ class ProfitLossReport
             $cogs = (float) ($cogsByDay[$d] ?? 0);
             $exp = (float) ($expensesByDay[$d] ?? 0);
             $days->push([
-                'date'      => $d,
-                'label'     => Carbon::parse($d)->locale(MarketProfile::lang())->isoFormat('ddd D/M'),
+                'date' => $d,
+                'label' => Carbon::parse($d)->locale('ar')->isoFormat('ddd D/M'),
                 'net_sales' => round($netSales, 2),
                 'collected' => round($collected, 2),
-                'cogs'      => round($cogs, 2),
-                'expenses'  => round($exp, 2),
-                'profit'    => round($netSales - $cogs - $exp, 2),
+                'cogs' => round($cogs, 2),
+                'expenses' => round($exp, 2),
+                'profit' => round($netSales - $cogs - $exp, 2),
             ]);
             $cursor->addDay();
         }
@@ -693,6 +688,7 @@ class ProfitLossReport
         if ($this->branchId) {
             $q->where('invoices.branch_id', $this->branchId);
         }
+
         return $q;
     }
 
@@ -705,7 +701,7 @@ class ProfitLossReport
             ->orderByDesc('total')
             ->get()
             ->map(fn ($r) => [
-                'id'    => $r->id,
+                'id' => $r->id,
                 'label' => $r->label ?: 'بدون تصنيف',
                 'color' => $r->color ?: '#94a3b8',
                 'count' => (int) $r->count,
@@ -724,8 +720,8 @@ class ProfitLossReport
             ->limit(10)
             ->get()
             ->map(fn ($r) => [
-                'id'    => $r->id,
-                'name'  => $r->name ?: 'غير محدد',
+                'id' => $r->id,
+                'name' => $r->name ?: 'غير محدد',
                 'count' => (int) $r->count,
                 'total' => round((float) $r->total, 2),
             ])
@@ -743,7 +739,7 @@ class ProfitLossReport
             ->orderByDesc('total')
             ->get()
             ->map(fn ($r) => [
-                'id'    => $r->id,
+                'id' => $r->id,
                 'label' => $r->label ?: 'بدون تصنيف',
                 'color' => $r->color ?: '#94a3b8',
                 'count' => (int) $r->count,
@@ -755,6 +751,7 @@ class ProfitLossReport
     protected function expensesByMethod($baseQuery): array
     {
         $labels = ['cash' => 'نقدي', 'card' => 'بطاقة', 'bank_transfer' => 'حوالة بنكية', 'cheque' => 'شيك', 'other' => 'أخرى'];
+
         return (clone $baseQuery)
             ->selectRaw('payment_method, COUNT(*) as count, SUM(amount) as total')
             ->groupBy('payment_method')
@@ -762,9 +759,9 @@ class ProfitLossReport
             ->get()
             ->map(fn ($r) => [
                 'method' => $r->payment_method,
-                'label'  => $labels[$r->payment_method] ?? $r->payment_method,
-                'count'  => (int) $r->count,
-                'total'  => round((float) $r->total, 2),
+                'label' => $labels[$r->payment_method] ?? $r->payment_method,
+                'count' => (int) $r->count,
+                'total' => round((float) $r->total, 2),
             ])
             ->toArray();
     }
@@ -795,6 +792,7 @@ class ProfitLossReport
         if ($this->branchId) {
             $query->where($branchColumn, $this->branchId);
         }
+
         return $query;
     }
 
@@ -803,6 +801,7 @@ class ProfitLossReport
         if ($this->branchId) {
             $query->where($branchColumn, $this->branchId);
         }
+
         return $query;
     }
 
@@ -821,17 +820,19 @@ class ProfitLossReport
             // so we don't rely on the global scope alone.
             $query->where('refunds.branch_id', $this->branchId);
         }
+
         return $query;
     }
 
     protected function soldItemsQuery(): QueryBuilder
     {
         $q = DB::table('order_items')
-            ->join('orders',     'order_items.order_id',     '=', 'orders.id')
+            ->join('orders', 'order_items.order_id', '=', 'orders.id')
             ->join('menu_items', 'order_items.menu_item_id', '=', 'menu_items.id')
             ->whereBetween('orders.created_at', [$this->start, $this->end])
             ->where('order_items.status', '!=', 'cancelled')
             ->whereIn('orders.status', ['approved', 'preparing', 'ready', 'delivered', 'completed']);
+
         return $this->scopeRaw($q, 'orders.branch_id');
     }
 }

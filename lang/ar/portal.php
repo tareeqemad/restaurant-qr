@@ -7,7 +7,6 @@ return [
         'navigation' => 'قائمة التنقل',
         'close' => 'إغلاق',
         'home' => 'الرئيسية',
-        'my_orders' => 'طلباتي',
         'my_reservations' => 'حجوزاتي',
         'my_reviews' => 'تقييماتي',
         'notifications' => 'الإشعارات',
@@ -28,12 +27,6 @@ return [
         'all_reservations' => 'كل الحجوزات',
         'guest_count' => '{1}:count ضيف|[2,*]:count ضيوف',
         'no_upcoming_reservations' => 'لا توجد حجوزات قادمة. ابدأ بحجز طاولتك الآن.',
-        'active_orders' => 'طلبات نشطة',
-        'all_orders' => 'كل الطلبات',
-        'recent_orders' => 'طلباتك السابقة',
-        'view_all' => 'عرض الكل (:count)',
-        'no_orders_yet' => 'لم تطلب أي شيء بعد. تصفّح القائمة وابدأ طلبك الأول.',
-        'order_now' => 'اطلب الآن',
     ],
 
     'notifications' => [
@@ -134,7 +127,6 @@ return [
         'previous_orders' => 'طلباتك السابقة',
         'source_dine_in' => 'في المطعم',
         'source_takeaway' => 'استلام',
-        'source_delivery' => 'توصيل',
         'source_other' => 'طلب',
         'source_table' => 'طاولة',
         'source_from_app' => 'من التطبيق',

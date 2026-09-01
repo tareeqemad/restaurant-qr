@@ -9,6 +9,7 @@ use App\Models\Category;
 use App\Models\Customer;
 use App\Models\Ingredient;
 use App\Models\IngredientStock;
+use App\Models\Invoice;
 use App\Models\InventoryMovement;
 use App\Models\MenuItem;
 use App\Models\Order;
@@ -177,7 +178,7 @@ class WaiterOrderFlowTest extends TestCase
             defaultBranchId: $this->branch->id,
         );
 
-        // What the controller does after Customer::findForLogin matches.
+        // What the controller does after the format-tolerant phone match.
         $session->update([
             'customer_id' => $customer->id,
             'customer_name' => $customer->name,
@@ -212,6 +213,11 @@ class WaiterOrderFlowTest extends TestCase
             'quantity' => 1,
             'modifier_ids' => [],
         ]], createdByUserId: $this->waiter->id);
+        $secondOrder = app(OrderService::class)->createFromCart($session, [[
+            'menu_item_id' => $this->burger->id,
+            'quantity' => 2,
+            'modifier_ids' => [],
+        ]], createdByUserId: $this->waiter->id);
 
         $this->assertSame($tableA->id, $order->table_id);
 
@@ -219,15 +225,94 @@ class WaiterOrderFlowTest extends TestCase
 
         $session->refresh();
         $order->refresh();
+        $secondOrder->refresh();
 
         $this->assertSame($tableB->id, $session->table_id,
             'Session itself moves to the new table.');
         $this->assertSame($tableB->id, $order->table_id,
             'EVERY linked order moves too — kitchen tickets need to show the new table.');
+        $this->assertSame($tableB->id, $secondOrder->table_id,
+            'Later rounds in the same session move with the original order.');
+        $this->assertSame('11', $session->table_number_snapshot,
+            'The live session label follows the physical move.');
+        $this->assertSame('11', $order->table_number_snapshot,
+            'Kitchen and waiter surfaces must not retain the old table snapshot.');
+        $this->assertSame('11', $secondOrder->table_number_snapshot);
         $this->assertSame('available', $tableA->fresh()->status,
             'Source table freed.');
         $this->assertSame('occupied', $tableB->fresh()->status,
             'Target table marked occupied.');
+    }
+
+    public function test_transfer_carries_an_open_invoice_but_rejects_a_settled_session(): void
+    {
+        $this->actingAs($this->waiter);
+
+        $tableA = Table::create(['number' => '30', 'capacity' => 4, 'status' => 'occupied', 'active' => true]);
+        $tableB = Table::create(['number' => '31', 'capacity' => 4, 'status' => 'available', 'active' => true]);
+        $tableC = Table::create(['number' => '32', 'capacity' => 4, 'status' => 'available', 'active' => true]);
+        $session = TableSession::create([
+            'branch_id' => $this->branch->id,
+            'table_id' => $tableA->id,
+            'table_number_snapshot' => '30',
+            'token' => 'transfer-invoice-test',
+            'status' => 'active',
+            'opened_at' => now(),
+            'cover_count' => 2,
+        ]);
+        $order = app(OrderService::class)->createFromCart($session, [[
+            'menu_item_id' => $this->burger->id,
+            'quantity' => 1,
+            'modifier_ids' => [],
+        ]], createdByUserId: $this->waiter->id);
+        $invoice = Invoice::create([
+            'branch_id' => $this->branch->id,
+            'table_session_id' => $session->id,
+            'table_number_snapshot' => '30',
+            'issued_by_user_id' => $this->waiter->id,
+            'subtotal' => $order->subtotal,
+            'total' => $order->total,
+            'paid_total' => 0,
+            'balance' => $order->total,
+            'status' => 'issued',
+            'issued_at' => now(),
+        ]);
+
+        app(TableSessionTransferService::class)->transfer($tableA, $tableB, $this->waiter->id);
+
+        $this->assertSame('31', $invoice->fresh()->table_number_snapshot,
+            'An unsettled invoice is part of the same live session and follows it.');
+
+        $invoice->update(['status' => 'paid', 'paid_total' => $invoice->total, 'balance' => 0, 'paid_at' => now()]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('لا يمكن نقل جلسة تم إقفال حسابها');
+        app(TableSessionTransferService::class)->transfer($tableB->fresh(), $tableC, $this->waiter->id);
+    }
+
+    public function test_transfer_refuses_a_table_that_still_needs_cleaning(): void
+    {
+        $this->actingAs($this->waiter);
+
+        $source = Table::create(['number' => '40', 'capacity' => 4, 'status' => 'occupied', 'active' => true]);
+        $dirty = Table::create([
+            'number' => '41',
+            'capacity' => 4,
+            'status' => 'available',
+            'needs_cleaning_since' => now(),
+            'active' => true,
+        ]);
+        TableSession::create([
+            'branch_id' => $this->branch->id,
+            'table_id' => $source->id,
+            'token' => 'dirty-target-test',
+            'status' => 'active',
+            'opened_at' => now(),
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('الطاولة الجديدة ليست متاحة');
+        app(TableSessionTransferService::class)->transfer($source, $dirty, $this->waiter->id);
     }
 
     /**
@@ -252,6 +337,8 @@ class WaiterOrderFlowTest extends TestCase
             'default_station_id' => $bar->id, 'active' => true,
         ]);
         $syrup = $this->ing('Syrup', $this->gram, 1000);
+        IngredientStock::where('ingredient_id', $syrup->id)
+            ->update(['storage_location_id' => $barStorage->id]);
         $cola = MenuItem::create([
             'category_id' => $drinks->id, 'station_id' => $bar->id,
             'sku' => 'D-1', 'slug' => 'cola', 'name' => 'Cola', 'price' => 4,
@@ -488,6 +575,7 @@ class WaiterOrderFlowTest extends TestCase
 
     private function approvedOrder(): Order
     {
+        Setting::put('inventory_deduction_stage', 'approve', 'inventory', 'string');
         $table = Table::create(['number' => '20', 'capacity' => 4, 'status' => 'available', 'active' => true]);
         $session = TableSession::create([
             'branch_id' => $this->branch->id, 'table_id' => $table->id,

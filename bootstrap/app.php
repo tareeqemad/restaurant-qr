@@ -2,10 +2,11 @@
 
 use App\Http\Middleware\AdminMiddleware;
 use App\Http\Middleware\EnsureFirstRunSetupComplete;
-use App\Http\Middleware\EnsureValidLicense;
+use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\RequirePermission;
 use App\Http\Middleware\SetActiveBranch;
+use App\Http\Middleware\TableOrderingDeviceMiddleware;
 use App\Http\Middleware\TableSessionMiddleware;
-use App\Http\Middleware\TranslateMarketHtml;
 use App\Http\Middleware\VerifySyncToken;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -17,7 +18,6 @@ return Application::configure(basePath: dirname(__DIR__))
         web: __DIR__.'/../routes/web.php',
         api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
-        channels: __DIR__.'/../routes/channels.php',
         health: '/up',
         then: function () {
             Route::middleware('web')
@@ -28,22 +28,22 @@ return Application::configure(basePath: dirname(__DIR__))
             Route::middleware('web')
                 ->group(base_path('routes/customer.php'));
 
-            Route::middleware('web')
-                ->prefix('portal')
-                ->group(base_path('routes/portal.php'));
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->web(append: [
-            TranslateMarketHtml::class,
+            // Inertia middleware is inert on classic Blade
+            // responses — it only shapes routes that return Inertia::render().
+            HandleInertiaRequests::class,
         ]);
 
         $middleware->alias([
             'admin' => AdminMiddleware::class,
             'branch' => SetActiveBranch::class,
+            'permission' => RequirePermission::class,
             'setup.complete' => EnsureFirstRunSetupComplete::class,
-            'license' => EnsureValidLicense::class,
             'table.session' => TableSessionMiddleware::class,
+            'table.order-owner' => TableOrderingDeviceMiddleware::class,
             'sync.token' => VerifySyncToken::class,
         ]);
     })

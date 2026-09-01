@@ -15,9 +15,8 @@ use Illuminate\Queue\SerializesModels;
  * cashier dashboard lights the amber strip AND chimes the moment it lands,
  * instead of waiting for the next 10s poll.
  *
- * Always dispatched via App\Helpers\SafeBroadcast so a downed Reverb can't
- * break the customer/waiter/cashier write path — the strip still appears on
- * the next poll either way.
+ * SafeBroadcast turns this payload into a branch/session polling pulse without
+ * coupling the customer write path to infrastructure outside shared hosting.
  */
 class PendingTransferDeclared implements ShouldBroadcastNow
 {
@@ -29,7 +28,11 @@ class PendingTransferDeclared implements ShouldBroadcastNow
     {
         // Cashiers act on it; waiters like to know their table's diner paid.
         // Both channels are already authorized in routes/channels.php.
-        return [new PrivateChannel('cashiers'), new PrivateChannel('waiters')];
+        return [
+            new PrivateChannel('branch.'.$this->transfer->branch_id.'.cashiers'),
+            new PrivateChannel('branch.'.$this->transfer->branch_id.'.waiters'),
+            new PrivateChannel('owners'),
+        ];
     }
 
     public function broadcastAs(): string

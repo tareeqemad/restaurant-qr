@@ -5,6 +5,9 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\Lookup;
+use App\Models\LookupGroup;
+use App\Support\AdminShell;
+use App\Support\BranchContext;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -27,25 +30,39 @@ class LookupController extends Controller
             $activeGroup = array_key_first($groups);
         }
 
-        $rows = Lookup::withTrashed()
-            ->where('group', $activeGroup)
-            ->orderBy('display_order')
-            ->orderBy('id')
-            ->get();
+        // Load the small lookup catalogue once. Vue can then switch tabs,
+        // create, edit, hide and restore values without another page visit.
+        $rowsByGroup = collect(array_keys($groups))
+            ->mapWithKeys(fn (string $group) => [$group => $this->rowsForGroup($group)]);
+        $rows = $rowsByGroup->get($activeGroup, collect());
 
-        // Per-group usage count — for the dashboard chips above each tab.
-        // Derived from knownGroups() so a new lookup group automatically
-        // gets its count chip without touching this file. Each call hits
-        // the cached `Lookup::for($group)` (default cache driver, 5 min).
-        $usage = collect(array_keys($groups))
-            ->mapWithKeys(fn ($g) => [$g => Lookup::for($g)->count()])
-            ->all();
-
-        return view('admin.lookups.index', [
-            'groups'      => $groups,
+        return AdminShell::render('Admin/Lookups/Index', [
+            'groups' => collect($groups)->map(fn (array $meta, string $key) => [
+                'key' => $key,
+                'label' => $meta['label'],
+                'icon' => $meta['icon'],
+                'subtitle' => $meta['subtitle'],
+                'count' => $rowsByGroup->get($key, collect())
+                    ->where('is_active', true)
+                    ->whereNull('deleted_at')
+                    ->count(),
+                'url' => route('admin.lookups.index', ['group' => $key]),
+            ])->values(),
             'activeGroup' => $activeGroup,
-            'rows'        => $rows,
-            'usage'       => $usage,
+            'rows' => $rows->map(fn (Lookup $row) => $this->serializeLookup($row))->values(),
+            'rowsByGroup' => $rowsByGroup->map(
+                fn ($groupRows) => $groupRows
+                    ->map(fn (Lookup $row) => $this->serializeLookup($row))
+                    ->values()
+            ),
+            'can' => [
+                'create' => $request->user()->can('create', Lookup::class),
+                'update' => $request->user()->can('update', $rows->first() ?? new Lookup),
+                'delete' => $request->user()->can('delete', $rows->first() ?? new Lookup),
+            ],
+            'urls' => [
+                'store' => route('admin.lookups.store'),
+            ],
         ]);
     }
 
@@ -74,6 +91,13 @@ class LookupController extends Controller
             "إضافة قيمة \"{$lookup->label}\" إلى \"{$lookup->group}\"",
             $lookup
         );
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'message' => 'تمت إضافة القيمة.',
+                'row' => $this->serializeLookup($lookup),
+            ], 201);
+        }
 
         return redirect()->route('admin.lookups.index', ['group' => $lookup->group])
             ->with('success', 'تمت إضافة القيمة.');
@@ -104,31 +128,45 @@ class LookupController extends Controller
             $lookup
         );
 
+        if ($request->expectsJson()) {
+            return response()->json([
+                'message' => 'تم حفظ التعديلات.',
+                'row' => $this->serializeLookup($lookup->fresh()),
+            ]);
+        }
+
         return redirect()->route('admin.lookups.index', ['group' => $lookup->group])
             ->with('success', 'تم حفظ التعديلات.');
     }
 
     /**
      * Resolve the branch_id for a new lookup row based on its group:
-     *   - Per-branch groups (`Lookup::PER_BRANCH_GROUPS`) → active branch
+     *   - Per-branch groups (`lookup_groups.scope = branch`) → active branch
      *   - Global groups → null
      * Owner-level on "كل الفروع" creating a per-branch lookup falls back
      * to the user's primary branch (cleaner than refusing).
      */
     protected function resolveBranchIdForGroup(string $group): ?int
     {
-        if (! in_array($group, Lookup::PER_BRANCH_GROUPS, true)) {
+        if (! LookupGroup::isPerBranch($group)) {
             return null;
         }
-        return \App\Support\BranchContext::current()
+
+        return BranchContext::current()
             ?? auth()->user()?->primaryBranch()?->id;
     }
 
-    public function destroy(Lookup $lookup)
+    public function destroy(Request $request, Lookup $lookup)
     {
         $this->authorize('delete', $lookup);
 
         if ($lookup->is_system) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => 'لا يمكن حذف هذه القيمة لأنها أساسية للنظام. يمكنك تعطيلها بدلاً من ذلك.',
+                ], 422);
+            }
+
             return back()->with('error',
                 'لا يمكن حذف هذه القيمة لأنها أساسية للنظام. يمكنك إخفاؤها بدلاً من ذلك.');
         }
@@ -141,11 +179,18 @@ class LookupController extends Controller
 
         ActivityLog::log('lookup.deleted', "حذف قيمة \"{$label}\" من \"{$group}\"");
 
+        if ($request->expectsJson()) {
+            return response()->json([
+                'message' => 'تم إخفاء القيمة، وبقيت السجلات السابقة مرتبطة بها.',
+                'row' => $this->serializeLookup($lookup),
+            ]);
+        }
+
         return redirect()->route('admin.lookups.index', ['group' => $group])
             ->with('success', 'تم إخفاء القيمة. (السجلات السابقة تبقى مرتبطة بها للأرشيف).');
     }
 
-    public function restore(int $id)
+    public function restore(Request $request, int $id)
     {
         $lookup = Lookup::withTrashed()->findOrFail($id);
         $this->authorize('update', $lookup);
@@ -158,8 +203,50 @@ class LookupController extends Controller
             $lookup
         );
 
+        if ($request->expectsJson()) {
+            return response()->json([
+                'message' => 'تم استرجاع القيمة.',
+                'row' => $this->serializeLookup($lookup->fresh()),
+            ]);
+        }
+
         return redirect()->route('admin.lookups.index', ['group' => $lookup->group])
             ->with('success', 'تم استرجاع القيمة.');
+    }
+
+    protected function rowsForGroup(string $group)
+    {
+        $branchId = $this->resolveBranchIdForGroup($group);
+
+        return Lookup::withTrashed()
+            ->where('group', $group)
+            ->when(
+                $branchId === null,
+                fn ($query) => $query->whereNull('branch_id'),
+                fn ($query) => $query->where('branch_id', $branchId)
+            )
+            ->orderBy('display_order')
+            ->orderBy('id')
+            ->get();
+    }
+
+    protected function serializeLookup(Lookup $row): array
+    {
+        return [
+            'id' => $row->id,
+            'group' => $row->group,
+            'label' => $row->label,
+            'code' => $row->code,
+            'color' => $row->color && str_starts_with($row->color, '#') ? $row->color : '#94a3b8',
+            'icon' => $row->icon ?: '',
+            'displayOrder' => $row->display_order,
+            'active' => (bool) $row->is_active,
+            'system' => (bool) $row->is_system,
+            'deleted' => $row->trashed(),
+            'updateUrl' => route('admin.lookups.update', $row),
+            'deleteUrl' => route('admin.lookups.destroy', $row),
+            'restoreUrl' => route('admin.lookups.restore', $row->id),
+        ];
     }
 
     // ─── Validation ────────────────────────────────────────────────
@@ -176,19 +263,19 @@ class LookupController extends Controller
             ->ignore($lookupId);
 
         $rules = [
-            'group'         => $groupRule,
-            'code'          => ['nullable', 'string', 'max:60', 'regex:/^[a-z0-9_]+$/i', $codeUnique],
-            'label'         => ['required', 'string', 'max:120'],
-            'color'         => ['nullable', 'string', 'max:30'],
-            'icon'          => ['nullable', 'string', 'max:60'],
+            'group' => $groupRule,
+            'code' => ['nullable', 'string', 'max:60', 'regex:/^[a-z0-9_]+$/i', $codeUnique],
+            'label' => ['required', 'string', 'max:120'],
+            'color' => ['nullable', 'string', 'max:30'],
+            'icon' => ['nullable', 'string', 'max:60'],
             'display_order' => ['nullable', 'integer', 'min:0', 'max:9999'],
-            'is_active'     => ['nullable', 'boolean'],
+            'is_active' => ['nullable', 'boolean'],
         ];
 
         $data = $request->validate($rules);
 
         // Normalise boolean (HTML checkbox sends nothing when unchecked).
-        $data['is_active']     = $request->boolean('is_active');
+        $data['is_active'] = $request->boolean('is_active');
         $data['display_order'] = (int) ($data['display_order'] ?? 0);
 
         return $data;

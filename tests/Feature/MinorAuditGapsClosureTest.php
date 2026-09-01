@@ -35,7 +35,7 @@ use Tests\TestCase;
 /**
  * Closure tests for the 5 minor gaps from the comprehensive audit:
  *
- *   G4 — Refund must update invoice.balance + status (not just refunded_total)
+ *   G4 — Refund credit note and payout must stay balanced without false debt
  *   G5 — Splits prorate to the new total when discount changes post-issue
  *   G6 — Convert-to-waste posts DR 5400 / CR 5000 reclassification
  *   G7 — Customer relation is loaded once (no per-line query in addItem)
@@ -100,14 +100,13 @@ class MinorAuditGapsClosureTest extends TestCase
     // G4 — Refund recomputes balance + status
     // ───────────────────────────────────────────────────────────────
 
-    public function test_g4_refund_partial_reopens_invoice_balance_and_status(): void
+    public function test_g4_refund_partial_reduces_sale_without_creating_false_balance(): void
     {
         $invoice = $this->makeInvoice(total: 100);
         $invoice->update(['paid_total' => 100, 'balance' => 0, 'status' => 'paid', 'paid_at' => now()]);
 
-        // Fully refund 30 of the 100. Expected: net=70, balance=30,
-        // status='partially_paid', paid_at cleared so the dashboard
-        // stops showing "paid X mins ago".
+        // Refund 30 of the 100. The credit note reduces the sale to 70
+        // while the payout reduces net paid to 70; no customer debt remains.
         $payment = Payment::create([
             'branch_id' => $this->branch->id, 'invoice_id' => $invoice->id,
             'amount' => 100, 'method' => 'cash',
@@ -127,12 +126,12 @@ class MinorAuditGapsClosureTest extends TestCase
         $this->assertEqualsWithDelta(30.0, (float) $invoice->refunded_total, 0.01);
         $this->assertEqualsWithDelta(70.0, $invoice->netPaid(), 0.01,
             'netPaid = paid_total - refunded_total.');
-        $this->assertEqualsWithDelta(30.0, (float) $invoice->balance, 0.01,
-            'Balance reopens by the refund amount.');
-        $this->assertSame('partially_paid', $invoice->status,
-            'Status drops from paid → partially_paid when a partial refund opens the balance.');
-        $this->assertNull($invoice->paid_at,
-            'paid_at cleared so the "paid X mins ago" widget stops misleading.');
+        $this->assertEqualsWithDelta(30.0, (float) $invoice->credited_total, 0.01);
+        $this->assertEqualsWithDelta(70.0, $invoice->adjustedTotal(), 0.01);
+        $this->assertEqualsWithDelta(0.0, (float) $invoice->balance, 0.01,
+            'The credit note and payout move together, so no false debt is created.');
+        $this->assertSame('paid', $invoice->status);
+        $this->assertNotNull($invoice->paid_at);
     }
 
     // ───────────────────────────────────────────────────────────────

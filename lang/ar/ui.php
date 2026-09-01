@@ -218,7 +218,7 @@ return [
 
     'dish' => [
         'not_available' => 'غير متوفر',
-        'out_of_stock' => 'نفد المخزون',
+        'out_of_stock' => 'غير متوفر اليوم',
         'available_today' => 'متاح اليوم',
         'minutes_short' => ':count د',
         'discount_percent' => 'خصم :percent%',
@@ -308,13 +308,8 @@ return [
         'status_completed' => 'مكتمل',
         'status_cancelled' => 'ملغى',
         'source_dine_in' => 'من الطاولة',
-        'source_portal' => 'تطبيق المطعم',
-        'source_delivery' => 'دليفري',
         'source_phone' => 'اتصال هاتفي',
         'source_other' => 'مباشر',
-        'source_talabat' => 'طلبات',
-        'source_careem' => 'كريم ناو',
-        'source_uber_eats' => 'أوبر إيتس',
         'cancel_order_number' => 'إلغاء :number',
         'cancel_confirm_question' => 'هل أنت متأكد من إلغاء هذا الطلب؟',
         'cancel_reason_optional' => 'سبب الإلغاء (اختياري)',

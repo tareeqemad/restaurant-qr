@@ -31,6 +31,14 @@ class AccountMapping extends Model
             return null;
         }
 
+        // Seeded dictionaries are portable business codes. Their generated
+        // sync UUID differs between independent installations, so using it
+        // here would silently disconnect the default accounting mapping after
+        // a clean install. User-created rows still use their stable sync UUID.
+        if ($lookup->is_system && $lookup->code) {
+            return 'code:'.$lookup->code;
+        }
+
         if ($uuid = $lookup->getAttribute('uuid')) {
             return 'lookup:'.$uuid;
         }

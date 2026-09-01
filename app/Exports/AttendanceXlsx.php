@@ -6,8 +6,6 @@ use App\Models\Attendance;
 use App\Models\Branch;
 use App\Models\User;
 use App\Support\BranchContext;
-use App\Support\MarketProfile;
-use App\Support\MarketSpreadsheetLocalizer;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -23,7 +21,7 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
  * Sheets:
  *   1. ملخص     — period, branch, applied filters, headline KPIs
  *   2. السجلات  — every matching attendance row, fully detailed
- *   3. حسب الموظف — aggregation per staff member (shifts, hours, late, source mix)
+ *   3. حسب الموظف — aggregation per staff member (records, hours, review, source mix)
  *
  * Why a dedicated class rather than a quick CSV: managers receive these
  * files for payroll review, so number formats (hours as `[h]:mm`),
@@ -33,9 +31,12 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 class AttendanceXlsx
 {
     protected string $brandGreen = '0F2D22';
-    protected string $brandGold  = 'B97818';
-    protected string $headerBg   = '1F4733';
-    protected string $rowAlt     = 'FAFDFA';
+
+    protected string $brandGold = 'B97818';
+
+    protected string $headerBg = '1F4733';
+
+    protected string $rowAlt = 'FAFDFA';
 
     /** @var array{from:string,to:string,status:?string,user_id:?int,branch_id:?int,branch_label:string} */
     protected array $period;
@@ -48,7 +49,7 @@ class AttendanceXlsx
         // so we don't pay for the query 3 times.
         $rows = $this->buildQuery($filters)->get();
 
-        $book = new Spreadsheet();
+        $book = new Spreadsheet;
         $book->getProperties()
             ->setCreator(config('restaurant.name', 'Relax'))
             ->setTitle('Attendance Report')
@@ -58,10 +59,9 @@ class AttendanceXlsx
         $this->buildRecordsSheet($book->createSheet(), $rows);
         $this->buildPerEmployeeSheet($book->createSheet(), $rows);
 
-        MarketSpreadsheetLocalizer::apply($book);
         $book->setActiveSheetIndex(0);
 
-        $stamp    = now()->format('Y-m-d_H-i');
+        $stamp = now()->format('Y-m-d_H-i');
         $filename = "attendance_{$this->period['from']}_to_{$this->period['to']}_{$stamp}.xlsx";
 
         return response()->streamDownload(function () use ($book) {
@@ -83,23 +83,27 @@ class AttendanceXlsx
     protected function resolvePeriod(array $f): array
     {
         $from = $f['from'] ?? null;
-        $to   = $f['to']   ?? null;
+        $to = $f['to'] ?? null;
         $date = $f['date'] ?? null;
 
         if ($date) {
             $from = $to = $date;
         }
-        if (! $from) $from = now()->startOfMonth()->toDateString();
-        if (! $to)   $to   = now()->endOfMonth()->toDateString();
+        if (! $from) {
+            $from = now()->startOfMonth()->toDateString();
+        }
+        if (! $to) {
+            $to = now()->endOfMonth()->toDateString();
+        }
 
         $branchId = BranchContext::current();
 
         return [
-            'from'         => $from,
-            'to'           => $to,
-            'status'       => $f['status']  ?? null,
-            'user_id'      => isset($f['user_id']) ? (int) $f['user_id'] : null,
-            'branch_id'    => $branchId,
+            'from' => $from,
+            'to' => $to,
+            'status' => $f['status'] ?? null,
+            'user_id' => isset($f['user_id']) ? (int) $f['user_id'] : null,
+            'branch_id' => $branchId,
             'branch_label' => $branchId
                 ? (Branch::find($branchId)?->name ?? '—')
                 : 'كل الفروع',
@@ -113,9 +117,23 @@ class AttendanceXlsx
             ->whereDate('clock_in_at', '<=', $this->period['to'])
             ->orderBy('clock_in_at', 'desc');
 
-        if ($this->period['status'] === 'open')   $q->whereNull('clock_out_at');
-        if ($this->period['status'] === 'closed') $q->whereNotNull('clock_out_at');
-        if ($this->period['user_id']) $q->where('user_id', $this->period['user_id']);
+        if ($this->period['status'] === 'open') {
+            $q->whereNull('clock_out_at');
+        }
+        if ($this->period['status'] === 'closed') {
+            $q->whereNotNull('clock_out_at')->where('source', '!=', Attendance::SOURCE_REVIEW);
+        }
+        if ($this->period['status'] === 'review') {
+            $q->where('source', Attendance::SOURCE_REVIEW);
+        }
+        if ($this->period['user_id']) {
+            $q->where('user_id', $this->period['user_id']);
+        }
+        if ($search = trim((string) ($f['search'] ?? ''))) {
+            $q->whereHas('user', fn (Builder $user) => $user
+                ->where('name', 'like', "%{$search}%")
+                ->orWhere('username', 'like', "%{$search}%"));
+        }
 
         return $q;
     }
@@ -138,9 +156,10 @@ class AttendanceXlsx
 
         // Filter / period block
         $statusLabel = match ($this->period['status']) {
-            'open'   => 'مفتوحة فقط (حاضرون الآن)',
+            'open' => 'مفتوحة فقط (حاضرون الآن)',
             'closed' => 'مغلقة فقط (أكملوا انصرافهم)',
-            default  => 'كل الحالات',
+            'review' => 'تحتاج مراجعة فقط (ساعاتها غير محتسبة)',
+            default => 'كل الحالات',
         };
         $userLabel = $this->period['user_id']
             ? (User::find($this->period['user_id'])?->name ?? "#{$this->period['user_id']}")
@@ -149,13 +168,13 @@ class AttendanceXlsx
             ->diffInDays(Carbon::parse($this->period['to'])) + 1;
 
         $meta = [
-            ['الفترة', Carbon::parse($this->period['from'])->locale(MarketProfile::lang())->isoFormat('D MMMM YYYY')
-                . ' — ' . Carbon::parse($this->period['to'])->locale(MarketProfile::lang())->isoFormat('D MMMM YYYY')
-                . " ({$days} يوم)"],
+            ['الفترة', Carbon::parse($this->period['from'])->locale('ar')->isoFormat('D MMMM YYYY')
+                .' — '.Carbon::parse($this->period['to'])->locale('ar')->isoFormat('D MMMM YYYY')
+                ." ({$days} يوم)"],
             ['الفرع',   $this->period['branch_label']],
             ['الموظف',  $userLabel],
             ['الحالة',  $statusLabel],
-            ['تاريخ التقرير', now()->locale(MarketProfile::lang())->isoFormat('D MMMM YYYY · HH:mm')],
+            ['تاريخ التقرير', now()->locale('ar')->isoFormat('D MMMM YYYY · HH:mm')],
         ];
         $row = 3;
         foreach ($meta as $pair) {
@@ -172,25 +191,27 @@ class AttendanceXlsx
         }
 
         // KPIs
-        $totalShifts  = $rows->count();
-        $openShifts   = $rows->whereNull('clock_out_at')->count();
-        $closedShifts = $totalShifts - $openShifts;
+        $totalShifts = $rows->count();
+        $openShifts = $rows->whereNull('clock_out_at')->count();
+        $reviewShifts = $rows->where('source', Attendance::SOURCE_REVIEW)->count();
+        $closedRows = $rows->whereNotNull('clock_out_at')
+            ->where('source', '!=', Attendance::SOURCE_REVIEW);
+        $closedShifts = $closedRows->count();
         $totalMinutes = (int) $rows->sum(fn ($r) => $r->effectiveMinutes());
-        $avgMinutes   = $closedShifts > 0
-            ? (int) round($rows->whereNotNull('clock_out_at')->avg('worked_minutes'))
+        $avgMinutes = $closedShifts > 0
+            ? (int) round($closedRows->avg('worked_minutes'))
             : 0;
-        $uniqueStaff  = $rows->pluck('user_id')->unique()->count();
-        $autoClosed   = $rows->where('source', 'auto_closed')->count();
+        $uniqueStaff = $rows->pluck('user_id')->unique()->count();
 
         $row += 1;
-        $this->writeKpi($sheet, $row++, 'إجمالي السجلات', $totalShifts,             $this->brandGreen, 'count');
-        $this->writeKpi($sheet, $row++, 'سجلات مفتوحة',  $openShifts,              '0E7490',          'count');
-        $this->writeKpi($sheet, $row++, 'سجلات مغلقة',   $closedShifts,            '14532D',          'count');
-        $this->writeKpi($sheet, $row++, 'موظفون فريدون', $uniqueStaff,             '475569',          'count');
-        $this->writeKpi($sheet, $row++, 'مجموع ساعات العمل', $totalMinutes,         $this->brandGold,  'hours');
-        $this->writeKpi($sheet, $row++, 'متوسط ساعات الورديّة (للمغلقة)', $avgMinutes, '92400E',       'hours');
-        if ($autoClosed > 0) {
-            $this->writeKpi($sheet, $row++, 'سجلات أُغلقت تلقائياً', $autoClosed, 'B45309', 'count');
+        $this->writeKpi($sheet, $row++, 'إجمالي السجلات', $totalShifts, $this->brandGreen, 'count');
+        $this->writeKpi($sheet, $row++, 'سجلات مفتوحة', $openShifts, '0E7490', 'count');
+        $this->writeKpi($sheet, $row++, 'سجلات مغلقة', $closedShifts, '14532D', 'count');
+        $this->writeKpi($sheet, $row++, 'موظفون فريدون', $uniqueStaff, '475569', 'count');
+        $this->writeKpi($sheet, $row++, 'مجموع ساعات العمل', $totalMinutes, $this->brandGold, 'hours');
+        $this->writeKpi($sheet, $row++, 'متوسط ساعات الورديّة (للمغلقة)', $avgMinutes, '92400E', 'hours');
+        if ($reviewShifts > 0) {
+            $this->writeKpi($sheet, $row++, 'سجلات تحتاج مراجعة', $reviewShifts, 'B45309', 'count');
         }
 
         // Footnote
@@ -202,20 +223,22 @@ class AttendanceXlsx
         ]);
         $row++;
         $note = "• ورقة «السجلات»: كل سطر هو ورديّة كاملة بتفاصيلها (دخول، خروج، استراحة، صافي عمل).\n"
-              . "• ورقة «حسب الموظف»: تجميع لكل موظف خلال الفترة مع متوسط الورديّة.\n"
-              . "• «الساعات» تُعرض بصيغة [س]:د — جاهزة للجمع في Excel كمدة زمنية.\n"
-              . "• «أُغلقت تلقائياً»: ورديّة تجاوزت 24 ساعة بدون انصراف وأُغلقت بسقف 12 ساعة (لا تحتسب وقت إضافي).\n"
-              . "• الورديّات المفتوحة تستخدم الساعة الحالية لاحتساب «المدة حتى الآن».";
+              ."• ورقة «حسب الموظف»: تجميع لكل موظف خلال الفترة مع متوسط الورديّة.\n"
+              ."• «الساعات» تُعرض بصيغة [س]:د — جاهزة للجمع في Excel كمدة زمنية.\n"
+              ."• «تحتاج مراجعة»: سجل تُرك مفتوحاً أكثر من 24 ساعة؛ ساعاتُه صفر حتى يصححه المدير.\n"
+              .'• الورديّات المفتوحة تستخدم الساعة الحالية لاحتساب «المدة حتى الآن».';
         $sheet->setCellValue("A{$row}", $note);
         $sheet->mergeCells("A{$row}:D{$row}");
         $sheet->getStyle("A{$row}")->getAlignment()->setWrapText(true)->setVertical(Alignment::VERTICAL_TOP);
         $sheet->getRowDimension($row)->setRowHeight(110);
 
-        foreach (['A', 'B', 'C', 'D'] as $col) $sheet->getColumnDimension($col)->setWidth(28);
+        foreach (['A', 'B', 'C', 'D'] as $col) {
+            $sheet->getColumnDimension($col)->setWidth(28);
+        }
     }
 
     /**
-     * @param string $kind 'count' | 'hours'
+     * @param  string  $kind  'count' | 'hours'
      */
     protected function writeKpi($sheet, int $row, string $label, int $value, string $rgb, string $kind = 'count'): void
     {
@@ -274,7 +297,9 @@ class AttendanceXlsx
             $sheet->setCellValue("H{$row}", $worked / 1440);
             $sheet->getStyle("H{$row}")->getNumberFormat()->setFormatCode('[h]:mm');
 
-            $sheet->setCellValue("I{$row}", $a->isOpen() ? 'مفتوحة (حاضر الآن)' : 'مغلقة');
+            $sheet->setCellValue("I{$row}", $a->needsReview()
+                ? 'تحتاج مراجعة — غير محتسبة'
+                : ($a->isOpen() ? 'مفتوحة (حاضر الآن)' : 'مغلقة'));
             $sheet->setCellValue("J{$row}", $this->sourceLabel($a->source));
             $sheet->setCellValue("K{$row}", $a->editedBy->name ?? '—');
             $sheet->setCellValue("L{$row}", (string) $a->notes);
@@ -284,7 +309,7 @@ class AttendanceXlsx
                 $sheet->getStyle("A{$row}:L{$row}")->getFill()
                     ->setFillType(Fill::FILL_SOLID)
                     ->getStartColor()->setRGB('ECFDF5');
-            } elseif ($a->source === 'auto_closed') {
+            } elseif ($a->source === Attendance::SOURCE_REVIEW) {
                 $sheet->getStyle("A{$row}:L{$row}")->getFill()
                     ->setFillType(Fill::FILL_SOLID)
                     ->getStartColor()->setRGB('FEF3C7');
@@ -312,21 +337,25 @@ class AttendanceXlsx
             $sheet->getStyle("A{$row}")->getAlignment()
                 ->setHorizontal(Alignment::HORIZONTAL_LEFT);
         } else {
-            $sheet->setCellValue("A2", 'لا توجد سجلات ضمن الفلاتر المختارة.');
-            $sheet->mergeCells("A2:L2");
-            $sheet->getStyle("A2")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+            $sheet->setCellValue('A2', 'لا توجد سجلات ضمن الفلاتر المختارة.');
+            $sheet->mergeCells('A2:L2');
+            $sheet->getStyle('A2')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
         }
 
         // Column widths — auto for short numerics, explicit for the wide ones
-        foreach (['A','C','J','K'] as $col) $sheet->getColumnDimension($col)->setWidth(22);
-        foreach (['B','D','E','F','G','H','I'] as $col) $sheet->getColumnDimension($col)->setAutoSize(true);
+        foreach (['A', 'C', 'J', 'K'] as $col) {
+            $sheet->getColumnDimension($col)->setWidth(22);
+        }
+        foreach (['B', 'D', 'E', 'F', 'G', 'H', 'I'] as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
         $sheet->getColumnDimension('L')->setWidth(40);
-        $sheet->getStyle('L2:L'.max(2, $row-1))->getAlignment()->setWrapText(true);
+        $sheet->getStyle('L2:L'.max(2, $row - 1))->getAlignment()->setWrapText(true);
 
         $sheet->freezePane('A2');
         // AutoFilter is friendly for managers — they can slice without re-running.
         if ($rows->count() > 0) {
-            $sheet->setAutoFilter('A1:L'.($row-1));
+            $sheet->setAutoFilter('A1:L'.($row - 1));
         }
     }
 
@@ -342,7 +371,7 @@ class AttendanceXlsx
             'عدد السجلات', 'سجلات مغلقة', 'سجلات مفتوحة',
             'إجمالي ساعات العمل', 'متوسط الورديّة',
             'إجمالي الاستراحة (د)',
-            'ذاتي', 'يدوي', 'تلقائي',
+            'ذاتي', 'يدوي', 'تحتاج مراجعة',
         ];
         $sheet->fromArray($headers, null, 'A1');
         $this->styleHeader($sheet, 'A1:K1');
@@ -351,14 +380,15 @@ class AttendanceXlsx
         $row = 2;
 
         foreach ($grouped as $userId => $userRows) {
-            $first   = $userRows->first();
-            $closed  = $userRows->whereNotNull('clock_out_at');
-            $open    = $userRows->whereNull('clock_out_at');
-            $totalM  = (int) $userRows->sum(fn ($r) => $r->effectiveMinutes());
-            $avgM    = $closed->count() > 0
+            $first = $userRows->first();
+            $closed = $userRows->whereNotNull('clock_out_at')
+                ->where('source', '!=', Attendance::SOURCE_REVIEW);
+            $open = $userRows->whereNull('clock_out_at');
+            $totalM = (int) $userRows->sum(fn ($r) => $r->effectiveMinutes());
+            $avgM = $closed->count() > 0
                 ? (int) round($closed->avg('worked_minutes'))
                 : 0;
-            $breakM  = (int) $userRows->sum('break_minutes');
+            $breakM = (int) $userRows->sum('break_minutes');
 
             $sheet->setCellValue("A{$row}", $first->user->name ?? '—');
             $sheet->setCellValue("B{$row}", $first->user->username ?? '');
@@ -370,7 +400,7 @@ class AttendanceXlsx
             $sheet->setCellValue("H{$row}", $breakM);
             $sheet->setCellValue("I{$row}", $userRows->where('source', 'self')->count());
             $sheet->setCellValue("J{$row}", $userRows->where('source', 'manager_added')->count());
-            $sheet->setCellValue("K{$row}", $userRows->whereIn('source', ['auto', 'auto_closed'])->count());
+            $sheet->setCellValue("K{$row}", $userRows->where('source', Attendance::SOURCE_REVIEW)->count());
 
             $sheet->getStyle("F{$row}:G{$row}")->getNumberFormat()->setFormatCode('[h]:mm');
             $sheet->getStyle("C{$row}:E{$row}")->getNumberFormat()->setFormatCode('#,##0');
@@ -390,7 +420,7 @@ class AttendanceXlsx
             $last = $row - 1;
             $sheet->setCellValue("A{$row}", 'الإجمالي');
             $sheet->mergeCells("A{$row}:B{$row}");
-            foreach (['C','D','E','F','H','I','J','K'] as $col) {
+            foreach (['C', 'D', 'E', 'F', 'H', 'I', 'J', 'K'] as $col) {
                 $sheet->setCellValue("{$col}{$row}", "=SUM({$col}2:{$col}{$last})");
             }
             // Average of averages is misleading — use overall average instead
@@ -407,16 +437,20 @@ class AttendanceXlsx
             $sheet->getStyle("A{$row}")->getAlignment()
                 ->setHorizontal(Alignment::HORIZONTAL_LEFT);
         } else {
-            $sheet->setCellValue("A2", 'لا توجد بيانات للتجميع.');
-            $sheet->mergeCells("A2:K2");
-            $sheet->getStyle("A2")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+            $sheet->setCellValue('A2', 'لا توجد بيانات للتجميع.');
+            $sheet->mergeCells('A2:K2');
+            $sheet->getStyle('A2')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
         }
 
-        foreach (['A'] as $col) $sheet->getColumnDimension($col)->setWidth(22);
-        foreach (['B','C','D','E','F','G','H','I','J','K'] as $col) $sheet->getColumnDimension($col)->setAutoSize(true);
+        foreach (['A'] as $col) {
+            $sheet->getColumnDimension($col)->setWidth(22);
+        }
+        foreach (['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K'] as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
         $sheet->freezePane('A2');
         if ($grouped->count() > 0) {
-            $sheet->setAutoFilter('A1:K'.($row-1));
+            $sheet->setAutoFilter('A1:K'.($row - 1));
         }
     }
 
@@ -425,11 +459,10 @@ class AttendanceXlsx
     protected function sourceLabel(?string $src): string
     {
         return match ($src) {
-            'self'           => 'ذاتي',
-            'manager_added'  => 'يدوي (مدير)',
-            'auto_closed'    => 'إغلاق تلقائي',
-            'auto'           => 'تلقائي',
-            default          => $src ?? '—',
+            'self' => 'ذاتي',
+            'manager_added' => 'يدوي (مدير)',
+            Attendance::SOURCE_REVIEW => 'يحتاج مراجعة',
+            default => $src ?? '—',
         };
     }
 

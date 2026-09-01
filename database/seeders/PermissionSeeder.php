@@ -12,33 +12,37 @@ class PermissionSeeder extends Seeder
     {
         $groups = [
             'users' => ['viewAny', 'view', 'create', 'update', 'delete'],
-            'roles' => ['viewAny', 'view', 'create', 'update', 'delete'],
-            'tables' => ['viewAny', 'create', 'update', 'delete', 'transfer'],
+            'tables' => ['viewAny', 'create', 'update', 'delete', 'transfer', 'assign_sections'],
             'categories' => ['viewAny', 'create', 'update', 'delete'],
             'menu_items' => ['viewAny', 'create', 'update', 'delete', 'toggle_availability'],
             'modifiers' => ['viewAny', 'create', 'update', 'delete'],
             'ingredients' => ['viewAny', 'create', 'update', 'delete'],
             'inventory' => ['viewAny', 'manage'],
             'suppliers' => ['viewAny', 'view', 'create', 'update', 'delete'],
-            'purchase_orders' => ['viewAny', 'view', 'create', 'update', 'send', 'receive', 'cancel', 'delete'],
+            'purchase_orders' => ['viewAny', 'view', 'create', 'update', 'send', 'approve', 'receive', 'cancel', 'delete'],
             'supplier_invoices' => ['viewAny', 'view', 'create', 'pay', 'cancel', 'delete'],
             'stock_counts' => ['viewAny', 'view', 'create', 'update', 'finalize', 'cancel', 'delete'],
             'storage_locations' => ['viewAny', 'create', 'update', 'delete', 'transfer'],
             'waste' => ['viewAny', 'create'],
-            'orders' => ['viewAny', 'view', 'create', 'approve', 'cancel', 'edit', 'delete', 'archive'],
-            'payments' => ['viewAny', 'create', 'refund'],
+            'orders' => ['viewAny', 'view', 'create', 'approve', 'cancel', 'edit', 'serve', 'delete', 'archive'],
+            // Day-to-day collection is deliberately separate from corrective
+            // money actions. A normal cashier may collect and park a customer
+            // balance, while refund/void/write-off/invoice cancellation are
+            // opt-in permissions for a trusted cashier or a manager.
+            'payments' => [
+                'viewAny', 'create', 'settle_on_account',
+                'refund', 'void_own', 'void', 'writeoff', 'cancel_invoice',
+            ],
             // Cashier-applied ad-hoc discounts on an open invoice. `apply` is
             // for the staff at the till; the per-role percent/fixed cap lives
             // in config/restaurant.php (`discounts.caps`). Owner-level is
             // uncapped via OrderDiscountService::userCap().
             'discounts' => ['apply', 'remove'],
-            // Marketing announcements / promo broadcasts to portal customers.
-            // `publish` is gated separately because publishing fans out one
-            // notification per matched customer (potentially thousands).
-            'announcements' => ['viewAny', 'view', 'create', 'update', 'publish', 'delete'],
-            'shifts' => ['viewAny', 'open', 'close', 'view_all'],
             'expenses' => ['viewAny', 'view', 'create', 'update', 'approve', 'reject', 'delete'],
-            'customers' => ['viewAny', 'view', 'update', 'block', 'delete'],
+            'customers' => ['viewAny', 'view', 'create', 'notify', 'update', 'manage_credit', 'block', 'delete'],
+            'reservations' => ['viewAny', 'view', 'confirm', 'seat', 'complete', 'cancel', 'no_show', 'update'],
+            'reviews' => ['viewAny', 'view', 'hide', 'unhide', 'delete'],
+            'attendance' => ['viewAny', 'view', 'create', 'update', 'delete'],
             'reports' => ['viewAny', 'export'],
             'settings' => ['view', 'update'],
             'lookups' => ['viewAny', 'create', 'update', 'delete'],
@@ -76,6 +80,7 @@ class PermissionSeeder extends Seeder
         foreach ([
             'kitchen' => 'Kitchen station screen',
             'bar' => 'Bar station screen',
+            'coffee' => 'Coffee station screen',
             'grill' => 'Grill station screen',
             'dessert' => 'Dessert station screen',
             'cold' => 'Cold station screen',
@@ -91,69 +96,105 @@ class PermissionSeeder extends Seeder
             );
         }
 
-        // Attach permissions to roles
-        $admin = Role::where('name', 'admin')->first();
-        $manager = Role::where('name', 'manager')->first();
-        $waiter = Role::where('name', 'waiter')->first();
-        $chef = Role::where('name', 'chef')->first();
-        $bartender = Role::where('name', 'bartender')->first();
-        $cashier = Role::where('name', 'cashier')->first();
+        Role::global()
+            ->whereIn('name', self::defaultRoleNames())
+            ->get()
+            ->each(fn (Role $role) => $this->syncRoleDefaults($role));
+    }
 
-        if ($admin) $admin->permissions()->sync(Permission::pluck('id'));
+    /** @return string[] */
+    public static function defaultRoleNames(): array
+    {
+        return ['admin', 'manager', 'accountant', 'waiter', 'chef', 'bartender', 'cashier'];
+    }
 
-        if ($manager) {
+    /**
+     * Apply one built-in role template without touching any other role.
+     * This is also the canonical fixture hook for tests that create roles
+     * after the permission catalogue has been seeded.
+     */
+    public function syncRoleDefaults(Role $role): void
+    {
+        if (! $role->isGlobal()) {
+            return;
+        }
+
+        $permissionIds = match ($role->name) {
+            'admin' => Permission::pluck('id'),
+            'manager' =>
             // Manager doesn't manage roles or system-wide lookups (those are
             // owner-level configuration; an admin/super-admin handles them).
-            $managerPerms = Permission::whereNotIn('group', ['roles', 'lookups'])->pluck('id');
-            $manager->permissions()->sync($managerPerms);
-        }
-
-        if ($waiter) {
-            $waiter->permissions()->sync(Permission::whereIn('name', [
+            // Attendance deletion is also opt-in: corrections belong in the
+            // audit trail, while a hard delete erases the employee record.
+            Permission::whereNotIn('group', ['roles', 'lookups'])
+                ->where('name', '!=', 'attendance.delete')
+                ->pluck('id'),
+            'accountant' =>
+            // The accountant owns the books and reviews their source
+            // documents, but does not run the warehouse or procurement flow.
+            // Expense approval remains a manager control so the person who
+            // records a cost does not approve the same cost by default.
+            Permission::whereIn('name', [
+                'chart_of_accounts.viewAny', 'chart_of_accounts.create',
+                'chart_of_accounts.update', 'chart_of_accounts.delete',
+                'reports.viewAny', 'reports.export',
+                'expenses.viewAny', 'expenses.view', 'expenses.create', 'expenses.update',
+                'supplier_invoices.viewAny', 'supplier_invoices.view',
+                'supplier_invoices.create', 'supplier_invoices.pay', 'supplier_invoices.cancel',
+                'suppliers.viewAny', 'suppliers.view',
+                'purchase_orders.viewAny', 'purchase_orders.view',
+                'inventory.viewAny',
+                'stock_counts.viewAny', 'stock_counts.view',
+                // Financial correction and audit, without opening the till.
+                'payments.viewAny', 'payments.refund', 'payments.void',
+                'payments.writeoff', 'payments.cancel_invoice',
+                'customers.manage_credit',
+            ])->pluck('id'),
+            'waiter' => Permission::whereIn('name', [
                 'tables.viewAny', 'tables.transfer',
                 'orders.viewAny', 'orders.view', 'orders.create', 'orders.approve', 'orders.cancel', 'orders.edit',
+                'orders.serve',
                 'menu_items.viewAny', 'menu_items.toggle_availability',
-            ])->pluck('id'));
-        }
-
-        if ($chef) {
-            $chef->permissions()->sync(Permission::whereIn('name', [
+                'reservations.viewAny', 'reservations.view', 'reservations.confirm',
+                'reservations.seat', 'reservations.complete',
+            ])->pluck('id'),
+            'chef' => Permission::whereIn('name', [
                 'orders.viewAny', 'orders.view',
                 'menu_items.viewAny', 'menu_items.toggle_availability',
                 'ingredients.viewAny', 'inventory.viewAny',
+                'waste.viewAny',
                 'station.kitchen.view', 'station.grill.view', 'station.dessert.view', 'station.cold.view',
-            ])->pluck('id'));
-        }
-
-        if ($bartender) {
-            $bartender->permissions()->sync(Permission::whereIn('name', [
+            ])->pluck('id'),
+            'bartender' => Permission::whereIn('name', [
                 'orders.viewAny', 'orders.view',
                 'menu_items.viewAny', 'menu_items.toggle_availability',
                 'ingredients.viewAny', 'inventory.viewAny',
                 'station.bar.view', 'station.coffee.view',
-            ])->pluck('id'));
-        }
-
-        if ($cashier) {
-            $cashier->permissions()->sync(Permission::whereIn('name', [
+            ])->pluck('id'),
+            'cashier' => Permission::whereIn('name', [
                 'orders.viewAny', 'orders.view', 'orders.create',
-                'payments.viewAny', 'payments.create', 'payments.refund',
+                'orders.approve', 'orders.cancel', 'orders.edit',
+                'payments.viewAny', 'payments.create', 'payments.settle_on_account',
+                // Safe desk-side corrections: own same-day payment only,
+                // and an invoice only while it still has zero payments.
+                'payments.void_own', 'payments.cancel_invoice',
                 'discounts.apply', 'discounts.remove',
-                'tables.viewAny',
-                'shifts.open', 'shifts.close',
-                'reports.viewAny',
+                'tables.viewAny', 'tables.assign_sections',
                 // Petty cash: cashier may log + view, manager approves.
                 'expenses.viewAny', 'expenses.view', 'expenses.create',
                 // Customer phone-lookup at checkout (read-only).
-                'customers.viewAny', 'customers.view',
+                'customers.viewAny', 'customers.view', 'customers.create', 'customers.notify',
+                'reservations.viewAny', 'reservations.view',
                 // Cashier can run the staff-meal quick consume during a
-                // shift (cola, water) — settling debt / closing the month
+                // workday (cola, water) — settling debt / closing the month
                 // remains a manager action.
                 'staff_meals.quick_consume',
-                // Cashier sees active promotions so the POS lights up
-                // the discount badge correctly; create/update stays manager.
-                'promotions.viewAny',
-            ])->pluck('id'));
+            ])->pluck('id'),
+            default => null,
+        };
+
+        if ($permissionIds !== null) {
+            $role->permissions()->sync($permissionIds);
         }
     }
 }

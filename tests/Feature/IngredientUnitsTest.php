@@ -66,6 +66,7 @@ class IngredientUnitsTest extends TestCase
         $this->supplier = Supplier::create([
             'name' => 'مورد كولا', 'active' => true,
         ]);
+        $this->supplier->branches()->attach($this->branch->id);
 
         $this->cola = Ingredient::create([
             'name' => 'علبة كولا',
@@ -225,6 +226,7 @@ class IngredientUnitsTest extends TestCase
         $si = app(\App\Services\SupplierInvoiceService::class)->create(
             data: [
                 'supplier_id'  => $this->supplier->id,
+                'purchase_order_id' => $po->id,
                 'number'       => 'INV-001',
                 'invoice_date' => now()->toDateString(),
                 'due_date'     => now()->addDays(30)->toDateString(),

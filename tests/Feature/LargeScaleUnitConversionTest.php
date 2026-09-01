@@ -156,7 +156,9 @@ class LargeScaleUnitConversionTest extends TestCase
         $order = app(OrderService::class)->createFromCart($session, [[
             'menu_item_id' => $dish->id, 'quantity' => 1, 'modifier_ids' => [],
         ]], createdByUserId: $this->user->id);
-        app(OrderService::class)->approve($order, $this->user->id);
+        $orders = app(OrderService::class);
+        $orders->approve($order, $this->user->id);
+        $orders->startPreparing($order->items()->first(), $this->user->id);
 
         $sugar->refresh();
         $this->assertSame((float) ($stockInGrams - 100), (float) $sugar->current_stock,

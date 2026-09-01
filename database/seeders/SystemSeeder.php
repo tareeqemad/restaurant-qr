@@ -5,7 +5,7 @@ namespace Database\Seeders;
 use Illuminate\Database\Seeder;
 
 /**
- * Foundational reference data — roles, permissions, units, allergens.
+ * Foundational reference data — roles, permissions, lookup groups, units, allergens.
  *
  * MUST run on every install (dev or production). Without these:
  *   - No roles exist → user creation fails.
@@ -27,11 +27,16 @@ class SystemSeeder extends Seeder
         $this->call([
             RoleSeeder::class,
             PermissionSeeder::class,
+            SystemSettingSeeder::class,
             CurrencySeeder::class,
             AccountingSeeder::class,
+            LookupGroupSeeder::class,
+            ExpenseCategorySeeder::class,
+            AccountMappingSeeder::class,
             UnitSeeder::class,
             AllergenSeeder::class,
             DiscountCategorySeeder::class,
+            WasteReasonSeeder::class,
         ]);
     }
 }

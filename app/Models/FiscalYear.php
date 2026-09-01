@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class FiscalYear extends Model
 {
@@ -41,6 +42,11 @@ class FiscalYear extends Model
     public function closingEntry(): BelongsTo
     {
         return $this->belongsTo(JournalEntry::class, 'closing_journal_entry_id');
+    }
+
+    public function periods(): HasMany
+    {
+        return $this->hasMany(AccountingPeriod::class)->orderBy('starts_on');
     }
 
     public function isClosed(): bool

@@ -1,0 +1,961 @@
+/* Tables board v6 — compact rush-mode UI for the waiter. Imported by the
+   Vue page so the operational board and its styles ship as one unit. */
+
+.tables-board {
+    --u: #64748b; --u-bg: #f1f5f9; --u-tx: #475569;
+    display: flex;
+    flex-direction: column;
+    gap: .72rem;
+}
+
+/* ── Compact page header ────────────────────────────────────────────────── */
+.tables-quick-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    min-height: 58px;
+    padding: .2rem 0 .65rem;
+    border-bottom: 1px solid #edf1f5;
+}
+.tables-quick-title { display: flex; align-items: center; gap: .65rem; min-width: 0; }
+.tables-quick-icon {
+    width: 42px; height: 42px;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    border-radius: 12px;
+    background: #eaf6f0;
+    color: rgb(var(--primary-rgb));
+    font-size: 1.05rem;
+}
+.tables-quick-head h1 {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    margin: 0;
+    color: #0f172a;
+    font-size: 1.18rem;
+    font-weight: 900;
+}
+.tables-quick-head p { margin: .18rem 0 0; color: #64748b; font-size: .82rem; }
+.tables-quick-add {
+    min-height: 42px;
+    display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
+    flex-shrink: 0;
+    padding: .45rem .85rem;
+    border-radius: 10px;
+    background: rgb(var(--primary-rgb));
+    color: #fff;
+    text-decoration: none;
+    font-size: .82rem;
+    font-weight: 900;
+}
+.tables-quick-add:hover { color: #fff; filter: brightness(.96); }
+
+.tb-ops-shell {
+    position: relative;
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+    padding: .55rem;
+    border: 1px solid #e4ebe7;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, .96);
+    box-shadow: 0 8px 24px rgba(15, 42, 34, .06);
+    backdrop-filter: blur(10px);
+}
+.tb-control-sentinel {
+    width: 1px;
+    height: 1px;
+    display: block;
+    margin-bottom: -1px;
+    pointer-events: none;
+}
+.tb-control-placeholder { flex: 0 0 auto; }
+.tb-ops-shell.is-docked {
+    position: fixed;
+    top: .45rem;
+    left: var(--tb-dock-left);
+    width: var(--tb-dock-width);
+    z-index: 1040;
+    box-shadow: 0 12px 34px rgba(15, 42, 34, .16);
+}
+
+/* ── Section tabs: the one navigation control ─────────────────────────────
+   Sized for a thumb on a tablet, not a mouse on a desktop — 48px min height,
+   and the strip scrolls sideways rather than wrapping into a wall of buttons
+   once a floor has 5-6 sections. */
+.tb-tabs {
+    display: flex;
+    align-items: stretch;
+    gap: .35rem;
+    overflow-x: auto;
+    padding-bottom: .2rem;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+.tb-tabs::-webkit-scrollbar { display: none; }
+.tb-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+    min-height: 42px;
+    padding: .42rem .78rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: #fff;
+    color: #475569;
+    font-size: .88rem;
+    font-weight: 800;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: border-color .12s, background .12s, color .12s;
+}
+.tb-tab:hover { border-color: #cbd5e1; color: #1e293b; }
+.tb-tab.is-active {
+    background: rgb(var(--primary-rgb));
+    border-color: rgb(var(--primary-rgb));
+    color: #fff;
+}
+.tb-tab-label { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.15; }
+.tb-tab-label small { font-size: .66rem; font-weight: 700; opacity: .75; }
+.tb-tab-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--sec-color, #94a3b8); flex-shrink: 0; }
+.tb-tab.is-active .tb-tab-dot { background: #fff; }
+.tb-tab-count {
+    min-width: 24px; height: 22px; padding: 0 .4rem;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 999px;
+    background: rgba(15, 42, 34, .08);
+    font-size: .74rem; font-weight: 900;
+    font-variant-numeric: tabular-nums;
+}
+.tb-tab.is-active .tb-tab-count { background: rgba(255, 255, 255, .22); color: #fff; }
+.tb-tab--mine.is-active { box-shadow: 0 4px 12px rgba(var(--primary-rgb), .22); }
+
+.tb-tabs-manage {
+    display: inline-flex; align-items: center; gap: .35rem;
+    align-self: center;
+    margin-inline-start: 0;
+    padding: 0 .6rem;
+    font-size: .78rem; font-weight: 800; color: #64748b; text-decoration: none;
+    white-space: nowrap; flex-shrink: 0;
+}
+.tb-tabs-manage:hover { color: rgb(var(--primary-rgb)); }
+
+.tb-nudge {
+    display: flex; align-items: center; gap: .55rem;
+    padding: .55rem .75rem;
+    border: 1px dashed #fcd9a4;
+    border-radius: 12px;
+    background: #fffbeb;
+    color: #92400e;
+    font-size: .84rem; font-weight: 700;
+}
+.tb-nudge i { font-size: 1rem; flex-shrink: 0; }
+
+/* ── Command bar ─────────────────────────────────────────────────────────── */
+.tb-command {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    flex-wrap: wrap;
+    padding-top: .48rem;
+    border-top: 1px solid #edf2ef;
+}
+
+/* Graded load chip (KDS thresholds): idle green → calm neutral → busy amber
+   → slammed red. Only "slammed" pulses — an alarm that always screams stops
+   meaning anything. */
+.tb-load {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    min-height: 40px;
+    padding: .4rem .75rem;
+    border-radius: 999px;
+    background: #ecfdf5;
+    color: #0f7050;
+    font-size: .82rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+.tb-load--calm {
+    background: #f1f5f9;
+    color: #475569;
+}
+.tb-load--busy {
+    background: #fffbeb;
+    color: #b45309;
+}
+.tb-load--slammed {
+    background: #fef2f2;
+    color: #b91c1c;
+}
+.tb-load--slammed i { animation: tb-pulse 1.4s ease-in-out infinite; }
+
+.tb-search-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    margin-inline-start: auto;
+    min-width: 210px;
+    flex: 1 1 210px;
+    max-width: 360px;
+}
+.tb-search-wrap > .bi-search {
+    position: absolute;
+    inset-inline-start: .7rem;
+    color: #94a3b8;
+    font-size: .9rem;
+    pointer-events: none;
+}
+.tb-search {
+    width: 100%;
+    height: 40px;
+    padding: 0 2rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #fff;
+    font-size: .85rem;
+    color: #1e293b;
+}
+.tb-search:focus {
+    outline: 0;
+    border-color: rgb(var(--primary-rgb));
+    box-shadow: 0 0 0 3px rgba(var(--primary-rgb), .12);
+}
+.tb-search-clear {
+    position: absolute;
+    inset-inline-end: .5rem;
+    border: 0;
+    background: transparent;
+    color: #94a3b8;
+    cursor: pointer;
+    font-size: .8rem;
+}
+
+/* One local, instant filter: the waiter can isolate the useful part of the
+   floor without a server trip or leaving the board. */
+.tb-state-filters {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    overflow-x: auto;
+    padding-top: .45rem;
+    border-top: 1px solid #edf2ef;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+}
+.tb-state-filters::-webkit-scrollbar { display: none; }
+.tb-state-filter {
+    --sf: #64748b;
+    min-height: 38px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .38rem;
+    flex: 0 0 auto;
+    padding: .35rem .65rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #fff;
+    color: #64748b;
+    font-size: .75rem;
+    font-weight: 850;
+    cursor: pointer;
+}
+.tb-state-filter--action { --sf: #d97706; }
+.tb-state-filter--occupied { --sf: #64748b; }
+.tb-state-filter--available { --sf: #16845f; }
+.tb-state-filter--cleaning { --sf: #0891b2; }
+.tb-state-filter i { color: var(--sf); }
+.tb-state-filter strong {
+    min-width: 21px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 .28rem;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #475569;
+    font-size: .68rem;
+    font-variant-numeric: tabular-nums;
+}
+.tb-state-filter:hover { border-color: color-mix(in srgb, var(--sf) 38%, #e2e8f0); }
+.tb-state-filter.is-active {
+    border-color: var(--sf);
+    background: color-mix(in srgb, var(--sf) 9%, #fff);
+    color: color-mix(in srgb, var(--sf) 88%, #0f172a);
+    box-shadow: inset 0 -2px 0 var(--sf);
+}
+.tb-state-filter.is-active strong { background: var(--sf); color: #fff; }
+.tb-state-filter-short { display: none; }
+
+/* ── Section chips ───────────────────────────────────────────────────────── */
+.tb-section-chips {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .4rem;
+}
+.tb-section-ico { color: #94a3b8; font-size: .85rem; }
+.tb-section-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    color: #475569;
+    font-size: .8rem;
+    font-weight: 700;
+    padding: .38rem .75rem;
+    border-radius: 999px;
+    cursor: pointer;
+}
+.tb-section-chip.is-active {
+    border-color: var(--sec-color, rgb(var(--primary-rgb)));
+    background: color-mix(in srgb, var(--sec-color, #16845f) 12%, #fff);
+    color: #1e293b;
+}
+.tb-section-dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--sec-color, #94a3b8);
+}
+.tb-section-cnt {
+    font-size: .72rem; font-weight: 900; color: #64748b;
+    font-variant-numeric: tabular-nums;
+}
+.tb-section-clear {
+    border: 0; background: transparent; color: #94a3b8; cursor: pointer; font-size: .8rem;
+}
+
+/* ── Priority feed ───────────────────────────────────────────────────────── */
+.tb-feed {
+    display: flex;
+    flex-direction: column;
+    gap: .6rem;
+    padding: .65rem;
+    border: 1px solid #e4ebe7;
+    border-radius: 14px;
+    background: #fff;
+}
+
+.tb-feed-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+}
+.tb-feed-title { display: flex; align-items: center; gap: .55rem; min-width: 0; }
+.tb-feed-icon {
+    width: 34px; height: 34px;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    border-radius: 10px;
+    background: #fef3c7;
+}
+.tb-feed-head i { color: #b45309; }
+.tb-feed-head h3 { margin: 0; font-size: .92rem; font-weight: 900; color: #1e293b; }
+.tb-feed-sub { font-size: .76rem; color: #94a3b8; font-weight: 700; }
+.tb-feed-total {
+    min-width: 30px; height: 30px; padding: 0 .45rem;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    border-radius: 999px;
+    background: #fff7ed;
+    color: #c2410c;
+    font-size: .78rem;
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+}
+
+/* One dense decision surface: no red strip, no separate queues, and no
+   hidden cards. The controller has already sorted these rows by urgency. */
+.tb-priority-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(285px, 100%), 1fr));
+    gap: .48rem;
+}
+.tb-priority-card {
+    --u: #64748b; --u-bg: #f1f5f9; --u-tx: #475569;
+    min-width: 0;
+    min-height: 74px;
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: .55rem;
+    padding: .48rem;
+    border: 1px solid color-mix(in srgb, var(--u) 18%, #e8edf1);
+    border-inline-start: 4px solid var(--u);
+    border-radius: 11px;
+    background: color-mix(in srgb, var(--u-bg) 42%, #fff);
+}
+.tb-priority-table {
+    width: 46px; height: 50px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    border-radius: 10px;
+    background: var(--u-bg);
+    color: var(--u-tx);
+    line-height: 1;
+}
+.tb-priority-table small { font-size: .58rem; font-weight: 800; opacity: .82; }
+.tb-priority-table strong { margin-top: .15rem; font-size: 1.12rem; font-weight: 900; font-variant-numeric: tabular-nums; }
+.tb-priority-copy { min-width: 0; }
+.tb-priority-label {
+    min-width: 0;
+    display: flex; align-items: center; gap: .32rem;
+    color: #17221f;
+    font-size: .8rem;
+    font-weight: 900;
+}
+.tb-priority-label i { flex-shrink: 0; color: var(--u); }
+.tb-priority-label span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.tb-priority-meta {
+    display: flex; align-items: center; flex-wrap: wrap; gap: .15rem .55rem;
+    margin-top: .25rem;
+    color: #718096;
+    font-size: .66rem;
+    font-weight: 700;
+}
+.tb-priority-meta > span { display: inline-flex; align-items: center; gap: .2rem; min-width: 0; }
+.tb-priority-action { display: flex; flex-shrink: 0; }
+.tb-priority-action .tb-feed-btn {
+    min-height: 40px;
+    padding: .4rem .7rem;
+    border: 0;
+    background: var(--u);
+    font-size: .75rem;
+}
+
+.tb-urg-red   { --u: #dc2626; --u-bg: #fef2f2; --u-tx: #991b1b; }
+.tb-urg-amber { --u: #d97706; --u-bg: #fffbeb; --u-tx: #92400e; }
+.tb-urg-bill  { --u: #2563eb; --u-bg: #eff6ff; --u-tx: #1e40af; }
+.tb-urg-grey  { --u: #64748b; --u-bg: #f1f5f9; --u-tx: #475569; }
+.tb-zdot { width: 8px; height: 8px; border-radius: 50%; background: var(--sec-color, #94a3b8); }
+.tb-feed-btn {
+    display: inline-flex; align-items: center; gap: .4rem;
+    padding: .5rem .95rem;
+    border-radius: 9px;
+    border: 1.5px solid var(--u);
+    background: var(--u);
+    color: #fff;
+    font-size: .82rem; font-weight: 800;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.tb-feed-btn:hover { color: #fff; filter: brightness(.95); }
+
+/* ── Floor map ───────────────────────────────────────────────────────────── */
+.tb-map { display: flex; flex-direction: column; gap: .55rem; }
+.tb-map-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.tb-map-title { display: flex; align-items: center; gap: .45rem; }
+.tb-map-head i { color: #64748b; }
+.tb-map-head h3 { margin: 0; font-size: .95rem; font-weight: 900; color: #1e293b; }
+.tb-map-count { color: #94a3b8; font-size: .72rem; font-weight: 800; }
+
+.tb-map-section-label {
+    display: flex; align-items: center; gap: .45rem;
+    font-size: .78rem; font-weight: 800; color: #94a3b8;
+    margin-bottom: .4rem;
+}
+.tb-map-section-label strong { color: #334155; font-size: .84rem; }
+.tb-map-section-dot {
+    width: 9px;
+    height: 9px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: var(--sec-color, #94a3b8) !important;
+    padding: 0 !important;
+}
+.tb-map-section-label span {
+    font-size: .7rem; font-weight: 900; color: #64748b;
+    background: #f1f5f9; padding: .05rem .4rem; border-radius: 999px;
+}
+.tb-map-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
+    gap: .45rem;
+}
+.tb-map-section { margin-bottom: .3rem; }
+
+.tb-tile {
+    --t: #64748b; --t-bg: #f8fafc;
+    position: relative;
+    border: 1px solid #e8edf1;
+    background: var(--t-bg);
+    border-radius: 12px;
+    padding: .48rem;
+    min-height: 116px;
+    display: flex;
+    flex-direction: column;
+    gap: .35rem;
+}
+.tb-tile.is-menu-open {
+    /* The menu is taller than a tile. Raise the whole tile stacking context so
+       later grid cells cannot paint over the open menu. */
+    z-index: 80;
+    transform: none;
+}
+.tb-tile--available { --t: #16845f; --t-bg: #ecfdf5; }
+.tb-tile--occupied  { --t: #64748b; --t-bg: #f8fafc; }
+.tb-tile--attention { --t: #d97706; --t-bg: #fffbeb; }
+.tb-tile--cleaning  { --t: #0891b2; --t-bg: #ecfeff; }
+.tb-tile--stale     { --t: #7c6f5a; --t-bg: #faf8f3; }
+.tb-tile--urgent    { --t: #dc2626; --t-bg: #fef2f2; }
+.tb-tile--bill      { --t: #2563eb; --t-bg: #eff6ff; }
+.tb-tile--reserved  { --t: #7c3aed; --t-bg: #f5f3ff; }
+.tb-tile--oos       { --t: #94a3b8; --t-bg: #f1f5f9; }
+.tb-tile { border-color: color-mix(in srgb, var(--t) 22%, #e8edf1); }
+.tb-tile--urgent { animation: tb-glow 2s ease-in-out infinite; }
+.tb-tile--available {
+    min-height: 88px;
+    border-color: #cfe7dc;
+    background: #f5fbf8;
+    transition: border-color .14s ease, box-shadow .14s ease, transform .14s ease;
+}
+.tb-tile--available:hover,
+.tb-tile--available:focus-within {
+    border-color: #69ae92;
+    box-shadow: 0 7px 18px rgba(22, 132, 95, .10);
+    transform: translateY(-1px);
+}
+.tb-tile-hit {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border-radius: inherit;
+}
+.tb-tile-hit:focus-visible {
+    outline: 3px solid rgba(22, 132, 95, .28);
+    outline-offset: 2px;
+}
+
+.tb-tile-top { display: flex; align-items: flex-start; justify-content: space-between; gap: .2rem; }
+.tb-tile-num { font-size: 1.35rem; font-weight: 900; color: var(--t); font-variant-numeric: tabular-nums; line-height: 1; }
+
+.tb-tile-body {
+    flex: 1;
+    min-height: 32px;
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+}
+.tb-tile-state {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    color: var(--t);
+    font-size: .76rem;
+    font-weight: 800;
+}
+.tb-tile-state small { font-size: .68rem; font-weight: 700; }
+.tb-tile-open-cue {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+    margin-top: auto;
+    color: #16845f;
+    font-size: .68rem;
+    font-weight: 850;
+}
+.tb-tile-open-cue i {
+    width: 21px;
+    height: 21px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 7px;
+    background: #dff3e9;
+}
+.tb-tile-name {
+    overflow: hidden;
+    color: #64748b;
+    font-size: .7rem;
+    font-weight: 700;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.tb-tile-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .25rem .55rem;
+    color: #84928e;
+    font-size: .64rem;
+    font-weight: 750;
+}
+.tb-tile-meta span { display: inline-flex; align-items: center; gap: .22rem; min-width: 0; }
+.tb-tile-meta i { color: var(--t); }
+.tb-tile--available .tb-tile-meta { display: none; }
+.tb-table-counts {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .22rem;
+}
+.tb-table-counts span {
+    min-height: 22px;
+    display: inline-flex;
+    align-items: center;
+    gap: .2rem;
+    padding: .08rem .36rem;
+    border: 1px solid color-mix(in srgb, var(--t) 13%, #e8edf1);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--t) 5%, #fff);
+    color: #64748b;
+    font-size: .61rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+.tb-table-counts i { color: var(--t); }
+.tb-table-counts b {
+    color: #17221f;
+    font-size: .68rem;
+    font-variant-numeric: tabular-nums;
+}
+.tb-table-counts .is-session {
+    border-color: color-mix(in srgb, var(--t) 22%, #e8edf1);
+    color: var(--t);
+}
+.tb-tile--available .tb-table-counts { margin-top: auto; }
+.tb-order-pulse {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .2rem;
+    margin-top: auto;
+}
+.tb-order-pulse span {
+    padding: .12rem .32rem;
+    border-radius: 999px;
+    background: #fff;
+    font-size: .62rem;
+    font-weight: 900;
+    white-space: nowrap;
+}
+.tb-order-pulse .is-pending { color: #b45309; background: #fef3c7; }
+.tb-order-pulse .is-kitchen { color: #1d4ed8; background: #dbeafe; }
+.tb-order-pulse .is-ready { color: #047857; background: #d1fae5; }
+
+.tb-tile-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .3rem;
+    margin: 0;
+}
+.tb-tile-action {
+    min-width: 0;
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .25rem;
+    padding: .3rem .25rem;
+    border: 1px solid color-mix(in srgb, var(--t) 22%, #fff);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--t) 10%, #fff);
+    color: var(--t);
+    font-size: .7rem;
+    font-weight: 900;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.tb-tile-action.is-wide { grid-column: 1 / -1; }
+.tb-tile-action--primary,
+.tb-tile-action--add.is-wide { background: var(--t); border-color: var(--t); color: #fff; }
+.tb-tile-action--add:not(.is-wide),
+.tb-tile-action--follow:not(.tb-tile-action--primary) { background: #fff; }
+.tb-tile-action:hover { filter: brightness(.94); color: var(--t); }
+.tb-tile-action--primary:hover,
+.tb-tile-action--add.is-wide:hover { color: #fff; }
+.tb-tile-action:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--t) 30%, transparent);
+    outline-offset: 1px;
+}
+
+/* ── Per-table actions (shared partial) ─────────────────────────────────── */
+.ta-actions { display: inline-flex; align-items: center; gap: .2rem; flex-shrink: 0; }
+.tb-tile .ta-actions { position: relative; z-index: 3; }
+.tb-tile.is-menu-open .ta-actions { z-index: 81; }
+.tb-tile--available .ta-actions {
+    opacity: .16;
+    transition: opacity .14s ease;
+}
+.tb-tile--available:hover .ta-actions,
+.tb-tile--available:focus-within .ta-actions { opacity: 1; }
+.ta-more { position: relative; }
+.ta-quick-edit-btn,
+.ta-more-btn {
+    border: 0; background: rgba(15, 42, 34, .05);
+    color: #64748b; cursor: pointer;
+    width: 28px; height: 28px; border-radius: 8px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: .85rem;
+}
+.ta-quick-edit-btn:hover,
+.ta-more-btn:hover { background: rgba(15, 42, 34, .1); color: #1e293b; }
+/* The popover must be able to escape the tile — a 78px tile can't contain a
+   210px menu, and any overflow:hidden up the chain scissors it in half. */
+.tb-map, .tb-map-section, .tb-map-grid, .tb-feed { overflow: visible; }
+
+.ta-more-menu {
+    display: none;
+    position: absolute;
+    inset-inline-end: 0;
+    top: calc(100% + 4px);
+    min-width: 210px;
+    max-width: min(240px, 78vw);
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 12px 30px rgba(15, 42, 34, .14);
+    padding: .35rem;
+    z-index: 60;
+    list-style: none;
+    margin: 0;
+}
+.ta-more-menu.show { display: block; }
+/* Edge tiles: the menu would run off-screen on the side it normally opens
+   toward, so Alpine measures on open and flips it to the other side. */
+.ta-more-menu.is-flipped { inset-inline-end: auto; inset-inline-start: 0; }
+.tb-tile .ta-more-menu { min-width: 190px; }
+.ta-more-menu .dropdown-item {
+    display: flex; align-items: center; gap: .5rem;
+    padding: .5rem .6rem;
+    border-radius: 8px;
+    font-size: .82rem; font-weight: 700; color: #334155;
+    width: 100%; border: 0; background: transparent; cursor: pointer;
+    text-decoration: none;
+}
+.ta-more-menu .dropdown-item:hover { background: #f1f5f9; }
+.ta-more-menu .dropdown-divider { margin: .3rem .2rem; border-top: 1px solid #edf1f5; }
+.ta-more-danger { color: #dc2626 !important; }
+.ta-more-danger:hover { background: #fef2f2 !important; }
+.ta-more-transfer { padding: .35rem .5rem; }
+.ta-more-transfer-label {
+    display: flex; align-items: center; gap: .4rem;
+    font-size: .74rem; font-weight: 800; color: #64748b; margin-bottom: .35rem;
+}
+.ta-more-transfer-row { display: flex; gap: .35rem; }
+.ta-transfer-select {
+    flex: 1; min-width: 0; height: 34px;
+    border: 1px solid #e2e8f0; border-radius: 8px;
+    font-size: .78rem; padding: 0 .4rem; background: #fff;
+}
+.ta-transfer-go {
+    border: 0; background: rgb(var(--primary-rgb)); color: #fff;
+    border-radius: 8px; padding: 0 .7rem; font-size: .78rem; font-weight: 800; cursor: pointer;
+}
+
+@keyframes tb-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+@keyframes tb-glow {
+    0%, 100% { box-shadow: 0 0 0 1px rgba(220, 38, 38, .1); }
+    50% { box-shadow: 0 0 0 3px rgba(220, 38, 38, .18); }
+}
+@keyframes tb-card-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: none; }
+}
+
+/* The urgent glow is an attention device, not decoration — but it must never
+   be forced on someone with a vestibular disorder (WCAG 2.3.3). Colour, icon
+   and feed position already carry the meaning without it. */
+@media (prefers-reduced-motion: reduce) {
+    .tb-tile--urgent,
+    .tb-load--slammed i {
+        animation: none;
+    }
+}
+
+@media (max-width: 600px) {
+    .tables-quick-head { align-items: center; }
+    .tables-quick-head p { display: none; }
+    .tables-quick-add { width: 42px; padding: 0; }
+    .tables-quick-add span { display: none; }
+    .tb-ops-shell {
+        position: static;
+        padding: .45rem;
+        border-radius: 12px;
+        box-shadow: none;
+        backdrop-filter: none;
+    }
+    .tb-control-sentinel,
+    .tb-control-placeholder { display: none; }
+    .tb-command { gap: .4rem; }
+    .tb-search-wrap { order: 3; flex-basis: 100%; max-width: none; margin-inline-start: 0; }
+    .tb-feed { padding: .5rem; }
+    .tb-feed-sub { display: none; }
+    .tb-priority-grid { grid-template-columns: 1fr; }
+    .tb-priority-card { grid-template-columns: 44px minmax(0, 1fr) auto; }
+    .tb-priority-action .tb-feed-btn { min-width: 44px; padding-inline: .65rem; }
+    .tb-map-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .tb-tile { min-height: 120px; }
+    .tb-tile--available { min-height: 92px; }
+    .tb-tile-action { min-height: 44px; }
+    .tb-tile .ta-more-btn,
+    .tb-tile .ta-quick-edit-btn { width: 40px; height: 40px; }
+}
+
+@media (min-width: 1400px) {
+    .tb-map-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+}
+
+@media (max-width: 440px) {
+    .tb-state-filter-label { display: none; }
+    .tb-state-filter-short { display: inline; }
+    .tb-state-filter { min-height: 42px; padding-inline: .58rem; }
+}
+
+@media (hover: none) {
+    .tb-tile--available .ta-actions { opacity: .72; }
+    .tb-tile--available:hover { transform: none; }
+}
+
+/* Housekeeping stays secondary beside the room status. */
+.tb-lens {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    margin-inline-start: auto;
+    padding: .35rem .7rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 999px;
+    background: #fff;
+    color: #7c6f5a;
+    font-size: .78rem;
+    font-weight: 800;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.tb-lens:hover { border-color: #cbd5e1; }
+.tb-lens.is-active {
+    background: #faf8f3;
+    border-color: #7c6f5a;
+    color: #5c5142;
+}
+.tb-lens-count {
+    min-width: 20px;
+    height: 18px;
+    padding: 0 .3rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: #f1f5f9;
+    font-size: .7rem;
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+}
+.tb-command .tb-lens { margin-inline-start: 0; }
+.tb-lens--sweep {
+    border-color: #fecaca;
+    color: #b91c1c;
+    background: #fff;
+}
+.tb-lens--sweep:hover { border-color: #dc2626; background: #fef2f2; }
+.tb-lens--sweep .tb-lens-count { background: #fee2e2; color: #b91c1c; }
+
+/* ── Touch targets ───────────────────────────────────────────────────────
+   Measured on a real waiter's tablet (845×604): the feed's action buttons
+   rendered at 38px and the ⋯ trigger at 28px wide. Both are under the 44px
+   minimum every touch guideline agrees on — and this is a man tapping with a
+   wet finger, at speed, while carrying plates. A missed tap here is a plate
+   going cold, so this is not a style preference. */
+.tb-feed-btn {
+    min-height: 44px;
+    padding-inline: 1.1rem;
+}
+.ta-more-btn {
+    width: 44px;
+    height: 44px;
+    font-size: 1rem;
+}
+.ta-quick-edit-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    color: #64748b;
+    cursor: pointer;
+}
+.tb-tile .ta-more-btn {
+    width: 34px;
+    height: 34px;
+}
+.tb-tile .ta-quick-edit-btn {
+    width: 34px;
+    height: 34px;
+}
+
+@media (max-width: 600px) {
+    .tb-tile .ta-more-btn,
+    .tb-tile .ta-quick-edit-btn { width: 40px; height: 40px; }
+}
+
+/* ── Quick edit modal ───────────────────────────────────────────────────── */
+.table-quick-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1095;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    background: rgba(15, 23, 42, .48);
+}
+.table-quick-modal__panel {
+    width: min(560px, 100%);
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, .28);
+}
+.table-quick-modal__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.1rem;
+    border-bottom: 1px solid #edf1f5;
+}
+.table-quick-modal__head small { color: rgb(var(--primary-rgb)); font-weight: 800; }
+.table-quick-modal__head h2 { margin: .1rem 0 0; color: #0f172a; font-size: 1.2rem; font-weight: 900; }
+.table-quick-modal__head button {
+    width: 40px;
+    height: 40px;
+    border: 0;
+    border-radius: 9px;
+    background: #f1f5f9;
+    color: #475569;
+}
+.table-quick-modal__body { padding: 1.1rem; }
+.table-quick-modal__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: .5rem;
+    padding: .85rem 1.1rem;
+    border-top: 1px solid #edf1f5;
+    background: #f8fafc;
+}
+.table-active-switch {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    min-height: 44px;
+    padding: .6rem .75rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 9px;
+    color: #334155;
+    font-weight: 700;
+    cursor: pointer;
+}
+.table-active-switch input[type="checkbox"] { width: 18px; height: 18px; }
+
+@media (max-width: 575.98px) {
+    .table-quick-modal { place-items: end center; padding: 0; }
+    .table-quick-modal__panel { width: 100%; max-height: 92vh; border-radius: 16px 16px 0 0; }
+}

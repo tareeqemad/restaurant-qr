@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Models\Branch;
-use App\Models\CashMovement;
 use App\Models\Category;
 use App\Models\Expense;
 use App\Models\Invoice;
@@ -15,7 +14,6 @@ use App\Models\Order;
 use App\Models\Refund;
 use App\Models\Role;
 use App\Models\Setting;
-use App\Models\Shift;
 use App\Models\Station;
 use App\Models\StorageLocation;
 use App\Models\Supplier;
@@ -41,16 +39,10 @@ use Tests\TestCase;
  *        instead of session.orders.
  *   G2 — Post-issuance cashier discount changes never re-posted the
  *        journal entry, so A/R stayed inflated by the discount amount.
- *   G3 — Cash refunds during a shift weren't subtracted from
- *        expected_cash, surfacing as phantom shortages at close.
  *   G4 — Approved non-cash expenses were deletable even after posting
  *        their accounting entry.
  *   G5 — Posted supplier invoices were deletable instead of being
  *        cancelled through the reversing-entry flow.
- *   G6 — Shift close ignored cash drawer pay-ins/pay-outs, so petty cash
- *        expenses appeared as phantom shortages.
- *   G7 — Supplier cash payments linked to a shift also leave the drawer
- *        and must reduce expected cash at close.
  */
 class FinancialAuditGapsTest extends TestCase
 {
@@ -308,139 +300,6 @@ class FinancialAuditGapsTest extends TestCase
         $this->assertEqualsWithDelta(80.0, $netByCode['1100'] ?? 0, 0.01, 'Net A/R must match the latest invoice total.');
         $this->assertEqualsWithDelta(20.0, $netByCode['4090'] ?? 0, 0.01, 'Net discounts must match the latest discount.');
         $this->assertEqualsWithDelta(-100.0, $netByCode['4000'] ?? 0, 0.01, 'Net sales revenue should stay at gross sales.');
-    }
-
-    // ───────────────────────────────────────────────────────────────
-    // G3 — Cash refunds reduce expected_cash at shift close
-    // ───────────────────────────────────────────────────────────────
-
-    public function test_g3_cash_refund_is_subtracted_from_shift_expected_cash(): void
-    {
-        $shift = Shift::create([
-            'branch_id'    => $this->branch->id,
-            'user_id'      => $this->cashier->id,
-            'status'       => 'open',
-            'opened_at'    => now()->subHours(2),
-            'cash_opening' => 200,
-        ]);
-
-        // Build an order so the invoice satisfies its origin invariant.
-        $session = TableSession::create([
-            'branch_id' => $this->branch->id, 'table_id' => $this->table->id,
-            'token' => 'g3-'.uniqid(), 'status' => 'active',
-            'opened_at' => now()->subHour(), 'cover_count' => 1,
-        ]);
-        $order = app(OrderService::class)->createFromCart($session, [[
-            'menu_item_id' => $this->burger->id, 'quantity' => 1, 'modifier_ids' => [],
-        ]], createdByUserId: $this->cashier->id);
-
-        // Sanity: NO payment created — we only test the refund subtract.
-        // Refund::method='cash' simulates cash handed back to the customer.
-        Refund::create([
-            'number'         => 'R-'.uniqid(),
-            'branch_id'      => $this->branch->id,
-            'invoice_id'     => Invoice::create([
-                'branch_id' => $this->branch->id, 'order_id' => $order->id,
-                'issued_by_user_id' => $this->cashier->id,
-                'subtotal' => 50, 'discount_total' => 0, 'tax_total' => 0,
-                'service_total' => 0, 'delivery_fee' => 0, 'tip' => 0,
-                'total' => 50, 'balance' => 0, 'status' => 'paid',
-                'issued_at' => now()->subHour(), 'paid_at' => now()->subHour(),
-            ])->id,
-            'shift_id'       => $shift->id,
-            'amount'         => 30,
-            'method'         => 'cash',
-            'reason'         => 'wrong item',
-            'created_by_user_id' => $this->cashier->id,
-            'status'         => 'completed',
-            'refunded_at'    => now(),
-        ]);
-
-        $this->actingAs($this->cashier)
-            ->post(route('admin.shifts.close', $shift), [
-                'cash_closing' => 170,   // 200 opening - 30 refund = 170 expected
-            ])
-            ->assertRedirect();
-
-        $shift->refresh();
-        $this->assertEqualsWithDelta(170.0, (float) $shift->expected_cash, 0.01,
-            'Expected cash MUST subtract the 30 in cash refunds.');
-        $this->assertEqualsWithDelta(0.0, (float) $shift->cash_variance, 0.01,
-            'When closing cash matches expected, variance is zero — no phantom shortage.');
-    }
-
-    public function test_g6_cash_movements_are_included_in_shift_expected_cash(): void
-    {
-        $shift = Shift::create([
-            'branch_id' => $this->branch->id,
-            'user_id' => $this->cashier->id,
-            'status' => 'open',
-            'opened_at' => now()->subHours(2),
-            'cash_opening' => 200,
-        ]);
-
-        CashMovement::create([
-            'branch_id' => $this->branch->id,
-            'shift_id' => $shift->id,
-            'type' => 'pay_out',
-            'amount' => 40,
-            'reason' => 'Petty cash expense',
-            'user_id' => $this->cashier->id,
-        ]);
-
-        $this->actingAs($this->cashier)
-            ->post(route('admin.shifts.close', $shift), [
-                'cash_closing' => 160,
-            ])
-            ->assertRedirect();
-
-        $shift->refresh();
-        $this->assertEqualsWithDelta(160.0, (float) $shift->expected_cash, 0.01);
-        $this->assertEqualsWithDelta(0.0, (float) $shift->cash_variance, 0.01);
-    }
-
-    public function test_g7_supplier_cash_payments_reduce_shift_expected_cash(): void
-    {
-        $shift = Shift::create([
-            'branch_id' => $this->branch->id,
-            'user_id' => $this->cashier->id,
-            'status' => 'open',
-            'opened_at' => now()->subHours(2),
-            'cash_opening' => 200,
-        ]);
-
-        $supplier = Supplier::create(['name' => 'Cash Supplier', 'active' => true]);
-        $supplier->branches()->attach($this->branch->id);
-        $invoice = SupplierInvoice::create([
-            'number' => 'SUP-CASH-'.uniqid(),
-            'supplier_id' => $supplier->id,
-            'subtotal' => 50,
-            'tax_total' => 0,
-            'total' => 50,
-            'paid_total' => 0,
-            'balance' => 50,
-            'status' => 'unpaid',
-            'invoice_date' => now()->toDateString(),
-            'created_by' => $this->cashier->id,
-        ]);
-        SupplierPayment::create([
-            'supplier_invoice_id' => $invoice->id,
-            'amount' => 50,
-            'method' => 'cash',
-            'paid_on' => now()->toDateString(),
-            'paid_by' => $this->cashier->id,
-            'shift_id' => $shift->id,
-        ]);
-
-        $this->actingAs($this->cashier)
-            ->post(route('admin.shifts.close', $shift), [
-                'cash_closing' => 150,
-            ])
-            ->assertRedirect();
-
-        $shift->refresh();
-        $this->assertEqualsWithDelta(150.0, (float) $shift->expected_cash, 0.01);
-        $this->assertEqualsWithDelta(0.0, (float) $shift->cash_variance, 0.01);
     }
 
     public function test_g4_approved_non_cash_expense_cannot_be_deleted_after_accounting_post(): void

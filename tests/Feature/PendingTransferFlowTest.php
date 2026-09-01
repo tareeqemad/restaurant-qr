@@ -22,7 +22,9 @@ use App\Services\OrderService;
 use App\Services\PendingTransferService;
 use App\Support\BranchContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
@@ -112,6 +114,45 @@ class PendingTransferFlowTest extends TestCase
         $this->assertSame('paid', $invoice->status);
         $this->assertSame(100.0, (float) $invoice->paid_total);
         $this->assertSame('transfer', $invoice->payments()->latest('id')->first()->method);
+
+        // Money can settle before food, but the kitchen ticket and occupied
+        // table must remain live until the final line is served.
+        $order = $session->orders()->with('items')->first();
+        $this->assertSame('approved', $order->status);
+        $this->assertSame('active', $session->fresh()->status);
+        $this->assertSame('occupied', $session->table->fresh()->status);
+
+        $item = $order->items->first();
+        app(OrderService::class)->startPreparing($item, $this->admin->id);
+        app(OrderService::class)->markItemReady($item->fresh());
+        app(OrderService::class)->markItemServed($item->fresh(), $this->admin->id);
+
+        $this->assertSame('completed', $order->fresh()->status);
+        $this->assertSame('closed', $session->fresh()->status);
+        $this->assertSame('available', $session->table->fresh()->status);
+    }
+
+    public function test_customer_uploads_private_receipt_and_cashier_can_view_it(): void
+    {
+        Storage::fake('local');
+        $invoice = $this->issueVisit();
+        $session = $invoice->tableSession;
+        $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
+
+        $this->post(route('customer.bill.transfer'), [
+            'session' => $session->token,
+            'sender_name' => 'Customer Sender',
+            'amount' => 100,
+            'proof' => UploadedFile::fake()->createWithContent('receipt.png', $png),
+        ])->assertSessionHas('success');
+
+        $transfer = PendingTransfer::where('table_session_id', $session->id)->firstOrFail();
+        $this->assertNotNull($transfer->proof_path);
+        Storage::disk('local')->assertExists($transfer->proof_path);
+
+        $this->actingAs($this->admin)
+            ->get(route('admin.cashier.transfers.proof', $transfer))
+            ->assertOk();
     }
 
     /** The cashier can also record a claim from their own screen (not just the waiter). */

@@ -11,19 +11,18 @@ class SupplierPayment extends Model
     use HasFactory;
 
     protected $fillable = [
-        'supplier_invoice_id', 'amount', 'method', 'reference',
-        'paid_on', 'notes', 'paid_by', 'shift_id',
+        'supplier_invoice_id', 'amount', 'currency_code', 'exchange_rate', 'method', 'reference',
+        'paid_on', 'notes', 'paid_by',
     ];
 
     protected $casts = [
         'amount'  => 'decimal:4',
+        'exchange_rate' => 'decimal:8',
         'paid_on' => 'date',
     ];
 
     public function invoice(): BelongsTo  { return $this->belongsTo(SupplierInvoice::class, 'supplier_invoice_id'); }
     public function payer(): BelongsTo    { return $this->belongsTo(User::class, 'paid_by'); }
-    public function shift(): BelongsTo    { return $this->belongsTo(Shift::class); }
-
     public function methodLabel(): string
     {
         return match ($this->method) {

@@ -38,6 +38,9 @@ class SetActiveBranch
             return $next($request);
         }
 
+        // Long-lived workers must never inherit a previous request's branch.
+        BranchContext::clear();
+
         $session = $request->session();
 
         // Owner-level "all branches" mode — explicit opt-in via the switcher.
@@ -83,6 +86,8 @@ class SetActiveBranch
 
         if ($branchId) {
             BranchContext::set((int) $branchId);
+        } elseif (! $user->isOwnerLevel()) {
+            abort(403, 'هذا الحساب غير مربوط بأي فرع. اطلب من المدير تعيين فرع للحساب.');
         }
 
         return $next($request);

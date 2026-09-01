@@ -7,24 +7,27 @@ use App\Models\Setting;
 /**
  * Per-restaurant enabled payment methods.
  *
- * The DB enum (payments.method) keeps every method we've ever shipped
- * (cash / card / transfer / app / credit). Which ones a given install
- * is allowed to USE is a settings-level decision so the restaurant can
- * turn off whatever it doesn't accept — small cash-only shops, places
- * without a POS terminal, branches that don't extend credit, etc.
- *
- * Defaults mirror the pre-existing hardcoded set (cash + card + transfer)
- * so an upgrade keeps behaviour identical until the admin opts in.
+ * Direct bank and Visa receipts post to the bank immediately. Wallet receipts
+ * remain in their own asset account until the accountant transfers them.
  */
 class PaymentMethods
 {
+    public const CUSTOMER_ADVANCE = 'customer_advance';
+
     /** All methods the schema supports, with their labels and icons. */
     protected const CATALOG = [
-        'cash'     => ['label_key' => 'admin.payment_methods.cash',     'icon' => 'bi-cash-stack',   'default' => true],
-        'card'     => ['label_key' => 'admin.payment_methods.card',     'icon' => 'bi-credit-card',  'default' => true],
-        'transfer' => ['label_key' => 'admin.payment_methods.transfer', 'icon' => 'bi-bank',         'default' => true],
-        'app'      => ['label_key' => 'admin.payment_methods.app',      'icon' => 'bi-phone',        'default' => false],
-        'credit'   => ['label_key' => 'admin.payment_methods.credit',   'icon' => 'bi-journal-text', 'default' => false],
+        'cash' => ['label_key' => 'admin.payment_methods.cash',       'icon' => 'bi-cash-stack', 'default' => true,  'description' => 'تحصيل نقدي على مسؤولية المستخدم الذي أكّد الدفعة.'],
+        'transfer' => ['label_key' => 'admin.payment_methods.transfer',   'icon' => 'bi-bank',       'default' => true,  'description' => 'تحويل مباشر إلى حساب البنك بعد التحقق من الوصل.'],
+        'card' => ['label_key' => 'admin.payment_methods.card',       'icon' => 'bi-credit-card', 'default' => false, 'description' => 'دفعة فيزا تصل إلى البنك مباشرة بلا حساب مقاصة.'],
+        'palpay' => ['label_key' => 'admin.payment_methods.palpay',     'icon' => 'bi-wallet2',    'default' => false, 'description' => 'تُثبت في رصيد PalPay حتى يحولها المحاسب إلى البنك.'],
+        'jawwal_pay' => ['label_key' => 'admin.payment_methods.jawwal_pay', 'icon' => 'bi-phone',      'default' => false, 'description' => 'تُثبت في رصيد Jawwal Pay حتى يحولها المحاسب إلى البنك.'],
+    ];
+
+    private const HISTORICAL_LABELS = [
+        'card' => 'بطاقة (قديم)',
+        'app' => 'محفظة (قديم)',
+        'credit' => 'آجل (قديم)',
+        self::CUSTOMER_ADVANCE => 'رصيد مقدم للزبون',
     ];
 
     /** All known methods + metadata, including their current enabled state. */
@@ -37,6 +40,7 @@ class PaymentMethods
                 'enabled' => self::isEnabled($code),
             ];
         }
+
         return $out;
     }
 
@@ -49,6 +53,7 @@ class PaymentMethods
                 $out[] = $code;
             }
         }
+
         return $out;
     }
 
@@ -65,6 +70,7 @@ class PaymentMethods
             return false;
         }
         $default = self::CATALOG[$code]['default'];
+
         return (bool) Setting::get(self::settingKey($code), $default);
     }
 
@@ -73,13 +79,14 @@ class PaymentMethods
     {
         $key = self::CATALOG[$code]['label_key'] ?? null;
 
-        return is_string($key) ? __($key) : $code;
+        return is_string($key) ? __($key) : (self::HISTORICAL_LABELS[$code] ?? $code);
     }
 
     /** Validation `in:` rule built from the currently-enabled methods. */
     public static function inRule(): string
     {
         $codes = self::enabled();
+
         return 'in:'.implode(',', $codes ?: ['cash']);
     }
 }

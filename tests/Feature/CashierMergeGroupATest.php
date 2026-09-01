@@ -7,9 +7,11 @@ use App\Models\Category;
 use App\Models\Customer;
 use App\Models\Ingredient;
 use App\Models\IngredientStock;
+use App\Models\Invoice;
 use App\Models\MenuItem;
 use App\Models\RecipeItem;
 use App\Models\Role;
+use App\Models\Setting;
 use App\Models\Station;
 use App\Models\StorageLocation;
 use App\Models\Table;
@@ -19,6 +21,7 @@ use App\Models\User;
 use App\Services\BillingService;
 use App\Services\OrderService;
 use App\Support\BranchContext;
+use Database\Seeders\PermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
 use Tests\TestCase;
@@ -37,9 +40,13 @@ class CashierMergeGroupATest extends TestCase
     use RefreshDatabase;
 
     protected Branch $branch;
+
     protected User $admin;
+
     protected User $waiter;
+
     protected MenuItem $menuItem;
+
     protected Customer $customer;
 
     protected function setUp(): void
@@ -47,15 +54,15 @@ class CashierMergeGroupATest extends TestCase
         parent::setUp();
         Notification::fake();
 
-        \App\Models\Setting::put('tax_enabled', false, 'billing', 'bool');
-        \App\Models\Setting::put('service_enabled', false, 'billing', 'bool');
+        Setting::put('tax_enabled', false, 'billing', 'bool');
+        Setting::put('service_enabled', false, 'billing', 'bool');
 
         $this->branch = Branch::create(['code' => 'gat', 'name' => 'GAT', 'is_active' => true]);
         BranchContext::set($this->branch->id);
 
         Role::firstOrCreate(['name' => 'admin'], ['label' => 'Admin', 'is_system' => true]);
         Role::firstOrCreate(['name' => 'waiter'], ['label' => 'Waiter', 'is_system' => true]);
-        $this->seed(\Database\Seeders\PermissionSeeder::class);
+        $this->seed(PermissionSeeder::class);
 
         $this->admin = User::create([
             'name' => 'A', 'username' => 'gat-admin', 'role' => 'admin',
@@ -70,14 +77,14 @@ class CashierMergeGroupATest extends TestCase
         ]);
         $this->waiter->branches()->attach($this->branch->id, ['is_primary' => true, 'joined_at' => now()]);
 
-        $unit = Unit::create(['code'=>'pcs','name'=>'pcs','unit_type'=>'count','factor_to_base'=>1,'is_base'=>true]);
-        $storage = StorageLocation::create(['code'=>'k','name'=>'K','is_default'=>true,'active'=>true]);
-        $station = Station::create(['code'=>'kitchen','name'=>'K','storage_location_id'=>$storage->id,'active'=>true]);
-        $category = Category::create(['slug'=>'m','name'=>'M','default_station_id'=>$station->id,'active'=>true]);
-        $ing = Ingredient::create(['sku'=>'I','name'=>'S','base_unit_id'=>$unit->id,'current_stock'=>500,'reorder_threshold'=>0,'cost_per_unit'=>1,'track_stock'=>true,'active'=>true]);
-        IngredientStock::create(['ingredient_id'=>$ing->id,'storage_location_id'=>$storage->id,'quantity'=>500,'reorder_threshold'=>0]);
-        $this->menuItem = MenuItem::create(['category_id'=>$category->id,'station_id'=>$station->id,'sku'=>'M1','slug'=>'m','name'=>'Meal','price'=>100,'cost'=>10,'prep_time_minutes'=>5,'is_available'=>true]);
-        RecipeItem::create(['menu_item_id'=>$this->menuItem->id,'ingredient_id'=>$ing->id,'quantity'=>1,'unit_id'=>$unit->id]);
+        $unit = Unit::create(['code' => 'pcs', 'name' => 'pcs', 'unit_type' => 'count', 'factor_to_base' => 1, 'is_base' => true]);
+        $storage = StorageLocation::create(['code' => 'k', 'name' => 'K', 'is_default' => true, 'active' => true]);
+        $station = Station::create(['code' => 'kitchen', 'name' => 'K', 'storage_location_id' => $storage->id, 'active' => true]);
+        $category = Category::create(['slug' => 'm', 'name' => 'M', 'default_station_id' => $station->id, 'active' => true]);
+        $ing = Ingredient::create(['sku' => 'I', 'name' => 'S', 'base_unit_id' => $unit->id, 'current_stock' => 500, 'reorder_threshold' => 0, 'cost_per_unit' => 1, 'track_stock' => true, 'active' => true]);
+        IngredientStock::create(['ingredient_id' => $ing->id, 'storage_location_id' => $storage->id, 'quantity' => 500, 'reorder_threshold' => 0]);
+        $this->menuItem = MenuItem::create(['category_id' => $category->id, 'station_id' => $station->id, 'sku' => 'M1', 'slug' => 'm', 'name' => 'Meal', 'price' => 100, 'cost' => 10, 'prep_time_minutes' => 5, 'is_available' => true]);
+        RecipeItem::create(['menu_item_id' => $this->menuItem->id, 'ingredient_id' => $ing->id, 'quantity' => 1, 'unit_id' => $unit->id]);
 
         [$this->customer] = Customer::createFromCashier(name: 'ز', phone: '0599111662', defaultBranchId: $this->branch->id);
     }
@@ -90,24 +97,27 @@ class CashierMergeGroupATest extends TestCase
 
     private function openSession(): TableSession
     {
-        $table = Table::create(['number'=>(string) random_int(1,9999),'capacity'=>4,'status'=>'occupied','active'=>true]);
-        return TableSession::create(['table_id'=>$table->id,'customer_id'=>$this->customer->id,'cover_count'=>1,'status'=>'active']);
+        $table = Table::create(['number' => (string) random_int(1, 9999), 'capacity' => 4, 'status' => 'occupied', 'active' => true]);
+
+        return TableSession::create(['table_id' => $table->id, 'customer_id' => $this->customer->id, 'cover_count' => 1, 'status' => 'active']);
     }
 
-    /** @return array{0: \App\Models\Invoice, 1: TableSession} */
+    /** @return array{0: Invoice, 1: TableSession} */
     private function issueMeal(): array
     {
         $session = $this->openSession();
-        $order = app(OrderService::class)->createFromCart($session, [['menu_item_id'=>$this->menuItem->id,'quantity'=>1,'modifier_ids'=>[]]]);
+        $order = app(OrderService::class)->createFromCart($session, [['menu_item_id' => $this->menuItem->id, 'quantity' => 1, 'modifier_ids' => []]]);
         app(OrderService::class)->approve($order, $this->admin->id);
         $invoice = app(BillingService::class)->issueInvoice($session->fresh(), $this->admin->id);
+
         return [$invoice, $session];
     }
 
     /**
      * Settle-on-account with `return_session` parks the debt AND redirects to
-     * the merged dashboard with the session pre-selected. A partial payment is
-     * collected first so paid_total > 0 (the service refuses a zero-paid park).
+     * the merged dashboard with the session pre-selected. This case keeps a
+     * partial payment to cover the mixed-payment path; full unpaid debt is
+     * covered by the Vue cashier contract test.
      */
     public function test_settle_on_account_with_return_session_redirects_to_index_and_parks(): void
     {

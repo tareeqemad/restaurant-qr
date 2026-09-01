@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Branch extends Model
@@ -17,7 +18,6 @@ class Branch extends Model
     protected $fillable = [
         'code',
         'name',
-        'name_en',
         'phone',
         'email',
         'city',
@@ -39,6 +39,33 @@ class Branch extends Model
         return $this->belongsToMany(User::class, 'branch_user')
             ->withPivot(['is_primary', 'joined_at'])
             ->withTimestamps();
+    }
+
+    public function employees(): BelongsToMany
+    {
+        return $this->belongsToMany(Employee::class, 'branch_employee')
+            ->withPivot(['is_primary', 'joined_at'])
+            ->withTimestamps();
+    }
+
+    /** Legal owners are independent from staff/application accounts. */
+    public function owners(): BelongsToMany
+    {
+        return $this->belongsToMany(BusinessOwner::class, 'branch_ownerships')
+            ->withPivot([
+                'ownership_percentage',
+                'title',
+                'is_primary',
+                'is_authorized_signatory',
+                'starts_on',
+                'ends_on',
+            ])
+            ->withTimestamps();
+    }
+
+    public function legalProfile(): HasOne
+    {
+        return $this->hasOne(BranchLegalProfile::class);
     }
 
     /**

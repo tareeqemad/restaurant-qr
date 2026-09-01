@@ -9,8 +9,7 @@ class PurchaseOrderPolicy extends BasePolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->hasAnyRole(['admin', 'manager'])
-            || $user->hasPermission('purchase_orders.viewAny');
+        return $user->hasPermission('purchase_orders.viewAny');
     }
 
     public function view(User $user, PurchaseOrder $po): bool
@@ -21,49 +20,48 @@ class PurchaseOrderPolicy extends BasePolicy
 
     public function create(User $user): bool
     {
-        return $user->hasAnyRole(['admin', 'manager'])
-            || $user->hasPermission('purchase_orders.create');
+        return $user->hasPermission('purchase_orders.create');
     }
 
     public function update(User $user, PurchaseOrder $po): bool
     {
         return $po->isEditable()
-            && ($user->hasAnyRole(['admin', 'manager']) || $user->hasPermission('purchase_orders.update'))
+            && $user->hasPermission('purchase_orders.update')
             && $this->inUserBranch($user, $po);
     }
 
     public function send(User $user, PurchaseOrder $po): bool
     {
         return $po->isSendable()
-            && ($user->hasAnyRole(['admin', 'manager']) || $user->hasPermission('purchase_orders.send'))
+            && $user->hasPermission('purchase_orders.send')
             && $this->inUserBranch($user, $po);
     }
 
     public function approve(User $user, PurchaseOrder $po): bool
     {
         return $po->isApprovable()
-            && ($user->hasAnyRole(['admin', 'manager']) || $user->hasPermission('purchase_orders.approve'))
+            && $user->hasPermission('purchase_orders.approve')
             && $this->inUserBranch($user, $po);
     }
 
     public function receive(User $user, PurchaseOrder $po): bool
     {
         return $po->isReceivable()
-            && ($user->hasAnyRole(['admin', 'manager']) || $user->hasPermission('purchase_orders.receive'))
+            && $user->hasPermission('purchase_orders.receive')
             && $this->inUserBranch($user, $po);
     }
 
     public function cancel(User $user, PurchaseOrder $po): bool
     {
         return ! in_array($po->status, ['received', 'cancelled'], true)
-            && ($user->hasAnyRole(['admin', 'manager']) || $user->hasPermission('purchase_orders.cancel'))
+            && $user->hasPermission('purchase_orders.cancel')
             && $this->inUserBranch($user, $po);
     }
 
     public function delete(User $user, PurchaseOrder $po): bool
     {
         return $po->isEditable()
-            && ($user->isAdmin() || $user->hasPermission('purchase_orders.delete'))
+            && $user->hasPermission('purchase_orders.delete')
             && $this->inUserBranch($user, $po);
     }
 }

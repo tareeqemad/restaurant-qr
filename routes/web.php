@@ -6,7 +6,12 @@ use App\Http\Controllers\BrandAssetController;
 use App\Http\Controllers\OptimizedAssetController;
 use App\Http\Controllers\SetupController;
 use App\Support\FirstRunSetup;
+use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
+use Illuminate\Cookie\Middleware\EncryptCookies;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
+use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
+use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 Route::get('/', fn () => FirstRunSetup::shouldRunWizard()
     ? redirect()->route('setup.show')
@@ -15,11 +20,11 @@ Route::get('/brand-assets/{key}', BrandAssetController::class)->name('brand.asse
 Route::get('/optimized-assets/{path}', OptimizedAssetController::class)
     ->where('path', '.*')
     ->withoutMiddleware([
-        \Illuminate\Cookie\Middleware\EncryptCookies::class,
-        \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
-        \Illuminate\Session\Middleware\StartSession::class,
-        \Illuminate\View\Middleware\ShareErrorsFromSession::class,
-        \Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class,
+        EncryptCookies::class,
+        AddQueuedCookiesToResponse::class,
+        StartSession::class,
+        ShareErrorsFromSession::class,
+        ValidateCsrfToken::class,
     ])
     ->name('optimized.asset');
 
@@ -27,6 +32,9 @@ Route::get('/setup', [SetupController::class, 'show'])->name('setup.show');
 Route::post('/setup', [SetupController::class, 'store'])
     ->middleware('throttle:10,1')
     ->name('setup.store');
+Route::get('/setup/complete', [SetupController::class, 'complete'])
+    ->middleware('auth')
+    ->name('setup.complete');
 
 Route::get('/login', [LoginController::class, 'show'])->name('login');
 
@@ -41,8 +49,8 @@ Route::middleware('guest')->group(function () {
     // Forgot-password (staff). The controller also enforces its own
     // per-identifier + per-IP throttles so the SMS provider doesn't get
     // hammered on a typo loop.
-    Route::get ('/forgot-password',  [ForgotPasswordController::class, 'show'])->name('password.request');
-    Route::post('/forgot-password',  [ForgotPasswordController::class, 'store'])
+    Route::get('/forgot-password', [ForgotPasswordController::class, 'show'])->name('password.request');
+    Route::post('/forgot-password', [ForgotPasswordController::class, 'store'])
         ->middleware('throttle:10,1')
         ->name('password.email');
 });

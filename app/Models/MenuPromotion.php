@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -40,29 +41,40 @@ class MenuPromotion extends Model
     ];
 
     protected $casts = [
-        'value'             => 'decimal:2',
-        'min_subtotal'      => 'decimal:2',
-        'starts_at'         => 'datetime',
-        'ends_at'           => 'datetime',
-        'days_of_week'      => 'array',
-        'channels'          => 'array',
+        'value' => 'decimal:2',
+        'min_subtotal' => 'decimal:2',
+        'starts_at' => 'datetime',
+        'ends_at' => 'datetime',
+        'days_of_week' => 'array',
+        'channels' => 'array',
         'excluded_item_ids' => 'array',
         'free_modifier_ids' => 'array',
-        'active'            => 'boolean',
+        'active' => 'boolean',
     ];
 
-    public const AUDIENCE_EVERYONE        = 'everyone';
-    public const AUDIENCE_BIRTHDAY_MONTH  = 'birthday_month';
+    public const AUDIENCE_EVERYONE = 'everyone';
+
+    public const AUDIENCE_BIRTHDAY_MONTH = 'birthday_month';
 
     public const TYPE_SALE_PRICE = 'sale_price';
-    public const TYPE_PERCENT    = 'percent';
-    public const TYPE_FIXED_OFF  = 'fixed_off';
+
+    public const TYPE_PERCENT = 'percent';
+
+    public const TYPE_FIXED_OFF = 'fixed_off';
 
     public const TARGET_MENU_ITEM = 'menu_item';
-    public const TARGET_CATEGORY  = 'category';
 
-    public function branch(): BelongsTo  { return $this->belongsTo(Branch::class); }
-    public function creator(): BelongsTo { return $this->belongsTo(User::class, 'created_by_user_id'); }
+    public const TARGET_CATEGORY = 'category';
+
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by_user_id');
+    }
 
     public function menuItem(): BelongsTo
     {
@@ -84,10 +96,13 @@ class MenuPromotion extends Model
     public function applyTo(float $basePrice): float
     {
         return match ($this->type) {
-            self::TYPE_SALE_PRICE => max(0, (float) $this->value),
-            self::TYPE_PERCENT    => max(0, round($basePrice * (1 - ((float) $this->value / 100)), 2)),
-            self::TYPE_FIXED_OFF  => max(0, round($basePrice - (float) $this->value, 2)),
-            default               => $basePrice,
+            // A value above the catalogue price is not an offer. Clamp it to
+            // the base price so a configuration mistake can never charge a
+            // customer more while displaying an "offer" badge.
+            self::TYPE_SALE_PRICE => max(0, min($basePrice, (float) $this->value)),
+            self::TYPE_PERCENT => max(0, round($basePrice * (1 - ((float) $this->value / 100)), 2)),
+            self::TYPE_FIXED_OFF => max(0, round($basePrice - (float) $this->value, 2)),
+            default => $basePrice,
         };
     }
 
@@ -96,29 +111,43 @@ class MenuPromotion extends Model
      * the schedule fields. PromotionService::resolveForItem uses this
      * to filter candidates before priority/specificity tie-breaking.
      */
-    public function isLiveAt(\Carbon\Carbon $when): bool
+    public function isLiveAt(Carbon $when): bool
     {
-        if (! $this->active) return false;
+        if (! $this->active) {
+            return false;
+        }
 
-        if ($this->starts_at && $when->lt($this->starts_at)) return false;
-        if ($this->ends_at   && $when->gt($this->ends_at))   return false;
+        if ($this->starts_at && $when->lt($this->starts_at)) {
+            return false;
+        }
+        if ($this->ends_at && $when->gt($this->ends_at)) {
+            return false;
+        }
 
         // Day-of-week filter: 0 = Sunday … 6 = Saturday (matches Carbon's dayOfWeek)
         if (! empty($this->days_of_week)) {
-            if (! in_array($when->dayOfWeek, array_map('intval', $this->days_of_week), true)) return false;
+            if (! in_array($when->dayOfWeek, array_map('intval', $this->days_of_week), true)) {
+                return false;
+            }
         }
 
         // Time-of-day window — both endpoints required if either is set.
         if ($this->time_from || $this->time_to) {
-            if (! $this->time_from || ! $this->time_to) return false;
+            if (! $this->time_from || ! $this->time_to) {
+                return false;
+            }
             $current = $when->format('H:i:s');
-            $from    = $this->time_from instanceof \Carbon\Carbon ? $this->time_from->format('H:i:s') : (string) $this->time_from;
-            $to      = $this->time_to   instanceof \Carbon\Carbon ? $this->time_to->format('H:i:s')   : (string) $this->time_to;
+            $from = $this->time_from instanceof Carbon ? $this->time_from->format('H:i:s') : (string) $this->time_from;
+            $to = $this->time_to   instanceof Carbon ? $this->time_to->format('H:i:s') : (string) $this->time_to;
             // Same-day window (15:00-17:00). Overnight (22:00-02:00) flips the compare.
             if ($from <= $to) {
-                if ($current < $from || $current > $to) return false;
+                if ($current < $from || $current > $to) {
+                    return false;
+                }
             } else {
-                if ($current < $from && $current > $to) return false;
+                if ($current < $from && $current > $to) {
+                    return false;
+                }
             }
         }
 
@@ -139,10 +168,14 @@ class MenuPromotion extends Model
             return (int) $this->target_id === (int) $item->id;
         }
         if ($this->target_type === self::TARGET_CATEGORY) {
-            if ((int) $this->target_id !== (int) $item->category_id) return false;
+            if ((int) $this->target_id !== (int) $item->category_id) {
+                return false;
+            }
             $excluded = collect($this->excluded_item_ids ?? [])->map(fn ($i) => (int) $i)->all();
+
             return ! in_array((int) $item->id, $excluded, true);
         }
+
         return false;
     }
 
@@ -153,8 +186,13 @@ class MenuPromotion extends Model
      */
     public function allowsChannel(?string $channel): bool
     {
-        if (empty($this->channels)) return true;
-        if ($channel === null) return false;
+        if (empty($this->channels)) {
+            return true;
+        }
+        if ($channel === null) {
+            return false;
+        }
+
         return in_array($channel, $this->channels, true);
     }
 
@@ -166,7 +204,10 @@ class MenuPromotion extends Model
     public function meetsMinSubtotal(?float $subtotal): bool
     {
         $min = $this->min_subtotal !== null ? (float) $this->min_subtotal : 0;
-        if ($min <= 0) return true;
+        if ($min <= 0) {
+            return true;
+        }
+
         return $subtotal !== null && $subtotal + 0.001 >= $min;
     }
 
@@ -178,7 +219,10 @@ class MenuPromotion extends Model
      */
     public function isExhausted(): bool
     {
-        if ($this->usage_limit === null) return false;
+        if ($this->usage_limit === null) {
+            return false;
+        }
+
         return (int) $this->usage_count >= (int) $this->usage_limit;
     }
 
@@ -190,13 +234,13 @@ class MenuPromotion extends Model
      *   fail birthday_month — promos targeting birthdays only ever
      *   fire for logged-in / identified customers.
      */
-    public function matchesAudience(?\App\Models\Customer $customer, \Carbon\Carbon $when): bool
+    public function matchesAudience(?Customer $customer, Carbon $when): bool
     {
         return match ($this->audience ?? self::AUDIENCE_EVERYONE) {
-            self::AUDIENCE_EVERYONE       => true,
+            self::AUDIENCE_EVERYONE => true,
             self::AUDIENCE_BIRTHDAY_MONTH => $customer?->birthday
                                                 && $customer->birthday->month === $when->month,
-            default                       => true,
+            default => true,
         };
     }
 
@@ -211,9 +255,9 @@ class MenuPromotion extends Model
     {
         return match ($this->type) {
             self::TYPE_SALE_PRICE => 'سعر عرض ثابت',
-            self::TYPE_PERCENT    => 'نسبة مئوية',
-            self::TYPE_FIXED_OFF  => 'خصم مبلغ ثابت',
-            default               => $this->type,
+            self::TYPE_PERCENT => 'نسبة مئوية',
+            self::TYPE_FIXED_OFF => 'خصم مبلغ ثابت',
+            default => $this->type,
         };
     }
 
@@ -221,9 +265,9 @@ class MenuPromotion extends Model
     {
         return match ($this->type) {
             self::TYPE_SALE_PRICE => number_format((float) $this->value, 2).' ش.إ',
-            self::TYPE_PERCENT    => rtrim(rtrim((string) $this->value, '0'), '.').'%',
-            self::TYPE_FIXED_OFF  => '−'.number_format((float) $this->value, 2).' ش.إ',
-            default               => (string) $this->value,
+            self::TYPE_PERCENT => rtrim(rtrim((string) $this->value, '0'), '.').'%',
+            self::TYPE_FIXED_OFF => '−'.number_format((float) $this->value, 2).' ش.إ',
+            default => (string) $this->value,
         };
     }
 
@@ -236,7 +280,7 @@ class MenuPromotion extends Model
         $parts = [];
         if ($this->starts_at || $this->ends_at) {
             $from = $this->starts_at?->format('Y-m-d') ?? '∞';
-            $to   = $this->ends_at?->format('Y-m-d')   ?? '∞';
+            $to = $this->ends_at?->format('Y-m-d') ?? '∞';
             $parts[] = "{$from} → {$to}";
         }
         if (! empty($this->days_of_week)) {
@@ -247,10 +291,11 @@ class MenuPromotion extends Model
             $parts[] = $picked;
         }
         if ($this->time_from && $this->time_to) {
-            $from = $this->time_from instanceof \Carbon\Carbon ? $this->time_from->format('H:i') : substr((string) $this->time_from, 0, 5);
-            $to   = $this->time_to   instanceof \Carbon\Carbon ? $this->time_to->format('H:i')   : substr((string) $this->time_to, 0, 5);
+            $from = $this->time_from instanceof Carbon ? $this->time_from->format('H:i') : substr((string) $this->time_from, 0, 5);
+            $to = $this->time_to   instanceof Carbon ? $this->time_to->format('H:i') : substr((string) $this->time_to, 0, 5);
             $parts[] = "{$from} – {$to}";
         }
+
         return empty($parts) ? 'دائم' : implode(' · ', $parts);
     }
 }

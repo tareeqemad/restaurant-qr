@@ -1,5 +1,6 @@
 *.log
 .DS_Store
+.claude/settings.local.json
 .claude/worktrees/
 *.zip
 # .env is committed per user request (local/demo project — NOT recommended in production)
@@ -26,3 +27,5 @@ Homestead.json
 Homestead.yaml
 Thumbs.db
 /.tmp-appdata
+/tmp
+/.codex-staging

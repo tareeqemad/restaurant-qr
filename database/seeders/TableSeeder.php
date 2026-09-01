@@ -19,13 +19,14 @@ use Illuminate\Database\Seeder;
  * keyed on (branch, number), so re-running reshapes the floor without
  * duplicating it.
  *
- * The indoor/outdoor zones are GLOBAL (shared across branches) — see
- * App\Models\Lookup::PER_BRANCH_GROUPS, which deliberately excludes "zones".
+ * The indoor/outdoor zones are GLOBAL (shared across branches) — their
+ * scope comes from the system row in `lookup_groups`.
  */
 class TableSeeder extends Seeder
 {
     /** 15 + 25 = a 40-table floor. */
     private const INDOOR = 15;
+
     private const OUTDOOR = 25;
 
     public function run(): void

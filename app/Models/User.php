@@ -3,13 +3,18 @@
 namespace App\Models;
 
 use App\Enums\UserRole;
+use App\Helpers\Brand;
+use App\Support\BranchContext;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Collection;
 
 class User extends Authenticatable
 {
@@ -17,7 +22,6 @@ class User extends Authenticatable
 
     protected $fillable = [
         'name',
-        'name_en',
         'username',
         'email',
         'phone',
@@ -61,26 +65,41 @@ class User extends Authenticatable
      * running tab; settled rows are history (payroll deduction, cash
      * pay-back, write-off).
      */
-    public function staffMealCharges(): \Illuminate\Database\Eloquent\Relations\HasMany
+    public function staffMealCharges(): HasMany
     {
         return $this->hasMany(StaffMealCharge::class)->latest('charged_at');
     }
 
     /**
-     * Sum of unsettled charges in a specific month — drives the
-     * "used this month" KPI on the staff meals dashboard. Defaults to
-     * the current calendar month.
+     * Nominal non-gift consumption in a month. Settlements and waivers do
+     * not erase historical consumption; a zero-debt gift is the exception.
      */
-    public function staffMealUsedInMonth(?\Carbon\Carbon $month = null): float
+    public function staffMealUsedInMonth(?Carbon $month = null): float
     {
         $month = $month?->copy()->startOfMonth() ?? now()->startOfMonth();
         $end = $month->copy()->endOfMonth();
 
-        return (float) StaffMealCharge::query()
+        $charges = StaffMealCharge::query()
             ->where('user_id', $this->id)
-            ->whereNull('settled_at')
             ->whereBetween('charged_at', [$month, $end])
-            ->sum('amount');
+            ->where(function ($query) {
+                $query->whereNull('settlement_method')
+                    ->orWhere('settlement_method', '!=', 'gift')
+                    ->orWhere(function ($giftQuery) {
+                        $giftQuery->where('settlement_method', 'gift')
+                            ->where('amount', '>', 0);
+                    });
+            })
+            ->with('order:id,total')
+            ->get();
+
+        $withOrders = $charges->whereNotNull('order_id')
+            ->unique('order_id')
+            ->sum(fn (StaffMealCharge $charge) => (float) ($charge->order?->total ?? $charge->amount));
+        $withoutOrders = $charges->whereNull('order_id')
+            ->sum(fn (StaffMealCharge $charge) => (float) $charge->amount);
+
+        return round((float) $withOrders + (float) $withoutOrders, 2);
     }
 
     /**
@@ -103,7 +122,10 @@ class User extends Authenticatable
      */
     public function staffMealRemainingThisMonth(): ?float
     {
-        if ($this->monthly_meal_allowance === null) return null;
+        if ($this->monthly_meal_allowance === null) {
+            return null;
+        }
+
         return round((float) $this->monthly_meal_allowance - $this->staffMealUsedInMonth(), 2);
     }
 
@@ -120,7 +142,10 @@ class User extends Authenticatable
      */
     public function staffMealCeilingHeadroom(): ?float
     {
-        if ($this->meal_debt_ceiling === null) return null;
+        if ($this->meal_debt_ceiling === null) {
+            return null;
+        }
+
         return round((float) $this->meal_debt_ceiling - $this->staffMealOutstanding(), 2);
     }
 
@@ -135,10 +160,17 @@ class User extends Authenticatable
         if ($this->monthly_meal_allowance === null || (float) $this->monthly_meal_allowance <= 0) {
             return null;
         }
+
         return round($this->staffMealUsedInMonth() / (float) $this->monthly_meal_allowance * 100, 1);
     }
 
     // ========== Relations ==========
+
+    /** Optional employee record. A login is never required for employment. */
+    public function employee(): HasOne
+    {
+        return $this->hasOne(Employee::class);
+    }
 
     public function station(): BelongsTo
     {
@@ -165,16 +197,6 @@ class User extends Authenticatable
             ->withTimestamps();
     }
 
-    public function shifts(): HasMany
-    {
-        return $this->hasMany(Shift::class);
-    }
-
-    public function activeShift()
-    {
-        return $this->hasOne(Shift::class)->where('status', 'open')->latest('opened_at');
-    }
-
     public function approvedOrders(): HasMany
     {
         return $this->hasMany(Order::class, 'approved_by_user_id');
@@ -193,7 +215,7 @@ class User extends Authenticatable
      */
     public function openAttendance(): ?Attendance
     {
-        return \App\Support\BranchContext::unscoped(
+        return BranchContext::unscoped(
             fn () => $this->attendances()->open()->latest('clock_in_at')->first()
         );
     }
@@ -247,6 +269,11 @@ class User extends Authenticatable
     public function isManager(): bool
     {
         return $this->role === UserRole::Manager->value;
+    }
+
+    public function isAccountant(): bool
+    {
+        return $this->role === UserRole::Accountant->value;
     }
 
     public function isWaiter(): bool
@@ -304,12 +331,13 @@ class User extends Authenticatable
         }
 
         $branch = null;
-        if ($id = \App\Support\BranchContext::current()) {
+        if ($id = BranchContext::current()) {
             $branch = Branch::find($id);
         }
         $branch ??= $this->primaryBranch();
 
         $this->setRelation('currentBranch', $branch);
+
         return $branch;
     }
 
@@ -350,7 +378,6 @@ class User extends Authenticatable
     // were dropped (see migration 2026_05_10_220000). The user's role
     // is always the global `$this->role` (UserRole enum).
 
-
     public function getRoleLabelAttribute(): string
     {
         return UserRole::tryFrom($this->role)?->label() ?? $this->role;
@@ -380,6 +407,7 @@ class User extends Authenticatable
             UserRole::Partner->value,
             UserRole::Admin->value,
             UserRole::Manager->value,
+            UserRole::Accountant->value,
             UserRole::Waiter->value,
             UserRole::Chef->value,
             UserRole::Bartender->value,
@@ -435,7 +463,11 @@ class User extends Authenticatable
         }
 
         // Role-based permissions
-        $role = Role::where('name', $this->role)->with('permissions')->first();
+        $role = Role::global()
+            ->where('name', $this->role)
+            ->with('permissions')
+            ->first();
+
         return $role?->permissions->contains('name', $name) ?? false;
     }
 
@@ -447,10 +479,16 @@ class User extends Authenticatable
      * owner-level users (they bypass the check entirely; surfacing per-
      * permission toggles for them would be misleading).
      */
-    public function rolePermissionIds(): \Illuminate\Support\Collection
+    public function rolePermissionIds(): Collection
     {
-        if ($this->isOwnerLevel()) return collect();
-        $role = Role::where('name', $this->role)->with('permissions:id')->first();
+        if ($this->isOwnerLevel()) {
+            return collect();
+        }
+        $role = Role::global()
+            ->where('name', $this->role)
+            ->with('permissions:id')
+            ->first();
+
         return collect($role?->permissions?->pluck('id') ?? []);
     }
 
@@ -460,7 +498,7 @@ class User extends Authenticatable
      * Loading via the relation honors withPivot('granted') so we can
      * separate grants from revokes.
      */
-    public function grantedPermissionIds(): \Illuminate\Support\Collection
+    public function grantedPermissionIds(): Collection
     {
         return $this->permissions()
             ->wherePivot('granted', true)
@@ -472,7 +510,7 @@ class User extends Authenticatable
      * These are role-default permissions the admin has stripped from this
      * one user (rare but useful: a manager forbidden from settling debts).
      */
-    public function revokedPermissionIds(): \Illuminate\Support\Collection
+    public function revokedPermissionIds(): Collection
     {
         return $this->permissions()
             ->wherePivot('granted', false)
@@ -487,11 +525,13 @@ class User extends Authenticatable
      * that to display "all permissions (owner)" rather than ticking 119
      * boxes one by one.
      */
-    public function effectivePermissionIds(): ?\Illuminate\Support\Collection
+    public function effectivePermissionIds(): ?Collection
     {
-        if ($this->isOwnerLevel()) return null;
+        if ($this->isOwnerLevel()) {
+            return null;
+        }
 
-        $role    = $this->rolePermissionIds();
+        $role = $this->rolePermissionIds();
         $granted = $this->grantedPermissionIds();
         $revoked = $this->revokedPermissionIds();
 
@@ -511,7 +551,8 @@ class User extends Authenticatable
         if ($this->avatar && file_exists(public_path('storage/'.$this->avatar))) {
             return asset('storage/'.$this->avatar);
         }
+
         // Neutral person silhouette — inline SVG, no broken-image flash.
-        return \App\Helpers\Brand::defaultAvatarDataUri();
+        return Brand::defaultAvatarDataUri();
     }
 }

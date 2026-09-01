@@ -12,8 +12,13 @@ class OrderItem extends Model
 {
     use HasFactory;
 
+    public function changeRequests(): HasMany
+    {
+        return $this->hasMany(OrderChangeRequest::class);
+    }
+
     protected $fillable = [
-        'order_id', 'menu_item_id', 'station_id', 'name_snapshot', 'name_en_snapshot',
+        'order_id', 'menu_item_id', 'station_id', 'name_snapshot',
         'quantity', 'unit_price',
         // Snapshotted at addItem-time when a promotion was active so receipts
         // + reports can show "was 30 → now 25" even after the promo expires.
@@ -57,6 +62,11 @@ class OrderItem extends Model
         return $this->hasMany(OrderItemModifier::class);
     }
 
+    public function exclusions(): HasMany
+    {
+        return $this->hasMany(OrderItemIngredientExclusion::class);
+    }
+
     /**
      * The promotion that drove the discounted unit_price on this line —
      * loaded so the cashier UI + receipt can show "خصم: <promo name>".
@@ -77,7 +87,10 @@ class OrderItem extends Model
     /** Total savings on this line (qty × per-unit discount). */
     public function discountSavings(): float
     {
-        if (! $this->wasDiscounted()) return 0.0;
+        if (! $this->wasDiscounted()) {
+            return 0.0;
+        }
+
         return round(((float) $this->unit_price_original - (float) $this->unit_price) * (float) $this->quantity, 2);
     }
 

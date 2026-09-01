@@ -9,7 +9,7 @@ class RefundPolicy extends BasePolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->hasAnyRole(['admin', 'manager', 'cashier']);
+        return $user->hasPermission('payments.refund');
     }
 
     public function view(User $user, Refund $refund): bool
@@ -20,20 +20,27 @@ class RefundPolicy extends BasePolicy
 
     public function create(User $user): bool
     {
-        return $user->hasAnyRole(['admin', 'manager', 'cashier']);
+        return $user->hasPermission('payments.refund');
     }
 
     public function complete(User $user, Refund $refund): bool
     {
         return $refund->status === 'pending'
-            && $user->hasAnyRole(['admin', 'manager'])
+            && $user->hasPermission('payments.refund')
             && $this->inUserBranch($user, $refund);
     }
 
     public function cancel(User $user, Refund $refund): bool
     {
         return $refund->status === 'pending'
-            && $user->hasAnyRole(['admin', 'manager'])
+            && $user->hasPermission('payments.refund')
+            && $this->inUserBranch($user, $refund);
+    }
+
+    public function reverse(User $user, Refund $refund): bool
+    {
+        return $refund->status === 'completed'
+            && $user->hasPermission('payments.refund')
             && $this->inUserBranch($user, $refund);
     }
 }

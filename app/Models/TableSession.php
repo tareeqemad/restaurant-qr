@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 
 class TableSession extends Model
@@ -15,15 +16,17 @@ class TableSession extends Model
 
     protected $fillable = [
         'table_id', 'table_number_snapshot',
-        'customer_id', 'token', 'cover_count', 'status',
-        'customer_name', 'customer_phone', 'opened_by_user_id', 'assigned_waiter_id',
-        'opened_at', 'closed_at', 'last_activity_at',
+        'customer_id', 'token', 'ordering_device_hash', 'cover_count', 'status',
+        'customer_name', 'customer_phone',
+        'opened_by_user_id', 'assigned_waiter_id',
+        'opened_at', 'engaged_at', 'closed_at', 'last_activity_at',
         'bill_requested_at', 'bill_request_note',
         'help_requested_at', 'help_request_note', 'help_ack_by_user_id',
     ];
 
     protected $casts = [
         'opened_at' => 'datetime',
+        'engaged_at' => 'datetime',
         'closed_at' => 'datetime',
         'last_activity_at' => 'datetime',
         'bill_requested_at' => 'datetime',
@@ -42,6 +45,14 @@ class TableSession extends Model
             if (empty($m->last_activity_at)) {
                 $m->last_activity_at = now();
             }
+            // Trusted staff/test flows may create the session after the table
+            // is occupied. QR-created sessions start on an available table.
+            if (empty($m->engaged_at) && $m->table_id) {
+                $table = Table::withoutGlobalScopes()->find($m->table_id);
+                if ($table?->status === 'occupied') {
+                    $m->engaged_at = now();
+                }
+            }
             // Snapshot the table number so renaming/deleting the table
             // later doesn't silently rewrite this session's display.
             if (empty($m->table_number_snapshot) && $m->table_id) {
@@ -49,25 +60,51 @@ class TableSession extends Model
             }
         });
 
-        // Seating a new party ends any bussing debt on that table — either it
-        // got wiped down or nobody is tracking it. This is the safety valve
-        // that stops needs_cleaning_since from getting stuck on a floor that
-        // ignores the feature, and it covers every path that OPENS a session
-        // (QR scan, waiter POS) without each having to remember.
-        //
-        // Transfer is deliberately NOT covered here: it moves a session by
-        // updating table_id, so nothing is created and this never fires.
-        // TableSessionTransferService clears the target explicitly instead.
-        static::created(function (self $m) {
-            if (! $m->table_id) {
-                return;
-            }
+    }
 
-            Table::withoutGlobalScopes()
-                ->whereKey($m->table_id)
-                ->whereNotNull('needs_cleaning_since')
-                ->update(['needs_cleaning_since' => null]);
-        });
+    /** Promote a harmless QR draft into a real table visit. */
+    public function engage(?int $waiterId = null): ?string
+    {
+        $updates = [];
+        if (! $this->engaged_at) {
+            $updates['engaged_at'] = now();
+        }
+        if ($waiterId && ! $this->assigned_waiter_id) {
+            $updates['assigned_waiter_id'] = $waiterId;
+        }
+        if ($updates !== []) {
+            $this->update($updates);
+        }
+
+        $table = Table::withoutGlobalScopes()->find($this->table_id);
+        if (! $table) {
+            return null;
+        }
+
+        $previous = $table->status;
+        $table->update([
+            'status' => 'occupied',
+            // Browsing never clears this flag. A real seating signal does.
+            'needs_cleaning_since' => null,
+        ]);
+
+        return $previous;
+    }
+
+    public function isBrowsing(): bool
+    {
+        return ! $this->engaged_at && ! $this->orders()->exists();
+    }
+
+    /** Only the browser that placed the first QR order may mutate this visit. */
+    public function canOrderFromDevice(?string $deviceHash): bool
+    {
+        if (! $this->ordering_device_hash) {
+            return true;
+        }
+
+        return filled($deviceHash)
+            && hash_equals($this->ordering_device_hash, $deviceHash);
     }
 
     /**
@@ -114,7 +151,7 @@ class TableSession extends Model
         return $this->hasMany(Order::class);
     }
 
-    public function invoice(): \Illuminate\Database\Eloquent\Relations\HasOne
+    public function invoice(): HasOne
     {
         return $this->hasOne(Invoice::class)->latest();
     }
@@ -127,6 +164,7 @@ class TableSession extends Model
     public function touch($attribute = null): bool
     {
         $this->last_activity_at = now();
+
         return parent::touch($attribute);
     }
 }

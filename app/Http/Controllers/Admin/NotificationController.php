@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Support\AdminShell;
 use App\Support\BranchContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -51,17 +52,45 @@ class NotificationController extends Controller
         $base = $user->notifications();
         $this->scopeToActiveBranch($base, $user);
         $stats = [
-            'total'    => (clone $base)->count(),
-            'unread'   => (clone $base)->whereNull('read_at')->count(),
-            'today'    => (clone $base)->whereDate('created_at', today())->count(),
-            'by_type'  => (clone $base)
+            'total' => (clone $base)->count(),
+            'unread' => (clone $base)->whereNull('read_at')->count(),
+            'today' => (clone $base)->whereDate('created_at', today())->count(),
+            'by_type' => (clone $base)
                 ->selectRaw('type_key, COUNT(*) as c')
                 ->groupBy('type_key')
                 ->pluck('c', 'type_key')
                 ->toArray(),
         ];
 
-        return view('admin.notifications.index', compact('notifications', 'stats', 'status'));
+        $notifications->through(fn ($notification) => $this->present($notification, $user));
+
+        return AdminShell::render('Admin/Notifications/Index', [
+            'notifications' => $notifications,
+            'stats' => [
+                'total' => $stats['total'],
+                'unread' => $stats['unread'],
+                'today' => $stats['today'],
+                'newOrders' => $stats['by_type']['order.new'] ?? 0,
+                'billRequests' => $stats['by_type']['bill.requested'] ?? 0,
+                'lowStock' => $stats['by_type']['stock.low'] ?? 0,
+                'refunds' => $stats['by_type']['refund.issued'] ?? 0,
+            ],
+            'filters' => [
+                'status' => $status,
+                'type' => (string) $request->get('type', ''),
+                'severity' => (string) $request->get('severity', ''),
+            ],
+            'types' => collect($this->typeLabels())->map(fn (array $meta, string $value) => [
+                'value' => $value,
+                'label' => $meta['label'],
+                'icon' => $meta['icon'],
+            ])->values(),
+            'urls' => [
+                'index' => route('admin.notifications.index'),
+                'readAll' => route('admin.notifications.read-all'),
+                'base' => url('admin/notifications'),
+            ],
+        ]);
     }
 
     /**
@@ -80,7 +109,7 @@ class NotificationController extends Controller
 
         return response()->json([
             'unread' => $unread,
-            'items'  => $rows->map(fn ($n) => $this->present($n))->values(),
+            'items' => $rows->map(fn ($n) => $this->present($n, $user))->values(),
         ]);
     }
 
@@ -97,7 +126,7 @@ class NotificationController extends Controller
         }
 
         return response()->json([
-            'ok'     => true,
+            'ok' => true,
             'unread' => $this->unreadCountFor($user),
         ]);
     }
@@ -115,7 +144,7 @@ class NotificationController extends Controller
         $query->update(['read_at' => now()]);
 
         return response()->json([
-            'ok'     => true,
+            'ok' => true,
             'unread' => $this->unreadCountFor($user),
         ]);
     }
@@ -129,7 +158,7 @@ class NotificationController extends Controller
         $user->notifications()->whereKey($id)->delete();
 
         return response()->json([
-            'ok'     => true,
+            'ok' => true,
             'unread' => $this->unreadCountFor($user),
         ]);
     }
@@ -142,13 +171,15 @@ class NotificationController extends Controller
      */
     protected function scopeToActiveBranch($query, $user): void
     {
-        if ($user->isOwnerLevel()) return;
+        if ($user->isOwnerLevel()) {
+            return;
+        }
 
         $branchId = BranchContext::current() ?? optional($user->primaryBranch())->id;
         if ($branchId) {
             $query->where(function ($q) use ($branchId) {
                 $q->where('branch_id', $branchId)
-                  ->orWhereNull('branch_id');
+                    ->orWhereNull('branch_id');
             });
         }
     }
@@ -157,6 +188,7 @@ class NotificationController extends Controller
     {
         $q = $user->unreadNotifications();
         $this->scopeToActiveBranch($q, $user);
+
         return $q->count();
     }
 
@@ -165,19 +197,80 @@ class NotificationController extends Controller
      * Pulls the heavy bits out of the `data` JSON — the bell shouldn't
      * need to know the column shape.
      */
-    protected function present($notification): array
+    protected function present($notification, $user): array
     {
         $data = $notification->data ?? [];
+        $type = $notification->type_key ?? $data['type_key'] ?? '';
+        $extra = $data['extra'] ?? [];
+
         return [
-            'id'           => $notification->id,
-            'title'        => $data['title']        ?? 'إشعار',
-            'body'         => $data['body']         ?? '',
-            'icon'         => $data['icon']         ?? 'bi-bell',
-            'severity'     => $data['severity']     ?? 'info',
-            'action_url'   => $data['action_url']   ?? null,
+            'id' => $notification->id,
+            'title' => $data['title'] ?? 'إشعار',
+            'body' => $data['body'] ?? '',
+            'icon' => $data['icon'] ?? 'bi-bell',
+            'severity' => $data['severity'] ?? 'info',
+            'action_url' => $data['action_url'] ?? null,
             'action_label' => $data['action_label'] ?? null,
-            'read'         => ! is_null($notification->read_at),
-            'created_at'   => optional($notification->created_at)->diffForHumans(),
+            'type_key' => $type,
+            'extra' => $extra,
+            'quick_action' => $this->quickAction($type, $extra, $user),
+            'read' => ! is_null($notification->read_at),
+            'created_at' => optional($notification->created_at)->diffForHumans(),
+        ];
+    }
+
+    protected function quickAction(string $type, array $extra, $user): ?array
+    {
+        $canWorkFloor = $user->isOwnerLevel()
+            || $user->hasAnyRole(['admin', 'manager', 'waiter']);
+        if (! $canWorkFloor) {
+            return null;
+        }
+
+        // A new round must be opened and reviewed before approval.  Keeping
+        // a one-tap approve action in the bell let staff send unseen items to
+        // production and was the main source of rush-hour confusion.
+        if ($type === 'order.new') {
+            return null;
+        }
+
+        if ($type === 'order.ready' && ! empty($extra['order_id'])) {
+            return [
+                'label' => 'تم التقديم',
+                'url' => route('admin.orders.board-action'),
+                'payload' => ['verb' => 'serve-ready', 'order_id' => (int) $extra['order_id']],
+            ];
+        }
+
+        if ($type === 'table.help' && ! empty($extra['session_id'])) {
+            return [
+                'label' => 'أنا ذاهب',
+                'url' => route('admin.tables.ack-help', (int) $extra['session_id']),
+                'payload' => [],
+            ];
+        }
+
+        return null;
+    }
+
+    protected function typeLabels(): array
+    {
+        return [
+            'order.new' => ['label' => 'طلب جديد', 'icon' => 'bi-bag-plus-fill'],
+            'order.change' => ['label' => 'تعديل طلب', 'icon' => 'bi-pencil-square'],
+            'order.cancelled' => ['label' => 'طلب ملغى', 'icon' => 'bi-x-octagon-fill'],
+            'order.ready' => ['label' => 'طلب جاهز', 'icon' => 'bi-bell-fill'],
+            'table.help' => ['label' => 'طلب نادل', 'icon' => 'bi-hand-index-thumb-fill'],
+            'reservation.new' => ['label' => 'حجز جديد', 'icon' => 'bi-calendar-plus-fill'],
+            'reservation.upcoming' => ['label' => 'حجز قريب', 'icon' => 'bi-calendar-event-fill'],
+            'review.new' => ['label' => 'تقييم جديد', 'icon' => 'bi-star-fill'],
+            'stock.low' => ['label' => 'مخزون منخفض', 'icon' => 'bi-exclamation-triangle-fill'],
+            'refund.issued' => ['label' => 'استرداد', 'icon' => 'bi-arrow-counterclockwise'],
+            'attendance.late' => ['label' => 'تأخر حضور', 'icon' => 'bi-alarm-fill'],
+            'purchase.received' => ['label' => 'استلام مشتريات', 'icon' => 'bi-box-seam'],
+            'bill.requested' => ['label' => 'طلب فاتورة', 'icon' => 'bi-receipt-cutoff'],
+            'branch_transfer.sent' => ['label' => 'تحويل قادم', 'icon' => 'bi-truck'],
+            'branch_transfer.received' => ['label' => 'تحويل مستلم', 'icon' => 'bi-check-circle-fill'],
         ];
     }
 }

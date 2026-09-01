@@ -9,7 +9,7 @@ class PaymentPolicy extends BasePolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->hasAnyRole(['admin', 'manager', 'cashier']);
+        return $user->hasPermission('payments.viewAny');
     }
 
     /**
@@ -24,12 +24,27 @@ class PaymentPolicy extends BasePolicy
 
     public function create(User $user): bool
     {
-        return $user->hasAnyRole(['admin', 'manager', 'cashier']);
+        return $user->hasPermission('payments.create');
     }
 
     public function delete(User $user, Payment $payment): bool
     {
-        return $user->hasAnyRole(['admin', 'manager'])
+        return $user->hasPermission('payments.void')
             && $this->inUserBranch($user, $payment);
+    }
+
+    public function void(User $user, Payment $payment): bool
+    {
+        if (! $this->inUserBranch($user, $payment)) {
+            return false;
+        }
+
+        if ($user->hasPermission('payments.void')) {
+            return true;
+        }
+
+        return $user->hasPermission('payments.void_own')
+            && (int) $payment->received_by_user_id === (int) $user->id
+            && $payment->paid_at?->isToday();
     }
 }

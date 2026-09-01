@@ -2,10 +2,8 @@
 
 namespace App\Providers;
 
-use App\Http\Middleware\SetActiveBranch;
 use App\Models\Account;
 use App\Models\ActivityLog;
-use App\Models\Announcement;
 use App\Models\Attendance;
 use App\Models\Branch;
 use App\Models\Customer;
@@ -23,7 +21,6 @@ use App\Models\Refund;
 use App\Models\Reservation;
 use App\Models\Review;
 use App\Models\Role;
-use App\Models\Shift;
 use App\Models\Station;
 use App\Models\StockCount;
 use App\Models\Supplier;
@@ -35,7 +32,6 @@ use App\Observers\RecipeItemObserver;
 use App\Observers\StationObserver;
 use App\Policies\AccountPolicy;
 use App\Policies\ActivityLogPolicy;
-use App\Policies\AnnouncementPolicy;
 use App\Policies\AttendancePolicy;
 use App\Policies\BranchPolicy;
 use App\Policies\CustomerPolicy;
@@ -52,7 +48,6 @@ use App\Policies\RefundPolicy;
 use App\Policies\ReservationPolicy;
 use App\Policies\ReviewPolicy;
 use App\Policies\RolePolicy;
-use App\Policies\ShiftPolicy;
 use App\Policies\StockCountPolicy;
 use App\Policies\SupplierInvoicePolicy;
 use App\Policies\SupplierPolicy;
@@ -69,7 +64,6 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
-use Livewire\Livewire;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -82,7 +76,6 @@ class AppServiceProvider extends ServiceProvider
     {
         RuntimeConfig::apply();
 
-        app()->setLocale(MarketProfile::lang());
         date_default_timezone_set(MarketProfile::timezone());
 
         Schema::defaultStringLength(191);
@@ -96,16 +89,6 @@ class AppServiceProvider extends ServiceProvider
             TrustProxies::at($trustedProxies);
         }
 
-        // Livewire's update endpoint sits outside the `branch` middleware,
-        // so without this any computed property that calls Lookup::for(...)
-        // sees a NULL branch context and returns no rows. Marking
-        // SetActiveBranch as persistent makes Livewire run it on every
-        // wire:click round-trip — keeping zone chips, branch-scoped
-        // dropdowns, etc. stable after the initial page render.
-        Livewire::addPersistentMiddleware([
-            SetActiveBranch::class,
-        ]);
-
         Gate::policy(Account::class, AccountPolicy::class);
         Gate::policy(User::class, UserPolicy::class);
         Gate::policy(Role::class, RolePolicy::class);
@@ -115,7 +98,6 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Table::class, TablePolicy::class);
         Gate::policy(Payment::class, PaymentPolicy::class);
         Gate::policy(OrderDiscount::class, OrderDiscountPolicy::class);
-        Gate::policy(Announcement::class, AnnouncementPolicy::class);
         Gate::policy(Ingredient::class, InventoryPolicy::class);
         Gate::policy(Supplier::class, SupplierPolicy::class);
         Gate::policy(PurchaseOrder::class, PurchaseOrderPolicy::class);
@@ -130,7 +112,6 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Expense::class, ExpensePolicy::class);
         Gate::policy(Lookup::class, LookupPolicy::class);
         Gate::policy(Customer::class, CustomerPolicy::class);
-        Gate::policy(Shift::class, ShiftPolicy::class);
 
         // Model observers — keep menu-item costs in sync with recipes.
         Ingredient::observe(IngredientObserver::class);

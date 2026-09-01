@@ -19,17 +19,12 @@ class AccountingSeeder extends Seeder
      * every re-seed (the bug this replaces).
      */
     private const DISABLED_CODES = [
-        '1020', // مقاصة بطاقات — تسوية فورية إلى 1010
-        '1030', // مقاصة المحافظ — غير مستخدمة
-        '1040', // مقاصة البيع الآجل — الرصيد يبقى على 1100
         '2200', // أمانات الإكراميات — تُقبض مباشرة
         '4200', // فروقات جرد دائنة — لا جرد فعلي
         '4210', // فروقات صندوق دائنة — لا عدّ نقدية
-        '5300', // عمولات بنكية — تسوية بلا رسوم
         '5410', // عجز جرد — لا جرد فعلي
         '5420', // فروقات أسعار مشتريات — لا مطابقة بندية
         '5510', // عجز صندوق — لا عدّ نقدية
-        '5050', // مصاريف وجبات الموظفين — يتيم: استُبدل بنموذج 4030، لا يرحّل إليه كود
     ];
 
     public function run(): void
@@ -39,7 +34,7 @@ class AccountingSeeder extends Seeder
 
             $payload = [
                 ...$account,
-                'is_system'  => true,
+                'is_system' => true,
                 'updated_at' => now(),
             ];
 
@@ -47,7 +42,7 @@ class AccountingSeeder extends Seeder
             // (or a disable migration's) later toggle on an existing account.
             // Fresh installs get the correct default: disabled set starts off.
             if (! $exists) {
-                $payload['is_active']  = ! in_array($account['code'], self::DISABLED_CODES, true);
+                $payload['is_active'] = ! in_array($account['code'], self::DISABLED_CODES, true);
                 $payload['created_at'] = now();
             }
 
@@ -60,15 +55,16 @@ class AccountingSeeder extends Seeder
         return [
             ['code' => '1000', 'name' => 'الصندوق', 'type' => 'asset', 'normal_balance' => 'debit', 'description' => 'النقدية الموجودة في درج الكاشير أو الخزنة.'],
             ['code' => '1010', 'name' => 'البنك', 'type' => 'asset', 'normal_balance' => 'debit', 'description' => 'أرصدة الحسابات البنكية والتحويلات البنكية.'],
-            ['code' => '1020', 'name' => 'مقاصة بطاقات الدفع', 'type' => 'asset', 'normal_balance' => 'debit', 'description' => 'مبالغ محصلة بالبطاقات قبل تسويتها في البنك.'],
-            ['code' => '1030', 'name' => 'مقاصة المحافظ الإلكترونية', 'type' => 'asset', 'normal_balance' => 'debit', 'description' => 'مبالغ محصلة عبر تطبيقات ومحافظ الدفع قبل التسوية.'],
-            ['code' => '1040', 'name' => 'مقاصة البيع الآجل للعملاء', 'type' => 'asset', 'normal_balance' => 'debit', 'description' => 'مبالغ مبيعات آجلة أو إشعارات دائنة تحتاج تسوية.'],
+            ['code' => '1020', 'name' => 'محفظة PalPay', 'type' => 'asset', 'normal_balance' => 'debit', 'description' => 'مبالغ محصلة في محفظة PalPay ولم يحولها المحاسب إلى البنك بعد.'],
+            ['code' => '1030', 'name' => 'محفظة Jawwal Pay', 'type' => 'asset', 'normal_balance' => 'debit', 'description' => 'مبالغ محصلة في محفظة Jawwal Pay ولم يحولها المحاسب إلى البنك بعد.'],
             ['code' => '1100', 'name' => 'الذمم المدينة - العملاء', 'type' => 'asset', 'normal_balance' => 'debit', 'description' => 'مستحقات المطعم على العملاء بعد إصدار الفواتير.'],
             ['code' => '1150', 'name' => 'مخزون تحت التحويل بين الفروع', 'type' => 'asset', 'normal_balance' => 'debit', 'description' => 'مخزون خرج من فرع ولم يؤكد الفرع الآخر استلامه بعد.'],
+            ['code' => '1160', 'name' => 'الحساب الجاري بين الفروع', 'type' => 'asset', 'normal_balance' => 'debit', 'description' => 'حساب نظامي متقابل لقيمة المخزون المنقول بين الفروع ويتعادل في القوائم المجمعة.'],
             ['code' => '1200', 'name' => 'المخزون', 'type' => 'asset', 'normal_balance' => 'debit', 'description' => 'قيمة المواد والمكونات المتاحة للبيع أو الإنتاج.'],
-            ['code' => '1300', 'name' => 'ضريبة القيمة المضافة - مدخلات', 'type' => 'asset', 'normal_balance' => 'debit', 'description' => 'ضريبة مشتريات قابلة للخصم من ضريبة المخرجات.'],
+            ['code' => '1300', 'name' => 'ضريبة مشتريات الموردين - مدخلات', 'type' => 'asset', 'normal_balance' => 'debit', 'description' => 'ضريبة تُدخل من فاتورة المورد نفسها إن وُجدت، ولا تتبع إعداد ضريبة فاتورة الزبون.'],
             ['code' => '2000', 'name' => 'الذمم الدائنة - الموردون', 'type' => 'liability', 'normal_balance' => 'credit', 'description' => 'مستحقات الموردين على المطعم.'],
-            ['code' => '2100', 'name' => 'ضريبة القيمة المضافة - مخرجات', 'type' => 'liability', 'normal_balance' => 'credit', 'description' => 'ضريبة المبيعات المستحقة للجهات الضريبية.'],
+            ['code' => '2050', 'name' => 'رواتب وأجور مستحقة', 'type' => 'liability', 'normal_balance' => 'credit', 'description' => 'رواتب تم إثباتها ولم تُدفع بعد.'],
+            ['code' => '2100', 'name' => 'ضريبة فواتير الزبائن - مخرجات', 'type' => 'liability', 'normal_balance' => 'credit', 'description' => 'ضريبة اختيارية على الفاتورة الصادرة من المطعم للزبون حسب جدول السريان.'],
             ['code' => '2200', 'name' => 'أمانات الإكراميات', 'type' => 'liability', 'normal_balance' => 'credit', 'description' => 'إكراميات محصلة لصالح الموظفين ولم تصرف بعد.'],
             ['code' => '2300', 'name' => 'استلامات مخزون غير مفوترة', 'type' => 'liability', 'normal_balance' => 'credit', 'description' => 'بضاعة تم استلامها في المخزن ولم تصل فاتورة المورد الخاصة بها بعد.'],
             ['code' => '3000', 'name' => 'رأس المال وحقوق الملكية', 'type' => 'equity', 'normal_balance' => 'credit', 'description' => 'حقوق مالك المنشأة وصافي الاستثمار.'],
@@ -80,23 +76,29 @@ class AccountingSeeder extends Seeder
             ['code' => '4090', 'name' => 'خصومات ومسموحات المبيعات', 'type' => 'contra_revenue', 'normal_balance' => 'debit', 'description' => 'حساب مقابل للإيراد يخفض صافي المبيعات.'],
             ['code' => '4100', 'name' => 'مردودات ومسموحات المبيعات', 'type' => 'contra_revenue', 'normal_balance' => 'debit', 'description' => 'استردادات أو مردودات تخفض صافي المبيعات.'],
             ['code' => '4200', 'name' => 'فروقات جرد دائنة', 'type' => 'revenue', 'normal_balance' => 'credit', 'description' => 'زيادات جردية أو تسويات مخزون لصالح المنشأة.'],
-            ['code' => '4210', 'name' => 'فروقات صندوق دائنة', 'type' => 'revenue', 'normal_balance' => 'credit', 'description' => 'فوائض نقدية عند إغلاق الشفت.'],
             ['code' => '5000', 'name' => 'تكلفة البضاعة المباعة', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'تكلفة المواد المرتبطة بالأصناف المباعة.'],
             ['code' => '5100', 'name' => 'مصروفات تشغيلية', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'مصروفات تشغيل المطعم اليومية غير المرتبطة مباشرة بتكلفة الصنف.'],
+            ['code' => '5110', 'name' => 'إيجار المحل والفروع', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'إيجار موقع المطعم أو أحد فروعه.'],
+            ['code' => '5120', 'name' => 'كهرباء ومياه وغاز', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'فواتير الكهرباء والمياه والغاز ومرافق التشغيل.'],
+            ['code' => '5130', 'name' => 'رواتب وأجور الموظفين', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'رواتب وأجور وبدلات الموظفين.'],
+            ['code' => '5140', 'name' => 'صيانة وإصلاحات', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'صيانة المعدات والمحل والإصلاحات الدورية.'],
+            ['code' => '5150', 'name' => 'نظافة وتغليف واستهلاكات', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'مواد التنظيف والتغليف والمستهلكات اليومية.'],
+            ['code' => '5160', 'name' => 'اتصالات وإنترنت', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'الهاتف والإنترنت وخدمات الاتصال.'],
+            ['code' => '5170', 'name' => 'نقل وتوصيل', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'نقل مشتريات أو توصيلات مدفوعة من المطعم.'],
+            ['code' => '5180', 'name' => 'اشتراكات وخدمات رقمية', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'البرامج والخدمات السحابية والاشتراكات الدورية.'],
+            ['code' => '5190', 'name' => 'مصاريف تشغيلية أخرى', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'مصروف تشغيلي لا ينتمي إلى تصنيف أدق.'],
             ['code' => '5200', 'name' => 'مصروف ديون معدومة', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'مبالغ ذمم مدينة تم شطبها لعدم التحصيل.'],
-            ['code' => '5300', 'name' => 'عمولات بنكية وبطاقات', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'رسوم بوابات الدفع والبنوك والبطاقات.'],
             ['code' => '5400', 'name' => 'هدر وتالف المخزون', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'تكلفة المواد التالفة أو المهدورة.'],
             ['code' => '5410', 'name' => 'عجز وفروقات جرد مدينة', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'نقص جردي أو صرف مخزون غير مرتبط ببيع.'],
             ['code' => '5420', 'name' => 'فروقات أسعار مشتريات', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'فرق السعر بين قيمة الاستلام وقيمة فاتورة المورد.'],
-            ['code' => '5510', 'name' => 'عجز صندوق', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'نقص نقدي عند إغلاق الشفت.'],
 
             // ── وجبات الموظفين (staff meals) — تنشئها هجرات 2026_05_25_* أيضاً؛
             //    مكرّرة هنا ليبقى الـ seeder مصدراً كاملاً للدليل (updateOrInsert idempotent).
-            ['code' => '1110', 'name' => 'مستحقات على الموظفين - بدل الوجبات', 'type' => 'asset', 'normal_balance' => 'debit', 'description' => 'قيمة وجبات الموظفين المستحقة عليهم قبل التسوية نقداً أو بخصم الراتب.'],
+            ['code' => '1110', 'name' => 'مستحقات وجبات الموظفين', 'type' => 'asset', 'normal_balance' => 'debit', 'description' => 'الجزء المتجاوز فقط من البدل الشهري والمستحق فعلياً على الموظف.'],
             ['code' => '2110', 'name' => 'خصومات الرواتب المستحقة', 'type' => 'liability', 'normal_balance' => 'credit', 'description' => 'مبالغ خُصمت على الموظفين في إقفال شهري وستُحسم من راتب الشهر التالي.'],
-            ['code' => '4030', 'name' => 'إيرادات بدل وجبات الموظفين', 'type' => 'revenue', 'normal_balance' => 'credit', 'description' => 'القيمة البيعية لوجبات الموظفين الداخلية.'],
-            ['code' => '5050', 'name' => 'مصاريف وجبات الموظفين', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'تكلفة الوجبات المقدّمة للموظفين كميزة عينية.'],
-            ['code' => '5060', 'name' => 'هدايا ومكافآت الموظفين العينية', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'وجبات مُنحت للموظفين مجاناً (هدية أو تنازل إداري).'],
+            ['code' => '2150', 'name' => 'أرصدة مقدمة للزبائن', 'type' => 'liability', 'normal_balance' => 'credit', 'description' => 'مبالغ استلمها المطعم من زبائن ولم تُستخدم في فواتير بعد.'],
+            ['code' => '4030', 'name' => 'استرداد تكلفة وجبات الموظفين', 'type' => 'revenue', 'normal_balance' => 'credit', 'description' => 'المبالغ المستحقة على الموظفين عن الجزء الذي تجاوز البدل الشهري فقط.'],
+            ['code' => '5060', 'name' => 'تكلفة وجبات ومنافع الموظفين', 'type' => 'expense', 'normal_balance' => 'debit', 'description' => 'التكلفة الفعلية للمكونات المصروفة في وجبات الموظفين المجانية أو المدعومة.'],
 
             // ── الأصول الثابتة والإهلاك (fixed assets) — تنشئها هجرة 2026_05_31_190000.
             ['code' => '1500', 'name' => 'الأصول الثابتة', 'type' => 'asset', 'normal_balance' => 'debit', 'description' => 'تكلفة المعدات والأثاث والتجهيزات المرسملة.'],

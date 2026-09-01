@@ -29,6 +29,7 @@ use App\Services\OrderService;
 use App\Support\BranchContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class RestaurantCriticalWorkflowTest extends TestCase
@@ -91,7 +92,7 @@ class RestaurantCriticalWorkflowTest extends TestCase
         ]);
 
         $kitchenPermission = Permission::where('name', 'station.kitchen.view')->firstOrFail();
-        $chefRole->permissions()->attach($kitchenPermission->id);
+        $chefRole->permissions()->syncWithoutDetaching([$kitchenPermission->id]);
 
         $this->category = Category::create([
             'slug' => 'mains',
@@ -180,6 +181,9 @@ class RestaurantCriticalWorkflowTest extends TestCase
             'station_id' => $this->kitchen->id,
             'status' => OrderItemStatus::Approved->value,
         ]);
+        $this->assertSame(10.0, (float) $this->ingredient->fresh()->current_stock,
+            'The safer default waits until the kitchen starts the line.');
+        app(OrderService::class)->startPreparing($approved->items()->first(), $this->waiter->id);
         $this->assertSame(8.0, (float) $this->ingredient->fresh()->current_stock);
         $this->assertSame(8.0, (float) IngredientStock::first()->fresh()->quantity);
         $this->assertSame(1, InventoryMovement::where('type', 'out')->count());
@@ -230,13 +234,10 @@ class RestaurantCriticalWorkflowTest extends TestCase
         $this->assertSame(8.0, (float) $this->ingredient->fresh()->current_stock);
     }
 
-    public function test_cashier_screen_and_split_flow_use_enabled_payment_methods(): void
+    public function test_cashier_screen_and_split_flow_use_supported_payment_methods(): void
     {
-        Setting::put('payment_method_cash_enabled', false, 'payments', 'bool');
-        Setting::put('payment_method_card_enabled', false, 'payments', 'bool');
-        Setting::put('payment_method_transfer_enabled', false, 'payments', 'bool');
-        Setting::put('payment_method_app_enabled', true, 'payments', 'bool');
-        Setting::put('payment_method_credit_enabled', true, 'payments', 'bool');
+        Setting::put('payment_method_cash_enabled', true, 'payments', 'bool');
+        Setting::put('payment_method_transfer_enabled', true, 'payments', 'bool');
 
         $table = Table::create([
             'number' => '11',
@@ -269,16 +270,18 @@ class RestaurantCriticalWorkflowTest extends TestCase
         $this->actingAs($this->cashier)
             ->get(route('admin.cashier.index', ['session' => $session->id]))
             ->assertOk()
-            ->assertSee(__('admin.payment_methods.app'), false)
-            ->assertSee(__('admin.payment_methods.credit'), false);
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('options.payment_methods', 2)
+                ->where('options.payment_methods.0.code', 'cash')
+                ->where('options.payment_methods.1.code', 'transfer'));
 
         $firstShare = round((float) $invoice->total / 2, 2);
         $secondShare = round((float) $invoice->total - $firstShare, 2);
 
         $this->post(route('admin.cashier.split', $invoice), [
             'splits' => [
-                ['label' => 'Guest 1', 'amount' => $firstShare, 'method' => 'app'],
-                ['label' => 'Guest 2', 'amount' => $secondShare, 'method' => 'credit'],
+                ['label' => 'Guest 1', 'amount' => $firstShare, 'method' => 'cash'],
+                ['label' => 'Guest 2', 'amount' => $secondShare, 'method' => 'transfer'],
             ],
         ])
             ->assertSessionHasNoErrors()
@@ -286,11 +289,11 @@ class RestaurantCriticalWorkflowTest extends TestCase
 
         $this->assertDatabaseHas('invoice_splits', [
             'invoice_id' => $invoice->id,
-            'method' => 'app',
+            'method' => 'cash',
         ]);
         $this->assertDatabaseHas('invoice_splits', [
             'invoice_id' => $invoice->id,
-            'method' => 'credit',
+            'method' => 'transfer',
         ]);
     }
 

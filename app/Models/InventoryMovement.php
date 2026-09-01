@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\WasteReason;
 use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -13,6 +14,7 @@ class InventoryMovement extends Model
     use BelongsToBranch, HasFactory;
 
     protected $fillable = [
+        'uuid',
         'branch_id',
         'ingredient_id', 'batch_id', 'storage_location_id',
         'type', 'quantity', 'unit_id', 'quantity_in_base',
@@ -62,10 +64,10 @@ class InventoryMovement extends Model
         return $this->belongsTo(StorageLocation::class);
     }
 
-    public function wasteReasonEnum(): ?\App\Enums\WasteReason
+    public function wasteReasonEnum(): ?WasteReason
     {
         return $this->waste_reason
-            ? \App\Enums\WasteReason::tryFrom($this->waste_reason)
+            ? WasteReason::tryFrom($this->waste_reason)
             : null;
     }
 

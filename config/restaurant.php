@@ -1,26 +1,9 @@
 <?php
 
-$marketProfile = env('MARKET_PROFILE', 'palestine');
-$isUsMarket = $marketProfile === 'us';
-$envOrMarket = static function (string $key, mixed $default, mixed $legacyDefault = null) use ($isUsMarket): mixed {
-    $value = env($key);
-
-    if ($value === null || $value === '') {
-        return $default;
-    }
-
-    if ($isUsMarket && $legacyDefault !== null && (string) $value === (string) $legacyDefault) {
-        return $default;
-    }
-
-    return $value;
-};
-
 return [
-    'market' => $marketProfile,
-    'name' => $envOrMarket('RESTAURANT_NAME', $isUsMarket ? 'Restaurant QR' : 'مطعم QR', 'مطعم QR'),
-    'currency' => $envOrMarket('RESTAURANT_CURRENCY', $isUsMarket ? 'USD' : 'ILS', 'ILS'),
-    'currency_symbol' => $envOrMarket('RESTAURANT_CURRENCY_SYMBOL', $isUsMarket ? '$' : '₪', '₪'),
+    'name' => env('RESTAURANT_NAME', 'مطعم QR'),
+    'currency' => env('RESTAURANT_CURRENCY', 'ILS'),
+    'currency_symbol' => env('RESTAURANT_CURRENCY_SYMBOL', '₪'),
 
     // Base URL the customer QR codes resolve to. On a local/on-prem server
     // set MENU_BASE_URL to the LAN address the restaurant WiFi can reach
@@ -38,24 +21,27 @@ return [
     ],
 
     'tax' => [
-        'label' => $envOrMarket('RESTAURANT_TAX_LABEL', $isUsMarket ? 'Sales tax' : 'الضريبة', 'الضريبة'),
-        'number_label' => $envOrMarket('RESTAURANT_TAX_NUMBER_LABEL', $isUsMarket ? 'Sales tax ID' : 'الرقم الضريبي', 'الرقم الضريبي'),
-        'enabled' => env('RESTAURANT_TAX_ENABLED', true),
-        'rate' => (float) $envOrMarket('RESTAURANT_TAX_RATE', $isUsMarket ? 0 : 16, 16),
+        'label' => env('RESTAURANT_TAX_LABEL', 'الضريبة'),
+        'number_label' => env('RESTAURANT_TAX_NUMBER_LABEL', 'الرقم الضريبي'),
+        // Customer invoices are tax-free by default. A restaurant accountant
+        // must explicitly enable and effective-date a rate; 16% is never
+        // treated as a legal or universal default.
+        'enabled' => env('RESTAURANT_TAX_ENABLED', false),
+        'rate' => (float) env('RESTAURANT_TAX_RATE', 0),
         'inclusive' => env('RESTAURANT_TAX_INCLUSIVE', false),
     ],
 
     'service_charge' => [
-        'label' => $envOrMarket('RESTAURANT_SERVICE_LABEL', $isUsMarket ? 'Gratuity' : 'الخدمة', 'الخدمة'),
+        'label' => env('RESTAURANT_SERVICE_LABEL', 'الخدمة'),
         'enabled' => env('RESTAURANT_SERVICE_ENABLED', false),
-        'rate' => (float) $envOrMarket('RESTAURANT_SERVICE_RATE', $isUsMarket ? 0 : 10, 10),
+        'rate' => (float) env('RESTAURANT_SERVICE_RATE', 10),
     ],
 
-    'phone_country' => $envOrMarket('RESTAURANT_PHONE_COUNTRY', $isUsMarket ? 'US' : 'PS', 'PS'),
+    'phone_country' => env('RESTAURANT_PHONE_COUNTRY', 'PS'),
 
     'theme' => [
-        'primary' => '#166534',
-        'dark' => '#14532d',
+        'primary' => '#1f6b50',
+        'dark' => '#123f31',
         'header' => '#ffffff',
         'accent' => '#d97706',
         'menu' => '#ffffff',
@@ -67,6 +53,9 @@ return [
         'auto_approve' => env('RESTAURANT_AUTO_APPROVE', false),
         'customer_cancel_window_seconds' => 120,
         'session_ttl_minutes' => 240,
+        // A scan that never becomes an order or waiter interaction is only a
+        // draft cart. Reclaim it quickly without shortening a real visit.
+        'browsing_session_idle_minutes' => env('RESTAURANT_BROWSING_SESSION_IDLE', 20),
         // Server-side idle-session sweeper: an active table session with no
         // activity for this long gets auto-closed when it carries no financial
         // exposure (no orders / all cancelled / fully paid). Exposed sessions
@@ -100,7 +89,7 @@ return [
         // A safety net at invoice settlement guarantees deduction regardless,
         // so picking a later stage just spares us deduct→return churn on
         // orders that get cancelled before the kitchen touches them.
-        'deduction_stage' => env('RESTAURANT_DEDUCTION_STAGE', 'approve'),
+        'deduction_stage' => env('RESTAURANT_DEDUCTION_STAGE', 'preparing'),
     ],
 
     // Sidebar visibility for OPTIONAL back-of-house screens. A small,
@@ -114,8 +103,8 @@ return [
     // active branch exists, and auto-hide while you run a single branch.
     'nav' => [
         'vendor_price_compare' => env('NAV_VENDOR_PRICE_COMPARE', false),
-        'batch_expiry'         => env('NAV_BATCH_EXPIRY', false),
-        'units_management'     => true,
+        'batch_expiry' => env('NAV_BATCH_EXPIRY', false),
+        'units_management' => true,
     ],
 
     // Cashier-applied discounts. Caps are role-keyed defaults; the running

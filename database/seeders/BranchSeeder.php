@@ -27,7 +27,6 @@ class BranchSeeder extends Seeder
             ['code' => 'main-khan-yunis'],
             [
                 'name'          => 'الفرع الرئيسي - خانيونس',
-                'name_en'       => 'Main Branch — Khan Yunis',
                 'city'          => 'خانيونس',
                 'is_active'     => true,
                 'display_order' => 1,
@@ -38,7 +37,6 @@ class BranchSeeder extends Seeder
             ['code' => 'gaza'],
             [
                 'name'          => 'فرع غزة',
-                'name_en'       => 'Gaza Branch',
                 'city'          => 'غزة',
                 'is_active'     => true,
                 'display_order' => 2,

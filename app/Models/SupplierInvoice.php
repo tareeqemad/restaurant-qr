@@ -15,6 +15,7 @@ class SupplierInvoice extends Model
 
     protected $fillable = [
         'number', 'supplier_id', 'purchase_order_id',
+        'currency_code', 'exchange_rate', 'is_opening_balance',
         'subtotal', 'tax_total', 'total', 'paid_total', 'balance',
         'status', 'invoice_date', 'due_date', 'paid_at', 'cancelled_at',
         'notes', 'attachment_path', 'created_by',
@@ -30,6 +31,8 @@ class SupplierInvoice extends Model
         'due_date'     => 'date',
         'paid_at'      => 'datetime',
         'cancelled_at' => 'datetime',
+        'exchange_rate'=> 'decimal:8',
+        'is_opening_balance' => 'boolean',
     ];
 
     public function supplier(): BelongsTo { return $this->belongsTo(Supplier::class); }
@@ -65,7 +68,7 @@ class SupplierInvoice extends Model
         return $this->status !== 'paid'
             && $this->status !== 'cancelled'
             && $this->due_date
-            && $this->due_date->isPast();
+            && $this->due_date->lt(today());
     }
 
     public function recomputeBalance(): void
@@ -85,5 +88,15 @@ class SupplierInvoice extends Model
             'status'     => $status,
             'paid_at'    => $status === 'paid' && !$this->paid_at ? now() : $this->paid_at,
         ]);
+    }
+
+    public function baseTotal(): float
+    {
+        return round((float) $this->total * (float) ($this->exchange_rate ?: 1), 4);
+    }
+
+    public function formatMoney(float|int|string|null $amount): string
+    {
+        return number_format((float) $amount, 2).' '.($this->currency_code ?: 'ILS');
     }
 }

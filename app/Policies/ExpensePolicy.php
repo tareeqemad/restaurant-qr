@@ -21,8 +21,7 @@ class ExpensePolicy extends BasePolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->hasAnyRole(['admin', 'manager', 'cashier'])
-            || $user->hasPermission('expenses.viewAny');
+        return $user->hasPermission('expenses.viewAny');
     }
 
     public function view(User $user, Expense $expense): bool
@@ -33,8 +32,7 @@ class ExpensePolicy extends BasePolicy
 
     public function create(User $user): bool
     {
-        return $user->hasAnyRole(['admin', 'manager', 'cashier'])
-            || $user->hasPermission('expenses.create');
+        return $user->hasPermission('expenses.create');
     }
 
     public function update(User $user, Expense $expense): bool
@@ -43,7 +41,7 @@ class ExpensePolicy extends BasePolicy
             return false;
         }
 
-        return ($user->hasAnyRole(['admin', 'manager']) || $user->hasPermission('expenses.update'))
+        return $user->hasPermission('expenses.update')
             && $this->inUserBranch($user, $expense);
     }
 
@@ -53,7 +51,7 @@ class ExpensePolicy extends BasePolicy
             return false;
         }
 
-        return ($user->hasAnyRole(['admin', 'manager']) || $user->hasPermission('expenses.approve'))
+        return $user->hasPermission('expenses.approve')
             && $this->inUserBranch($user, $expense);
     }
 
@@ -63,7 +61,7 @@ class ExpensePolicy extends BasePolicy
             return false;
         }
 
-        return ($user->hasAnyRole(['admin', 'manager']) || $user->hasPermission('expenses.reject'))
+        return $user->hasPermission('expenses.reject')
             && $this->inUserBranch($user, $expense);
     }
 
@@ -75,7 +73,7 @@ class ExpensePolicy extends BasePolicy
             return false;
         }
 
-        return ($user->isAdmin() || $user->hasPermission('expenses.delete'))
+        return $user->hasPermission('expenses.delete')
             && $this->inUserBranch($user, $expense);
     }
 }

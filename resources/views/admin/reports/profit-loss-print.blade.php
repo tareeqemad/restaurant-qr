@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 @php($market = \App\Support\MarketProfile::class)
-<html lang="{{ $market::lang() }}" dir="{{ $market::direction() }}" data-market="{{ $market::current() }}">
+<html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -19,16 +19,16 @@
     $cur = $brand['currency'];
     $source = $period['source'] ?? 'ledger';
     $sourceLabel = $source === 'ledger' ? 'دفتر القيود' : 'تشغيلي';
-    $totalCosts = $costs['cogs'] + $costs['waste'] + $costs['expenses'] + $costs['platform_commission'] + $costs['refunds'];
+    $totalCosts = $costs['cogs'] + $costs['waste'] + $costs['expenses'] + $costs['refunds'];
     $fmt = fn ($v) => number_format((float) $v, 2, '.', ',') . ' ' . $cur;
     $pct = fn ($v) => number_format((float) $v, 2) . '%';
 @endphp
 
 <style>
     :root {
-        --green-deep: #14532d;
-        --green-mid: #166534;
-        --green-soft: #2d6e4a;
+        --green-deep: #123f31;
+        --green-mid: #1f6b50;
+        --green-soft: #43816c;
         --green-tint: #f0fdf4;
         --gold: #d97706;
         --gold-soft: #fef9e7;
@@ -106,7 +106,7 @@
     /* ─── BRAND HEADER (clean — no decorative blob, no dashed strip) ─── */
     .brand {
         position: relative;
-        background: linear-gradient(135deg, #0f4731 0%, #1c5e44 100%);
+        background: linear-gradient(135deg, var(--green-deep) 0%, var(--green-mid) 100%);
         color: #fff;
         margin: 16px;
         border-radius: 18px;
@@ -240,7 +240,7 @@
     }
     .stmt__row.subtotal .lbl { color: var(--green-deep); font-weight: 700; }
     .stmt__row.gross { background: var(--green-tint); border-color: #bbf7d0; }
-    .stmt__row.gross .amt { color: #14532d; }
+    .stmt__row.gross .amt { color: var(--green-deep); }
     .stmt__row.final {
         background: linear-gradient(135deg, var(--green-tint) 0%, var(--gold-soft) 100%);
         border: 2px solid var(--gold) !important; border-radius: 10px;
@@ -315,7 +315,7 @@
         display: inline-block; padding: 3px 10px; border-radius: 999px;
         font-size: 11px; font-weight: 700;
     }
-    .pill--good { background: var(--green-tint); color: #14532d; }
+    .pill--good { background: var(--green-tint); color: var(--green-deep); }
     .pill--warn { background: var(--gold-soft); color: var(--gold); }
     .pill--bad  { background: var(--red-soft); color: var(--red); }
 
@@ -413,14 +413,14 @@
         تفاصيل الصندوق · {{ $brand['name'] }}
         <small>اضغط زر "اطبع" أدناه أو استخدم Ctrl/⌘ + P · لحفظه PDF اختر "حفظ بصيغة PDF" من نافذة الطباعة</small>
     </div>
-    <button class="btn btn--primary" onclick="window.print()">
+    <button type="button" class="btn btn--primary" data-print-document>
         <span>🖨</span>
         <span>اطبع التقرير</span>
     </button>
-    <a class="btn btn--ghost" href="javascript:window.close()">
+    <button type="button" class="btn btn--ghost" data-close-document>
         <span>×</span>
         <span>إغلاق</span>
-    </a>
+    </button>
 </div>
 
 <div class="page">
@@ -440,10 +440,10 @@
         </div>
         <div class="brand__meta">
             <strong>{{ $branchName }}</strong><br>
-            {{ \Carbon\Carbon::parse($period['from'])->locale(\App\Support\MarketProfile::lang())->isoFormat('D MMMM YYYY') }}
+            {{ \Carbon\Carbon::parse($period['from'])->locale('ar')->isoFormat('D MMMM YYYY') }}
             —
-            {{ \Carbon\Carbon::parse($period['to'])->locale(\App\Support\MarketProfile::lang())->isoFormat('D MMMM YYYY') }}<br>
-            <span style="font-size:11.5px; opacity:.8;">صدر {{ $generatedAt->locale(\App\Support\MarketProfile::lang())->isoFormat('D MMMM YYYY · HH:mm') }}</span>
+            {{ \Carbon\Carbon::parse($period['to'])->locale('ar')->isoFormat('D MMMM YYYY') }}<br>
+            <span style="font-size:11.5px; opacity:.8;">صدر {{ $generatedAt->locale('ar')->isoFormat('D MMMM YYYY · HH:mm') }}</span>
         </div>
     </div>
 
@@ -528,11 +528,6 @@
         <div class="lbl">يُطرح: المصروفات التشغيلية</div>
         <div class="amt">−{{ $fmt($costs['expenses']) }}</div>
         <div class="pct">{{ $sales['net_sales'] > 0 ? $pct(($costs['expenses'] / $sales['net_sales']) * 100) : '—' }}</div>
-    </div>
-    <div class="stmt__row indent neg">
-        <div class="lbl">يُطرح: عمولات منصات التوصيل</div>
-        <div class="amt">−{{ $fmt($costs['platform_commission']) }}</div>
-        <div class="pct">{{ $sales['net_sales'] > 0 ? $pct(($costs['platform_commission'] / $sales['net_sales']) * 100) : '—' }}</div>
     </div>
     <div class="stmt__row subtotal">
         <div class="lbl">الربح من العمليات</div>
@@ -720,7 +715,7 @@
                         <td style="text-align:center;">{{ rtrim(rtrim(number_format((float) $it->qty, 2), '0'), '.') }}</td>
                         <td class="num">{{ $fmt($rev) }}</td>
                         <td class="num" style="color: var(--red);">{{ $fmt($it->cogs) }}</td>
-                        <td class="num" style="color: #14532d;">{{ $fmt($it->profit) }}</td>
+                        <td class="num" style="color: var(--green-deep);">{{ $fmt($it->profit) }}</td>
                         <td style="text-align:center;"><span class="pill {{ $pillClass }}">{{ number_format($margin, 1) }}%</span></td>
                     </tr>
                 @endforeach
@@ -754,11 +749,8 @@
         <dt>المصروفات التشغيلية</dt>
         <dd>المصروفات المعتمدة في الفترة من شاشة المصروفات (إيجار، رواتب، فواتير الكهرباء والماء، نقدية صغيرة، …).</dd>
 
-        <dt>عمولات منصات التوصيل</dt>
-        <dd>= مجموع (إجمالي الطلب × نسبة عمولة المنصة). محسوبة من الطلبات المُسجَّلة بمصدر خارجي مثل طلبات وكريم وأوبر.</dd>
-
         <dt>الربح من العمليات</dt>
-        <dd>= الربح الإجمالي − المصروفات − عمولات المنصات. مؤشر فعالية الإدارة اليومية.</dd>
+        <dd>= الربح الإجمالي − المصروفات التشغيلية. مؤشر فعالية الإدارة اليومية.</dd>
 
         <dt>الاستردادات</dt>
         <dd>المبالغ المُعادة للزبائن في الفترة (شكاوى، أخطاء، تعويضات). تظهر منفصلة لتمييز الخسائر الاستثنائية.</dd>
@@ -795,6 +787,11 @@
 </div>
 
 </div> {{-- /.page --}}
+
+<script>
+    document.querySelector('[data-print-document]')?.addEventListener('click', () => window.print());
+    document.querySelector('[data-close-document]')?.addEventListener('click', () => window.close());
+</script>
 
 </body>
 </html>

@@ -1,280 +1,120 @@
-{{--
-  Shared layout for all error pages (404, 403, 500, 419, 503, 429).
-  Standalone — does NOT extend admin.blade.php, so errors render even if the
-  auth system, sidebar, or menu settings fail.
-
-  Sections a child page defines:
-    @section('title')        Browser tab title (after the error code)
-    @section('code')          Big "404" / "500" / etc. in Cinzel
-    @section('headline')      Short one-line headline
-    @section('message')       Longer explanation
-    @section('illustration')  Inline SVG specific to this error
-    @section('actions')       Button row (at least one CTA)
-    @section('accent')        CSS accent color for this specific error
-                               (defaults to gold — override with a valid CSS color)
---}}
 @php
     $market = \App\Support\MarketProfile::class;
     $brandName = \App\Helpers\Brand::name();
+    $isAdminContext = auth()->check() || request()->is('admin') || request()->is('admin/*');
+    $homeUrl = $isAdminContext ? url('/admin') : url('/');
+    $homeLabel = $isAdminContext ? 'لوحة التحكم' : 'الصفحة الرئيسية';
+    $theme = \App\Support\ThemePalette::current();
+    $requestReference = substr(hash('sha256', request()->method().'|'.request()->fullUrl().'|'.now()->format('YmdHi')), 0, 8);
 @endphp
 <!DOCTYPE html>
-<html lang="{{ $market::lang() }}" dir="{{ $market::direction() }}" data-market="{{ $market::current() }}">
+<html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#122d1e">
-    <title>@yield('title', 'خطأ') — {{ config('restaurant.name', 'Relax') }}</title>
-
+    <meta name="theme-color" content="#f4f7f5">
+    <meta name="robots" content="noindex, nofollow">
+    <title>@yield('code') — @yield('title', 'تعذر فتح الصفحة') | {{ $brandName }}</title>
     <link rel="icon" href="{{ \App\Helpers\Brand::faviconUrl() }}" type="image/x-icon">
-
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="{{ $market::fontUrl() }}" rel="stylesheet">
-
     <style>
         :root {
-            --forest:      #1f4733;
-            --forest-deep: #122d1e;
-            --forest-dark: #0d2317;
-            --gold:        #d4a550;
-            --gold-light:  #e8c775;
-            --gold-dark:   #a37a2b;
-            --cream:       #faf5eb;
-            --accent:      @yield('accent', '#d4a550');
+            --primary: {{ $theme['primary'] }};
+            --primary-soft: #e9f5f0;
+            --ink: #16231c;
+            --muted: #6c7972;
+            --line: #dfe7e2;
+            --surface: #ffffff;
+            --accent: @yield('accent', $theme['primary']);
         }
         @include('partials.market-vars')
-
-        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-        html, body { margin: 0; padding: 0; }
-
+        * { box-sizing: border-box; }
+        html, body { margin: 0; min-height: 100%; }
         body {
-            font-family: var(--market-font-family);
-            min-height: 100vh;
+            min-height: 100dvh;
+            padding: 1rem;
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            color: var(--ink);
             background:
-                linear-gradient(135deg, rgba(13,35,23,.92) 0%, rgba(18,45,30,.85) 50%, rgba(31,71,51,.92) 100%),
-                url("{{ asset('assets/brand/pattern.svg') }}"),
-                linear-gradient(135deg, #0d2317 0%, #1f4733 100%);
-            background-size: cover, 240px 240px, cover;
-            background-repeat: no-repeat, repeat, no-repeat;
-            background-attachment: fixed;
-            color: #fff;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 2rem 1rem;
-            position: relative;
-            overflow-x: hidden;
+                radial-gradient(circle at 90% 0%, rgba(15, 71, 49, .07), transparent 28rem),
+                radial-gradient(circle at 0% 100%, rgba(186, 135, 39, .06), transparent 25rem),
+                #f4f7f5;
+            font-family: var(--market-font-family, "Segoe UI", Tahoma, Arial, sans-serif);
         }
-
-        /* Decorative glow blobs */
-        body::before,
-        body::after {
-            content: '';
-            position: fixed;
-            width: 480px;
-            height: 480px;
-            border-radius: 50%;
-            filter: blur(80px);
-            opacity: .25;
-            pointer-events: none;
-            z-index: 0;
-        }
-        body::before {
-            background: radial-gradient(circle, var(--accent), transparent 70%);
-            top: -180px;
-            inset-inline-end: -180px;
-        }
-        body::after {
-            background: radial-gradient(circle, var(--gold-light), transparent 70%);
-            bottom: -180px;
-            inset-inline-start: -180px;
-        }
-
-        /* Card */
-        .error-card {
-            position: relative;
-            z-index: 1;
-            max-width: 560px;
-            width: 100%;
-            text-align: center;
-            background: rgba(255,255,255,.05);
-            border: 1px solid rgba(212,165,80,.25);
-            border-radius: 24px;
-            padding: 3rem 2rem 2.5rem;
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            box-shadow: 0 24px 60px rgba(0,0,0,.35);
-        }
-
-        /* Gold top stripe */
-        .error-card::before {
-            content: '';
-            position: absolute;
-            top: 0; left: 20%; right: 20%;
-            height: 3px;
-            background: linear-gradient(90deg, transparent, var(--accent), transparent);
-            border-radius: 0 0 999px 999px;
-        }
-
-        /* Illustration */
-        .error-illustration {
-            width: 140px;
-            height: 140px;
-            margin: 0 auto 1.25rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: linear-gradient(135deg, rgba(212,165,80,.15), rgba(212,165,80,.05));
-            border: 1px solid rgba(212,165,80,.3);
-            border-radius: 28px;
-            position: relative;
-        }
-        .error-illustration svg {
-            width: 80px;
-            height: 80px;
-            color: var(--accent);
-        }
-        .error-illustration::after {
-            content: '';
-            position: absolute;
-            inset: -6px;
-            border: 1px dashed rgba(212,165,80,.2);
-            border-radius: 32px;
-            pointer-events: none;
-        }
-
-        /* Big Code (404, 500, ...) */
-        .error-code {
-            font-family: 'Cinzel', serif;
-            font-size: clamp(3.5rem, 10vw, 5.5rem);
-            font-weight: 700;
-            letter-spacing: .08em;
-            line-height: 1;
-            background: linear-gradient(180deg, var(--gold-light) 0%, var(--accent) 50%, var(--gold-dark) 100%);
-            -webkit-background-clip: text;
-            background-clip: text;
-            color: transparent;
-            margin: .25rem 0 .5rem;
-            text-shadow: 0 4px 24px rgba(212,165,80,.2);
-        }
-
-        /* Headline + message */
-        .error-headline {
-            font-size: 1.5rem;
-            font-weight: 900;
-            margin: .5rem 0;
-            color: #fff;
-            letter-spacing: -.01em;
-        }
-        .error-message {
-            font-size: 1rem;
-            font-weight: 500;
-            margin: 0 0 1.75rem;
-            color: rgba(255,255,255,.78);
-            line-height: 1.65;
-        }
-
-        /* Actions row */
-        .error-actions {
-            display: flex;
-            gap: .75rem;
-            justify-content: center;
-            flex-wrap: wrap;
-        }
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: .7rem 1.4rem;
-            border-radius: 12px;
-            font-weight: 700;
-            font-size: .95rem;
-            font-family: inherit;
-            text-decoration: none;
-            border: 0;
-            cursor: pointer;
-            transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
-        }
-        .btn-primary {
-            background: linear-gradient(135deg, var(--accent), var(--gold-dark));
-            color: #fff;
-            box-shadow: 0 6px 20px rgba(212,165,80,.35);
-        }
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 28px rgba(212,165,80,.5);
-        }
-        .btn-ghost {
-            background: rgba(255,255,255,.08);
-            color: rgba(255,255,255,.9);
-            border: 1px solid rgba(255,255,255,.18);
-        }
-        .btn-ghost:hover {
-            background: rgba(255,255,255,.14);
-            transform: translateY(-2px);
-        }
+        .site-head, .error-wrap, .site-foot { width: min(960px, 100%); margin-inline: auto; }
+        .site-head { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+        .brand { display: inline-flex; align-items: center; gap: .65rem; color: inherit; text-decoration: none; }
+        .brand img { width: 38px; height: 38px; object-fit: contain; border-radius: 12px; background: #fff; border: 1px solid var(--line); padding: .25rem; }
+        .brand strong, .brand small { display: block; }
+        .brand strong { font-size: .9rem; font-weight: 900; }
+        .brand small { margin-top: .08rem; color: var(--muted); font-size: .66rem; }
+        .context-pill { min-height: 34px; display: inline-flex; align-items: center; padding: 0 .72rem; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.75); color: var(--muted); font-size: .68rem; font-weight: 800; }
+        .error-wrap { display: grid; place-items: center; padding-block: 2rem; }
+        .error-card { width: min(680px, 100%); overflow: hidden; position: relative; display: grid; grid-template-columns: 130px 1fr; border: 1px solid var(--line); border-radius: 26px; background: rgba(255,255,255,.94); box-shadow: 0 28px 80px -55px rgba(19, 57, 36, .55); }
+        .error-side { padding: 1.5rem 1rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .65rem; background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, white), #f8faf8); border-inline-end: 1px solid var(--line); }
+        .error-illustration { width: 64px; height: 64px; border-radius: 20px; display: grid; place-items: center; background: #fff; color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 18%, white); box-shadow: 0 12px 28px -20px var(--accent); }
+        .error-illustration svg { width: 32px; height: 32px; }
+        .error-code { color: var(--accent); font-size: 1.45rem; font-weight: 950; letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+        .error-content { padding: clamp(1.45rem, 5vw, 2.35rem); }
+        .eyebrow { display: inline-flex; align-items: center; gap: .35rem; margin-bottom: .65rem; color: var(--accent); font-size: .68rem; font-weight: 850; }
+        .eyebrow::before { content: ''; width: 16px; height: 2px; border-radius: 2px; background: currentColor; opacity: .55; }
+        .error-headline { margin: 0; color: var(--ink); font-size: clamp(1.25rem, 3.5vw, 1.75rem); font-weight: 950; letter-spacing: -.025em; }
+        .error-message { max-width: 32rem; margin: .55rem 0 1.35rem; color: var(--muted); font-size: .86rem; line-height: 1.75; }
+        .error-actions { display: flex; flex-wrap: wrap; gap: .55rem; }
+        .btn { min-height: 44px; border: 1px solid transparent; border-radius: 13px; padding: 0 1rem; display: inline-flex; align-items: center; justify-content: center; gap: .45rem; color: inherit; background: none; font: inherit; font-size: .76rem; font-weight: 850; text-decoration: none; cursor: pointer; transition: transform .15s ease, background .15s ease; }
+        .btn:hover { transform: translateY(-1px); }
         .btn svg { width: 16px; height: 16px; }
-
-        /* Brand footer */
-        .error-footer {
-            position: relative;
-            z-index: 1;
-            margin-top: 2rem;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: .4rem;
-            opacity: .55;
-            transition: opacity .2s;
+        .btn-primary { background: var(--primary); color: #fff; box-shadow: 0 10px 24px -16px var(--primary); }
+        .btn-ghost { border-color: var(--line); background: #f8faf8; color: #4f5e55; }
+        .site-foot { min-height: 46px; display: flex; align-items: center; justify-content: center; color: #89958e; font-size: .65rem; text-align: center; }
+        @media (max-width: 560px) {
+            body { padding: .7rem; }
+            .brand small, .context-pill { display: none; }
+            .error-wrap { padding-block: 1rem; }
+            .error-card { grid-template-columns: 1fr; border-radius: 22px; }
+            .error-side { min-height: 116px; flex-direction: row; border-inline-end: 0; border-bottom: 1px solid var(--line); }
+            .error-content { text-align: center; }
+            .eyebrow { justify-content: center; }
+            .error-message { margin-inline: auto; }
+            .error-actions { display: grid; grid-template-columns: 1fr; }
+            .btn { width: 100%; }
         }
-        .error-footer:hover { opacity: .85; }
-        .error-footer img {
-            width: 36px;
-            height: 36px;
-            filter: drop-shadow(0 4px 10px rgba(212,165,80,.3));
-        }
-        .error-footer .brand-name {
-            font-family: 'Cinzel', serif;
-            font-weight: 600;
-            font-size: 1.05rem;
-            letter-spacing: .12em;
-            color: var(--accent);
-        }
-        .error-footer .brand-tag {
-            font-size: .72rem;
-            color: rgba(255,255,255,.5);
-            letter-spacing: .05em;
-        }
-
-        @media (max-width: 480px) {
-            .error-card { padding: 2rem 1.25rem 1.75rem; border-radius: 20px; }
-            .error-illustration { width: 110px; height: 110px; border-radius: 22px; }
-            .error-illustration svg { width: 60px; height: 60px; }
-            .error-headline { font-size: 1.2rem; }
-            .error-message { font-size: .92rem; }
-            .error-actions { flex-direction: column; }
-            .btn { width: 100%; justify-content: center; }
-        }
+        @media (prefers-reduced-motion: reduce) { .btn { transition: none; } }
     </style>
     @include('partials.runtime-theme')
 </head>
 <body>
-    <div class="error-card">
-        <div class="error-illustration">
-            @yield('illustration')
-        </div>
-        <div class="error-code">@yield('code')</div>
-        <h1 class="error-headline">@yield('headline')</h1>
-        <p class="error-message">@yield('message')</p>
-        <div class="error-actions">
-            @yield('actions')
-        </div>
-    </div>
-    <div class="error-footer">
-        <img src="{{ \App\Helpers\Brand::logoUrl() }}" alt="{{ $brandName }}">
-        <span class="brand-name">{{ $brandName }}</span>
-        <span class="brand-tag">نظام إدارة المطعم</span>
-    </div>
+    <header class="site-head">
+        <a href="{{ $homeUrl }}" class="brand">
+            <img src="{{ \App\Helpers\Brand::logoUrl() }}" alt="">
+            <span><strong>{{ $brandName }}</strong><small>نظام إدارة المطعم</small></span>
+        </a>
+        <span class="context-pill">{{ $isAdminContext ? 'منطقة الإدارة' : 'خدمة الزبائن' }}</span>
+    </header>
+
+    <main class="error-wrap">
+        <article class="error-card" role="alert" aria-labelledby="error-headline">
+            <aside class="error-side" aria-hidden="true">
+                <div class="error-illustration">@yield('illustration')</div>
+                <div class="error-code">@yield('code')</div>
+            </aside>
+            <section class="error-content">
+                <span class="eyebrow">تعذر إكمال الطلب</span>
+                <h1 id="error-headline" class="error-headline">@yield('headline')</h1>
+                <p class="error-message">@yield('message')</p>
+                <div class="error-actions">@yield('actions')</div>
+            </section>
+        </article>
+    </main>
+
+    <footer class="site-foot">إذا تكررت المشكلة، أخبر موظف المطعم بالرمز: {{ $requestReference }}</footer>
+    <script>
+        document.querySelectorAll('[data-error-back]').forEach((button) => {
+            button.addEventListener('click', () => window.history.length > 1 ? window.history.back() : window.location.assign(@json($homeUrl)));
+        });
+        document.querySelectorAll('[data-error-reload]').forEach((button) => {
+            button.addEventListener('click', () => window.location.reload());
+        });
+    </script>
 </body>
 </html>

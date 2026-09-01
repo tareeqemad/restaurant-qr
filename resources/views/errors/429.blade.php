@@ -1,10 +1,10 @@
 @extends('errors.layout')
 
-@section('title', '429')
+@section('title', 'محاولات متكررة')
 @section('code', '429')
 @section('accent', '#e48a8a')
-@section('headline', 'طلبات كثيرة جداً')
-@section('message', 'تم تجاوز الحد المسموح من الطلبات. الرجاء الانتظار قليلاً قبل المحاولة مرة أخرى.')
+@section('headline', 'مهلاً، نحتاج لحظة قصيرة')
+@section('message', 'وصلت عدة محاولات خلال وقت قصير، لذلك أوقفنا التنفيذ مؤقتاً لحماية النظام. انتظر قليلاً ثم جرّب من جديد.')
 
 @section('illustration')
     {{-- Stopwatch --}}
@@ -17,17 +17,17 @@
 @endsection
 
 @section('actions')
-    <a href="javascript:history.back()" class="btn btn-primary">
+    <button type="button" class="btn btn-primary" data-error-back>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="m9 18 6-6-6-6"/>
         </svg>
         العودة للخلف
-    </a>
-    <a href="{{ url('/admin') }}" class="btn btn-ghost">
+    </button>
+    <a href="{{ auth()->check() || request()->is('admin*') ? url('/admin') : url('/') }}" class="btn btn-ghost">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
             <polyline points="9 22 9 12 15 12 15 22"/>
         </svg>
-        لوحة التحكم
+        {{ auth()->check() || request()->is('admin*') ? 'لوحة التحكم' : 'الصفحة الرئيسية' }}
     </a>
 @endsection

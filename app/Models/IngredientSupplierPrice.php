@@ -25,7 +25,7 @@ class IngredientSupplierPrice extends Model
 
     protected $fillable = [
         'branch_id', 'ingredient_id', 'supplier_id', 'unit_id',
-        'unit_price', 'unit_price_in_base',
+        'unit_price', 'currency_code', 'exchange_rate', 'unit_price_in_base',
         'previous_price_in_base', 'change_pct',
         'purchase_order_id', 'purchase_order_item_id',
         'source', 'recorded_by_user_id', 'notes',
@@ -34,6 +34,7 @@ class IngredientSupplierPrice extends Model
 
     protected $casts = [
         'unit_price'              => 'decimal:4',
+        'exchange_rate'           => 'decimal:8',
         'unit_price_in_base'      => 'decimal:4',
         'previous_price_in_base'  => 'decimal:4',
         'change_pct'              => 'decimal:2',

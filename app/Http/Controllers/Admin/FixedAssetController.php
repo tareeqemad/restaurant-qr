@@ -12,6 +12,7 @@ use App\Models\Supplier;
 use App\Services\Accounting\AccountingService;
 use App\Services\ExchangeRateService;
 use App\Support\BranchContext;
+use App\Support\AdminShell;
 use App\Support\MarketProfile;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -48,8 +49,27 @@ class FixedAssetController extends Controller
         $assets = $query->paginate(20)->withQueryString();
         $statsRows = FixedAsset::query()->get();
 
-        return view('admin.fixed-assets.index', [
-            'assets' => $assets,
+        $canCreate = (bool) auth()->user()?->hasPermission('chart_of_accounts.create');
+        $canUpdate = (bool) auth()->user()?->hasPermission('chart_of_accounts.update');
+
+        return AdminShell::render('Admin/Accounting/FixedAssets', [
+            'assets' => [
+                'data' => $assets->getCollection()->map(fn (FixedAsset $asset) => [
+                    'id' => $asset->id,
+                    'number' => $asset->asset_number,
+                    'name' => $asset->name,
+                    'category' => $asset->category,
+                    'vendor' => $asset->vendor_name,
+                    'date' => $asset->acquisition_date?->toDateString(),
+                    'cost' => (float) $asset->cost,
+                    'accumulated' => (float) $asset->accumulated_depreciation,
+                    'bookValue' => $asset->bookValue(),
+                    'status' => $asset->status,
+                    'showUrl' => route('admin.accounting.fixed-assets.show', $asset),
+                ])->values(),
+                'links' => $assets->linkCollection()->toArray(),
+                'total' => $assets->total(),
+            ],
             'stats' => [
                 'count' => $statsRows->count(),
                 'active' => $statsRows->where('status', 'active')->count(),
@@ -66,6 +86,13 @@ class FixedAssetController extends Controller
             'filters' => $filters,
             'defaultPeriodMonth' => now()->format('Y-m'),
             'defaultPostedOn' => now()->endOfMonth()->toDateString(),
+            'can' => ['create' => $canCreate, 'update' => $canUpdate],
+            'currency' => ['code' => $this->accountingBaseCurrencyCode(), 'symbol' => MarketProfile::currencySymbol()],
+            'urls' => $this->workspaceUrls() + [
+                'index' => route('admin.accounting.fixed-assets.index'),
+                'create' => $canCreate ? route('admin.accounting.fixed-assets.create') : null,
+                'runDepreciation' => $canUpdate ? route('admin.accounting.fixed-assets.depreciation-run') : null,
+            ],
         ]);
     }
 
@@ -73,8 +100,7 @@ class FixedAssetController extends Controller
     {
         abort_unless(auth()->user()?->hasPermission('chart_of_accounts.create'), 403);
 
-        return view('admin.fixed-assets.create', [
-            'asset' => new FixedAsset([
+        $asset = new FixedAsset([
                 'asset_number' => FixedAsset::generateNumber(),
                 'acquisition_date' => now()->toDateString(),
                 'in_service_date' => now()->toDateString(),
@@ -82,10 +108,30 @@ class FixedAssetController extends Controller
                 'exchange_rate' => 1,
                 'useful_life_months' => 60,
                 'payment_method' => 'bank_transfer',
-            ]),
-            'currencies' => $this->accountingCurrencies(),
-            'paymentMethods' => $this->paymentMethods(),
-            'suppliers' => Supplier::orderBy('name')->get(['id', 'name']),
+            ]);
+
+        return AdminShell::render('Admin/Accounting/FixedAssetCreate', [
+            'defaults' => [
+                'assetNumber' => $asset->asset_number,
+                'acquisitionDate' => $asset->acquisition_date?->toDateString(),
+                'inServiceDate' => $asset->in_service_date?->toDateString(),
+                'currencyCode' => $asset->currency_code,
+                'exchangeRate' => (float) $asset->exchange_rate,
+                'usefulLifeMonths' => $asset->useful_life_months,
+                'paymentMethod' => $asset->payment_method,
+            ],
+            'currencies' => $this->accountingCurrencies()->map(fn (Currency $currency) => [
+                'code' => $currency->code, 'name' => $currency->name,
+                'rate' => $currency->is_base ? 1 : (float) ($currency->rate_to_base ?: 0),
+                'base' => (bool) $currency->is_base,
+            ])->values(),
+            'paymentMethods' => collect($this->paymentMethods())->map(fn ($label, $code) => ['code' => $code, 'label' => $label])->values(),
+            'suppliers' => Supplier::orderBy('name')->get(['id', 'name'])->map(fn (Supplier $supplier) => ['id' => $supplier->id, 'name' => $supplier->name])->values(),
+            'hasBranch' => (bool) BranchContext::current(),
+            'urls' => $this->workspaceUrls() + [
+                'index' => route('admin.accounting.fixed-assets.index'),
+                'store' => route('admin.accounting.fixed-assets.store'),
+            ],
         ]);
     }
 
@@ -141,12 +187,62 @@ class FixedAssetController extends Controller
 
         $fixedAsset->load(['purchaseEntry', 'disposalEntry', 'depreciations.journalEntry', 'supplier', 'creator']);
 
-        return view('admin.fixed-assets.show', [
-            'asset' => $fixedAsset,
-            'statusLabels' => $this->statusLabels(),
-            'paymentMethods' => $this->paymentMethods(),
-            'disposalPaymentMethods' => $this->disposalPaymentMethods(),
+        return AdminShell::render('Admin/Accounting/FixedAssetShow', [
+            'asset' => [
+                'id' => $fixedAsset->id,
+                'number' => $fixedAsset->asset_number,
+                'name' => $fixedAsset->name,
+                'status' => $fixedAsset->status,
+                'statusLabel' => $this->statusLabels()[$fixedAsset->status] ?? $fixedAsset->status,
+                'category' => $fixedAsset->category,
+                'description' => $fixedAsset->description,
+                'vendor' => $fixedAsset->supplier?->name ?? $fixedAsset->vendor_name,
+                'acquisitionDate' => $fixedAsset->acquisition_date?->toDateString(),
+                'inServiceDate' => $fixedAsset->in_service_date?->toDateString(),
+                'usefulLifeMonths' => $fixedAsset->useful_life_months,
+                'currencyCode' => $fixedAsset->currency_code,
+                'exchangeRate' => (float) $fixedAsset->exchange_rate,
+                'foreignCost' => (float) $fixedAsset->foreign_cost,
+                'cost' => (float) $fixedAsset->cost,
+                'salvageValue' => (float) $fixedAsset->salvage_value,
+                'accumulated' => (float) $fixedAsset->accumulated_depreciation,
+                'bookValue' => $fixedAsset->bookValue(),
+                'monthlyDepreciation' => $fixedAsset->monthlyDepreciationAmount(),
+                'remainingDepreciable' => $fixedAsset->remainingDepreciableAmount(),
+                'depreciatedThrough' => $fixedAsset->depreciated_through?->toDateString(),
+                'notes' => $fixedAsset->notes,
+                'disposedOn' => $fixedAsset->disposed_on?->toDateString(),
+                'disposalProceeds' => (float) $fixedAsset->disposal_proceeds,
+                'purchaseEntry' => $fixedAsset->purchaseEntry ? [
+                    'number' => $fixedAsset->purchaseEntry->entry_no,
+                    'url' => route('admin.accounting.journal', ['search' => $fixedAsset->purchaseEntry->entry_no]),
+                ] : null,
+                'disposalEntry' => $fixedAsset->disposalEntry ? [
+                    'number' => $fixedAsset->disposalEntry->entry_no,
+                    'url' => route('admin.accounting.journal', ['search' => $fixedAsset->disposalEntry->entry_no]),
+                ] : null,
+                'depreciations' => $fixedAsset->depreciations->sortByDesc('period_end')->values()->map(fn (FixedAssetDepreciation $row) => [
+                    'id' => $row->id,
+                    'period' => $row->period_start?->format('Y-m'),
+                    'postedOn' => $row->posted_on?->toDateString(),
+                    'amount' => (float) $row->amount,
+                    'accumulatedAfter' => (float) $row->accumulated_after,
+                    'notes' => $row->notes,
+                    'entry' => $row->journalEntry ? [
+                        'number' => $row->journalEntry->entry_no,
+                        'url' => route('admin.accounting.journal', ['search' => $row->journalEntry->entry_no]),
+                    ] : null,
+                ])->values(),
+            ],
+            'disposalPaymentMethods' => collect($this->disposalPaymentMethods())->map(fn ($label, $code) => ['code' => $code, 'label' => $label])->values(),
             'nextDepreciationAmount' => round($fixedAsset->depreciationAmountForPeriod(now()->endOfMonth()), 2),
+            'canUpdate' => (bool) auth()->user()?->hasPermission('chart_of_accounts.update'),
+            'currency' => ['code' => $this->accountingBaseCurrencyCode(), 'symbol' => MarketProfile::currencySymbol()],
+            'urls' => $this->workspaceUrls() + [
+                'index' => route('admin.accounting.fixed-assets.index'),
+                'depreciation' => route('admin.accounting.fixed-assets.depreciation', $fixedAsset),
+                'dispose' => route('admin.accounting.fixed-assets.dispose', $fixedAsset),
+            ],
         ]);
     }
 
@@ -424,6 +520,29 @@ class FixedAssetController extends Controller
             'active' => 'نشط',
             'fully_depreciated' => 'مهلك بالكامل',
             'disposed' => 'مستبعد',
+        ];
+    }
+
+    private function workspaceUrls(): array
+    {
+        $user = auth()->user();
+        $canCreate = (bool) $user?->hasPermission('chart_of_accounts.create');
+        $canUpdate = (bool) $user?->hasPermission('chart_of_accounts.update');
+
+        return [
+            'home' => route('admin.accounting.index'), 'guide' => route('admin.accounting.guide'),
+            'journal' => route('admin.accounting.journal'), 'ledger' => route('admin.accounting.ledger'),
+            'trialBalance' => route('admin.accounting.trial-balance'), 'profitLoss' => route('admin.reports.profit-loss'),
+            'balanceSheet' => route('admin.accounting.balance-sheet'), 'aging' => route('admin.accounting.aging'),
+            'taxReport' => route('admin.accounting.tax-report'), 'accounts' => route('admin.accounts.index'),
+            'openingBalances' => $canCreate ? route('admin.accounting.opening-balances') : null,
+            'manualEntry' => $canCreate ? route('admin.accounting.manual-entry.create') : null,
+            'fiscalYears' => $canUpdate ? route('admin.accounting.fiscal-years') : null,
+            'periods' => $canUpdate ? route('admin.accounting.periods') : null,
+            'mappings' => $canUpdate ? route('admin.accounting.mappings') : null,
+            'reconciliations' => $canUpdate ? route('admin.accounting.reconciliations') : null,
+            'settlements' => $canUpdate ? route('admin.accounting.settlements') : null,
+            'fixedAssets' => route('admin.accounting.fixed-assets.index'),
         ];
     }
 

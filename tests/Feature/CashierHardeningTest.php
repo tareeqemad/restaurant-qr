@@ -101,26 +101,19 @@ class CashierHardeningTest extends TestCase
         return [$invoice, $session, $order];
     }
 
-    /** #1 — a discount applied AFTER a partial refund must net out the refund, not
-     *  close the invoice as 'paid' on the gross payment while money is still owed. */
-    public function test_discount_after_partial_refund_keeps_balance_open(): void
+    /** A posted return is immutable; later discounts must use another credit note. */
+    public function test_discount_after_partial_refund_is_blocked(): void
     {
         $this->actingAs($this->admin);
         [$invoice, $session] = $this->issueMeal();          // total 100
 
         app(BillingService::class)->addPayment($invoice, 100.0, 'cash', $this->admin->id);
         app(RefundService::class)->issue($invoice->fresh(), 30.0, 'cash', 'صنف مرتجع', $this->admin->id);
-        // net paid now 70, balance 30, status partially_paid.
-
-        // Cashier comps 20 off → new total 80. Net paid 70 → still owes 10.
+        // Sale and net payment are now both 70; the original invoice stays closed.
+        $this->expectException(ValidationException::class);
         app(OrderDiscountService::class)->applyToSession(
             $session->fresh(), ['type' => 'fixed', 'value' => 20, 'reason' => 'مجاملة'], $this->admin
         );
-
-        $invoice->refresh();
-        $this->assertSame('partially_paid', $invoice->status,
-            'Gross-payment math would wrongly close this as paid; net math keeps it open.');
-        $this->assertEqualsWithDelta(10.0, (float) $invoice->balance, 0.001, 'Still owes 80 − net-paid 70 = 10.');
     }
 
     /** #2a — a session discount cannot be applied once the invoice is paid/closed. */
@@ -202,7 +195,7 @@ class CashierHardeningTest extends TestCase
         app(BillingService::class)->settleOnAccount($invoice->fresh(), $this->admin->id);   // park 40 as debt
 
         $this->expectException(ValidationException::class);
-        $this->expectExceptionMessageMatches('/مؤجّلة كدين/u');
+        $this->expectExceptionMessageMatches('/فاتورة دين|تخفيض الدين/u');
         app(RefundService::class)->issue($invoice->fresh(), 30.0, 'cash', 'مرتجع', $this->admin->id);
     }
 
@@ -217,7 +210,8 @@ class CashierHardeningTest extends TestCase
         app(BillingService::class)->voidPayment($payment->fresh(), $this->admin->id, 'أُدخل مرتين');
 
         $invoice->refresh();
-        $this->assertSame(0, $invoice->payments()->count(), 'The voided payment row is removed.');
+        $this->assertSame(0, $invoice->payments()->count(), 'The voided payment is excluded from live collections.');
+        $this->assertDatabaseHas('payments', ['id' => $payment->id, 'status' => 'voided']);
         $this->assertEqualsWithDelta(0.0, (float) $invoice->paid_total, 0.001);
         $this->assertEqualsWithDelta(100.0, (float) $invoice->balance, 0.001, 'Invoice reopens fully unpaid.');
         $this->assertSame('issued', $invoice->status);

@@ -114,7 +114,7 @@ class CashierSplitUnparkTest extends TestCase
         $this->actingAs($this->admin);
         [$invoice, $session] = $this->issueMeal();
 
-        // Active session: the checkout renders in the initial Livewire paint.
+        // Active session: the checkout renders in the initial response.
         $this->get(route('admin.cashier.index', ['session' => $session->id]))
             ->assertOk()
             ->assertSee($invoice->number);
@@ -178,7 +178,7 @@ class CashierSplitUnparkTest extends TestCase
 
         // Regroup: 2 equal → 3 uneven. The service clears-and-recreates.
         $this->post(route('admin.cashier.split', $invoice), ['splits' => [
-            ['label' => 'أحمد', 'amount' => 40, 'method' => 'card'],
+            ['label' => 'أحمد', 'amount' => 40, 'method' => 'transfer'],
             ['label' => 'سمير', 'amount' => 30, 'method' => 'cash'],
             ['label' => 'ليلى', 'amount' => 30, 'method' => 'cash'],
         ]])->assertSessionHas('success');
@@ -187,7 +187,7 @@ class CashierSplitUnparkTest extends TestCase
         $this->assertSame(3, $splits->count(), 'Old rows must be gone, replaced by the new grouping.');
         $this->assertSame(['أحمد', 'سمير', 'ليلى'], $splits->pluck('label')->all());
         $this->assertEqualsWithDelta(40.0, (float) $splits[0]->amount, 0.001);
-        $this->assertSame('card', $splits[0]->method);
+        $this->assertSame('transfer', $splits[0]->method);
     }
 
     /** Once ANY split is paid, the regroup POST is refused with a 422. */
@@ -247,5 +247,68 @@ class CashierSplitUnparkTest extends TestCase
         $this->actingAs($this->waiter)->get(route('admin.cashier.print', $invoice))->assertForbidden();
         $this->actingAs($this->waiter)->get(route('admin.cashier.pdf', $invoice))->assertForbidden();
         $this->actingAs($this->admin)->get(route('admin.cashier.print', $invoice))->assertOk();
+        $pdf = $this->actingAs($this->admin)->get(route('admin.cashier.pdf', $invoice));
+        $pdf->assertOk()->assertHeader('content-type', 'application/pdf');
+        $this->assertStringStartsWith('%PDF-', $pdf->getContent());
+        $this->assertStringContainsString($invoice->number.'.pdf', (string) $pdf->headers->get('content-disposition'));
+    }
+
+    public function test_thermal_receipt_is_formal_and_does_not_claim_tax_when_tax_is_off(): void
+    {
+        $this->actingAs($this->admin);
+        $this->branch->update([
+            'name' => 'فرع الرمال',
+            'phone' => '0599000111',
+            'address' => 'غزة',
+        ]);
+        [$invoice] = $this->issueMeal();
+        app(BillingService::class)->addPayment($invoice, 60, 'cash', $this->admin->id);
+        app(BillingService::class)->settleOnAccount($invoice->fresh(), $this->admin->id);
+
+        $this->get(route('admin.cashier.print', $invoice))
+            ->assertOk()
+            ->assertSee('data-invoice-document="receipt"', false)
+            ->assertSee('فاتورة مبيعات')
+            ->assertDontSee('فاتورة مبيعات ضريبية')
+            ->assertSee('فرع الرمال')
+            ->assertSee('غزة')
+            ->assertSee('رقم الطلب')
+            ->assertSee('الكاشير')
+            ->assertSee($this->admin->name)
+            ->assertSee('سعر الوحدة')
+            ->assertSee('استلمها')
+            ->assertSee('المدفوع')
+            ->assertSee('المتبقي')
+            ->assertSee('المتبقي مسجل ديناً على حساب الزبون');
+    }
+
+    public function test_a4_invoice_uses_tax_title_only_when_the_invoice_has_tax(): void
+    {
+        $this->actingAs($this->admin);
+        [$invoice] = $this->issueMeal();
+        \App\Models\Setting::put('tax_number', 'TX-1600', 'billing', 'string');
+        $invoice->update([
+            'tax_total' => 16,
+            'tip' => 5,
+            'total' => 121,
+            'balance' => 121,
+        ]);
+        $invoice->load([
+            'branch',
+            'issuer',
+            'tableSession.table',
+            'tableSession.orders.items.modifiers',
+            'order.items.modifiers',
+            'payments',
+        ]);
+
+        $html = view('admin.cashier.invoice-pdf', compact('invoice'))->render();
+
+        $this->assertStringContainsString('data-invoice-document="a4"', $html);
+        $this->assertStringContainsString('فاتورة مبيعات ضريبية', $html);
+        $this->assertStringContainsString('TX-1600', $html);
+        $this->assertStringContainsString('تفاصيل الأصناف', $html);
+        $this->assertStringContainsString('إكرامية', $html);
+        $this->assertStringContainsString('121.00', $html);
     }
 }

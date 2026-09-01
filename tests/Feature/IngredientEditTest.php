@@ -150,4 +150,57 @@ class IngredientEditTest extends TestCase
         $this->assertSame(5.0, (float) $ing->cost_per_unit,
             'cost_per_unit is system-maintained once a batch exists and must ignore a posted value on edit.');
     }
+
+    public function test_base_unit_must_match_selected_measurement_type(): void
+    {
+        $ing = $this->makeIngredient();
+
+        $this->actingAs($this->admin)
+            ->from(route('admin.ingredients.edit', $ing))
+            ->put(route('admin.ingredients.update', $ing), [
+                'name' => 'سكر',
+                'measurement_type' => 'volume',
+                'base_unit_id' => $this->g->id,
+                'reorder_threshold' => 0,
+                'cost_per_unit' => 5,
+                'track_stock' => 1,
+                'active' => 1,
+            ])
+            ->assertRedirect(route('admin.ingredients.edit', $ing))
+            ->assertSessionHasErrors('base_unit_id');
+
+        $this->assertNull($ing->refresh()->measurement_type);
+    }
+
+    public function test_base_unit_cannot_change_after_stock_history_exists(): void
+    {
+        $kg = Unit::create([
+            'code' => 'kg', 'name' => 'kg', 'unit_type' => 'weight',
+            'factor_to_base' => 1000, 'is_base' => false,
+        ]);
+        $ing = $this->makeIngredient();
+        IngredientBatch::create([
+            'ingredient_id' => $ing->id,
+            'branch_id' => $this->branch->id,
+            'received_date' => now()->toDateString(),
+            'initial_qty' => 1000,
+            'remaining_qty' => 1000,
+            'unit_cost' => 1,
+        ]);
+
+        $this->actingAs($this->admin)
+            ->from(route('admin.ingredients.edit', $ing))
+            ->put(route('admin.ingredients.update', $ing), [
+                'name' => 'سكر',
+                'measurement_type' => 'weight',
+                'base_unit_id' => $kg->id,
+                'reorder_threshold' => 0,
+                'cost_per_unit' => 5,
+                'track_stock' => 1,
+                'active' => 1,
+            ])
+            ->assertSessionHasErrors('base_unit_id');
+
+        $this->assertSame($this->g->id, $ing->refresh()->base_unit_id);
+    }
 }

@@ -2,6 +2,8 @@
 
 namespace App\Enums;
 
+use App\Models\User;
+
 /**
  * System role catalogue. Two "owner-level" roles see every branch:
  *   - SuperAdmin: technical/system role (developer, billing, system logs).
@@ -18,6 +20,7 @@ enum UserRole: string
     case Partner = 'partner';
     case Admin = 'admin';
     case Manager = 'manager';
+    case Accountant = 'accountant';
     case Waiter = 'waiter';
     case Chef = 'chef';
     case Bartender = 'bartender';
@@ -30,6 +33,7 @@ enum UserRole: string
             self::Partner => 'شريك',
             self::Admin => 'مدير عام',
             self::Manager => 'مدير فرع',
+            self::Accountant => 'محاسب',
             self::Waiter => 'جرسون',
             self::Chef => 'المطبخ',
             self::Bartender => 'البار',
@@ -93,9 +97,11 @@ enum UserRole: string
      * user is immediate full-system takeover. Without this filter the dropdown
      * lists every role with `super_admin` first, which is the literal default.
      */
-    public static function grantableBy(?\App\Models\User $actor): array
+    public static function grantableBy(?User $actor): array
     {
-        if (! $actor) return [];
+        if (! $actor) {
+            return [];
+        }
 
         // SuperAdmin can do anything.
         if ($actor->role === self::SuperAdmin->value) {
@@ -114,6 +120,7 @@ enum UserRole: string
         if ($actor->role === self::Admin->value) {
             return [
                 self::Manager->value,
+                self::Accountant->value,
                 ...self::staffRoles(),
             ];
         }
@@ -130,9 +137,10 @@ enum UserRole: string
      * Same as grantableBy but returns label-keyed-by-value array suitable
      * for a `<select>` — matches the shape of `options()`.
      */
-    public static function grantableOptions(?\App\Models\User $actor): array
+    public static function grantableOptions(?User $actor): array
     {
         $allowed = self::grantableBy($actor);
+
         return collect(self::cases())
             ->filter(fn ($c) => in_array($c->value, $allowed, true))
             ->mapWithKeys(fn (self $r) => [$r->value => $r->label()])

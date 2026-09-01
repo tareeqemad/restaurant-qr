@@ -11,7 +11,7 @@ return [
     | framework when an event needs to be broadcast. You may set this to
     | any of the connections defined in the "connections" array below.
     |
-    | Supported: "reverb", "pusher", "ably", "redis", "log", "null"
+    | Shared hosting uses polling, so only inert/logging drivers are exposed.
     |
     */
 
@@ -29,50 +29,6 @@ return [
     */
 
     'connections' => [
-
-        'reverb' => [
-            'driver' => 'reverb',
-            'key' => env('REVERB_APP_KEY'),
-            'secret' => env('REVERB_APP_SECRET'),
-            'app_id' => env('REVERB_APP_ID'),
-            'options' => [
-                'host' => env('REVERB_HOST'),
-                'port' => env('REVERB_PORT', 443),
-                'scheme' => env('REVERB_SCHEME', 'https'),
-                'useTLS' => env('REVERB_SCHEME', 'https') === 'https',
-            ],
-            'client_options' => [
-                // Keep request-path fast when Reverb isn't running. Default Guzzle
-                // connect timeout is effectively ~2s on Windows (TCP stack), which
-                // stacks up on bulk actions like "mark all ready" that fire many
-                // events in one request. 200ms is plenty on localhost.
-                'connect_timeout' => (float) env('REVERB_CONNECT_TIMEOUT', 0.2),
-                'timeout'         => (float) env('REVERB_TIMEOUT', 1.0),
-            ],
-        ],
-
-        'pusher' => [
-            'driver' => 'pusher',
-            'key' => env('PUSHER_APP_KEY'),
-            'secret' => env('PUSHER_APP_SECRET'),
-            'app_id' => env('PUSHER_APP_ID'),
-            'options' => [
-                'cluster' => env('PUSHER_APP_CLUSTER'),
-                'host' => env('PUSHER_HOST') ?: 'api-'.env('PUSHER_APP_CLUSTER', 'mt1').'.pusher.com',
-                'port' => env('PUSHER_PORT', 443),
-                'scheme' => env('PUSHER_SCHEME', 'https'),
-                'encrypted' => true,
-                'useTLS' => env('PUSHER_SCHEME', 'https') === 'https',
-            ],
-            'client_options' => [
-                // Guzzle client options: https://docs.guzzlephp.org/en/stable/request-options.html
-            ],
-        ],
-
-        'ably' => [
-            'driver' => 'ably',
-            'key' => env('ABLY_KEY'),
-        ],
 
         'log' => [
             'driver' => 'log',

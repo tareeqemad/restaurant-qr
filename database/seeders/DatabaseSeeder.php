@@ -5,25 +5,22 @@ namespace Database\Seeders;
 use Illuminate\Database\Seeder;
 
 /**
- * Default seed: full install (system + demo).
+ * Default development seed: system references plus demo operating data.
  *
- * Two-tier seeding:
- *   - SystemSeeder  → roles, permissions, units, allergens. ALWAYS safe.
- *   - DemoSeeder    → branches, staff, menu, tables. DEV/STAGING ONLY.
+ * Production workflow:
+ *   php artisan app:install
  *
- * Production install workflow:
- *   php artisan migrate
- *   php artisan db:seed --class=SystemSeeder
- *   php artisan app:install                # creates first super admin
+ * The installer runs the one-table migrations, restores the approved menu
+ * catalogue through ProductionSeeder, and creates the first Super Admin
+ * interactively. It does not create demo staff, passwords, restaurant tables,
+ * orders, stock balances, supplier debts, or accounting transactions.
  *
- * Or use the all-in-one wrapper:
- *   php artisan app:install                # interactive: migrate + system seed + super admin
+ * Development reset:
+ *   php artisan migrate:fresh --seed
  *
- * Demo / dev workflow (full reset):
- *   php artisan migrate:fresh --seed       # drops + system + demo
- *
- * Wipe demo data on a live system without losing the install:
- *   - UI: Super Admin → "إدارة النظام" → "إعادة تعيين البيانات التجريبية"
+ * Client handover:
+ *   - The demo remains fully usable until an owner deliberately opens /setup.
+ *   - Setup keeps the approved catalogue and wipes trial activity in one flow.
  *   - Code path: App\Services\DemoResetService::reset()
  */
 class DatabaseSeeder extends Seeder

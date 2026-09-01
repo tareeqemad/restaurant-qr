@@ -17,6 +17,12 @@ class SyncTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function tearDown(): void
+    {
+        BranchContext::clear();
+        parent::tearDown();
+    }
+
     // ── Cloud side: the pull endpoint ───────────────────────────────────────
 
     public function test_cloud_pull_returns_settings_changes_with_a_valid_token(): void
@@ -125,6 +131,7 @@ class SyncTest extends TestCase
         config(['sync.role' => 'cloud', 'sync.accept_token' => 'secret']);
 
         $branch = Branch::create(['code' => 'main', 'name' => 'Main', 'is_active' => true]);
+        BranchContext::set($branch->id);
 
         $remoteOrderUuid = '01JZ0000000000000000000001';
 
@@ -135,7 +142,6 @@ class SyncTest extends TestCase
                 'branch_id' => 999999,
                 'number' => 'ORD-REMOTE-0001',
                 'order_source' => 'dine_in',
-                'platform_commission_pct' => 0,
                 'order_type' => 'dine_in',
                 'status' => 'pending',
                 'subtotal' => 0,

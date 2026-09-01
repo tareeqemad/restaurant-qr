@@ -2,17 +2,27 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Helpers\Money;
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\Allergen;
 use App\Models\Category;
 use App\Models\Ingredient;
 use App\Models\IngredientUnit;
 use App\Models\MenuItem;
+use App\Models\MenuPromotion;
 use App\Models\ModifierGroup;
+use App\Models\OrderItem;
 use App\Models\RecipeItem;
+use App\Models\Setting;
 use App\Models\Station;
 use App\Models\Unit;
+use App\Services\PromotionService;
 use App\Services\RecipeCostService;
+use App\Support\AdminShell;
+use App\Support\BranchContext;
+use App\Support\MenuWorkspace;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -23,33 +33,292 @@ class MenuItemController extends Controller
     public function index(Request $request)
     {
         $this->authorize('viewAny', MenuItem::class);
-        // Eager-load recipe + ingredient so the index view can render
-        // a live "نفد المخزون" badge without an N+1 across the rows.
-        $q = MenuItem::with(['category', 'station', 'recipeItems.ingredient']);
-        if ($s = $request->get('search')) {
+
+        // One card needs its recipe, resolved preparation station and the
+        // labels customers see. Eager-load those once; stockShortages() still
+        // owns the live inventory calculation and therefore stays canonical.
+        $q = MenuItem::with([
+            'category:id,name,default_station_id',
+            'category.station:id,name,color',
+            'station:id,name,color',
+            'recipeItems.ingredient.baseUnit',
+            'allergens:id,name,icon',
+            'modifierGroups:id,name',
+        ]);
+
+        if ($s = trim((string) $request->get('search'))) {
             $q->where(function ($qq) use ($s) {
-                $qq->where('name', 'like', "%$s%")->orWhere('name_en', 'like', "%$s%")->orWhere('sku', 'like', "%$s%");
+                $qq->where('name', 'like', "%$s%")->orWhere('sku', 'like', "%$s%");
             });
         }
         if ($c = $request->get('category_id')) {
             $q->where('category_id', $c);
         }
-        if ($request->filled('only_unavailable')) {
+        if ($station = $request->get('station_id')) {
+            $q->where('station_id', $station);
+        }
+        if ($status = $request->get('status')) {
+            match ($status) {
+                'available' => $q->where('is_available', true),
+                'unavailable' => $q->where('is_available', false),
+                'featured' => $q->where('is_featured', true),
+                'without_recipe' => $q->doesntHave('recipeItems'),
+                default => null,
+            };
+        } elseif ($request->filled('only_unavailable')) {
+            // Backward-compatible dashboard links.
             $q->where('is_available', false);
         }
+
         $items = $q->orderBy('display_order')->paginate(20)->withQueryString();
+        $resolvedPrices = app(PromotionService::class)->resolveBulk(
+            $items->getCollection(),
+            now(),
+            BranchContext::current(),
+        );
 
         $stats = [
             'total' => MenuItem::count(),
             'available' => MenuItem::where('is_available', true)->count(),
             'featured' => MenuItem::where('is_featured', true)->count(),
             'unavailable' => MenuItem::where('is_available', false)->count(),
+            'withoutRecipe' => MenuItem::doesntHave('recipeItems')->count(),
         ];
 
-        return view('admin.menu-items.index', [
+        $user = auth()->user();
+        $canUpdate = (bool) $user?->can('update', MenuItem::class);
+        $canDelete = (bool) $user?->can('delete', MenuItem::class);
+        $canToggle = (bool) $user?->can('toggleAvailability', MenuItem::class);
+
+        $items->through(function (MenuItem $item) use ($canUpdate, $canDelete, $canToggle, $resolvedPrices) {
+            $basePrice = (float) $item->price;
+            $priceData = $resolvedPrices[$item->id] ?? ['promotion' => null, 'price' => $basePrice];
+            $promotion = $priceData['promotion'];
+            $price = (float) $priceData['price'];
+            $hasPromotion = $promotion !== null && $price < $basePrice;
+            $cost = (float) $item->cost;
+            $profit = $price - $cost;
+            $margin = $price > 0 && $cost > 0 ? round(($profit / $price) * 100, 1) : null;
+            $shortages = $item->recipeItems->isNotEmpty() ? $item->stockShortages() : [];
+
+            return [
+                'id' => $item->id,
+                'name' => $item->name,
+                'sku' => $item->sku,
+                'description' => $item->description,
+                'imageUrl' => $item->imageUrl(),
+                'placeholderUrl' => MenuItem::placeholderImageUrl(),
+                'category' => $item->category?->name,
+                'station' => $item->station?->name ?: $item->category?->station?->name,
+                'price' => Money::format($price),
+                'basePrice' => Money::format($basePrice),
+                'hasPromotion' => $hasPromotion,
+                'promotionName' => $hasPromotion ? $promotion->name : null,
+                'cost' => $cost > 0 ? Money::format($cost) : null,
+                'profit' => $cost > 0 ? Money::format($profit) : null,
+                'margin' => $margin,
+                'prepMinutes' => (int) ($item->prep_time_minutes ?? 0),
+                'isAvailable' => (bool) $item->is_available,
+                'isFeatured' => (bool) $item->is_featured,
+                'unavailableReason' => $item->unavailable_reason,
+                'recipe' => $item->recipeItems->map(fn (RecipeItem $row) => [
+                    'name' => $row->ingredient?->name ?? 'مكوّن محذوف',
+                    'quantity' => (float) $row->quantity,
+                    'unit' => $row->ingredient?->baseUnit?->name,
+                ])->values(),
+                'allergens' => $item->allergens->map(fn (Allergen $allergen) => [
+                    'name' => $allergen->name,
+                    'icon' => $allergen->icon,
+                ])->values(),
+                'modifierGroups' => $item->modifierGroups->pluck('name')->values(),
+                'shortages' => collect($shortages)->map(fn (array $shortage) => [
+                    'ingredient' => $shortage['ingredient'],
+                    'required' => round((float) $shortage['required'], 4),
+                    'available' => round((float) $shortage['available'], 4),
+                ])->values(),
+                'can' => [
+                    'update' => $canUpdate,
+                    'delete' => $canDelete,
+                    'toggle' => $canToggle,
+                ],
+                'urls' => [
+                    'show' => route('admin.menu-items.show', $item),
+                    'edit' => route('admin.menu-items.edit', $item),
+                    'destroy' => route('admin.menu-items.destroy', $item),
+                    'toggle' => route('admin.menu-items.toggle-availability', $item),
+                ],
+            ];
+        });
+
+        return AdminShell::render('Admin/MenuItems/Index', [
+            'navigation' => MenuWorkspace::navigation(),
             'items' => $items,
-            'categories' => Category::where('active', true)->get(),
+            'categories' => Category::where('active', true)->orderBy('display_order')->get(['id', 'name']),
+            'stations' => Station::where('active', true)->orderBy('display_order')->get(['id', 'name']),
             'stats' => $stats,
+            'filters' => [
+                'search' => (string) $request->get('search', ''),
+                'categoryId' => (string) $request->get('category_id', ''),
+                'stationId' => (string) $request->get('station_id', ''),
+                'status' => (string) ($request->get('status') ?: ($request->filled('only_unavailable') ? 'unavailable' : '')),
+            ],
+            'can' => [
+                'create' => (bool) $user?->can('create', MenuItem::class),
+                'recomputeCosts' => (bool) $user?->can('create', MenuItem::class),
+            ],
+            'urls' => [
+                'index' => route('admin.menu-items.index'),
+                'create' => route('admin.menu-items.create'),
+                'recomputeCosts' => route('admin.menu-items.recompute-costs'),
+            ],
+        ]);
+    }
+
+    public function show(Request $request, MenuItem $menuItem)
+    {
+        $this->authorize('view', $menuItem);
+
+        $menuItem->load([
+            'category:id,name,default_station_id',
+            'category.station:id,name,color',
+            'station:id,name,color',
+            'recipeItems.ingredient.baseUnit',
+            'allergens:id,name,icon',
+            'modifierGroups:id,name',
+            'priceHistory.changer:id,name',
+        ]);
+
+        $basePrice = (float) $menuItem->price;
+        $promotion = $menuItem->activePromotion();
+        $effectivePrice = $promotion ? $promotion->applyTo($basePrice) : $basePrice;
+        $hasPromotion = $promotion !== null && $effectivePrice < $basePrice;
+        $cost = (float) $menuItem->cost;
+        $profit = $effectivePrice - $cost;
+        $margin = $effectivePrice > 0 && $cost > 0
+            ? round(($profit / $effectivePrice) * 100, 1)
+            : null;
+
+        $sales = OrderItem::query()
+            ->where('menu_item_id', $menuItem->id)
+            ->where('status', '!=', 'cancelled')
+            ->selectRaw('COALESCE(SUM(quantity), 0) as quantity_sold')
+            ->selectRaw('COALESCE(SUM(subtotal), 0) as revenue')
+            ->selectRaw('COALESCE(SUM(unit_price * quantity), 0) as item_revenue')
+            ->selectRaw('MAX(created_at) as last_sold_at')
+            ->first();
+        $quantitySold = (float) ($sales?->quantity_sold ?? 0);
+
+        $promotions = MenuPromotion::withTrashed()
+            ->where(function ($query) use ($menuItem) {
+                $query->whereNull('branch_id')->orWhere('branch_id', $menuItem->branch_id);
+            })
+            ->where(function ($query) use ($menuItem) {
+                $query->where(function ($target) use ($menuItem) {
+                    $target->where('target_type', MenuPromotion::TARGET_MENU_ITEM)
+                        ->where('target_id', $menuItem->id);
+                })->orWhere(function ($target) use ($menuItem) {
+                    $target->where('target_type', MenuPromotion::TARGET_CATEGORY)
+                        ->where('target_id', $menuItem->category_id);
+                });
+            })
+            ->latest('id')
+            ->get()
+            ->filter(fn (MenuPromotion $row) => $row->appliesToItem($menuItem))
+            ->map(function (MenuPromotion $row) use ($basePrice) {
+                $now = now();
+                $offerPrice = $row->applyTo($basePrice);
+                $status = $row->trashed()
+                    ? 'deleted'
+                    : (! $row->active
+                        ? 'paused'
+                        : ($row->starts_at?->gt($now)
+                            ? 'upcoming'
+                            : ($row->ends_at?->lt($now)
+                                ? 'expired'
+                                : ($row->isLiveAt($now) ? 'live' : 'outside'))));
+
+                return [
+                    'id' => $row->id,
+                    'name' => $row->name,
+                    'typeLabel' => $row->typeLabel(),
+                    'valueLabel' => $row->valueLabel(),
+                    'scheduleLabel' => $row->scheduleLabel(),
+                    'status' => $status,
+                    'offerPrice' => Money::format($offerPrice),
+                    'hasPriceDiscount' => $offerPrice < $basePrice,
+                    'scope' => $row->target_type === MenuPromotion::TARGET_MENU_ITEM ? 'هذا الصنف' : 'قسم '.$menuItem->category?->name,
+                ];
+            })
+            ->values();
+
+        $card = [
+            'item' => [
+                'id' => $menuItem->id,
+                'name' => $menuItem->name,
+                'sku' => $menuItem->sku,
+                'description' => $menuItem->description,
+                'imageUrl' => $menuItem->imageUrl(),
+                'category' => $menuItem->category?->name,
+                'station' => $menuItem->station?->name ?: $menuItem->category?->station?->name,
+                'basePrice' => Money::format($basePrice),
+                'effectivePrice' => Money::format($effectivePrice),
+                'hasPromotion' => $hasPromotion,
+                'promotionName' => $hasPromotion ? $promotion->name : null,
+                'cost' => Money::format($cost),
+                'profit' => Money::format($profit),
+                'margin' => $margin,
+                'isAvailable' => (bool) $menuItem->is_available,
+                'isFeatured' => (bool) $menuItem->is_featured,
+                'prepMinutes' => (int) $menuItem->prep_time_minutes,
+                'recipe' => $menuItem->recipeItems->map(fn (RecipeItem $row) => [
+                    'id' => $row->id,
+                    'ingredient' => $row->ingredient?->name ?? 'مكوّن محذوف',
+                    'quantity' => (float) $row->quantity,
+                    'unit' => $row->ingredient?->baseUnit?->name,
+                    'optional' => (bool) $row->is_optional,
+                    'url' => $row->ingredient ? route('admin.ingredients.show', $row->ingredient) : null,
+                ])->values(),
+                'allergens' => $menuItem->allergens->pluck('name')->values(),
+                'modifierGroups' => $menuItem->modifierGroups->pluck('name')->values(),
+            ],
+            'sales' => [
+                'quantity' => $quantitySold,
+                'revenue' => Money::format((float) ($sales?->revenue ?? 0)),
+                'averagePrice' => Money::format($quantitySold > 0 ? (float) $sales->item_revenue / $quantitySold : 0),
+                'lastSoldAt' => $sales?->last_sold_at ? Carbon::parse($sales->last_sold_at)->format('Y-m-d H:i') : null,
+            ],
+            'priceHistory' => $menuItem->priceHistory->take(50)->map(fn ($row) => [
+                'id' => $row->id,
+                'type' => $row->change_type,
+                'oldPrice' => $row->old_price !== null ? Money::format((float) $row->old_price) : null,
+                'newPrice' => Money::format((float) $row->new_price),
+                'reason' => $row->reason,
+                'changedBy' => $row->changer?->name ?: 'النظام',
+                'changedAt' => $row->changed_at?->format('Y-m-d H:i'),
+            ])->values(),
+            'promotions' => $promotions,
+            'can' => [
+                'update' => (bool) auth()->user()?->can('update', $menuItem),
+                'createPromotion' => (bool) auth()->user()?->hasPermission('promotions.create'),
+            ],
+            'urls' => [
+                'index' => route('admin.menu-items.index'),
+                'edit' => route('admin.menu-items.edit', $menuItem),
+                'promotions' => route('admin.promotions.index'),
+                'createPromotion' => route('admin.promotions.create', [
+                    'target_type' => 'menu_item',
+                    'target_id' => $menuItem->id,
+                ]),
+            ],
+        ];
+
+        if ($request->expectsJson()) {
+            return response()->json($card);
+        }
+
+        return AdminShell::render('Admin/MenuItems/Show', [
+            'navigation' => MenuWorkspace::navigation(),
+            ...$card,
         ]);
     }
 
@@ -57,7 +326,7 @@ class MenuItemController extends Controller
     {
         $this->authorize('create', MenuItem::class);
 
-        return view('admin.menu-items.create', $this->formData());
+        return $this->renderForm('create');
     }
 
     public function store(Request $request)
@@ -67,7 +336,7 @@ class MenuItemController extends Controller
         $recipe = $data['recipe'] ?? [];
         $allergenIds = $data['allergens'] ?? [];
         $modifierGroupIds = $data['modifier_groups'] ?? [];
-        unset($data['recipe'], $data['allergens'], $data['modifier_groups']);
+        unset($data['recipe'], $data['allergens'], $data['modifier_groups'], $data['price_change_reason']);
 
         if ($request->hasFile('image')) {
             // 'menu-items' (NOT 'menu'): it's the only dir whitelisted in
@@ -92,7 +361,7 @@ class MenuItemController extends Controller
         $this->authorize('update', MenuItem::class);
         $menuItem->load('recipeItems.ingredient', 'allergens', 'modifierGroups');
 
-        return view('admin.menu-items.edit', array_merge($this->formData(), ['item' => $menuItem]));
+        return $this->renderForm('edit', $menuItem);
     }
 
     public function update(Request $request, MenuItem $menuItem)
@@ -102,7 +371,9 @@ class MenuItemController extends Controller
         $recipe = $data['recipe'] ?? [];
         $allergenIds = $data['allergens'] ?? [];
         $modifierGroupIds = $data['modifier_groups'] ?? [];
-        unset($data['recipe'], $data['allergens'], $data['modifier_groups']);
+        $priceChangeReason = $data['price_change_reason'] ?? null;
+        unset($data['recipe'], $data['allergens'], $data['modifier_groups'], $data['price_change_reason']);
+        $oldPrice = (float) $menuItem->price;
 
         if ($request->hasFile('image')) {
             if ($menuItem->image) {
@@ -112,12 +383,27 @@ class MenuItemController extends Controller
             $data['image'] = $request->file('image')->store('menu-items', 'public');
         }
 
-        DB::transaction(function () use ($menuItem, $data, $recipe, $allergenIds, $modifierGroupIds) {
+        DB::transaction(function () use ($menuItem, $data, $recipe, $allergenIds, $modifierGroupIds, $priceChangeReason) {
+            $menuItem->priceChangeReason = $priceChangeReason;
+            $menuItem->priceChangedByUserId = auth()->id();
             $menuItem->update($data);
             $this->syncRecipe($menuItem, $recipe);
             $menuItem->allergens()->sync($allergenIds);
             $menuItem->modifierGroups()->sync($modifierGroupIds);
         });
+
+        if (abs($oldPrice - (float) $menuItem->price) > 0.001) {
+            ActivityLog::log(
+                'menu_item.price_changed',
+                "تغيير السعر الأساسي للصنف {$menuItem->name}",
+                $menuItem,
+                [
+                    'old_price' => $oldPrice,
+                    'new_price' => (float) $menuItem->price,
+                    'reason' => $priceChangeReason,
+                ],
+            );
+        }
 
         return redirect()->route('admin.menu-items.index')->with('success', 'تم التحديث');
     }
@@ -153,18 +439,91 @@ class MenuItemController extends Controller
         return back()->with('success', "تم تحديث تكلفة {$changed} صنف من الوصفات.");
     }
 
+    protected function renderForm(string $mode, ?MenuItem $item = null)
+    {
+        $data = $this->formData();
+
+        return AdminShell::render('Admin/MenuItems/Form', [
+            'navigation' => MenuWorkspace::navigation(),
+            'mode' => $mode,
+            'item' => $item ? [
+                'id' => $item->id,
+                'name' => $item->name,
+                'sku' => $item->sku,
+                'description' => $item->description,
+                'categoryId' => $item->category_id,
+                'stationId' => $item->station_id,
+                'price' => (float) $item->price,
+                'prepMinutes' => $item->prep_time_minutes,
+                'calories' => $item->calories,
+                'displayOrder' => $item->display_order,
+                'isAvailable' => (bool) $item->is_available,
+                'isFeatured' => (bool) $item->is_featured,
+                'unavailableReason' => $item->unavailable_reason,
+                'imageUrl' => $item->imageUrl(),
+                'allergenIds' => $item->allergens->pluck('id')->values(),
+                'modifierGroupIds' => $item->modifierGroups->pluck('id')->values(),
+                'recipe' => $item->recipeItems->map(fn (RecipeItem $row) => [
+                    'ingredient_id' => $row->ingredient_id,
+                    'quantity' => (float) $row->quantity,
+                    'unit_id' => $row->ingredient_unit_id ? 'iu:'.$row->ingredient_unit_id : 'u:'.$row->unit_id,
+                    'is_optional' => (bool) $row->is_optional,
+                ])->values(),
+            ] : null,
+            'categories' => $data['categories'],
+            'stations' => $data['stations'],
+            'allergens' => $data['allergens'],
+            'modifierGroups' => $data['modifierGroups'],
+            'ingredients' => $data['ingredients'],
+            'currencySymbol' => Setting::get('currency_symbol', config('restaurant.currency_symbol')),
+            'submitUrl' => $mode === 'create'
+                ? route('admin.menu-items.store')
+                : route('admin.menu-items.update', $item),
+            'urls' => [
+                'index' => route('admin.menu-items.index'),
+                'categories' => route('admin.categories.index'),
+                'modifiers' => route('admin.modifiers.index'),
+                'allergens' => route('admin.allergens.index'),
+                'ingredients' => route('admin.ingredients.index'),
+                'promotions' => route('admin.promotions.index'),
+            ],
+        ]);
+    }
+
     protected function formData(): array
     {
         return [
-            'categories' => Category::where('active', true)->orderBy('display_order')->get(),
-            'stations' => Station::where('active', true)->get(),
-            'allergens' => Allergen::orderBy('display_order')->get(),
+            'categories' => Category::where('active', true)->orderBy('display_order')->get(['id', 'name']),
+            'stations' => Station::where('active', true)->orderBy('display_order')->get(['id', 'name']),
+            'allergens' => Allergen::orderBy('display_order')->get(['id', 'name', 'icon']),
             'modifierGroups' => ModifierGroup::with(['modifiers' => fn ($q) => $q->orderBy('display_order')])
                 ->where('active', true)
                 ->orderBy('display_order')
-                ->get(),
-            'ingredients' => Ingredient::where('active', true)->orderBy('name')->get(),
-            'units' => Unit::all(),
+                ->get()
+                ->map(fn (ModifierGroup $group) => [
+                    'id' => $group->id,
+                    'name' => $group->name,
+                    'required' => (bool) $group->required,
+                    'minSelect' => (int) $group->min_select,
+                    'maxSelect' => (int) $group->max_select,
+                    'options' => $group->modifiers->map(fn ($modifier) => [
+                        'id' => $modifier->id,
+                        'name' => $modifier->name,
+                        'priceDelta' => (float) $modifier->price_delta,
+                    ])->values(),
+                ])->values(),
+            'ingredients' => Ingredient::with('baseUnit')
+                ->where('active', true)
+                ->orderBy('name')
+                ->get()
+                ->map(fn (Ingredient $ingredient) => [
+                    'id' => $ingredient->id,
+                    'name' => $ingredient->name,
+                    'baseUnitId' => $ingredient->base_unit_id,
+                    'baseUnitName' => $ingredient->baseUnit?->name,
+                    'baseUnitCode' => $ingredient->baseUnit?->code,
+                    'unitType' => $ingredient->baseUnit?->unit_type,
+                ])->values(),
         ];
     }
 
@@ -257,10 +616,9 @@ class MenuItemController extends Controller
             'station_id' => ['nullable', 'exists:stations,id'],
             'sku' => ['nullable', 'string', 'max:64'],
             'name' => ['required', 'string', 'max:255'],
-            'name_en' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
-            'description_en' => ['nullable', 'string'],
             'price' => ['required', 'numeric', 'min:0'],
+            'price_change_reason' => ['nullable', 'string', 'max:300'],
             'prep_time_minutes' => ['nullable', 'integer', 'min:0'],
             'calories' => ['nullable', 'integer'],
             'display_order' => ['nullable', 'integer'],
@@ -293,11 +651,31 @@ class MenuItemController extends Controller
                 $ingredientId = $row['ingredient_id'] ?? null;
                 $raw = trim((string) ($row['unit_id'] ?? ''));
 
-                if (! $ingredientId || ! str_starts_with($raw, 'u:')) {
+                if (! $ingredientId || $raw === '') {
                     continue;
                 }
 
-                $unitId = (int) substr($raw, 2);
+                if (str_starts_with($raw, 'iu:')) {
+                    $ingredientUnitId = (int) substr($raw, 3);
+                    $validIngredientUnit = $ingredientUnitId > 0
+                        && IngredientUnit::whereKey($ingredientUnitId)
+                            ->where('ingredient_id', $ingredientId)
+                            ->exists();
+                    if (! $validIngredientUnit) {
+                        $validator->errors()->add(
+                            "recipe.{$i}.unit_id",
+                            'وحدة الصنف المختارة لا تتبع المكوّن المحدد.'
+                        );
+                    }
+
+                    continue;
+                }
+
+                // Modern values are "u:5"; bare numeric ids are accepted for
+                // older forms but receive the exact same existence/type checks.
+                $unitId = str_starts_with($raw, 'u:')
+                    ? (int) substr($raw, 2)
+                    : (int) $raw;
                 if ($unitId <= 0) {
                     continue;
                 }
@@ -306,7 +684,16 @@ class MenuItemController extends Controller
                 $unit = Unit::find($unitId);
                 $baseUnit = $ingredient?->baseUnit;
 
-                if (! $ingredient || ! $unit || ! $baseUnit) {
+                if (! $unit) {
+                    $validator->errors()->add(
+                        "recipe.{$i}.unit_id",
+                        'وحدة القياس المختارة غير موجودة.'
+                    );
+
+                    continue;
+                }
+
+                if (! $ingredient || ! $baseUnit) {
                     continue;
                 }
 

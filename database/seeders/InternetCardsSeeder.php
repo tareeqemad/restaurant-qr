@@ -35,9 +35,9 @@ class InternetCardsSeeder extends Seeder
         // Default ladder. Slight discount for longer durations so customers
         // see an incentive to upgrade. Owner can override per-branch later.
         $cards = [
-            ['hours' => 1, 'sku' => 'NET-1H', 'name' => 'بطاقة نت — ساعة',     'name_en' => 'Internet Card — 1 Hour',  'price' => 5.00],
-            ['hours' => 2, 'sku' => 'NET-2H', 'name' => 'بطاقة نت — ساعتين',  'name_en' => 'Internet Card — 2 Hours', 'price' => 9.00],
-            ['hours' => 3, 'sku' => 'NET-3H', 'name' => 'بطاقة نت — 3 ساعات',  'name_en' => 'Internet Card — 3 Hours', 'price' => 12.00],
+            ['hours' => 1, 'sku' => 'NET-1H', 'name' => 'بطاقة نت — ساعة',  'price' => 5.00],
+            ['hours' => 2, 'sku' => 'NET-2H', 'name' => 'بطاقة نت — ساعتين', 'price' => 9.00],
+            ['hours' => 3, 'sku' => 'NET-3H', 'name' => 'بطاقة نت — 3 ساعات', 'price' => 12.00],
         ];
 
         foreach (Branch::all() as $branch) {
@@ -46,7 +46,6 @@ class InternetCardsSeeder extends Seeder
                     ['slug' => 'internet-cards'],
                     [
                         'name'           => 'بطاقات نت',
-                        'name_en'        => 'Internet Cards',
                         'description'    => 'بطاقات استخدام واي فاي بأوقات مختلفة',
                         'icon'           => 'bi-wifi',
                         'color'          => '#0ea5e9',
@@ -65,7 +64,6 @@ class InternetCardsSeeder extends Seeder
                             'station_id'         => null,    // sold at the till, not cooked
                             'sku'                => $c['sku'],
                             'name'               => $c['name'],
-                            'name_en'            => $c['name_en'],
                             'description'        => $c['hours'].' ساعة استخدام واي فاي بسرعة عالية',
                             'price'              => $c['price'],
                             'cost'               => 0,

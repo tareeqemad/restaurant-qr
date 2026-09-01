@@ -12,7 +12,7 @@ class Modifier extends Model
 {
     use HasFactory, HasLocalizedFields;
 
-    protected $fillable = ['modifier_group_id', 'name', 'name_en', 'price_delta', 'active', 'display_order'];
+    protected $fillable = ['modifier_group_id', 'name', 'price_delta', 'active', 'display_order'];
 
     protected $casts = [
         'price_delta' => 'decimal:2',

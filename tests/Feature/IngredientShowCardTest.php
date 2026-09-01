@@ -12,19 +12,25 @@ use App\Models\Unit;
 use App\Models\User;
 use App\Support\BranchContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 /**
  * Smoke test for the consolidated stock card. Sanity-checks that:
  *   - The show route renders 200 for a typical ingredient.
- *   - The view reports the right base-unit stock + smart-formatted
+ *   - The page reports the right base-unit stock + smart-formatted
  *     value (5,000,000 g → "5 طن").
  *   - Movement aggregates (received/consumed/wasted in last 30d)
  *     pull from inventory_movements correctly.
  *
  * Not exhaustive — each tab has its own underlying queries that are
- * covered elsewhere. This test guards the controller wiring + the
- * Blade template against silent breakage on schema changes.
+ * covered elsewhere. This test guards the controller wiring against
+ * silent breakage on schema changes.
+ *
+ * The screen moved to Inertia/Vue, so the assertions moved with it: the
+ * smart-formatted strings are now built in the controller and asserted as
+ * props. Asserting on markup would only be reading Inertia's escaped JSON
+ * blob, which says nothing about what the page shows.
  */
 class IngredientShowCardTest extends TestCase
 {
@@ -98,21 +104,22 @@ class IngredientShowCardTest extends TestCase
             'occurred_at' => now()->subDays(1),
         ]);
 
-        $this->actingAs($this->admin);
-        $response = $this->get(route('admin.ingredients.show', $sugar));
-
-        $response->assertOk();
-        $response->assertSee('كرت الصنف: سكر');
-        // Smart formatter must render the stock as "5 طن", NOT "5,000,000".
-        $response->assertSee('5 طن', false);
-        // The base unit tooltip must still expose the raw number for
-        // technical viewing — number_format outputs "5,000,000.0000".
-        $response->assertSee('5,000,000', false);
-        // Overview stats — at least the labels render so the tab is wired.
-        $response->assertSee('استُلم آخر 30 يوم', false);
-        $response->assertSee('استُهلك آخر 30 يوم', false);
-        // The 1M-g receive + 50K-g consume must show through.
-        $response->assertSee('1 طن', false);     // received last 30d
-        $response->assertSee('50 كيلوغرام', false);   // consumed last 30d
+        $this->actingAs($this->admin)
+            ->get(route('admin.ingredients.show', $sugar))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/Ingredients/Show')
+                ->where('ingredient.name', 'سكر')
+                // Smart formatter must render the stock as "5 طن", NOT "5,000,000".
+                ->where('hero.stockLabel', '5 طن')
+                // The tooltip must still expose the raw base number for the
+                // technical/accounting view — number_format(…, 4).
+                ->where('hero.stockExact', '5,000,000.0000')
+                // The 1M-g receive + 50K-g consume must come through.
+                ->where('kpis.received30.label', '1 طن')
+                ->where('kpis.consumed30.label', '50 كيلوغرام')
+                ->where('kpis.wasted30.label', '0 غرام')
+                // …and the chart has a full 30-day window to draw.
+                ->has('dailySeries', 30));
     }
 }

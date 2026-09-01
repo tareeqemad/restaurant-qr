@@ -17,7 +17,7 @@ class Category extends Model
     use BelongsToBranch, HasFactory, HasLocalizedFields, SoftDeletes;
 
     protected $fillable = [
-        'branch_id', 'slug', 'name', 'name_en', 'description', 'description_en',
+        'branch_id', 'slug', 'name', 'description',
         'image', 'icon', 'color', 'default_station_id', 'display_order', 'active',
     ];
 
@@ -29,7 +29,7 @@ class Category extends Model
     {
         static::creating(function (self $m) {
             if (empty($m->slug)) {
-                $m->slug = Str::slug($m->name_en ?: $m->name) ?: 'cat-'.uniqid();
+                $m->slug = Str::slug($m->name) ?: 'cat-'.uniqid();
             }
         });
     }

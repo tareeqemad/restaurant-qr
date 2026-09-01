@@ -24,7 +24,7 @@ class UserPermissionOverridesTest extends TestCase
     use RefreshDatabase;
 
     protected Branch $branch;
-    protected User $admin;
+    protected User $superAdmin;
     protected User $staff;
 
     protected function setUp(): void
@@ -41,8 +41,8 @@ class UserPermissionOverridesTest extends TestCase
         Role::firstOrCreate(['name' => 'waiter'],  ['label' => 'Waiter',  'is_system' => true]);
         $this->seed(\Database\Seeders\PermissionSeeder::class);
 
-        $this->admin = $this->user('admin_u',   'admin');
-        $this->staff = $this->user('waiter_u',  'waiter');
+        $this->superAdmin = $this->user('super_admin_u', 'super_admin');
+        $this->staff = $this->user('waiter_u', 'waiter');
     }
 
     protected function tearDown(): void
@@ -116,7 +116,7 @@ class UserPermissionOverridesTest extends TestCase
     // Controller sync — diff against role default
     // ────────────────────────────────────────────────────────────────
 
-    public function test_admin_can_grant_extra_permission_via_user_form(): void
+    public function test_super_admin_can_grant_extra_permission_via_user_form(): void
     {
         $closeMonth = Permission::where('name', 'staff_meals.close_month')->first();
         $waiterRole = Role::where('name', 'waiter')->first();
@@ -124,7 +124,7 @@ class UserPermissionOverridesTest extends TestCase
 
         // POST every role-default ID + the new extra one. The controller
         // should diff against role and only persist the extra grant.
-        $this->actingAs($this->admin)
+        $this->actingAs($this->superAdmin)
             ->put(route('admin.users.update', $this->staff), [
                 'name'              => $this->staff->name,
                 'username'          => $this->staff->username,
@@ -145,7 +145,7 @@ class UserPermissionOverridesTest extends TestCase
             'Only the deviation gets a row — role defaults stay implicit.');
     }
 
-    public function test_admin_can_revoke_role_permission_via_user_form(): void
+    public function test_super_admin_can_revoke_role_permission_via_user_form(): void
     {
         $waiterRole = Role::where('name', 'waiter')->first();
         $rolePermIds = $waiterRole->permissions->pluck('id')->all();
@@ -154,7 +154,7 @@ class UserPermissionOverridesTest extends TestCase
         // POST role defaults MINUS tables.viewAny → should write granted=false.
         $kept = array_values(array_diff($rolePermIds, [$tablesView->id]));
 
-        $this->actingAs($this->admin)
+        $this->actingAs($this->superAdmin)
             ->put(route('admin.users.update', $this->staff), [
                 'name' => $this->staff->name, 'username' => $this->staff->username,
                 'role' => $this->staff->role, 'status' => $this->staff->status,
@@ -177,7 +177,7 @@ class UserPermissionOverridesTest extends TestCase
         // POST exactly the role defaults — no extras, no missing → user_permission empties.
         $rolePermIds = Role::where('name', 'waiter')->first()->permissions->pluck('id')->all();
 
-        $this->actingAs($this->admin)
+        $this->actingAs($this->superAdmin)
             ->put(route('admin.users.update', $this->staff), [
                 'name' => $this->staff->name, 'username' => $this->staff->username,
                 'role' => $this->staff->role, 'status' => $this->staff->status,

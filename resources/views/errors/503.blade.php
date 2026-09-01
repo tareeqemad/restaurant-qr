@@ -1,10 +1,10 @@
 @extends('errors.layout')
 
-@section('title', '503')
+@section('title', 'صيانة مؤقتة')
 @section('code', '503')
 @section('accent', '#8cc8a3')
-@section('headline', 'النظام تحت الصيانة')
-@section('message', 'نعمل حالياً على تحديثات مهمة لتحسين تجربتك. سنعود خلال دقائق قليلة.')
+@section('headline', 'الخدمة متوقفة مؤقتاً')
+@section('message', 'نجري تحديثاً قصيراً على النظام. بياناتك محفوظة، حدّث الصفحة بعد قليل للمتابعة.')
 
 @section('illustration')
     {{-- Wrench + gear --}}
@@ -14,7 +14,7 @@
 @endsection
 
 @section('actions')
-    <a href="javascript:location.reload()" class="btn btn-primary">
+    <button type="button" class="btn btn-primary" data-error-reload>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
             <path d="M21 3v5h-5"/>
@@ -22,5 +22,6 @@
             <path d="M3 21v-5h5"/>
         </svg>
         تحديث الصفحة
-    </a>
+    </button>
+    <a href="{{ auth()->check() || request()->is('admin*') ? url('/admin') : url('/') }}" class="btn btn-ghost">{{ auth()->check() || request()->is('admin*') ? 'لوحة التحكم' : 'الصفحة الرئيسية' }}</a>
 @endsection

@@ -2,17 +2,47 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Helpers\QuantityFormatter;
 use App\Http\Controllers\Controller;
 use App\Models\Ingredient;
 use App\Models\StorageLocation;
 use App\Models\Supplier;
 use App\Models\Unit;
 use App\Services\InventoryService;
+use App\Support\AdminShell;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 
 class IngredientController extends Controller
 {
     public function __construct(protected InventoryService $inventory) {}
+
+    /**
+     * The `currency` prop every migrated page consumes as `currency.symbol`.
+     * Resolved exactly the way App\Helpers\Money::format() resolves it (DB
+     * setting first, config fallback) so a restaurant that changed its
+     * symbol in Settings sees the same symbol here as everywhere else.
+     */
+    protected function currencyProp(): array
+    {
+        return [
+            'symbol'   => \App\Models\Setting::get('currency_symbol', config('restaurant.currency_symbol', '₪')),
+            'decimals' => 2,
+        ];
+    }
+
+    /** number_format(x, 4) with trailing zeros trimmed — the index cost column. */
+    protected static function trim4(float $value): string
+    {
+        return rtrim(rtrim(number_format($value, 4, '.', ','), '0'), '.');
+    }
+
+    /** rtrim(rtrim((string) $value, '0'), '.') — the recipe/pack quantity display. */
+    protected static function trimRaw($value): string
+    {
+        return rtrim(rtrim((string) $value, '0'), '.');
+    }
 
     public function index(Request $request)
     {
@@ -55,29 +85,24 @@ class IngredientController extends Controller
         // which made the KPI count and the filtered table disagree.
         $statusFilter = $request->get('status') ?: ($request->filled('low_stock') ? 'low' : null);
         if ($statusFilter) {
-            if ($branchId) {
-                $tracked = Ingredient::where('track_stock', true)->get();
-                $matchIds = match ($statusFilter) {
-                    'low'     => $tracked->filter(fn ($i) =>
-                                    $i->isLowStockAtBranch($branchId)
-                                    && $i->stockAtBranch($branchId) > 0)->pluck('id'),
-                    'out'     => $tracked->filter(fn ($i) => $i->stockAtBranch($branchId) <= 0)->pluck('id'),
-                    'healthy' => $tracked->filter(fn ($i) =>
-                                    $i->stockAtBranch($branchId) > 0
-                                    && ! $i->isLowStockAtBranch($branchId))->pluck('id'),
-                    default   => null,
-                };
-                if ($matchIds !== null) $q->whereIn('id', $matchIds);
-            } else {
-                match ($statusFilter) {
-                    'low'     => $q->whereColumn('current_stock', '<=', 'reorder_threshold')
-                                   ->where('current_stock', '>', 0)
-                                   ->where('reorder_threshold', '>', 0),
-                    'out'     => $q->where('current_stock', '<=', 0),
-                    'healthy' => $q->whereColumn('current_stock', '>', 'reorder_threshold'),
-                    default   => null,
-                };
-            }
+            $tracked = Ingredient::where('track_stock', true)->get();
+            $matchIds = match ($statusFilter) {
+                'low' => $tracked->filter(function ($i) use ($branchId) {
+                    $stock = $branchId ? $i->usableStockAtBranch($branchId) : $i->trackedUsableStock();
+                    $threshold = $branchId ? $i->reorderThresholdAtBranch($branchId) : (float) $i->reorder_threshold;
+                    return $stock > 0 && $threshold > 0 && $stock <= $threshold;
+                })->pluck('id'),
+                'out' => $tracked->filter(fn ($i) =>
+                    ($branchId ? $i->usableStockAtBranch($branchId) : $i->trackedUsableStock()) <= 0
+                )->pluck('id'),
+                'healthy' => $tracked->filter(function ($i) use ($branchId) {
+                    $stock = $branchId ? $i->usableStockAtBranch($branchId) : $i->trackedUsableStock();
+                    $threshold = $branchId ? $i->reorderThresholdAtBranch($branchId) : (float) $i->reorder_threshold;
+                    return $stock > 0 && ($threshold <= 0 || $stock > $threshold);
+                })->pluck('id'),
+                default => null,
+            };
+            if ($matchIds !== null) $q->whereIn('id', $matchIds);
         }
 
         // Export the filtered list as a real .xlsx file. Honours the same
@@ -93,9 +118,9 @@ class IngredientController extends Controller
             $tracked  = Ingredient::where('track_stock', true)->get();
             $lowCount = $tracked->filter(fn ($i) =>
                 $i->isLowStockAtBranch($branchId)
-                && $i->stockAtBranch($branchId) > 0
+                && $i->usableStockAtBranch($branchId) > 0
             )->count();
-            $outCount = $tracked->filter(fn ($i) => $i->stockAtBranch($branchId) <= 0)->count();
+            $outCount = $tracked->filter(fn ($i) => $i->usableStockAtBranch($branchId) <= 0)->count();
             $healthy  = $tracked->count() - $lowCount - $outCount;
             $stats = [
                 'total'     => Ingredient::count(),
@@ -104,12 +129,19 @@ class IngredientController extends Controller
                 'healthy'   => max(0, $healthy),
             ];
         } else {
+            $tracked = Ingredient::where('track_stock', true)->get();
+            $lowCount = $tracked->filter(function ($i) {
+                $stock = $i->trackedUsableStock();
+                return $stock > 0
+                    && (float) $i->reorder_threshold > 0
+                    && $stock <= (float) $i->reorder_threshold;
+            })->count();
+            $outCount = $tracked->filter(fn ($i) => $i->trackedUsableStock() <= 0)->count();
             $stats = [
                 'total'     => Ingredient::count(),
-                'low_stock' => Ingredient::whereColumn('current_stock', '<=', 'reorder_threshold')
-                                         ->where('current_stock', '>', 0)->count(),
-                'out_stock' => Ingredient::where('current_stock', '<=', 0)->count(),
-                'healthy'   => Ingredient::whereColumn('current_stock', '>', 'reorder_threshold')->count(),
+                'low_stock' => $lowCount,
+                'out_stock' => $outCount,
+                'healthy'   => max(0, $tracked->count() - $lowCount - $outCount),
             ];
         }
 
@@ -122,7 +154,7 @@ class IngredientController extends Controller
         // the banner number matches the rows you can actually see.
         $totalInventoryValue = Ingredient::where('track_stock', true)->get()
             ->sum(function ($i) use ($branchId, $statusFilter) {
-                $stock = $branchId ? $i->stockAtBranch($branchId) : $i->trackedStock();
+                $stock = $branchId ? $i->usableStockAtBranch($branchId) : $i->trackedUsableStock();
                 $thr   = $branchId ? $i->reorderThresholdAtBranch($branchId) : (float) $i->reorder_threshold;
 
                 $matches = match ($statusFilter) {
@@ -146,25 +178,179 @@ class IngredientController extends Controller
             ->orderByDesc('is_default')
             ->orderBy('display_order')
             ->orderBy('name')
-            ->get(['id', 'name', 'code', 'branch_id', 'is_default'])
-            ->map(function ($loc) use ($branchId) {
-                // Add a clone so we don't mutate the original; prefix with
-                // branch name only in cross-branch view to disambiguate.
-                if (! $branchId && $loc->branch) {
-                    $loc->name = $loc->branch->name . ' · ' . $loc->name;
-                }
-                return $loc;
-            });
+            ->get(['id', 'name', 'code', 'branch_id', 'is_default']);
 
-        return view('admin.ingredients.index', compact(
-            'ingredients', 'stats', 'statusFilter', 'totalInventoryValue', 'filterLocations'
-        ));
+        $branchName = $branchId ? \App\Models\Branch::find($branchId)?->name : null;
+
+        // Every unit, grouped by measurement type, for the per-row "تسجيل
+        // حركة" sheet. The Blade fired one Unit query PER ROW inside the
+        // loop; one grouped query renders the identical option list.
+        $unitsByType = Unit::orderBy('name')->get()
+            ->groupBy('unit_type')
+            ->map(fn ($group) => $group->map(fn ($u) => [
+                'id'    => (int) $u->id,
+                'label' => $u->name.' ('.$u->code.')',
+            ])->values()->all())
+            ->toArray();
+
+        // Each stat card links back to the index with its filter applied;
+        // clicking the active card a second time clears it. `search` is
+        // preserved so the user doesn't lose their query. (Was a closure
+        // inside the Blade.)
+        $linkFor = function (?string $status) use ($statusFilter, $request) {
+            $params = $request->only('search');
+            if ($status && $statusFilter !== $status) {
+                $params['status'] = $status;
+            }
+
+            return route('admin.ingredients.index', $params);
+        };
+        $activeMark = fn (?string $key) => (($statusFilter === $key) || (! $statusFilter && $key === null)) ? ' • نشط' : '';
+
+        $canManage = Gate::allows('manage', Ingredient::class);
+
+        $ingredients->through(function (Ingredient $ing) use ($branchId, $canManage, $filterLocations) {
+            // Per-branch view when a branch is active; otherwise the
+            // cross-branch sum of ingredient_stock (the per-location truth
+            // table). Identical formulas to the retired Blade.
+            $bookStock = $branchId ? $ing->stockAtBranch($branchId)            : $ing->trackedStock();
+            $stock     = $branchId ? $ing->usableStockAtBranch($branchId)      : $ing->trackedUsableStock();
+            $unusable  = max(0, $bookStock - $stock);
+            $threshold = $branchId ? $ing->reorderThresholdAtBranch($branchId) : (float) $ing->reorder_threshold;
+
+            $value = $branchId ? $ing->valueAtBranch($branchId) : $ing->trackedValue();
+            $cost  = $branchId
+                ? $ing->costAtBranch($branchId)
+                : ($bookStock > 0 ? $value / $bookStock : (float) $ing->cost_per_unit);
+
+            $statusKey = ! $ing->track_stock
+                ? 'untracked'
+                : ($stock <= 0
+                    ? 'out'
+                    : ($threshold > 0 && $stock <= $threshold ? 'low' : 'healthy'));
+
+            $baseCode = $ing->baseUnit?->code;
+
+            return [
+                'id'             => (int) $ing->id,
+                'name'           => $ing->name,
+                'sku'            => $ing->sku,
+                'baseCode'       => $baseCode,
+                'measurementType'=> $ing->baseUnit?->unit_type,
+                'statusKey'      => $statusKey,
+                'trackStock'     => (bool) $ing->track_stock,
+                'tracksExpiry'   => (bool) $ing->tracks_expiry,
+                'stockLabel'     => QuantityFormatter::smart($stock, $baseCode),
+                'stockExact'     => number_format($stock, 2),
+                'unusableLabel'  => $unusable > 0.0001 ? QuantityFormatter::smart($unusable, $baseCode) : null,
+                'thresholdLabel' => QuantityFormatter::smart($threshold, $baseCode),
+                'thresholdExact' => number_format($threshold, 2),
+                'costLabel'      => static::trim4($cost),
+                // Only when a branch context narrows the cost away from the
+                // ingredient's global weighted average.
+                'globalCostLabel' => ($branchId && abs($cost - (float) $ing->cost_per_unit) > 0.0001)
+                    ? static::trim4((float) $ing->cost_per_unit)
+                    : null,
+                'value'        => round($value, 2),
+                'valueTooltip' => 'القيمة الدفترية قبل إثبات الهالك: '
+                    .number_format($bookStock, 2).' '.($baseCode ?? '')
+                    .' × '.static::trim4($cost).' = '.number_format($value, 2),
+                'locations' => $ing->stocks->sortByDesc('quantity')->values()->map(function ($st) use ($ing, $baseCode) {
+                    $usable = $ing->usableStockAtLocation((int) $st->storage_location_id);
+
+                    return [
+                        'name'    => $st->location?->name ?? '—',
+                        'qty'     => QuantityFormatter::smart($usable, $baseCode),
+                        'tooltip' => ($st->location?->name ?? 'موقع محذوف')
+                            .' — صالح: '.number_format($usable, 2).' '.($baseCode ?? ''),
+                    ];
+                })->all(),
+                // Adjust-sheet seed — the modal the Blade rendered per row.
+                'adjust' => [
+                    'currentStockLabel' => QuantityFormatter::smart($stock, $baseCode),
+                    'currentStockExact' => number_format($stock, 2),
+                    'baseUnitId'        => (int) $ing->base_unit_id,
+                    'costPerUnit'       => $cost,
+                    'locations'         => $filterLocations->map(function ($location) use ($ing, $baseCode, $branchId) {
+                        $locationStock = $ing->usableStockAtLocation((int) $location->id);
+                        $locationCost = $ing->costAtBranch((int) $location->branch_id);
+
+                        return [
+                            'id'         => (int) $location->id,
+                            'branchId'   => (int) $location->branch_id,
+                            'label'      => (! $branchId && $location->branch
+                                ? $location->branch->name.' · '
+                                : '').$location->name,
+                            'isDefault'  => (bool) $location->is_default,
+                            'stockLabel' => QuantityFormatter::smart($locationStock, $baseCode),
+                            'stockExact' => number_format($locationStock, 4),
+                            'unitCost'   => round($locationCost, 4),
+                        ];
+                    })->values()->all(),
+                ],
+                'urls' => [
+                    'show'         => route('admin.ingredients.show', $ing),
+                    'edit'         => route('admin.ingredients.edit', $ing),
+                    'destroy'      => route('admin.ingredients.destroy', $ing),
+                    'adjust'       => route('admin.ingredients.adjust', $ing),
+                    'vendorPrices' => route('admin.vendor-prices.ingredient', $ing),
+                ],
+                'can' => ['manage' => $canManage],
+            ];
+        });
+
+        return AdminShell::render('Admin/Ingredients/Index', [
+            'ingredients' => $ingredients,
+            'stats'       => [
+                'total'     => (int) $stats['total'],
+                'low_stock' => (int) $stats['low_stock'],
+                'out_stock' => (int) $stats['out_stock'],
+                'healthy'   => (int) $stats['healthy'],
+            ],
+            'statCards' => [
+                ['key' => null,        'label' => 'إجمالي المكونات'.$activeMark(null),    'value' => (int) $stats['total'],     'icon' => 'bi-basket2-fill',              'color' => 'primary', 'link' => $linkFor(null)],
+                ['key' => 'healthy',   'label' => 'مخزون صحي'.$activeMark('healthy'),     'value' => (int) $stats['healthy'],   'icon' => 'bi-check-circle-fill',         'color' => 'success', 'link' => $linkFor('healthy')],
+                ['key' => 'low',       'label' => 'مخزون منخفض'.$activeMark('low'),       'value' => (int) $stats['low_stock'], 'icon' => 'bi-exclamation-triangle-fill', 'color' => 'accent',  'link' => $linkFor('low')],
+                ['key' => 'out',       'label' => 'نفد المخزون'.$activeMark('out'),       'value' => (int) $stats['out_stock'], 'icon' => 'bi-x-octagon-fill',            'color' => 'danger',  'link' => $linkFor('out')],
+            ],
+            'statusFilter' => $statusFilter,
+            'filters'      => [
+                'search'              => $request->get('search'),
+                'storage_location_id' => $request->get('storage_location_id'),
+                'status'              => $statusFilter,
+            ],
+            'hasActionFilters' => $request->hasAny(['search', 'status', 'low_stock']),
+            'hasFilters'       => $request->hasAny(['search', 'storage_location_id', 'status']),
+            'filterLocations'  => $filterLocations->map(fn ($loc) => [
+                'id'    => (int) $loc->id,
+                'label' => (! $branchId && $loc->branch ? $loc->branch->name.' · ' : '')
+                    .$loc->name.($loc->code ? " ({$loc->code})" : ''),
+            ])->values()->all(),
+            'totalInventoryValue' => round((float) $totalInventoryValue, 2),
+            'statusFilterLabel'   => ['healthy' => 'صحي', 'low' => 'منخفض', 'out' => 'نفد'][$statusFilter] ?? null,
+            'branchName'          => $branchName,
+            'unitsByType'         => $unitsByType,
+            'today'               => now()->toDateString(),
+            'currency'            => $this->currencyProp(),
+            'can'                 => ['manage' => $canManage],
+            'urls'                => [
+                'index'  => route('admin.ingredients.index'),
+                'create' => route('admin.ingredients.create'),
+                'export' => route('admin.ingredients.index', array_merge(
+                    $request->only(['search', 'status', 'storage_location_id']),
+                    ['export' => 'xlsx'],
+                )),
+            ],
+        ]);
     }
 
     public function create()
     {
         $this->authorize('manage', Ingredient::class);
-        return view('admin.ingredients.create', $this->formData());
+
+        return AdminShell::render('Admin/Ingredients/Create', $this->formData() + [
+            'ingredient' => null,
+        ]);
     }
 
     public function store(Request $request)
@@ -180,6 +366,7 @@ class IngredientController extends Controller
             'branch_id'           => ['required', 'exists:branches,id'],
             'storage_location_id' => ['required', 'exists:storage_locations,id'],
             'initial_quantity'    => ['nullable', 'numeric', 'min:0'],
+            'initial_expiry_date' => ['nullable', 'date', 'after_or_equal:today'],
         ], [], [
             'branch_id'           => 'الفرع',
             'storage_location_id' => 'موقع التخزين',
@@ -189,6 +376,13 @@ class IngredientController extends Controller
         $branchId   = (int) $stockData['branch_id'];
         $locationId = (int) $stockData['storage_location_id'];
         $initialQty = (float) ($stockData['initial_quantity'] ?? 0);
+        $initialExpiry = $stockData['initial_expiry_date'] ?? null;
+
+        if ($initialQty > 0 && ! empty($data['tracks_expiry']) && ! $initialExpiry) {
+            throw ValidationException::withMessages([
+                'initial_expiry_date' => 'تاريخ صلاحية الكمية الافتتاحية مطلوب لهذا الصنف.',
+            ]);
+        }
 
         // Cross-check that the chosen location actually belongs to the
         // chosen branch — otherwise the home would point at the wrong place.
@@ -208,20 +402,29 @@ class IngredientController extends Controller
             ]);
         }
 
-        $ingredient = \Illuminate\Support\Facades\DB::transaction(function () use ($data, $initialQty, $locationId, $branchId) {
+        $ingredient = \Illuminate\Support\Facades\DB::transaction(function () use ($data, $initialQty, $initialExpiry, $locationId, $branchId) {
             $ingredient = Ingredient::create($data);
 
             if ($initialQty > 0) {
                 // Seed real stock through the inventory service — creates
                 // ingredient_stock + InventoryMovement audit + recomputes
                 // current_stock from the per-location truth.
-                \App\Support\BranchContext::forBranch($branchId, function () use ($ingredient, $initialQty, $locationId) {
+                \App\Support\BranchContext::forBranch($branchId, function () use ($ingredient, $initialQty, $initialExpiry, $locationId) {
+                    $batch = app(\App\Services\BatchInventoryService::class)->createBatchOnReceipt(
+                        ingredient: $ingredient,
+                        qtyBase: $initialQty,
+                        unitCost: (float) $ingredient->cost_per_unit,
+                        expiryDate: $initialExpiry,
+                        notes: 'كمية افتتاحية عند إنشاء الصنف',
+                        storageLocationId: $locationId,
+                    );
                     $this->inventory->recordMovement(
                         ingredient:        $ingredient,
                         type:              'in',
                         qtyBase:           $initialQty,
                         unitCost:          (float) $ingredient->cost_per_unit,
                         reason:            'كمية افتتاحية عند إنشاء المكوّن',
+                        batchId:           $batch->id,
                         storageLocationId: $locationId,
                     );
                 });
@@ -279,13 +482,24 @@ class IngredientController extends Controller
 
         $ingredient->load(['baseUnit', 'supplier', 'units', 'subRecipe.ingredient.baseUnit', 'subRecipe.unit', 'subRecipe.ingredientUnit']);
 
+        $user = auth()->user();
+        $branchId = \App\Support\BranchContext::current();
+        if (! $branchId && $user && ! $user->isOwnerLevel()) {
+            $branchId = optional($user->primaryBranch())->id;
+        }
+
         // ── Overview stats ────────────────────────────────────────
         $now30 = now()->subDays(30);
-        $stock = (float) $ingredient->trackedStock();
-        $value = $stock * (float) $ingredient->cost_per_unit;
+        $stock = $branchId
+            ? $ingredient->usableStockAtBranch((int) $branchId)
+            : $ingredient->trackedUsableStock();
+        $value = $branchId
+            ? $ingredient->valueAtBranch((int) $branchId)
+            : $ingredient->trackedValue();
 
         $movements30 = \App\Models\InventoryMovement::query()
             ->where('ingredient_id', $ingredient->id)
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
             ->whereBetween('occurred_at', [$now30, now()])
             ->get();
 
@@ -308,6 +522,9 @@ class IngredientController extends Controller
 
         // ── Locations ────────────────────────────────────────────
         $locations = $ingredient->stocks()
+            ->when($branchId, fn ($query) => $query->whereHas(
+                'location', fn ($location) => $location->where('branch_id', $branchId)
+            ))
             ->with('location.branch')
             ->orderByDesc('quantity')
             ->get();
@@ -315,6 +532,7 @@ class IngredientController extends Controller
         // ── Batches ──────────────────────────────────────────────
         $batches = \App\Models\IngredientBatch::query()
             ->where('ingredient_id', $ingredient->id)
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
             ->with('storageLocation')
             ->orderBy('expiry_date')
             ->limit(50)
@@ -323,6 +541,7 @@ class IngredientController extends Controller
         // ── Movements log (paginated) ────────────────────────────
         $movements = \App\Models\InventoryMovement::query()
             ->where('ingredient_id', $ingredient->id)
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
             ->with(['user', 'storageLocation', 'batch'])
             ->latest('occurred_at')
             ->paginate(20, ['*'], 'movements_page')
@@ -367,7 +586,8 @@ class IngredientController extends Controller
                 'ingredientUnit:id,name,factor_to_base',
                 'supplierInvoiceItems.supplierInvoice:id,number,invoice_date,status',
             ])
-            ->whereHas('purchaseOrder')  // skip orphaned lines from deleted POs
+            ->whereHas('purchaseOrder', fn ($query) => $query
+                ->when($branchId, fn ($po) => $po->where('branch_id', $branchId)))
             ->latest('id')
             ->limit(100)
             ->get();
@@ -375,8 +595,8 @@ class IngredientController extends Controller
         // ── Adjacent-ingredient navigation IDs ────────────────────
         // The index sorts by name ASC; we mirror that so "next" goes to
         // the alphabetically next ingredient the user already expects to
-        // see. lead()/lag() would be ideal but they're not portable across
-        // SQLite (used in tests) so we do a tiny per-call query instead.
+        // see. A tiny ordered ID query keeps navigation deterministic and
+        // avoids coupling this screen to a window-function query.
         $allIds = Ingredient::orderBy('name')->orderBy('id')->pluck('id');
         $currentPos = $allIds->search($ingredient->id);
         $nav = [
@@ -389,32 +609,386 @@ class IngredientController extends Controller
             'total' => $allIds->count(),
         ];
 
-        return view('admin.ingredients.show', compact(
-            'ingredient',
-            'stock', 'value', 'consumed30', 'wasted30', 'received30',
-            'lastIn', 'lastOut',
-            'dailySeries',
-            'locations', 'batches', 'movements',
-            'usedInMenuItems', 'usedInComposites',
-            'vendorPrices',
-            'purchaseLines',
-            'nav',
-        ));
+        // ── Everything the retired Blade computed in-template ─────
+        $baseCode = $ingredient->baseUnit?->code;
+        $threshold = $branchId
+            ? $ingredient->reorderThresholdAtBranch((int) $branchId)
+            : (float) $ingredient->reorder_threshold;
+        $isLow = $ingredient->track_stock && $stock <= $threshold && $stock > 0;
+        $isOut = $ingredient->track_stock && $stock <= 0;
+        $statusLabel = $isOut ? ['نفد', 'danger', 'bi-x-octagon-fill']
+                      : ($isLow ? ['منخفض', 'warning', 'bi-exclamation-triangle-fill']
+                                : ['آمن', 'success', 'bi-check-circle-fill']);
+
+        // Weekly average — last 30 days ÷ 30 × 7, and days of stock left
+        // at the current burn rate.
+        $weeklyAvg = $consumed30 / 30 * 7;
+        $dailyBurn = $consumed30 / 30;
+        $daysLeft  = $dailyBurn > 0 ? floor($stock / $dailyBurn) : null;
+
+        $costPerUnit = $branchId
+            ? $ingredient->costAtBranch((int) $branchId)
+            : ((float) $stock > 0 ? $value / $stock : (float) $ingredient->cost_per_unit);
+
+        $adjustLocations = StorageLocation::where('active', true)
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
+            ->when(! $user?->isOwnerLevel(), fn ($query) => $query
+                ->whereIn('branch_id', $user?->accessibleBranchIds() ?? []))
+            ->with('branch:id,name')
+            ->orderByDesc('is_default')
+            ->orderBy('display_order')
+            ->orderBy('name')
+            ->get(['id', 'name', 'branch_id', 'is_default']);
+
+        // Manufacturing formula (composite only) — line costs and the two
+        // footer totals used to be summed inside the template.
+        $formulaLines = [];
+        $formulaTotal = 0.0;
+        $yieldQty = (float) ($ingredient->composite_yield ?: 1);
+        if ($ingredient->is_composite) {
+            foreach ($ingredient->subRecipe as $line) {
+                $subIng  = $line->ingredient;
+                $subBase = $subIng?->baseUnit?->code;
+                // Resolve the line quantity into the sub-ingredient's base
+                // unit so the cost math is honest even when the recipe is
+                // written in tbsp / scoops / etc.
+                try {
+                    $qtyInBase = $line->quantityInBase();
+                } catch (\Throwable $e) {
+                    $qtyInBase = (float) $line->quantity;
+                }
+                $unitCost = $subIng ? $subIng->effectiveCostPerUnit() : 0;
+                $lineCost = $qtyInBase * $unitCost;
+                $formulaTotal += $lineCost;
+
+                $formulaLines[] = [
+                    'name'        => $subIng?->name ?? '—',
+                    'sku'         => $subIng?->sku,
+                    'url'         => $subIng ? route('admin.ingredients.show', $subIng) : null,
+                    'qty'         => static::trimRaw($line->quantity),
+                    'unitName'    => $line->ingredientUnit?->name ?? $line->unit?->code ?? $subBase,
+                    'qtyInBase'   => QuantityFormatter::smart($qtyInBase, $subBase),
+                    'subBaseCode' => $subBase,
+                    'unitCost'    => round($unitCost, 4),
+                    'lineCost'    => round($lineCost, 4),
+                ];
+            }
+        }
+
+        return AdminShell::render('Admin/Ingredients/Show', [
+            'ingredient' => [
+                'id'                   => (int) $ingredient->id,
+                'name'                 => $ingredient->name,
+                'sku'                  => $ingredient->sku,
+                'baseCode'             => $baseCode,
+                'baseUnitName'         => $ingredient->baseUnit?->name,
+                'supplierName'         => $ingredient->supplier?->name,
+                'active'               => (bool) $ingredient->active,
+                'trackStock'           => (bool) $ingredient->track_stock,
+                'tracksExpiry'         => (bool) $ingredient->tracks_expiry,
+                'isComposite'          => (bool) $ingredient->is_composite,
+                'notes'                => $ingredient->notes,
+                'updatedAt'            => $ingredient->updated_at?->format('Y-m-d H:i'),
+                'costPerUnit'          => $costPerUnit,
+                'effectiveCostPerUnit' => round($branchId ? $costPerUnit : $ingredient->effectiveCostPerUnit(), 4),
+                'yieldPctLabel'        => ($ingredient->yield_pct && (float) $ingredient->yield_pct < 100)
+                    ? static::trimRaw($ingredient->yield_pct) : null,
+                'reorderThresholdLabel' => $threshold > 0
+                    ? QuantityFormatter::smart($threshold, $baseCode) : null,
+                'compositeYieldLabel'   => ($ingredient->is_composite && $ingredient->composite_yield)
+                    ? QuantityFormatter::smart((float) $ingredient->composite_yield, $baseCode) : null,
+                // Alternate pack sizes (spec sheet on the "المعلومات العامة" tab)
+                'packUnits' => $ingredient->units->map(fn ($u) => [
+                    'id'            => (int) $u->id,
+                    'name'          => $u->name,
+                    'factorLabel'   => static::trimRaw($u->factor_to_base),
+                    'barcode'       => $u->barcode,
+                    'purchasePrice' => $u->purchase_price !== null ? (float) $u->purchase_price : null,
+                    'salePrice'     => $u->sale_price !== null ? (float) $u->sale_price : null,
+                    'isDefault'     => (bool) $u->is_default_purchase,
+                ])->values()->all(),
+            ],
+            'status' => ['label' => $statusLabel[0], 'color' => $statusLabel[1], 'icon' => $statusLabel[2]],
+            'hero'   => [
+                'isLow'      => $isLow,
+                'isOut'      => $isOut,
+                'stockLabel' => QuantityFormatter::smart($stock, $baseCode),
+                'stockExact' => number_format($stock, 4),
+                'value'      => round($value, 2),
+            ],
+            'kpis' => [
+                'received30'      => ['label' => QuantityFormatter::smart($received30, $baseCode), 'exact' => number_format($received30, 4)],
+                'consumed30'      => ['label' => QuantityFormatter::smart($consumed30, $baseCode), 'exact' => number_format($consumed30, 4)],
+                'weeklyAvgLabel'  => QuantityFormatter::smart($weeklyAvg, $baseCode),
+                'wasted30'        => ['label' => QuantityFormatter::smart($wasted30, $baseCode), 'exact' => number_format($wasted30, 4), 'positive' => $wasted30 > 0],
+                'daysLeft'        => $daysLeft !== null ? (int) $daysLeft : null,
+            ],
+            'dailySeries' => $dailySeries->values()->all(),
+            'lastIn'  => $lastIn ? [
+                'ago'      => $lastIn->occurred_at->diffForHumans(),
+                'qtyLabel' => QuantityFormatter::smart((float) $lastIn->quantity_in_base, $baseCode),
+            ] : null,
+            'lastOut' => $lastOut ? [
+                'ago'      => $lastOut->occurred_at->diffForHumans(),
+                'qtyLabel' => QuantityFormatter::smart((float) $lastOut->quantity_in_base, $baseCode),
+            ] : null,
+
+            'locations' => $locations->map(fn ($loc) => [
+                'id'             => (int) $loc->id,
+                'name'           => $loc->location?->name ?? '—',
+                'branchName'     => $loc->location?->branch?->name ?? '—',
+                'qtyLabel'       => QuantityFormatter::smart((float) $loc->quantity, $baseCode),
+                'qtyExact'       => number_format((float) $loc->quantity, 4),
+                'thresholdLabel' => $loc->reorder_threshold > 0
+                    ? QuantityFormatter::smart((float) $loc->reorder_threshold, $baseCode) : null,
+                'value'          => round((float) $loc->quantity * $costPerUnit, 2),
+            ])->values()->all(),
+
+            'batches' => $batches->map(function ($b) use ($baseCode) {
+                $isExpired  = $b->isExpired();
+                $nearExpiry = $b->isNearExpiry(7);
+                $statusKey  = $isExpired ? 'expired'
+                    : ($nearExpiry ? 'near'
+                        : ((float) $b->remaining_qty <= 0 ? 'drained' : 'active'));
+
+                return [
+                    'id'             => (int) $b->id,
+                    'label'          => $b->batch_number ?: '#'.$b->id,
+                    'locationName'   => $b->storageLocation?->name ?? '—',
+                    'remainingLabel' => QuantityFormatter::smart((float) $b->remaining_qty, $baseCode),
+                    'initialLabel'   => QuantityFormatter::smart((float) $b->initial_qty, $baseCode),
+                    'qtyExact'       => number_format((float) $b->remaining_qty, 4).' / '.number_format((float) $b->initial_qty, 4),
+                    'unitCost'       => (float) $b->unit_cost,
+                    'expiryDate'     => $b->expiry_date?->format('Y-m-d'),
+                    'statusKey'      => $statusKey,
+                    'rowTone'        => $isExpired ? 'danger' : ($nearExpiry ? 'warning' : null),
+                ];
+            })->values()->all(),
+
+            'movements' => $movements->through(function ($m) use ($baseCode) {
+                $badge = match ($m->type) {
+                    'in'         => ['إدخال', 'success',   '+'],
+                    'out'        => ['خصم',   'primary',   '−'],
+                    'waste'      => ['هدر',   'danger',    '−'],
+                    'return'     => ['إرجاع', 'info',      '+'],
+                    'adjustment' => ['تسوية', 'secondary', ''],
+                    default      => [$m->type, 'light',    ''],
+                };
+
+                return [
+                    'id'          => (int) $m->id,
+                    'at'          => $m->occurred_at->format('Y-m-d H:i'),
+                    'typeLabel'   => $badge[0],
+                    'typeColor'   => $badge[1],
+                    'sign'        => $badge[2],
+                    'qtyLabel'    => QuantityFormatter::smart((float) $m->quantity_in_base, $baseCode),
+                    'qtyExact'    => number_format((float) $m->quantity_in_base, 4),
+                    'afterLabel'  => QuantityFormatter::smart((float) $m->stock_after, $baseCode),
+                    'afterExact'  => number_format((float) $m->stock_after, 4),
+                    'reason'      => $m->reason,
+                    'userName'    => $m->user?->name,
+                ];
+            }),
+
+            'usedInMenuItems' => $usedInMenuItems->values()->map(fn ($line) => [
+                'name'         => $line->menuItem?->name,
+                'sku'          => $line->menuItem?->sku,
+                'categoryName' => $line->menuItem?->category?->name,
+                'qty'          => static::trimRaw($line->quantity),
+                'unitName'     => $line->ingredientUnit?->name ?? $line->unit?->code ?? $baseCode,
+            ])->all(),
+            'usedInComposites' => $usedInComposites->map(fn ($line) => [
+                'name'     => $line->parentIngredient?->name,
+                'sku'      => $line->parentIngredient?->sku,
+                'qty'      => static::trimRaw($line->quantity),
+                'unitName' => $line->ingredientUnit?->name ?? $line->unit?->code ?? $baseCode,
+            ])->values()->all(),
+
+            'formula' => [
+                'lines'          => $formulaLines,
+                'yieldLabel'     => QuantityFormatter::smart($yieldQty, $baseCode),
+                'total'          => round($formulaTotal, 4),
+                'perUnit'        => $yieldQty > 0 ? round($formulaTotal / $yieldQty, 4) : null,
+            ],
+
+            'purchaseLines' => $purchaseLines->map(function ($line) use ($baseCode) {
+                $po       = $line->purchaseOrder;
+                $invoices = $line->supplierInvoiceItems->pluck('supplierInvoice')->filter()->unique('id');
+
+                return [
+                    'id'           => (int) $line->id,
+                    'date'         => $po?->expected_at?->format('Y-m-d') ?? $po?->created_at?->format('Y-m-d'),
+                    'poNumber'     => $po?->number,
+                    'poUrl'        => $po ? route('admin.purchase-orders.show', $po) : null,
+                    'poStatus'     => $po?->statusLabel(),
+                    'poColor'      => $po?->statusColor(),
+                    'supplierName' => $po?->supplier?->name,
+                    'unitName'     => $line->ingredientUnit?->name ?? $line->unit?->code ?? $baseCode,
+                    'ordered'      => static::trimRaw($line->quantity_ordered),
+                    'received'     => static::trimRaw($line->quantity_received),
+                    'receiptState' => $line->isFullyReceived()
+                        ? 'full'
+                        : ((float) $line->quantity_received > 0 ? 'partial' : 'none'),
+                    'unitPrice'    => (float) $line->unit_price,
+                    'subtotal'     => (float) $line->subtotal,
+                    'invoices'     => $invoices->map(fn ($inv) => [
+                        'id'     => (int) $inv->id,
+                        'number' => $inv->number,
+                        'label'  => $inv->statusLabel(),
+                        'color'  => $inv->status === 'paid'
+                            ? 'success'
+                            : ($inv->status === 'partially_paid' ? 'warning text-dark' : 'secondary'),
+                        'url'    => route('admin.supplier-invoices.show', $inv),
+                    ])->values()->all(),
+                ];
+            })->values()->all(),
+            'purchaseTotal' => round((float) $purchaseLines->sum('subtotal'), 2),
+
+            'vendorPrices' => $vendorPrices->map(fn ($p) => [
+                'id'           => (int) $p->id,
+                'date'         => $p->observed_at?->format('Y-m-d'),
+                'supplierName' => $p->supplier?->name,
+                'unitPrice'    => (float) $p->unit_price_in_base,
+                'changePct'    => $p->change_pct !== null ? round((float) $p->change_pct, 1) : null,
+            ])->values()->all(),
+
+            'nav' => [
+                'prevUrl' => $nav['prev'] ? route('admin.ingredients.show', $nav['prev']) : null,
+                'nextUrl' => $nav['next'] ? route('admin.ingredients.show', $nav['next']) : null,
+                'firstUrl' => $nav['first'] ? route('admin.ingredients.show', $nav['first']) : null,
+                'lastUrl'  => $nav['last'] ? route('admin.ingredients.show', $nav['last']) : null,
+                'index'   => (int) $nav['index'],
+                'total'   => (int) $nav['total'],
+            ],
+
+            // The adjust sheet needs the same seed the index row carries.
+            'adjust' => [
+                'currentStockLabel' => QuantityFormatter::smart($stock, $baseCode),
+                'currentStockExact' => number_format($stock, 2),
+                'baseUnitId'        => (int) $ingredient->base_unit_id,
+                'costPerUnit'       => $costPerUnit,
+                'locations'         => $adjustLocations->map(function ($location) use ($ingredient, $baseCode, $branchId) {
+                    $locationStock = $ingredient->usableStockAtLocation((int) $location->id);
+
+                    return [
+                        'id'         => (int) $location->id,
+                        'branchId'   => (int) $location->branch_id,
+                        'label'      => (! $branchId && $location->branch
+                            ? $location->branch->name.' · '
+                            : '').$location->name,
+                        'isDefault'  => (bool) $location->is_default,
+                        'stockLabel' => QuantityFormatter::smart($locationStock, $baseCode),
+                        'stockExact' => number_format($locationStock, 4),
+                        'unitCost'   => round($ingredient->costAtBranch((int) $location->branch_id), 4),
+                    ];
+                })->values()->all(),
+                'units'             => Unit::where('unit_type', $ingredient->baseUnit?->unit_type)
+                    ->orderBy('name')->get()
+                    ->map(fn ($u) => ['id' => (int) $u->id, 'label' => $u->name.' ('.$u->code.')'])
+                    ->values()->all(),
+            ],
+
+            'today'    => now()->toDateString(),
+            'currency' => $this->currencyProp(),
+            'can'      => ['manage' => Gate::allows('manage', Ingredient::class)],
+            'urls'     => [
+                'index'  => route('admin.ingredients.index'),
+                'edit'   => route('admin.ingredients.edit', $ingredient),
+                'adjust' => route('admin.ingredients.adjust', $ingredient),
+            ],
+        ]);
     }
 
     public function edit(Ingredient $ingredient)
     {
         $this->authorize('manage', Ingredient::class);
-        return view('admin.ingredients.edit', array_merge($this->formData(), [
-            'ingredient' => $ingredient,
+
+        $ingredient->load(['baseUnit', 'units']);
+
+        // Sub-recipe editor payload — the retired Blade ran these three
+        // queries inside an @php block. Only a composite shows the editor,
+        // so only a composite pays for them.
+        $subRecipeIngredients = [];
+        $subRecipeUnits       = [];
+        $subRecipeLines       = [];
+        if ($ingredient->is_composite) {
+            $subRecipeIngredients = Ingredient::where('id', '!=', $ingredient->id)
+                ->where('active', true)
+                ->orderBy('name')
+                ->get(['id', 'name', 'sku'])
+                ->map(fn ($i) => ['id' => (int) $i->id, 'label' => $i->name.' ('.$i->sku.')'])
+                ->all();
+
+            $subRecipeUnits = Unit::orderBy('name')->get(['id', 'name', 'code'])
+                ->map(fn ($u) => ['id' => (int) $u->id, 'label' => $u->name.' ('.$u->code.')'])
+                ->all();
+
+            $subRecipeLines = $ingredient->subRecipe()->with('ingredient', 'unit')->get()
+                ->map(fn ($l) => [
+                    'ingredient_id' => (int) $l->ingredient_id,
+                    'quantity'      => (float) $l->quantity,
+                    'unit_id'       => (int) $l->unit_id,
+                ])->values()->all();
+        }
+
+        return AdminShell::render('Admin/Ingredients/Edit', $this->formData() + [
+            'ingredient' => [
+                'id'                    => (int) $ingredient->id,
+                'sku'                   => $ingredient->sku,
+                'name'                  => $ingredient->name,
+                'base_unit_id'          => (int) $ingredient->base_unit_id,
+                'measurement_type'      => $ingredient->measurement_type ?? $ingredient->baseUnit?->unit_type ?? 'weight',
+                'supplier_id'           => $ingredient->supplier_id ? (int) $ingredient->supplier_id : '',
+                'cost_per_unit'         => (float) $ingredient->cost_per_unit,
+                'reorder_threshold'     => (float) $ingredient->reorder_threshold,
+                'track_stock'           => (bool) $ingredient->track_stock,
+                'tracks_expiry'         => (bool) $ingredient->tracks_expiry,
+                'default_shelf_life_days' => $ingredient->default_shelf_life_days,
+                'active'                => (bool) $ingredient->active,
+                'notes'                 => $ingredient->notes,
+                'yield_pct'             => $ingredient->yield_pct !== null ? (float) $ingredient->yield_pct : null,
+                'is_composite'          => (bool) $ingredient->is_composite,
+                'composite_yield'       => $ingredient->composite_yield !== null ? (float) $ingredient->composite_yield : null,
+                'baseUnitName'          => $ingredient->baseUnit?->name,
+                'baseUnitCode'          => $ingredient->baseUnit?->code,
+                'compositeYieldLabel'   => static::trimRaw($ingredient->composite_yield ?? 0),
+                // Read-only "المخزون الحالي" box on the form.
+                'trackedStockLabel'     => rtrim(rtrim(number_format((float) $ingredient->trackedStock(), 4, '.', ''), '0'), '.'),
+            ],
             'costLocked' => $this->costIsLocked($ingredient),
-        ]));
+            'unitLocked' => $this->unitIsLocked($ingredient),
+            'packUnits'  => $ingredient->units->map(fn ($u) => [
+                'name'                => $u->name,
+                'factor_to_base'      => static::trimRaw($u->factor_to_base),
+                'barcode'             => $u->barcode ?? '',
+                'purchase_price'      => $u->purchase_price !== null ? static::trimRaw($u->purchase_price) : '',
+                'sale_price'          => $u->sale_price !== null ? static::trimRaw($u->sale_price) : '',
+                'is_default_purchase' => (bool) $u->is_default_purchase,
+            ])->values()->all(),
+            'subRecipeLines'       => $subRecipeLines,
+            'subRecipeIngredients' => $subRecipeIngredients,
+            'subRecipeUnits'       => $subRecipeUnits,
+            'editUrls' => [
+                'update'          => route('admin.ingredients.update', $ingredient),
+                'unitsUpdate'     => route('admin.ingredients.units.update', $ingredient),
+                'subRecipeUpdate' => route('admin.ingredients.sub_recipe.update', $ingredient),
+            ],
+        ]);
     }
 
     public function update(Request $request, Ingredient $ingredient)
     {
         $this->authorize('manage', Ingredient::class);
         $data = $this->valid($request);
+
+        if ((int) $data['base_unit_id'] !== (int) $ingredient->base_unit_id) {
+            if ($this->unitIsLocked($ingredient)) {
+                throw ValidationException::withMessages([
+                    'base_unit_id' => 'لا يمكن تغيير الوحدة الأساسية بعد وجود مخزون أو حركات أو وصفات. أنشئ صنفاً جديداً لتجنب إعادة تفسير الكميات السابقة.',
+                ]);
+            }
+        }
+
         // cost_per_unit locks once any stock history exists (see
         // costIsLocked): movements are posted to the GL at the cost they
         // carried, so a later manual edit would silently revalue stock with
@@ -456,6 +1030,14 @@ class IngredientController extends Controller
             ->exists();
     }
 
+    protected function unitIsLocked(Ingredient $ingredient): bool
+    {
+        return $this->costIsLocked($ingredient)
+            || $ingredient->recipeItems()->exists()
+            || $ingredient->subRecipe()->exists()
+            || $ingredient->units()->exists();
+    }
+
     public function destroy(Ingredient $ingredient)
     {
         $this->authorize('manage', Ingredient::class);
@@ -467,21 +1049,73 @@ class IngredientController extends Controller
     {
         $this->authorize('manage', Ingredient::class);
         $data = $request->validate([
-            'type' => ['required', 'in:in,out,waste,adjustment'],
+            'type' => ['required', 'in:in,out,waste,adjustment_in,adjustment_out'],
             'quantity' => ['required', 'numeric', 'min:0.0001'],
             'unit_id' => ['required', 'exists:units,id'],
             'reason' => ['required', 'string', 'max:255'],
             'unit_cost' => ['nullable', 'numeric', 'min:0'],
+            'expiry_date' => ['nullable', 'date', 'after_or_equal:today'],
+            'storage_location_id' => ['required', 'integer'],
         ]);
+
+        $location = StorageLocation::withoutGlobalScopes()
+            ->whereKey((int) $data['storage_location_id'])
+            ->where('active', true)
+            ->first();
+        if (! $location || ! $request->user()?->belongsToBranch((int) $location->branch_id)) {
+            throw ValidationException::withMessages([
+                'storage_location_id' => 'اختر موقع تخزين نشطاً من الفروع المسموح لك بإدارتها.',
+            ]);
+        }
+
+        $unit = Unit::findOrFail((int) $data['unit_id']);
+        $ingredient->loadMissing('baseUnit');
+        if ($unit->unit_type !== $ingredient->baseUnit?->unit_type) {
+            throw ValidationException::withMessages([
+                'unit_id' => "الوحدة «{$unit->name}» لا تطابق نوع قياس الصنف «{$ingredient->name}».",
+            ]);
+        }
+
+        if (in_array($data['type'], ['in', 'adjustment_in'], true)
+            && $ingredient->tracks_expiry
+            && empty($data['expiry_date'])) {
+            throw ValidationException::withMessages([
+                'expiry_date' => 'تاريخ الصلاحية مطلوب عند إضافة كمية لهذا الصنف.',
+            ]);
+        }
+
         $qtyBase = \App\Helpers\UnitConverter::convert($data['quantity'], $data['unit_id'], $ingredient->base_unit_id);
-        $this->inventory->recordMovement(
-            ingredient: $ingredient,
-            type: $data['type'],
-            qtyBase: $qtyBase,
-            unitCost: (float) ($data['unit_cost'] ?? $ingredient->cost_per_unit),
-            reason: $data['reason'],
-            syncBatches: true,   // manual adjustment must keep FIFO batches aligned
-        );
+        $movementType = str_starts_with($data['type'], 'adjustment_') ? 'adjustment' : $data['type'];
+        if ($data['type'] === 'adjustment_out') {
+            $qtyBase *= -1;
+        }
+        $unitCost = array_key_exists('unit_cost', $data) && $data['unit_cost'] !== null
+            ? (float) $data['unit_cost']
+            : $ingredient->costAtBranch((int) $location->branch_id);
+
+        \DB::transaction(function () use ($ingredient, $data, $qtyBase, $location, $unitCost, $movementType) {
+            $batch = null;
+            if ($data['type'] === 'in' || $data['type'] === 'adjustment_in') {
+                $batch = app(\App\Services\BatchInventoryService::class)->createBatchOnReceipt(
+                    ingredient: $ingredient,
+                    qtyBase: abs($qtyBase),
+                    unitCost: $unitCost,
+                    expiryDate: $data['expiry_date'] ?? null,
+                    notes: $data['reason'],
+                    storageLocationId: (int) $location->id,
+                );
+            }
+            $this->inventory->recordMovement(
+                ingredient: $ingredient,
+                type: $movementType,
+                qtyBase: $qtyBase,
+                unitCost: $unitCost,
+                reason: $data['reason'],
+                batchId: $batch?->id,
+                storageLocationId: (int) $location->id,
+                syncBatches: ! in_array($data['type'], ['in', 'adjustment_in'], true),
+            );
+        });
         return back()->with('success', 'تم تسجيل الحركة');
     }
 
@@ -548,7 +1182,8 @@ class IngredientController extends Controller
 
         $row = 2;
         foreach ($ingredients as $ing) {
-            $stock     = $branchId ? $ing->stockAtBranch($branchId)            : $ing->trackedStock();
+            $bookStock = $branchId ? $ing->stockAtBranch($branchId)            : $ing->trackedStock();
+            $stock     = $branchId ? $ing->usableStockAtBranch($branchId)      : $ing->trackedUsableStock();
             $threshold = $branchId ? $ing->reorderThresholdAtBranch($branchId) : (float) $ing->reorder_threshold;
 
             // Cost shown on the row — the per-branch weighted average when a
@@ -558,7 +1193,7 @@ class IngredientController extends Controller
             $value = $branchId ? $ing->valueAtBranch($branchId) : $ing->trackedValue();
             $cost  = $branchId
                 ? $ing->costAtBranch($branchId)
-                : ($stock > 0 ? $value / $stock : (float) $ing->cost_per_unit);
+                : ($bookStock > 0 ? $value / $bookStock : (float) $ing->cost_per_unit);
 
             $status = ! $ing->track_stock
                 ? 'غير متتبَّع'
@@ -574,7 +1209,7 @@ class IngredientController extends Controller
                 : $ing->stocks
                     ->sortByDesc('quantity')
                     ->map(fn ($s) => ($s->location?->name ?? 'موقع محذوف')
-                        . ': ' . number_format((float) $s->quantity, 2))
+                        . ': ' . number_format($ing->usableStockAtLocation((int) $s->storage_location_id), 2))
                     ->implode("\n");
 
             $sheet->fromArray([
@@ -717,12 +1352,37 @@ class IngredientController extends Controller
             ->toArray();
 
         return [
-            'units'                => Unit::all(),
-            'suppliers'            => $suppliers,
-            'supplierIdsByBranch'  => $supplierIdsByBranch,
-            'branches'             => $branches,
-            'locationsByBranch'    => $locationsByBranch,
+            // Flattened for Inertia — Eloquent models would serialize their
+            // entire row (and Unit carries columns the form never renders).
+            'units' => Unit::all()->map(fn ($u) => [
+                'id'       => (int) $u->id,
+                'label'    => $u->name.' ('.$u->code.')',
+                'unitType' => $u->unit_type,
+            ])->values()->all(),
+            'suppliers' => $suppliers->map(fn ($s) => [
+                'id'   => (int) $s->id,
+                'name' => $s->name,
+            ])->values()->all(),
+            'supplierIdsByBranch'  => (object) $supplierIdsByBranch,
+            'branches'             => $branches->map(fn ($b) => [
+                'id'   => (int) $b->id,
+                'name' => $b->name,
+            ])->values()->all(),
+            'locationsByBranch'    => (object) $locationsByBranch,
             'activeBranchId'       => \App\Support\BranchContext::current(),
+            // Zero branches means two very different things: for a user who
+            // CAN create branches it's a fresh installation (onboarding),
+            // for everyone else it's genuinely a permissions problem.
+            'canCreateBranch'      => Gate::allows('create', \App\Models\Branch::class),
+            'today'                => now()->toDateString(),
+            'currency'             => $this->currencyProp(),
+            'urls' => [
+                'index'          => route('admin.ingredients.index'),
+                'store'          => route('admin.ingredients.store'),
+                'branchCreate'   => route('admin.branches.create'),
+                'locationCreate' => route('admin.storage-locations.create'),
+                'suppliersIndex' => route('admin.suppliers.index'),
+            ],
         ];
     }
 
@@ -733,15 +1393,17 @@ class IngredientController extends Controller
      */
     protected function valid(Request $request): array
     {
-        return $request->validate([
+        $data = $request->validate([
             'sku' => ['nullable', 'string', 'max:64'],
             'name' => ['required', 'string', 'max:255'],
-            'name_en' => ['nullable', 'string', 'max:255'],
             'base_unit_id' => ['required', 'exists:units,id'],
+            'measurement_type' => ['nullable', 'in:weight,volume,count,length'],
             'supplier_id' => ['nullable', 'exists:suppliers,id'],
             'reorder_threshold' => ['required', 'numeric'],
             'cost_per_unit' => ['required', 'numeric', 'min:0'],
             'track_stock' => ['sometimes', 'boolean'],
+            'tracks_expiry' => ['sometimes', 'boolean'],
+            'default_shelf_life_days' => ['nullable', 'integer', 'min:1', 'max:3650'],
             'active' => ['sometimes', 'boolean'],
             'notes' => ['nullable', 'string'],
             // Yield ratio: optional. Null/blank = 100% (no trim loss).
@@ -750,6 +1412,21 @@ class IngredientController extends Controller
             'is_composite' => ['sometimes', 'boolean'],
             'composite_yield' => ['nullable', 'numeric', 'min:0.0001'],
         ]);
+
+        $baseUnit = Unit::findOrFail((int) $data['base_unit_id']);
+        $requestedType = $data['measurement_type'] ?? $baseUnit->unit_type;
+        if ($requestedType !== $baseUnit->unit_type) {
+            throw ValidationException::withMessages([
+                'base_unit_id' => "الوحدة «{$baseUnit->name}» لا تطابق نوع القياس المختار.",
+            ]);
+        }
+
+        $data['measurement_type'] = $baseUnit->unit_type;
+        if (empty($data['tracks_expiry'])) {
+            $data['default_shelf_life_days'] = null;
+        }
+
+        return $data;
     }
 
     /**
@@ -851,6 +1528,16 @@ class IngredientController extends Controller
         foreach ($data['lines'] ?? [] as $line) {
             if ((int) $line['ingredient_id'] === (int) $ingredient->id) {
                 return back()->with('error', 'لا يمكن للمكوّن المركّب أن يحوي نفسه كمكوّن فرعي.');
+            }
+        }
+
+        foreach ($data['lines'] ?? [] as $line) {
+            $child = Ingredient::with('baseUnit')->find((int) $line['ingredient_id']);
+            $unit = Unit::find((int) $line['unit_id']);
+            if ($child && $unit && $child->baseUnit && $unit->unit_type !== $child->baseUnit->unit_type) {
+                throw ValidationException::withMessages([
+                    'lines' => "الوحدة «{$unit->name}» لا تطابق نوع قياس المكوّن «{$child->name}».",
+                ]);
             }
         }
 

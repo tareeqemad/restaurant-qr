@@ -3,6 +3,7 @@
 namespace App\Notifications;
 
 use App\Models\Order;
+use App\Support\OrderRoundContext;
 
 class NewOrderNotification extends BaseNotification
 {
@@ -14,40 +15,73 @@ class NewOrderNotification extends BaseNotification
         $this->branchId = $order->branch_id ?? $this->branchId;
     }
 
-    public function typeKey(): string { return 'order.new'; }
-    public function severity(): string { return 'info'; }
-    public function icon(): string    { return 'bi-bag-plus-fill'; }
+    public function typeKey(): string
+    {
+        return 'order.new';
+    }
+
+    public function severity(): string
+    {
+        return 'info';
+    }
+
+    public function icon(): string
+    {
+        return 'bi-bag-plus-fill';
+    }
 
     public function title(): string
     {
-        return "طلب جديد: {$this->order->number}";
+        $round = OrderRoundContext::for($this->order);
+        $where = $this->order->table?->number
+            ? "طاولة {$this->order->table->number}"
+            : $this->order->sourceLabel();
+
+        return $round['number']
+            ? "{$where} · جولة {$round['number']}"
+            : "طلب جديد · {$where}";
     }
 
     public function body(): string
     {
-        $who   = $this->order->customer_name ?: 'بدون اسم';
-        $where = $this->order->table?->number
-            ? "طاولة {$this->order->table->number}"
-            : ($this->order->order_type ?: 'بدون مكان');
-        $total = number_format((float) $this->order->total, 2);
-        return "{$who} · {$where} · {$total} ₪";
+        $items = $this->order->items;
+        $pieces = $items->sum(fn ($item) => (float) $item->quantity);
+        $names = $items->pluck('name_snapshot')->filter()->take(2)->join('، ');
+        $more = max(0, $items->count() - 2);
+
+        return $this->formatQty((float) $pieces).' قطع: '.($names ?: 'راجع الأصناف')
+            .($more > 0 ? " +{$more}" : '');
     }
 
     public function actionUrl(): string
     {
-        return route('admin.orders.show', $this->order);
+        if ($this->order->table_id) {
+            return route('admin.waiter-orders.create', [
+                'table' => $this->order->table_id,
+                'review_order' => $this->order->id,
+            ]);
+        }
+
+        return route('admin.orders.index', ['order_id' => $this->order->id]);
     }
 
     public function actionLabel(): string
     {
-        return 'افتح الطلب';
+        return 'راجع الجولة';
     }
 
     public function extra(): array
     {
         return [
-            'order_id'     => $this->order->id,
+            'order_id' => $this->order->id,
             'order_number' => $this->order->number,
         ];
+    }
+
+    protected function formatQty(float $quantity): string
+    {
+        return $quantity == floor($quantity)
+            ? (string) (int) $quantity
+            : rtrim(rtrim(number_format($quantity, 2, '.', ''), '0'), '.');
     }
 }
