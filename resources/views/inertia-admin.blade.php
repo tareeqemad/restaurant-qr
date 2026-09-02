@@ -1,10 +1,14 @@
 @php
     $theme = \App\Support\ThemePalette::current();
     $market = \App\Support\MarketProfile::class;
-    $optimizedAsset = fn (string $path): string => route('optimized.asset', [
-        'path' => $path,
-        'v' => filemtime(public_path($path)),
-    ]);
+    // These framework styles already live under public/. Let LiteSpeed serve
+    // them directly: the PHP file response fails on some shared hosts and
+    // leaves the whole admin shell unstyled.
+    $staticAsset = static function (string $path): string {
+        $file = public_path($path);
+
+        return asset($path).(is_file($file) ? '?v='.filemtime($file) : '');
+    };
 @endphp
 <!DOCTYPE html>
 {{-- Root document for Inertia ADMIN pages (Wave 0 — AdminLayout.vue chrome).
@@ -30,12 +34,12 @@
     <title inertia>{{ \App\Helpers\Brand::name() }}</title>
     <link rel="icon" href="{{ \App\Helpers\Brand::faviconUrl() }}">
 
-    <link id="style" href="{{ $optimizedAsset('assets/dashtic/libs/bootstrap/css/bootstrap.rtl.min.css') }}" rel="stylesheet">
-    <link href="{{ $optimizedAsset('assets/dashtic/css/styles.min.css') }}" rel="stylesheet">
+    <link id="style" href="{{ $staticAsset('assets/dashtic/libs/bootstrap/css/bootstrap.rtl.min.css') }}" rel="stylesheet">
+    <link href="{{ $staticAsset('assets/dashtic/css/styles.min.css') }}" rel="stylesheet">
     <link href="{{ asset('assets/dashtic/icon-fonts/RemixIcons/fonts/remixicon.css') }}" rel="stylesheet">
     <link href="{{ asset('assets/dashtic/icon-fonts/bootstrap-icons/icons/font/bootstrap-icons.css') }}" rel="stylesheet">
     <link rel="stylesheet" href="{{ asset('assets/dashtic/css/relax-brand.css') }}?v={{ filemtime(public_path('assets/dashtic/css/relax-brand.css')) }}">
-    <link rel="stylesheet" href="{{ $optimizedAsset('assets/dashtic/css/relax-components.css') }}">
+    <link rel="stylesheet" href="{{ $staticAsset('assets/dashtic/css/relax-components.css') }}">
 
     {{-- Runtime theme override — after the compiled CSS so dashboard settings win. --}}
     <style>

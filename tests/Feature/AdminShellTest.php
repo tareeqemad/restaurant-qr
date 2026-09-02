@@ -83,6 +83,11 @@ class AdminShellTest extends TestCase
         $this->actingAs($this->admin)
             ->get(route('admin.activity-logs.index'))
             ->assertSee('styles.min.css');
+
+        $rootView = file_get_contents(resource_path('views/inertia-admin.blade.php'));
+        $this->assertStringContainsString("asset(\$path)", $rootView);
+        $this->assertStringContainsString("\$staticAsset('assets/dashtic/css/styles.min.css')", $rootView);
+        $this->assertStringNotContainsString("route('optimized.asset'", $rootView);
     }
 
     public function test_event_filter_narrows_the_table(): void
