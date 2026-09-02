@@ -146,6 +146,19 @@ class InventoryDashboardVueTest extends TestCase
             );
     }
 
+    public function test_dashboard_keeps_the_daily_decision_surface_compact(): void
+    {
+        $dashboard = file_get_contents(resource_path('js/Pages/Admin/Inventory/Dashboard.vue'));
+        $workspace = file_get_contents(resource_path('js/Components/Inventory/InventoryWorkspaceNav.vue'));
+        $fallback = file_get_contents(public_path('assets/dashtic/css/relax-components.css'));
+
+        $this->assertStringContainsString('@media(min-width:1181px){.pulse-grid{gap:0;', $dashboard);
+        $this->assertStringContainsString('.workflow-card__body small{display:none}', $dashboard);
+        $this->assertStringContainsString('grid-template-columns:minmax(480px,1fr) auto', $workspace);
+        $this->assertStringContainsString('html body .app-content .inv-workspace', $fallback);
+        $this->assertStringContainsString('html body .app-content .inventory-board .pulse-grid', $fallback);
+    }
+
     /**
      * The rail's tints were PHP conditionals inside the Blade's stat array.
      * They ship as props so a red "نافد" can never sit next to a zero.

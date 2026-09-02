@@ -10755,3 +10755,93 @@ html body .app-header .profile-dd .profile-menu {
         top: calc(100% + 8px) !important;
     }
 }
+
+/* Inventory decision center: keep daily work above the fold even when the
+   server still serves a previous Vite bundle. Source components mirror this. */
+html body .app-content .inventory-board {
+    gap: 12px;
+}
+
+html body .app-content .inventory-board .inventory-hero {
+    gap: 16px;
+    padding: 18px;
+    border-radius: 18px;
+    background: linear-gradient(120deg, #f4faf6 0%, #fff 70%);
+    box-shadow: 0 8px 24px rgba(22, 58, 42, .045);
+}
+
+html body .app-content .inventory-board .inventory-hero h1 {
+    font-size: clamp(1.35rem, 2.2vw, 1.75rem);
+}
+
+html body .app-content .inventory-board .inventory-hero p {
+    font-size: .78rem;
+}
+
+html body .app-content .inventory-board .pulse-card {
+    padding: 13px;
+    border-radius: 14px;
+}
+
+html body .app-content .inventory-board .pulse-card__icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+}
+
+html body .app-content .inventory-board .workflow-panel {
+    padding: 14px;
+    border-radius: 18px;
+    box-shadow: 0 8px 24px rgba(22, 58, 42, .035);
+}
+
+html body .app-content .inventory-board .workflow-card {
+    min-height: 64px;
+    padding: 10px;
+    border-radius: 13px;
+}
+
+@media screen and (min-width: 1181px) {
+    html body .app-content .inv-workspace {
+        display: grid;
+        grid-template-columns: minmax(480px, 1fr) auto;
+        align-items: center;
+        gap: 6px;
+        margin-block-end: 10px;
+        padding: 6px;
+        border-radius: 15px;
+        box-shadow: 0 7px 22px rgba(21, 54, 34, .05);
+    }
+
+    html body .app-content .inv-workspace__groups {
+        padding: 0;
+    }
+
+    html body .app-content .inv-workspace__links {
+        max-width: min(46vw, 640px);
+        padding: 0;
+        border-top: 0;
+    }
+
+    html body .app-content .inventory-board .pulse-grid {
+        gap: 0;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 15px;
+        background: #fff;
+    }
+
+    html body .app-content .inventory-board .pulse-card {
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+    }
+
+    html body .app-content .inventory-board .pulse-card + .pulse-card {
+        border-inline-start: 1px solid var(--line);
+    }
+
+    html body .app-content .inventory-board .workflow-card__body small {
+        display: none;
+    }
+}
