@@ -11,6 +11,7 @@ use App\Models\Role;
 use App\Models\Table;
 use App\Models\User;
 use App\Support\BranchContext;
+use Database\Seeders\PermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -27,6 +28,7 @@ class AdminBoardsVueTest extends TestCase
     use RefreshDatabase;
 
     protected Branch $branch;
+
     protected User $admin;
 
     protected function setUp(): void
@@ -37,7 +39,7 @@ class AdminBoardsVueTest extends TestCase
         BranchContext::set($this->branch->id);
 
         Role::firstOrCreate(['name' => 'super_admin'], ['label' => 'Super', 'is_system' => true]);
-        $this->seed(\Database\Seeders\PermissionSeeder::class);
+        $this->seed(PermissionSeeder::class);
 
         $this->admin = User::create([
             'name' => 'Boss', 'username' => 'ab_boss', 'password' => bcrypt('x'),
@@ -314,6 +316,27 @@ class AdminBoardsVueTest extends TestCase
                 $this->assertFalse($other['isCurrent']);
                 $this->assertFalse($other['blocksDelete']);
             });
+    }
+
+    public function test_branches_workspace_uses_existing_icons_and_adaptive_cards(): void
+    {
+        $index = file_get_contents(resource_path('js/Pages/Admin/Branches/Index.vue'));
+        $form = file_get_contents(resource_path('js/Pages/Admin/Branches/Form.vue'));
+        $icons = file_get_contents(public_path('assets/dashtic/icon-fonts/bootstrap-icons/icons/font/bootstrap-icons.css'));
+
+        $this->assertStringContainsString('repeat(auto-fit', $index);
+        $this->assertStringContainsString('bi-diagram-3-fill', $index);
+        $this->assertStringContainsString('branch.rolesCount', $index);
+        $this->assertStringNotContainsString('repeat(auto-fill', $index);
+
+        preg_match_all('/bi-[a-z0-9-]+/', $index.$form, $matches);
+        foreach (array_unique($matches[0]) as $icon) {
+            $this->assertStringContainsString(
+                ".{$icon}::before",
+                $icons,
+                "The branches UI references an icon unavailable in the bundled Bootstrap Icons font: {$icon}"
+            );
+        }
     }
 
     public function test_toggling_a_branch_flips_its_active_flag(): void

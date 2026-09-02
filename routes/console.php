@@ -2,11 +2,19 @@
 
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schedule;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
+
+Schedule::call(function (): void {
+    Cache::put('system.scheduler.last_run_at', now()->toIso8601String(), now()->addDays(2));
+})
+    ->name('system-health-heartbeat')
+    ->everyMinute()
+    ->withoutOverlapping();
 
 /*
 |--------------------------------------------------------------------------

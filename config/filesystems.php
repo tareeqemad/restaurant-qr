@@ -1,6 +1,28 @@
 <?php
 
+$publicStorageMode = strtolower((string) env('PUBLIC_STORAGE_MODE', 'linked'));
+$publicStorageMode = in_array($publicStorageMode, ['linked', 'direct'], true)
+    ? $publicStorageMode
+    : 'linked';
+$publicStorageRoot = $publicStorageMode === 'direct'
+    ? public_path('storage')
+    : storage_path('app/public');
+
 return [
+
+    /*
+    |--------------------------------------------------------------------------
+    | Public storage publishing mode
+    |--------------------------------------------------------------------------
+    |
+    | "linked" keeps Laravel's conventional storage/app/public ->
+    | public/storage symlink. Some shared hosts disable PHP's symlink() and
+    | exec() functions; "direct" lets the public disk write safely to
+    | public/storage instead, so deploys never depend on those functions.
+    |
+    */
+
+    'public_storage_mode' => $publicStorageMode,
 
     /*
     |--------------------------------------------------------------------------
@@ -45,7 +67,7 @@ return [
 
         'public' => [
             'driver' => 'local',
-            'root' => storage_path('app/public'),
+            'root' => $publicStorageRoot,
             'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage',
             'visibility' => 'public',
             // Auto-serve the public disk at /storage. Lets PHP's built-in
@@ -84,8 +106,8 @@ return [
     |
     */
 
-    'links' => [
-        public_path('storage') => storage_path('app/public'),
-    ],
+    'links' => $publicStorageMode === 'linked'
+        ? [public_path('storage') => storage_path('app/public')]
+        : [],
 
 ];

@@ -13,6 +13,7 @@ Route::middleware(['auth', 'setup.complete', 'admin', 'branch'])->group(function
     // Built-in operating manual. Every active back-office role can open it;
     // the page itself only links to workspaces that role is allowed to use.
     Route::get('usage-guide', Admin\UsageGuideController::class)->name('usage-guide');
+    Route::get('system-health', Admin\SystemHealthController::class)->name('system-health');
 
     // ── تجربة Inertia+Vue (MIGRATION-PILOT.md §5) ─────────────────────────
     // المرحلة 0 — البوابة: هذه الصفحة تثبت السلسلة كاملة (route → middleware

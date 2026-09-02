@@ -61,9 +61,25 @@ class UsageGuideTest extends TestCase
                     ->where('viewer.role', $role->value)
                     ->where('viewer.roleLabel', $role->label())
                     ->has('roles', count(UserRole::cases()))
-                    ->where('shell.nav', fn ($nav) => collect($nav)->contains('label', 'دليل الاستخدام'))
+                    ->where('shell.urls.usageGuide', route('admin.usage-guide'))
+                    ->where('shell.nav', fn ($nav) => collect($nav)->doesntContain('label', 'دليل الاستخدام'))
                 );
         }
+    }
+
+    public function test_guide_is_presented_under_profile_in_the_user_menu(): void
+    {
+        $header = file_get_contents(resource_path('js/Components/AdminShell/AdminHeader.vue'));
+        $profilePosition = strpos($header, 'الملف الشخصي');
+        $guidePosition = strpos($header, 'دليل الاستخدام');
+        $logoutPosition = strpos($header, 'تسجيل الخروج');
+
+        $this->assertNotFalse($profilePosition);
+        $this->assertNotFalse($guidePosition);
+        $this->assertNotFalse($logoutPosition);
+        $this->assertTrue($profilePosition < $guidePosition);
+        $this->assertTrue($guidePosition < $logoutPosition);
+        $this->assertStringContainsString('inset-block-start: calc(100% + 10px) !important;', $header);
     }
 
     public function test_guide_only_exposes_quick_links_the_viewer_can_open(): void
@@ -150,8 +166,30 @@ class UsageGuideTest extends TestCase
         $this->assertStringContainsString("window.addEventListener('beforeprint', preparePrint)", $page);
         $this->assertStringContainsString("window.addEventListener('afterprint', finishPrint)", $page);
         $this->assertStringContainsString('setAllChapters(true)', $page);
-        $this->assertStringContainsString('setAllChapters(false)', $page);
         $this->assertStringContainsString('.guide-chapter:not([open]) > .chapter-body { display: block !important;', $page);
         $this->assertStringContainsString('طباعة / حفظ PDF', $page);
+    }
+
+    public function test_guide_starts_with_a_role_based_reading_path_instead_of_the_full_reference(): void
+    {
+        $page = file_get_contents(resource_path('js/Pages/Admin/Guide/Index.vue'));
+
+        $this->assertStringContainsString('const roleReadingPaths = {', $page);
+        $this->assertStringContainsString("waiter: ['service-flow'", $page);
+        $this->assertStringContainsString("chef: ['service-flow'", $page);
+        $this->assertStringContainsString("bartender: ['service-flow'", $page);
+        $this->assertStringContainsString("cashier: ['cashier-table'", $page);
+        $this->assertStringContainsString("accountant: ['accounting'", $page);
+        $this->assertStringContainsString('ابدأ القراءة من هنا', $page);
+        $this->assertStringContainsString('لا تقرأ كل الدليل', $page);
+        $this->assertStringContainsString('مساري فقط', $page);
+        $this->assertStringContainsString('v-if="canSeeSetupChecklist && !query"', $page);
+        $this->assertStringContainsString('الفصل التالي:', $page);
+
+        $chapterList = strpos($page, 'class="chapter-list"');
+        $optionalPermissions = strpos($page, 'class="permissions-card permissions-card--reference"');
+        $this->assertNotFalse($chapterList);
+        $this->assertNotFalse($optionalPermissions);
+        $this->assertTrue($chapterList < $optionalPermissions);
     }
 }

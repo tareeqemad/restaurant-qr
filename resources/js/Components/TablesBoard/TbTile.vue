@@ -25,7 +25,7 @@ const props = defineProps({
     menuOpen: { type: Boolean, default: false },
 });
 
-defineEmits(['menu-toggle', 'quick-edit', 'transfer', 'destroy', 'clean', 'serve', 'ack']);
+defineEmits(['menu-toggle', 'quick-edit', 'transfer', 'destroy', 'clean', 'serve', 'ack', 'close']);
 
 const meta = () => TILE_META[props.row.tileState] ?? TILE_META.occupied;
 const displayName = () => {
@@ -51,6 +51,10 @@ const primaryAction = () => {
 
     if (props.row.triage?.type === 'help') {
         return { kind: 'ack', label: 'أنا ذاهب للطاولة', icon: 'bi-person-walking' };
+    }
+
+    if (props.row.triage?.type === 'idle' && props.row.triage?.action?.kind === 'close') {
+        return { kind: 'close', label: 'حرّر الطاولة', icon: 'bi-unlock' };
     }
 
     return {
@@ -124,6 +128,11 @@ const primaryAction = () => {
             <button v-else-if="primaryAction().kind === 'ack'" type="button"
                     class="tb-tile-action tb-tile-action--follow tb-tile-action--primary is-wide"
                     @click="$emit('ack', row)">
+                <i class="bi" :class="primaryAction().icon"></i> {{ primaryAction().label }}
+            </button>
+            <button v-else-if="primaryAction().kind === 'close'" type="button"
+                    class="tb-tile-action tb-tile-action--follow tb-tile-action--primary is-wide"
+                    @click="$emit('close', row)">
                 <i class="bi" :class="primaryAction().icon"></i> {{ primaryAction().label }}
             </button>
             <Link v-else :href="primaryAction().href"

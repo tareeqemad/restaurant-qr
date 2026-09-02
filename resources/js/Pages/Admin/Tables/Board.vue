@@ -259,12 +259,12 @@ const markClean = (row) => formPost(row.urls.markClean);
 
 const closeSession = async (row) => {
     const yes = await ask({
-        title: `إغلاق الجلسة الراكدة على طاولة ${row.number}؟`,
-        message: 'لا مستحقات عليها — الطاولة بترجع متاحة.',
-        confirmLabel: 'أغلق',
+        title: `تحرير طاولة ${row.number} الآن؟`,
+        message: 'لا مستحقات عليها — ستُغلق الجلسة الراكدة وتُعتبر الطاولة منظّفة وجاهزة للاستقبال.',
+        confirmLabel: 'حرّر الطاولة',
         danger: true,
     });
-    if (yes) formPost(row.urls.closeSession);
+    if (yes) formPost(row.urls.closeSession, { mark_ready: true });
 };
 
 const closeAllStale = async () => {
@@ -444,7 +444,7 @@ const loadChip = computed(() => {
                             @menu-toggle="toggleMenu"
                             @quick-edit="quickEditRow = $event"
                             @transfer="transfer" @destroy="destroy" @clean="markClean"
-                            @serve="serve" @ack="ackHelp" />
+                            @serve="serve" @ack="ackHelp" @close="closeSession" />
                 </div>
             </div>
         </section>

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Head, Link, usePage } from '@inertiajs/vue3'
 import AdminLayout from '../../../Layouts/AdminLayout.vue'
 import PageHeader from '../../../Components/Ui/PageHeader.vue'
@@ -18,12 +18,27 @@ const selectedRole = ref(props.viewer.role)
 const completed = ref([])
 const printing = ref(false)
 const activeChapterId = ref('start')
+const showAllChapters = ref(false)
+const searchInput = ref(null)
 const progressKey = `restaurant-usage-guide:${props.viewer.id}:${props.viewer.branchId ?? 'all'}`
 const page = usePage()
 const brand = computed(() => page.props.shell?.brand ?? { name: 'نظام إدارة المطعم', logo: null })
 const printDate = new Intl.DateTimeFormat('ar-PS', { dateStyle: 'long' }).format(new Date())
 let printSnapshot = null
 let chapterObserver = null
+
+const roleReadingPaths = {
+    super_admin: ['start', 'roles', 'inventory-foundation', 'recipes-menu', 'floor-setup', 'service-flow', 'rush-hour', 'cashier-table', 'purchasing', 'accounting', 'corrections', 'closing', 'troubleshooting', 'go-live'],
+    partner: ['start', 'roles', 'rush-hour', 'accounting', 'corrections', 'closing', 'troubleshooting', 'go-live'],
+    admin: ['start', 'roles', 'inventory-foundation', 'recipes-menu', 'floor-setup', 'service-flow', 'rush-hour', 'cashier-table', 'purchasing', 'accounting', 'corrections', 'closing', 'troubleshooting', 'go-live'],
+    manager: ['start', 'roles', 'inventory-foundation', 'recipes-menu', 'floor-setup', 'service-flow', 'rush-hour', 'cashier-table', 'purchasing', 'corrections', 'closing', 'troubleshooting', 'go-live'],
+    accountant: ['accounting', 'inventory-foundation', 'cashier-table', 'purchasing', 'corrections', 'closing', 'troubleshooting', 'go-live'],
+    waiter: ['service-flow', 'floor-setup', 'rush-hour', 'cashier-table', 'troubleshooting', 'go-live'],
+    chef: ['service-flow', 'recipes-menu', 'rush-hour', 'troubleshooting', 'go-live'],
+    bartender: ['service-flow', 'recipes-menu', 'rush-hour', 'troubleshooting', 'go-live'],
+    cashier: ['cashier-table', 'floor-setup', 'rush-hour', 'corrections', 'closing', 'troubleshooting', 'go-live'],
+}
+activeChapterId.value = roleReadingPaths[props.viewer.role]?.[0] ?? 'start'
 
 const normalize = (value) => String(value ?? '')
     .normalize('NFKD')
@@ -39,11 +54,22 @@ const filteredChapters = computed(() => {
 
 const selectedRoleMeta = computed(() => props.roles.find((role) => role.value === selectedRole.value))
 const selectedRoleGuide = computed(() => roleGuides[selectedRole.value] ?? roleGuides[props.viewer.role])
+const selectedRolePathIds = computed(() => roleReadingPaths[selectedRole.value] ?? roleReadingPaths[props.viewer.role] ?? chapters.map((chapter) => chapter.id))
+const rolePathChapters = computed(() => selectedRolePathIds.value
+    .map((id) => chapters.find((chapter) => chapter.id === id))
+    .filter(Boolean))
+const recommendedChapter = computed(() => rolePathChapters.value[0] ?? chapters[0])
+const visibleChapters = computed(() => {
+    if (query.value.trim()) return filteredChapters.value
+    return showAllChapters.value ? chapters : rolePathChapters.value
+})
+const canSwitchRole = computed(() => ['super_admin', 'partner', 'admin', 'manager'].includes(props.viewer.role))
+const canSeeSetupChecklist = computed(() => ['super_admin', 'partner', 'admin', 'manager', 'accountant'].includes(selectedRole.value))
 const completedCount = computed(() => setupChecklist.filter((item) => completed.value.includes(item.id)).length)
 const completionPercent = computed(() => Math.round((completedCount.value / setupChecklist.length) * 100))
 
 function isRelevant(chapter) {
-    return chapter.audience.includes('all') || chapter.audience.includes(selectedRole.value)
+    return selectedRolePathIds.value.includes(chapter.id)
 }
 
 function audienceLabel(value) {
@@ -57,6 +83,24 @@ function toggleChecklist(id) {
         : [...completed.value, id]
 
     localStorage.setItem(progressKey, JSON.stringify(completed.value))
+}
+
+function selectRole(role) {
+    selectedRole.value = role
+    query.value = ''
+    showAllChapters.value = false
+    activeChapterId.value = roleReadingPaths[role]?.[0] ?? 'start'
+}
+
+function startReading() {
+    query.value = ''
+    showAllChapters.value = false
+    nextTick(() => jumpTo(recommendedChapter.value.id))
+}
+
+function clearSearch() {
+    query.value = ''
+    nextTick(() => searchInput.value?.focus({ preventScroll: true }))
 }
 
 function jumpTo(id) {
@@ -76,15 +120,23 @@ function setAllChapters(open) {
     })
 }
 
+function observeChapters() {
+    if (! chapterObserver) return
+    chapterObserver.disconnect()
+    document.querySelectorAll('.guide-chapter').forEach((chapter) => chapterObserver.observe(chapter))
+}
+
 async function preparePrint() {
     if (printing.value) return
 
     printSnapshot = {
         query: query.value,
+        showAllChapters: showAllChapters.value,
         openIds: [...document.querySelectorAll('.guide-chapter[open]')].map((chapter) => chapter.id),
     }
     printing.value = true
     query.value = ''
+    showAllChapters.value = true
     document.documentElement.classList.add('usage-guide-printing')
 
     await nextTick()
@@ -98,6 +150,7 @@ function finishPrint() {
     printSnapshot = null
     printing.value = false
     query.value = snapshot.query
+    showAllChapters.value = snapshot.showAllChapters
     document.documentElement.classList.remove('usage-guide-printing')
 
     nextTick(() => {
@@ -126,7 +179,9 @@ onMounted(() => {
     }
 
     if (window.location.hash) {
-        setTimeout(() => jumpTo(window.location.hash.slice(1)), 80)
+        const requestedChapter = window.location.hash.slice(1)
+        if (! selectedRolePathIds.value.includes(requestedChapter)) showAllChapters.value = true
+        setTimeout(() => jumpTo(requestedChapter), 80)
     }
 
     chapterObserver = new IntersectionObserver((entries) => {
@@ -137,8 +192,13 @@ onMounted(() => {
         if (visible[0]?.target?.id) activeChapterId.value = visible[0].target.id
     }, { rootMargin: '-110px 0px -62% 0px', threshold: 0 })
 
-    document.querySelectorAll('.guide-chapter').forEach((chapter) => chapterObserver.observe(chapter))
+    observeChapters()
 })
+
+watch(
+    () => visibleChapters.value.map((chapter) => chapter.id).join('|'),
+    () => nextTick(observeChapters),
+)
 
 onBeforeUnmount(() => {
     window.removeEventListener('beforeprint', preparePrint)
@@ -202,60 +262,70 @@ onBeforeUnmount(() => {
     >
         <template #actions>
             <div class="guide-header-actions">
-                <button type="button" class="guide-outline-button" @click="setAllChapters(true)">
-                    <i class="bi bi-arrows-expand"></i>
-                    فتح الفصول
+                <button type="button" class="guide-print-button" :disabled="printing" @click="printPage">
+                    <i class="bi bi-printer"></i>
+                    {{ printing ? 'جاري تجهيز الطباعة...' : 'طباعة / حفظ PDF' }}
                 </button>
-                <button type="button" class="guide-outline-button" @click="setAllChapters(false)">
-                    <i class="bi bi-arrows-collapse"></i>
-                    إغلاق الفصول
-                </button>
-            <button type="button" class="guide-print-button" :disabled="printing" @click="printPage">
-                <i class="bi bi-printer"></i>
-                {{ printing ? 'جاري تجهيز الطباعة...' : 'طباعة / حفظ PDF' }}
-            </button>
             </div>
         </template>
     </PageHeader>
 
-    <section class="guide-hero" aria-labelledby="guide-welcome-title">
-        <div class="guide-hero__copy">
-            <span class="guide-eyebrow"><i class="bi bi-compass-fill"></i> مرجع العمل الرسمي داخل النظام</span>
-            <h2 id="guide-welcome-title">أهلاً {{ viewer.name }}، هذا هو طريقك من أول إعداد إلى إقفال اليوم</h2>
-            <p>
-                الدليل مبني على الشاشات والصلاحيات الفعلية. اختر الدور الذي تريد تدريبه، ابحث عن أي مشكلة،
-                وافتح الشاشة المطلوبة مباشرة عندما تكون لديك صلاحيتها.
-            </p>
-            <div class="guide-hero__meta">
-                <span><i class="bi bi-person-badge"></i> {{ viewer.roleLabel }}</span>
-                <span v-if="viewer.branchName"><i class="bi bi-building"></i> {{ viewer.branchName }}</span>
-                <span><i class="bi bi-book"></i> {{ chapters.length }} فصلاً عملياً</span>
+    <section class="reading-start" aria-labelledby="guide-welcome-title">
+        <div class="reading-start__main">
+            <span class="reading-start__eyebrow"><i class="bi bi-signpost-split-fill"></i> ابدأ القراءة من هنا</span>
+            <h2 id="guide-welcome-title">أهلاً {{ viewer.name }}، جهّزنا لك مسار <strong>{{ selectedRoleMeta?.label || viewer.roleLabel }}</strong></h2>
+            <p>لا تقرأ كل الدليل. ابدأ بالفصل المقترح، ثم انتقل بالترتيب بين فصول مسارك فقط.</p>
+
+            <ol class="reading-start__steps" aria-label="خطوات بدء القراءة">
+                <li class="done"><span><i class="bi bi-check-lg"></i></span><div><small>الخطوة 1</small><strong>حددنا دورك: {{ selectedRoleMeta?.label || viewer.roleLabel }}</strong></div></li>
+                <li class="active"><span>2</span><div><small>الخطوة 2 · الآن</small><strong>اقرأ: {{ recommendedChapter.title }}</strong></div></li>
+                <li><span>3</span><div><small>الخطوة 3</small><strong>أكمل فصول مسارك بالترتيب</strong></div></li>
+            </ol>
+
+            <div class="reading-start__actions">
+                <button type="button" class="start-reading-button" @click="startReading">
+                    ابدأ بالفصل {{ recommendedChapter.number }}
+                    <i class="bi bi-arrow-down"></i>
+                </button>
+                <Link
+                    v-if="selectedRoleGuide.action && urls[selectedRoleGuide.action]"
+                    :href="urls[selectedRoleGuide.action]"
+                    class="start-work-button"
+                >
+                    افتح شاشة عملي <i class="bi bi-box-arrow-up-left"></i>
+                </Link>
             </div>
         </div>
 
-        <div class="guide-hero__search">
-            <label for="guide-search">ما الذي تريد معرفته؟</label>
+        <aside class="reading-start__help">
+            <span><i class="bi bi-life-preserver"></i> إذا جئت لحل مشكلة</span>
+            <label for="guide-search">اكتب العملية أو المشكلة مباشرة</label>
             <div class="guide-search-box">
                 <i class="bi bi-search" aria-hidden="true"></i>
                 <input
                     id="guide-search"
+                    ref="searchInput"
                     v-model="query"
                     type="search"
                     placeholder="مثال: طاولة عليها 4 شيكل، الرصيد الافتتاحي، الاسترداد..."
                     autocomplete="off"
                 >
-                <button v-if="query" type="button" aria-label="مسح البحث" @click="query = ''">
+                <button v-if="query" type="button" aria-label="مسح البحث" @click="clearSearch">
                     <i class="bi bi-x-lg"></i>
                 </button>
             </div>
             <small v-if="query">{{ filteredChapters.length }} فصل مطابق للبحث</small>
-            <small v-else>يمكنك البحث باسم الشاشة أو العملية أو المشكلة</small>
-        </div>
+            <small v-else>البحث يفتش كل الفصول، وليس مسارك فقط.</small>
+            <div class="reading-scope" aria-label="نطاق الفصول">
+                <button type="button" :class="{ active: !showAllChapters && !query }" @click="query = ''; showAllChapters = false">مساري فقط <b>{{ rolePathChapters.length }}</b></button>
+                <button type="button" :class="{ active: showAllChapters && !query }" @click="query = ''; showAllChapters = true">كل الدليل <b>{{ chapters.length }}</b></button>
+            </div>
+        </aside>
     </section>
 
-    <section class="role-workspace" aria-labelledby="role-path-title">
-        <div class="role-workspace__picker">
-            <span>اعرض مسار دور</span>
+    <section v-if="!query" class="role-workspace" aria-labelledby="role-path-title">
+        <div v-if="canSwitchRole" class="role-workspace__picker">
+            <span>هل تدرّب موظفاً آخر؟ غيّر المسار:</span>
             <div class="role-pills" role="list" aria-label="اختيار الدور">
                 <button
                     v-for="role in roles"
@@ -263,7 +333,7 @@ onBeforeUnmount(() => {
                     type="button"
                     :class="{ active: selectedRole === role.value }"
                     :aria-pressed="selectedRole === role.value"
-                    @click="selectedRole = role.value"
+                    @click="selectRole(role.value)"
                 >
                     {{ role.label }}
                     <small v-if="role.value === viewer.role">أنت</small>
@@ -293,17 +363,17 @@ onBeforeUnmount(() => {
                 :href="urls[selectedRoleGuide.action]"
                 class="role-focus__action"
             >
-                ابدأ من شاشتك <i class="bi bi-arrow-left"></i>
+                {{ canSwitchRole ? 'افتح شاشة عمله' : 'افتح شاشة عملي' }} <i class="bi bi-arrow-left"></i>
             </Link>
         </article>
     </section>
 
-    <section class="launch-card" aria-labelledby="launch-title">
+    <section v-if="canSeeSetupChecklist && !query" class="launch-card" aria-labelledby="launch-title">
         <header class="launch-card__header">
             <div>
-                <span class="guide-eyebrow"><i class="bi bi-list-check"></i> قائمة تأسيس المطعم</span>
-                <h2 id="launch-title">نفّذها بالترتيب قبل التشغيل الحقيقي</h2>
-                <p>تُحفظ العلامات على هذا الكمبيوتر لهذا المستخدم والفرع.</p>
+                <span class="guide-eyebrow"><i class="bi bi-list-check"></i> للإدارة · عند تأسيس المطعم فقط</span>
+                <h2 id="launch-title">قائمة التأسيس قبل أول يوم تشغيل</h2>
+                <p>تجاهلها إذا كان المطعم يعمل فعلاً. تُحفظ العلامات لهذا المستخدم والفرع.</p>
             </div>
             <div class="launch-progress" :aria-label="`اكتمل ${completionPercent}%`">
                 <strong>{{ completedCount }} / {{ setupChecklist.length }}</strong>
@@ -345,12 +415,12 @@ onBeforeUnmount(() => {
         <aside class="guide-toc" aria-label="فهرس دليل الاستخدام">
             <div class="guide-toc__sticky">
                 <header>
-                    <span>فهرس الدليل</span>
-                    <strong>{{ filteredChapters.length }} / {{ chapters.length }}</strong>
+                    <span>{{ query ? 'نتائج البحث' : (showAllChapters ? 'كل الدليل' : `مسار ${selectedRoleMeta?.label}`) }}</span>
+                    <strong>{{ visibleChapters.length }} فصل</strong>
                 </header>
                 <nav>
                     <button
-                        v-for="chapter in filteredChapters"
+                        v-for="chapter in visibleChapters"
                         :key="chapter.id"
                         type="button"
                         :class="{ relevant: isRelevant(chapter), active: activeChapterId === chapter.id }"
@@ -365,42 +435,21 @@ onBeforeUnmount(() => {
 
                 <div class="toc-help">
                     <i class="bi bi-lightbulb-fill"></i>
-                    <p>ابدأ بالفصول المعلمة «لك»، ثم ارجع إلى الدليل الكامل عند التدريب أو حل مشكلة مشتركة.</p>
+                    <p v-if="!showAllChapters && !query">هذه فصولك بالترتيب. اقرأ الأول، ثم انتقل للذي يليه.</p>
+                    <p v-else>العلامة «لك» تعني أن الفصل ضمن مسار دورك.</p>
                 </div>
             </div>
         </aside>
 
         <main class="guide-content">
-            <section class="permissions-card" aria-labelledby="permissions-title">
-                <header>
-                    <div>
-                        <span>مرجع سريع</span>
-                        <h2 id="permissions-title">الأدوار وحدود العمل الافتراضية</h2>
-                    </div>
-                    <button type="button" @click="jumpTo('roles')">شرح الصلاحيات <i class="bi bi-arrow-down"></i></button>
-                </header>
-                <div class="guide-table-wrap">
-                    <table>
-                        <thead><tr><th>الدور</th><th>نطاقه</th><th>عمله الأساسي</th><th>ليس مساره الطبيعي</th></tr></thead>
-                        <tbody>
-                            <tr v-for="row in roleMatrix" :key="row[0]" :class="{ current: row[0] === viewer.roleLabel }">
-                                <td><strong>{{ row[0] }}</strong><small v-if="row[0] === viewer.roleLabel">دورك</small></td>
-                                <td>{{ row[1] }}</td><td>{{ row[2] }}</td><td>{{ row[3] }}</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-                <p><i class="bi bi-info-circle"></i> الصلاحيات الفردية قد توسّع أو تقيّد الدور؛ الشاشة والزر الفعليان هما المرجع النهائي.</p>
-            </section>
-
-            <div v-if="filteredChapters.length" class="chapter-list">
+            <div v-if="visibleChapters.length" class="chapter-list">
                 <details
-                    v-for="(chapter, chapterIndex) in filteredChapters"
+                    v-for="(chapter, chapterIndex) in visibleChapters"
                     :id="chapter.id"
                     :key="chapter.id"
                     class="guide-chapter"
                     :class="{ 'guide-chapter--relevant': isRelevant(chapter) }"
-                    :open="Boolean(query) || chapterIndex === 0"
+                    :open="Boolean(query) || chapter.id === recommendedChapter.id"
                 >
                     <summary>
                         <span class="chapter-number">{{ chapter.number }}</span>
@@ -460,9 +509,21 @@ onBeforeUnmount(() => {
                                 <span>مفيد لـ</span>
                                 <b v-for="role in chapter.audience" :key="role">{{ audienceLabel(role) }}</b>
                             </div>
-                            <Link v-if="chapter.action && urls[chapter.action]" :href="urls[chapter.action]" class="chapter-action">
-                                {{ chapter.actionLabel }} <i class="bi bi-arrow-left"></i>
-                            </Link>
+                            <div class="chapter-footer__actions">
+                                <Link v-if="chapter.action && urls[chapter.action]" :href="urls[chapter.action]" class="chapter-action chapter-action--screen">
+                                    {{ chapter.actionLabel }} <i class="bi bi-box-arrow-up-left"></i>
+                                </Link>
+                                <button
+                                    v-if="visibleChapters[chapterIndex + 1]"
+                                    type="button"
+                                    class="chapter-action chapter-action--next"
+                                    @click="jumpTo(visibleChapters[chapterIndex + 1].id)"
+                                >
+                                    الفصل التالي: {{ visibleChapters[chapterIndex + 1].title }}
+                                    <i class="bi bi-arrow-down"></i>
+                                </button>
+                                <span v-else class="reading-complete"><i class="bi bi-check2-circle"></i> أكملت آخر فصل في هذا المسار</span>
+                            </div>
                         </footer>
                     </div>
                 </details>
@@ -472,8 +533,31 @@ onBeforeUnmount(() => {
                 <i class="bi bi-search"></i>
                 <h2>لم نجد فصلاً مطابقاً</h2>
                 <p>جرّب كلمة أقصر مثل «دين»، «طاولة»، «مخزون»، «مطبخ» أو «رصيد».</p>
-                <button type="button" @click="query = ''">عرض الدليل كاملاً</button>
+                <button type="button" @click="query = ''; showAllChapters = true">عرض الدليل كاملاً</button>
             </section>
+
+            <details class="permissions-card permissions-card--reference">
+                <summary>
+                    <span><i class="bi bi-people-fill"></i></span>
+                    <div>
+                        <small>مرجع اختياري · ليس من بداية القراءة</small>
+                        <h2>جدول الأدوار وحدود الصلاحيات</h2>
+                    </div>
+                    <i class="bi bi-chevron-down"></i>
+                </summary>
+                <div class="guide-table-wrap">
+                    <table>
+                        <thead><tr><th>الدور</th><th>نطاقه</th><th>عمله الأساسي</th><th>ليس مساره الطبيعي</th></tr></thead>
+                        <tbody>
+                            <tr v-for="row in roleMatrix" :key="row[0]" :class="{ current: row[0] === viewer.roleLabel }">
+                                <td><strong>{{ row[0] }}</strong><small v-if="row[0] === viewer.roleLabel">دورك</small></td>
+                                <td>{{ row[1] }}</td><td>{{ row[2] }}</td><td>{{ row[3] }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p><i class="bi bi-info-circle"></i> الصلاحيات الفردية قد توسّع أو تقيّد الدور؛ الشاشة والزر الفعليان هما المرجع النهائي.</p>
+            </details>
 
             <section class="final-rule">
                 <span><i class="bi bi-shield-check"></i></span>
@@ -503,8 +587,7 @@ onBeforeUnmount(() => {
     gap: .5rem;
 }
 
-.guide-print-button,
-.guide-outline-button {
+.guide-print-button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -526,30 +609,31 @@ onBeforeUnmount(() => {
 
 .guide-print-button:hover:not(:disabled) { color: #fff; transform: translateY(-1px); box-shadow: 0 11px 24px rgba(23, 107, 69, .22); }
 .guide-print-button:disabled { cursor: wait; opacity: .72; }
-.guide-outline-button { border: 1px solid #d7dfdc; background: #fff; color: #40534d; }
-.guide-outline-button:hover { border-color: #8fb6a3; background: #f3f9f6; color: #176b45; }
-.guide-print-button:focus-visible,
-.guide-outline-button:focus-visible { outline: 3px solid rgba(23, 107, 69, .18); outline-offset: 2px; }
+.guide-print-button:focus-visible { outline: 3px solid rgba(23, 107, 69, .18); outline-offset: 2px; }
 
-.guide-hero {
+.reading-start {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(330px, .65fr);
+    margin-bottom: 1.35rem;
+    overflow: hidden;
+    border: 1px solid #d8e6df;
+    border-radius: 22px;
+    background: #fff;
+    box-shadow: 0 18px 45px rgba(20, 72, 54, .12);
+}
+
+.reading-start__main {
     position: relative;
     isolation: isolate;
-    display: grid;
-    grid-template-columns: minmax(0, 1.25fr) minmax(340px, .75fr);
-    gap: 2rem;
-    padding: clamp(1.4rem, 3vw, 2.5rem);
-    margin-bottom: 1.35rem;
-    border: 1px solid rgba(255,255,255,.16);
-    border-radius: 22px;
+    padding: clamp(1.35rem, 3vw, 2.35rem);
     background:
-        radial-gradient(circle at 12% 8%, rgba(244, 178, 44, .22), transparent 34%),
+        radial-gradient(circle at 12% 8%, rgba(244, 178, 44, .2), transparent 34%),
         linear-gradient(125deg, #103c30, #176b45 64%, #13805a);
     color: #fff;
-    box-shadow: 0 18px 45px rgba(20, 72, 54, .16);
     overflow: hidden;
 }
 
-.guide-hero::after {
+.reading-start__main::after {
     position: absolute;
     z-index: -1;
     inset: 0;
@@ -560,6 +644,7 @@ onBeforeUnmount(() => {
     opacity: .48;
 }
 
+.reading-start__eyebrow,
 .guide-eyebrow {
     display: inline-flex;
     align-items: center;
@@ -570,33 +655,48 @@ onBeforeUnmount(() => {
     letter-spacing: .02em;
 }
 
-.guide-hero h2 {
+.reading-start h2 {
     max-width: 760px;
-    margin: .75rem 0 .6rem;
+    margin: .65rem 0 .45rem;
     color: #fff;
-    font-size: clamp(1.55rem, 3vw, 2.35rem);
+    font-size: clamp(1.35rem, 2.4vw, 2rem);
     line-height: 1.35;
 }
 
-.guide-hero__copy > p { max-width: 760px; margin: 0; color: rgba(255,255,255,.82); line-height: 1.9; }
-.guide-hero__meta { display: flex; flex-wrap: wrap; gap: .65rem; margin-top: 1.25rem; }
-.guide-hero__meta span { display: inline-flex; align-items: center; gap: .4rem; padding: .45rem .72rem; border: 1px solid rgba(255,255,255,.16); border-radius: 999px; background: rgba(255,255,255,.09); font-size: .78rem; font-weight: 800; }
+.reading-start h2 strong { color: #f8d986; }
+.reading-start__main > p { max-width: 730px; margin: 0; color: rgba(255,255,255,.8); font-size: .82rem; line-height: 1.85; }
+.reading-start__steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .55rem; margin: 1.2rem 0; padding: 0; list-style: none; }
+.reading-start__steps li { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: .5rem; align-items: center; min-height: 62px; padding: .65rem; border: 1px solid rgba(255,255,255,.15); border-radius: 12px; background: rgba(255,255,255,.07); }
+.reading-start__steps li > span { display: grid; width: 29px; height: 29px; place-items: center; border-radius: 9px; background: rgba(255,255,255,.12); color: #d8eee3; font-size: .68rem; font-weight: 900; }
+.reading-start__steps li > div { display: grid; min-width: 0; gap: .15rem; }
+.reading-start__steps small { color: rgba(255,255,255,.62); font-size: .56rem; font-weight: 800; }
+.reading-start__steps strong { color: #fff; font-size: .68rem; line-height: 1.55; }
+.reading-start__steps li.done > span { background: #dff4e7; color: #176b45; }
+.reading-start__steps li.active { border-color: rgba(248,217,134,.72); background: rgba(248,217,134,.13); box-shadow: inset 0 0 0 1px rgba(248,217,134,.12); }
+.reading-start__steps li.active > span { background: #f8d986; color: #5d470e; }
+.reading-start__steps li.active small { color: #f8d986; }
+.reading-start__actions { display: flex; flex-wrap: wrap; gap: .55rem; }
+.start-reading-button,
+.start-work-button { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; gap: .5rem; padding: .65rem .9rem; border-radius: 11px; font-size: .73rem; font-weight: 900; text-decoration: none; }
+.start-reading-button { border: 1px solid #fff; background: #fff; color: #125f3d; box-shadow: 0 9px 20px rgba(4,35,26,.18); }
+.start-work-button { border: 1px solid rgba(255,255,255,.24); background: rgba(255,255,255,.08); color: #fff !important; }
+.start-reading-button:hover { transform: translateY(-1px); }
+.start-work-button:hover { background: rgba(255,255,255,.14); }
 
-.guide-hero__search {
-    align-self: center;
-    padding: 1.2rem;
-    border: 1px solid rgba(255,255,255,.18);
-    border-radius: 18px;
-    background: rgba(4, 35, 26, .28);
-    backdrop-filter: blur(10px);
-}
-
-.guide-hero__search label { display: block; margin-bottom: .65rem; color: #fff; font-weight: 900; }
-.guide-hero__search > small { display: block; margin-top: .55rem; color: rgba(255,255,255,.7); }
-.guide-search-box { display: flex; align-items: center; gap: .55rem; min-height: 52px; padding: 0 .85rem; border-radius: 13px; background: #fff; color: #50615d; }
+.reading-start__help { display: grid; align-content: center; gap: .55rem; padding: clamp(1.1rem, 2.2vw, 1.65rem); background: linear-gradient(145deg, #fff, #f7faf8); }
+.reading-start__help > span { display: inline-flex; align-items: center; gap: .4rem; color: #167049; font-size: .67rem; font-weight: 900; }
+.reading-start__help > label { color: #2b4338; font-size: .82rem; font-weight: 900; line-height: 1.55; }
+.reading-start__help > small { min-height: 18px; color: #7b8982; font-size: .61rem; }
+.guide-search-box { display: flex; align-items: center; gap: .55rem; min-height: 52px; padding: 0 .85rem; border: 1px solid #cfddd5; border-radius: 13px; background: #fff; color: #50615d; transition: border-color .15s ease, box-shadow .15s ease; }
+.guide-search-box:focus-within { border-color: #78ad8e; box-shadow: 0 0 0 3px rgba(23,107,69,.1); }
 .guide-search-box > i { font-size: 1.1rem; }
 .guide-search-box input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: #1f332e; font-size: .9rem; }
 .guide-search-box button { border: 0; background: transparent; color: #7b8986; }
+.reading-scope { display: grid; grid-template-columns: 1fr 1fr; gap: .3rem; padding: .25rem; margin-top: .35rem; border-radius: 11px; background: #edf3ef; }
+.reading-scope button { display: flex; min-height: 38px; align-items: center; justify-content: center; gap: .4rem; border: 0; border-radius: 8px; background: transparent; color: #6d7c74; font-size: .64rem; font-weight: 850; }
+.reading-scope button b { display: grid; min-width: 20px; height: 20px; place-items: center; padding-inline: .25rem; border-radius: 99px; background: #dde7e1; font-size: .55rem; }
+.reading-scope button.active { background: #fff; color: #176b45; box-shadow: 0 2px 8px rgba(24,53,37,.08); }
+.reading-scope button.active b { background: #e3f3e9; }
 
 .role-workspace,
 .launch-card,
@@ -675,11 +775,15 @@ onBeforeUnmount(() => {
 .toc-help p { margin: 0; font-size: .65rem; line-height: 1.6; }
 
 .guide-content { min-width: 0; }
-.permissions-card { margin-bottom: 1rem; overflow: hidden; }
-.permissions-card > header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.15rem; border-bottom: 1px solid #edf1ef; }
-.permissions-card header span { color: #17734b; font-size: .68rem; font-weight: 900; }
-.permissions-card h2 { margin: .2rem 0 0; color: #2c443c; font-size: 1.05rem; }
-.permissions-card header button { border: 0; background: transparent; color: #176b45; font-size: .72rem; font-weight: 900; }
+.permissions-card { margin-top: 1rem; overflow: hidden; }
+.permissions-card > summary { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center; gap: .7rem; padding: .85rem 1rem; cursor: pointer; list-style: none; }
+.permissions-card > summary::-webkit-details-marker { display: none; }
+.permissions-card > summary > span { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 11px; background: #edf6f1; color: #176b45; }
+.permissions-card > summary small { color: #87938d; font-size: .58rem; font-weight: 750; }
+.permissions-card > summary > i { color: #839188; transition: transform .18s ease; }
+.permissions-card[open] > summary { border-bottom: 1px solid #edf1ef; background: #fbfdfc; }
+.permissions-card[open] > summary > i { transform: rotate(180deg); }
+.permissions-card h2 { margin: .12rem 0 0; color: #2c443c; font-size: .88rem; }
 .permissions-card > p { display: flex; gap: .4rem; margin: 0; padding: .7rem 1rem; background: #f6f9f7; color: #65736f; font-size: .68rem; }
 
 .guide-table-wrap { overflow-x: auto; }
@@ -737,6 +841,11 @@ onBeforeUnmount(() => {
 .chapter-audience { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
 .chapter-audience span { color: #899591; font-size: .65rem; }
 .chapter-audience b { padding: .25rem .45rem; border-radius: 7px; background: #f1f5f3; color: #587068; font-size: .6rem; }
+.chapter-footer__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .45rem; }
+.chapter-action { border: 0; }
+.chapter-action--screen { border: 1px solid #cfe0d6; background: #fff; color: #176b45 !important; }
+.chapter-action--next { max-width: 310px; text-align: start; white-space: normal; }
+.reading-complete { display: inline-flex; align-items: center; gap: .4rem; padding: .55rem .7rem; border-radius: 9px; background: #eef8f2; color: #176b45; font-size: .65rem; font-weight: 850; }
 
 .no-results { padding: 3rem 1rem; border: 1px dashed #cbd7d2; border-radius: 18px; background: #fff; text-align: center; }
 .no-results > i { color: #91a39c; font-size: 2rem; }
@@ -758,7 +867,8 @@ onBeforeUnmount(() => {
 
 @media (max-width: 991.98px) {
     .guide-header-actions { flex-wrap: wrap; }
-    .guide-hero { grid-template-columns: 1fr; }
+    .reading-start { grid-template-columns: 1fr; }
+    .reading-start__steps { grid-template-columns: 1fr 1fr 1fr; }
     .role-workspace__picker { flex-direction: column; }
     .role-focus { grid-template-columns: auto 1fr; }
     .role-focus__action { grid-column: 1 / -1; }
@@ -769,13 +879,15 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 575.98px) {
-    .guide-header-actions { display: grid; width: 100%; grid-template-columns: 1fr 1fr; }
-    .guide-print-button { grid-column: 1 / -1; }
-    .guide-print-button,
-    .guide-outline-button { width: 100%; }
-    .guide-hero { padding: 1.1rem; border-radius: 16px; }
-    .guide-hero__meta { gap: .35rem; }
-    .guide-hero__meta span { font-size: .68rem; }
+    .guide-header-actions,
+    .guide-print-button { width: 100%; }
+    .reading-start { border-radius: 16px; }
+    .reading-start__main,
+    .reading-start__help { padding: 1rem; }
+    .reading-start__steps { grid-template-columns: 1fr; }
+    .reading-start__actions { display: grid; grid-template-columns: 1fr; }
+    .start-reading-button,
+    .start-work-button { width: 100%; }
     .role-focus { grid-template-columns: 1fr; }
     .role-focus__icon { width: 48px; height: 48px; }
     .role-focus__lists { grid-template-columns: 1fr; }
@@ -784,12 +896,14 @@ onBeforeUnmount(() => {
     .launch-item { grid-template-columns: auto auto 1fr; }
     .launch-item > a { grid-column: 3; }
     .guide-toc nav { grid-template-columns: 1fr; }
-    .permissions-card > header { align-items: flex-start; flex-direction: column; }
+    .permissions-card > summary { grid-template-columns: 34px minmax(0, 1fr) auto; padding: .75rem; }
     .guide-chapter > summary { grid-template-columns: 34px 42px 1fr auto; gap: .5rem; padding: .85rem .75rem; }
     .chapter-icon { width: 40px; height: 40px; }
     .chapter-body { padding: .9rem; }
     .chapter-footer { align-items: flex-start; flex-direction: column; }
+    .chapter-footer__actions,
     .chapter-action { width: 100%; }
+    .chapter-action--next { max-width: none; }
     .final-rule { grid-template-columns: auto 1fr; }
     .final-rule a { grid-column: 1 / -1; }
 }
@@ -824,15 +938,15 @@ onBeforeUnmount(() => {
     :global(#responsive-overlay),
     :global(.footer),
     :global(.page-header),
-    .guide-hero,
+    .reading-start,
     .guide-header-actions,
     .role-workspace__picker,
     .guide-toc,
-    .permissions-card > header button,
     .role-focus__action,
     .launch-item > a,
     .chapter-toggle,
     .chapter-action,
+    .reading-complete,
     .no-results { display: none !important; }
 
     :global(.page),
@@ -959,8 +1073,10 @@ onBeforeUnmount(() => {
     .launch-item small { font-size: 6.8pt; }
 
     .guide-layout { display: block; }
-    .permissions-card { margin: 0; break-after: page; page-break-after: always; overflow: visible; }
-    .permissions-card > header { padding: 4mm; }
+    .permissions-card { display: block !important; margin: 0; break-after: page; page-break-after: always; overflow: visible; }
+    .permissions-card > summary { display: grid !important; padding: 4mm; }
+    .permissions-card > .guide-table-wrap,
+    .permissions-card > p { display: block !important; }
     .permissions-card h2 { font-size: 15pt; }
     .permissions-card > p { padding: 3mm 4mm; font-size: 7.5pt; }
 

@@ -82,28 +82,64 @@ const logout = () => formPost(props.shell.urls.logout);
                 </div>
 
                 <div class="header-element main-profile-user profile-dd" ref="profileRoot">
-                    <a href="#" class="header-link" :aria-expanded="profileOpen" @click.prevent="profileToggle">
-                        <div class="d-flex align-items-center">
-                            <img :src="shell.user.avatar" alt="" class="rounded-circle header-profile-img avatar me-sm-2 me-0">
-                            <div class="d-xl-block d-none align-items-center my-auto text-start">
-                                <h6 class="fw-medium mb-0 lh-1 fs-13">{{ shell.user.name }}</h6>
-                                <span class="op-5 fw-normal d-block fs-11 lh-1">{{ shell.user.roleLabel }}</span>
-                            </div>
+                    <button
+                        type="button"
+                        class="header-link profile-trigger"
+                        :class="{ 'is-open': profileOpen }"
+                        aria-haspopup="menu"
+                        aria-controls="admin-profile-menu"
+                        :aria-expanded="profileOpen"
+                        aria-label="فتح قائمة الحساب"
+                        @click="profileToggle"
+                    >
+                        <span class="profile-trigger__content">
+                            <img :src="shell.user.avatar" :alt="`صورة ${shell.user.name}`" class="rounded-circle header-profile-img avatar">
+                            <span class="profile-trigger__identity">
+                                <strong>{{ shell.user.name }}</strong>
+                                <small>{{ shell.user.roleLabel }}</small>
+                            </span>
+                            <i class="bi bi-chevron-down profile-trigger__chevron" aria-hidden="true"></i>
+                        </span>
+                    </button>
+
+                    <div
+                        v-show="profileOpen"
+                        id="admin-profile-menu"
+                        class="main-header-dropdown dropdown-menu header-profile-dropdown dropdown-menu-end show profile-menu"
+                        role="menu"
+                        aria-label="قائمة حساب المستخدم"
+                    >
+                        <div class="profile-menu__identity">
+                            <img :src="shell.user.avatar" alt="" aria-hidden="true">
+                            <span>
+                                <strong>{{ shell.user.name }}</strong>
+                                <small>{{ shell.user.roleLabel }}</small>
+                            </span>
                         </div>
-                    </a>
-                    <div v-show="profileOpen" class="main-header-dropdown dropdown-menu header-profile-dropdown dropdown-menu-end show profile-menu">
-                        <ul class="list-unstyled mb-0">
-                            <li class="dropdown-item">
-                                <a class="d-flex align-items-center w-100" :href="shell.urls.profile">
-                                    <i class="bi bi-person me-3 fs-16"></i> الملف الشخصي
-                                </a>
-                            </li>
-                            <li class="dropdown-item">
-                                <button type="button" class="d-flex align-items-center w-100 border-0 bg-transparent p-0 text-danger" @click="logout">
-                                    <i class="bi bi-box-arrow-right me-3 fs-16"></i> تسجيل خروج
-                                </button>
-                            </li>
-                        </ul>
+
+                        <nav class="profile-menu__actions" aria-label="خيارات الحساب">
+                            <a :href="shell.urls.profile" class="profile-menu__item" role="menuitem">
+                                <i class="bi bi-person" aria-hidden="true"></i>
+                                <span>
+                                    <strong>الملف الشخصي</strong>
+                                    <small>بياناتك وأمان حسابك</small>
+                                </span>
+                                <i class="bi bi-chevron-left profile-menu__arrow" aria-hidden="true"></i>
+                            </a>
+                            <a :href="shell.urls.usageGuide" class="profile-menu__item" role="menuitem">
+                                <i class="bi bi-journal-bookmark" aria-hidden="true"></i>
+                                <span>
+                                    <strong>دليل الاستخدام</strong>
+                                    <small>شرح النظام حسب دورك</small>
+                                </span>
+                                <i class="bi bi-chevron-left profile-menu__arrow" aria-hidden="true"></i>
+                            </a>
+                        </nav>
+
+                        <button type="button" class="profile-menu__logout" role="menuitem" @click="logout">
+                            <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
+                            <span>تسجيل الخروج</span>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -120,7 +156,10 @@ const logout = () => formPost(props.shell.urls.logout);
 </template>
 
 <style scoped>
-.profile-dd { position: relative; }
+.profile-dd {
+    position: relative;
+    isolation: isolate;
+}
 .mobile-menu-trigger {
     display: inline-grid;
     width: 42px;
@@ -138,12 +177,210 @@ const logout = () => formPost(props.shell.urls.logout);
     background: rgba(var(--primary-rgb), .08);
     outline: none;
 }
-.profile-menu {
+.profile-trigger {
+    border: 1px solid rgba(var(--primary-rgb), .1);
+    background: #fff;
+    cursor: pointer;
+}
+.profile-trigger.is-open {
+    border-color: rgba(var(--primary-rgb), .25) !important;
+    background: rgba(var(--primary-rgb), .06) !important;
+}
+.profile-trigger__content {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: .5rem;
+}
+.profile-trigger__identity {
+    display: grid;
+    min-width: 0;
+    gap: .15rem;
+    text-align: start;
+}
+.profile-trigger__identity strong,
+.profile-trigger__identity small {
+    max-width: 116px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.profile-trigger__identity strong {
+    color: #243a30;
+    font-size: .72rem;
+    font-weight: 900;
+    line-height: 1.15;
+}
+.profile-trigger__identity small {
+    color: #7b8c83;
+    font-size: .58rem;
+    font-weight: 700;
+    line-height: 1.15;
+}
+.profile-trigger__chevron {
+    color: #85958d;
+    font-size: .65rem;
+    transition: transform .18s ease;
+}
+.profile-trigger.is-open .profile-trigger__chevron {
+    transform: rotate(180deg);
+}
+.profile-dd .profile-menu {
     position: absolute;
-    top: calc(100% + 8px);
-    inset-inline-end: 0;
-    min-width: 200px;
-    z-index: 1040;
+    inset-block-start: calc(100% + 10px) !important;
+    inset-inline-end: 0 !important;
+    inset-inline-start: auto !important;
+    top: auto !important;
+    right: auto;
+    left: auto;
+    z-index: 1200;
+    width: min(250px, calc(100vw - 1rem)) !important;
+    min-width: min(250px, calc(100vw - 1rem)) !important;
+    padding: .45rem !important;
+    overflow: visible;
+    border: 1px solid #dfe8e3;
+    border-radius: 14px !important;
+    background: #fff;
+    box-shadow: 0 18px 45px rgba(24, 53, 37, .16) !important;
+}
+.profile-dd .profile-menu::before {
+    inset-block-start: -6px;
+    inset-inline-end: 18px;
+    width: 11px;
+    height: 11px;
+    border-color: #dfe8e3 transparent transparent #dfe8e3;
+    background: #fff;
+}
+.profile-menu__identity {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: .65rem;
+    padding: .55rem .55rem .7rem;
+    border-bottom: 1px solid #edf2ef;
+}
+.profile-menu__identity img {
+    width: 38px;
+    height: 38px;
+    flex: 0 0 38px;
+    border: 2px solid #e0eee5;
+    border-radius: 12px;
+    object-fit: cover;
+}
+.profile-menu__identity span {
+    display: grid;
+    min-width: 0;
+    gap: .14rem;
+}
+.profile-menu__identity strong,
+.profile-menu__identity small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.profile-menu__identity strong {
+    color: #20362b;
+    font-size: .73rem;
+    font-weight: 900;
+}
+.profile-menu__identity small {
+    color: #819087;
+    font-size: .59rem;
+}
+.profile-menu__actions {
+    display: grid;
+    gap: .12rem;
+    padding-block: .35rem;
+}
+.profile-menu__item {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+    min-height: 49px;
+    align-items: center;
+    gap: .55rem;
+    padding: .45rem .5rem;
+    border-radius: 10px;
+    color: #344b40;
+    text-decoration: none;
+    transition: color .15s ease, background .15s ease;
+}
+.profile-menu__item > i:first-child {
+    display: grid;
+    width: 32px;
+    height: 32px;
+    place-items: center;
+    border-radius: 9px;
+    background: #edf7f1;
+    color: rgb(var(--primary-rgb));
+    font-size: .9rem;
+}
+.profile-menu__item span {
+    display: grid;
+    min-width: 0;
+    gap: .1rem;
+}
+.profile-menu__item strong {
+    font-size: .68rem;
+    font-weight: 900;
+}
+.profile-menu__item small {
+    overflow: hidden;
+    color: #849189;
+    font-size: .55rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.profile-menu__arrow {
+    color: #9ba8a1;
+    font-size: .62rem;
+}
+.profile-menu__item:hover,
+.profile-menu__item:focus-visible {
+    color: #126c3d;
+    background: #f1f8f4;
+    outline: none;
+}
+.profile-menu__item:focus-visible,
+.profile-menu__logout:focus-visible,
+.profile-trigger:focus-visible {
+    outline: 3px solid rgba(var(--primary-rgb), .16);
+    outline-offset: 1px;
+}
+.profile-menu__logout {
+    display: flex;
+    width: 100%;
+    min-height: 40px;
+    align-items: center;
+    gap: .6rem;
+    padding: .55rem .7rem;
+    border: 0;
+    border-top: 1px solid #f3e6e5;
+    border-radius: 9px;
+    background: transparent;
+    color: #c23939;
+    font-size: .67rem;
+    font-weight: 850;
+    text-align: start;
+}
+.profile-menu__logout:hover {
+    background: #fff3f2;
+}
+@media (max-width: 1199.98px) {
+    .profile-trigger__identity,
+    .profile-trigger__chevron {
+        display: none;
+    }
+}
+@media (max-width: 575.98px) {
+    .profile-dd .profile-menu {
+        inset-block-start: calc(100% + 8px) !important;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .profile-trigger__chevron,
+    .profile-menu__item {
+        transition: none;
+    }
 }
 #responsive-overlay {
     position: fixed;

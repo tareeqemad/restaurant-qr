@@ -5,7 +5,8 @@
     $homeUrl = $isAdminContext ? url('/admin') : url('/');
     $homeLabel = $isAdminContext ? 'لوحة التحكم' : 'الصفحة الرئيسية';
     $theme = \App\Support\ThemePalette::current();
-    $requestReference = substr(hash('sha256', request()->method().'|'.request()->fullUrl().'|'.now()->format('YmdHi')), 0, 8);
+    $requestReference = request()->attributes->get('request_reference')
+        ?: substr(hash('sha256', request()->method().'|'.request()->fullUrl().'|'.microtime(true)), 0, 12);
 @endphp
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">

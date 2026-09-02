@@ -4,8 +4,10 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use PDO;
 use Symfony\Component\Process\Process;
 
 /**
@@ -83,6 +85,12 @@ class BackupDatabase extends Command
     {
         $rawPath = substr($absPath, 0, -3); // strip the ".gz" → the .sql path
 
+        if (! function_exists('proc_open')) {
+            $this->warn('Process execution is disabled; using the portable PHP database dumper.');
+
+            return $this->dumpWithPhp($absPath);
+        }
+
         $defaults = tempnam(sys_get_temp_dir(), 'mysqldump_');
         file_put_contents($defaults, sprintf(
             "[client]\nhost=%s\nport=%s\nuser=%s\npassword=%s\n",
@@ -105,6 +113,12 @@ class BackupDatabase extends Command
 
         try {
             $process->run();
+        } catch (\Throwable $e) {
+            @unlink($rawPath);
+            $this->warn('mysqldump is unavailable; falling back to the portable PHP database dumper.');
+            Log::warning('mysqldump process unavailable; using PHP fallback', ['error' => $e->getMessage()]);
+
+            return $this->dumpWithPhp($absPath);
         } finally {
             @unlink($defaults);
         }
@@ -112,10 +126,10 @@ class BackupDatabase extends Command
         if (! $process->isSuccessful() || ! is_file($rawPath) || filesize($rawPath) === 0) {
             @unlink($rawPath);
             $error = trim($process->getErrorOutput()) ?: 'mysqldump produced no output.';
-            $this->error("Backup failed: {$error}");
-            Log::error('Database backup failed', ['error' => $error]);
+            $this->warn("mysqldump failed ({$error}); using the portable PHP database dumper.");
+            Log::warning('mysqldump failed; using PHP fallback', ['error' => $error]);
 
-            return false;
+            return $this->dumpWithPhp($absPath);
         }
 
         if (! $this->gzip($rawPath, $absPath)) {
@@ -129,6 +143,127 @@ class BackupDatabase extends Command
         }
 
         return true;
+    }
+
+    /**
+     * Shared-host fallback that needs no shell functions or external binary.
+     * It streams CREATE TABLE plus INSERT statements straight into gzip while
+     * holding one repeatable-read snapshot, so memory use stays bounded.
+     */
+    private function dumpWithPhp(string $absPath): bool
+    {
+        if (! function_exists('gzopen')) {
+            $this->error('Backup failed: PHP zlib is required for the portable dumper.');
+
+            return false;
+        }
+
+        $gzip = @gzopen($absPath, 'wb9');
+        if ($gzip === false) {
+            $this->error("Backup failed: cannot write {$absPath}.");
+
+            return false;
+        }
+
+        $connection = DB::connection();
+        $pdo = $connection->getPdo();
+        $transactionStarted = false;
+
+        try {
+            $connection->statement('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+            $connection->beginTransaction();
+            $transactionStarted = true;
+
+            $this->gzWrite($gzip, "-- Restaurant QR portable MySQL backup\n");
+            $this->gzWrite($gzip, '-- Generated: '.now()->toIso8601String()."\n");
+            $this->gzWrite($gzip, "SET FOREIGN_KEY_CHECKS=0;\nSET NAMES utf8mb4;\n\n");
+
+            $rows = $connection->select("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'");
+            $tables = collect($rows)
+                ->map(fn (object $row) => (string) array_values((array) $row)[0])
+                ->sort()
+                ->values();
+
+            foreach ($tables as $table) {
+                $quotedTable = '`'.str_replace('`', '``', $table).'`';
+                $createRow = (array) $connection->selectOne("SHOW CREATE TABLE {$quotedTable}");
+                $createSql = (string) (array_values($createRow)[1] ?? '');
+                if ($createSql === '') {
+                    throw new \RuntimeException("SHOW CREATE TABLE returned no definition for {$table}.");
+                }
+
+                $this->gzWrite($gzip, "DROP TABLE IF EXISTS {$quotedTable};\n{$createSql};\n");
+
+                $columns = $connection->getSchemaBuilder()->getColumnListing($table);
+                if ($columns !== []) {
+                    $columnSql = implode(',', array_map(
+                        fn (string $column) => '`'.str_replace('`', '``', $column).'`',
+                        $columns,
+                    ));
+                    $orderColumn = $this->primaryKeyColumn($table) ?: $columns[0];
+
+                    $connection->table($table)
+                        ->orderBy($orderColumn)
+                        ->chunk(250, function ($records) use ($gzip, $pdo, $quotedTable, $columnSql, $columns): void {
+                            $values = [];
+                            foreach ($records as $record) {
+                                $row = (array) $record;
+                                $values[] = '('.implode(',', array_map(
+                                    fn (string $column) => $this->sqlLiteral($pdo, $row[$column] ?? null),
+                                    $columns,
+                                )).')';
+                            }
+                            if ($values !== []) {
+                                $this->gzWrite($gzip, "INSERT INTO {$quotedTable} ({$columnSql}) VALUES\n".implode(",\n", $values).";\n");
+                            }
+                        });
+                }
+
+                $this->gzWrite($gzip, "\n");
+            }
+
+            $this->gzWrite($gzip, "SET FOREIGN_KEY_CHECKS=1;\n");
+            $connection->commit();
+            $transactionStarted = false;
+            gzclose($gzip);
+
+            return is_file($absPath) && filesize($absPath) > 0;
+        } catch (\Throwable $e) {
+            if ($transactionStarted) {
+                $connection->rollBack();
+            }
+            gzclose($gzip);
+            @unlink($absPath);
+            $this->error('Portable backup failed: '.$e->getMessage());
+            Log::error('Portable database backup failed', ['error' => $e->getMessage()]);
+
+            return false;
+        }
+    }
+
+    private function primaryKeyColumn(string $table): ?string
+    {
+        $quotedTable = '`'.str_replace('`', '``', $table).'`';
+        $row = DB::connection()->selectOne("SHOW KEYS FROM {$quotedTable} WHERE Key_name = 'PRIMARY' ORDER BY Seq_in_index LIMIT 1");
+
+        return $row ? (string) ($row->Column_name ?? null) : null;
+    }
+
+    private function sqlLiteral(PDO $pdo, mixed $value): string
+    {
+        if ($value === null) {
+            return 'NULL';
+        }
+
+        return $pdo->quote((string) $value);
+    }
+
+    /** @param resource $gzip */
+    private function gzWrite($gzip, string $contents): void
+    {
+        if (gzwrite($gzip, $contents) === false) {
+            throw new \RuntimeException('Unable to write the compressed SQL stream.');
+        }
     }
 
     private function dumpBinary(): string

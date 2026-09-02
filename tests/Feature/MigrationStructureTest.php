@@ -11,7 +11,11 @@ class MigrationStructureTest extends TestCase
     public function test_every_application_table_has_one_complete_migration_file(): void
     {
         $directory = dirname(__DIR__, 2).'/database/migrations';
-        $files = glob($directory.'/*.php') ?: [];
+        $allFiles = glob($directory.'/*.php') ?: [];
+        $files = array_values(array_filter(
+            $allFiles,
+            fn (string $file) => preg_match('/^2026_08_12_\d{6}_create_.+_table\.php$/', basename($file)) === 1,
+        ));
 
         $this->assertCount(
             self::EXPECTED_APPLICATION_TABLES,
@@ -42,5 +46,20 @@ class MigrationStructureTest extends TestCase
         }
 
         $this->assertCount(self::EXPECTED_APPLICATION_TABLES, $seenTables);
+    }
+
+    public function test_additive_upgrade_migrations_are_explicit_and_never_drop_business_columns(): void
+    {
+        $directory = dirname(__DIR__, 2).'/database/migrations';
+        $files = glob($directory.'/*_upgrade_*.php') ?: [];
+
+        $this->assertNotEmpty($files);
+        foreach ($files as $file) {
+            $contents = (string) file_get_contents($file);
+            $this->assertMatchesRegularExpression('/^2026_\d{2}_\d{2}_\d{6}_upgrade_.+\.php$/', basename($file));
+            $this->assertStringContainsString('public function up(): void', $contents);
+            $this->assertStringNotContainsString('dropColumn(', $contents);
+            $this->assertStringNotContainsString('dropIfExists(', $contents);
+        }
     }
 }

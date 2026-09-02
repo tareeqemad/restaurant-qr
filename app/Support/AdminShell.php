@@ -50,6 +50,7 @@ class AdminShell
             'urls' => [
                 'dashboard' => route('admin.dashboard'),
                 'profile' => route('admin.profile.show'),
+                'usageGuide' => route('admin.usage-guide'),
                 'logout' => route('logout'),
                 'notifications' => [
                     'recent' => route('admin.notifications.recent'),

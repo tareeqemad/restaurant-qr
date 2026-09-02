@@ -9,7 +9,7 @@
  * sometimes|boolean, so omitting it means "leave unchanged" — never rely
  * on unchecked-checkbox semantics here.
  */
-import { reactive, ref, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 
 const props = defineProps({
     row: { type: Object, default: null }, // open when non-null
@@ -18,9 +18,19 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'saved']);
 
-const form = reactive({ number: '', name: '', capacity: 1, zone_lookup_id: '', status: 'available', active: true });
+const form = reactive({
+    number: '',
+    name: '',
+    capacity: 1,
+    zone_lookup_id: '',
+    status: 'available',
+    active: true,
+    release_active_session: false,
+});
 const errors = ref({});
 const saving = ref(false);
+const canRelease = computed(() => props.row?.triage?.type === 'idle'
+    && props.row?.triage?.action?.kind === 'close');
 
 watch(() => props.row, (row) => {
     if (! row) return;
@@ -30,6 +40,11 @@ watch(() => props.row, (row) => {
     form.zone_lookup_id = row.zoneId ? String(row.zoneId) : '';
     form.status = row.status;
     form.active = Boolean(row.activeFlag);
+    // A stale, financially safe session is the exact case where a manager
+    // opening this sheet usually means “make this table usable again”. Keep
+    // it explicit and visible, while defaulting to the intended resolution.
+    form.release_active_session = row.triage?.type === 'idle'
+        && row.triage?.action?.kind === 'close';
     errors.value = {};
 });
 
@@ -58,6 +73,7 @@ const save = async () => {
                 zone_lookup_id: form.zone_lookup_id || null,
                 status: form.status,
                 active: Boolean(form.active),
+                release_active_session: Boolean(form.release_active_session),
             }),
         });
 
@@ -136,8 +152,29 @@ const err = (field) => errors.value?.[field]?.[0] ?? null;
                                     <option value="out_of_service">خارج الخدمة</option>
                                 </select>
                                 <small v-if="err('status')" class="qe-err">{{ err('status') }}</small>
+                                <small v-if="row.sessionId" class="qe-help">
+                                    الحالة التشغيلية مرتبطة بالجلسة المفتوحة، وليست بهذه القائمة وحدها.
+                                </small>
                             </label>
                         </div>
+
+                        <label v-if="canRelease" class="qe-release">
+                            <input v-model="form.release_active_session" type="checkbox">
+                            <span>
+                                <strong>حرّر الطاولة الآن واجعلها جاهزة</strong>
+                                <small>يغلق الجلسة الراكدة بلا مستحقات ويعتبر الطاولة متاحة ومنظّفة.</small>
+                            </span>
+                        </label>
+                        <div v-else-if="row.sessionId" class="qe-session-note">
+                            <i class="bi bi-info-circle"></i>
+                            <span>
+                                <strong>هناك جلسة مفتوحة على الطاولة</strong>
+                                <small>تغيير الحالة هنا لا يغلق الحساب. استخدم مساحة الطاولة أو التحصيل حسب وضع الطلب.</small>
+                            </span>
+                        </div>
+                        <small v-if="err('release_active_session')" class="qe-err qe-release-err">
+                            {{ err('release_active_session') }}
+                        </small>
 
                         <label class="qe-toggle">
                             <input v-model="form.active" type="checkbox">
@@ -148,7 +185,7 @@ const err = (field) => errors.value?.[field]?.[0] ?? null;
                             <button type="button" class="qe-btn qe-btn--ghost" @click="$emit('close')">إلغاء</button>
                             <button type="submit" class="qe-btn qe-btn--save" :disabled="saving">
                                 <i class="bi" :class="saving ? 'bi-arrow-repeat qe-spin' : 'bi-check-lg'"></i>
-                                {{ saving ? 'جارٍ الحفظ…' : 'حفظ' }}
+                                {{ saving ? 'جارٍ الحفظ…' : (form.release_active_session ? 'حفظ وتحرير الطاولة' : 'حفظ') }}
                             </button>
                         </div>
                     </form>
@@ -218,6 +255,26 @@ const err = (field) => errors.value?.[field]?.[0] ?? null;
 .qe-field > span { font-size: .8rem; font-weight: 700; color: #334155; }
 .qe-field .form-control, .qe-field .form-select { min-height: 46px; }
 .qe-err { color: #b91c1c; font-weight: 600; }
+.qe-help { color: #64748b; font-size: .72rem; line-height: 1.5; }
+.qe-release, .qe-session-note {
+    display: flex;
+    align-items: flex-start;
+    gap: .7rem;
+    padding: .8rem .9rem;
+    border: 1px solid #b9e4cf;
+    border-radius: 12px;
+    background: #effaf4;
+    color: #145a3b;
+}
+.qe-release { cursor: pointer; }
+.qe-release input { width: 20px; height: 20px; margin-top: .15rem; accent-color: rgb(var(--primary-rgb)); }
+.qe-release span, .qe-session-note span { display: grid; gap: .2rem; }
+.qe-release strong, .qe-session-note strong { font-size: .85rem; }
+.qe-release small, .qe-session-note small { color: #4b6f5e; font-size: .73rem; line-height: 1.55; }
+.qe-session-note { border-color: #dbe3ec; background: #f8fafc; color: #334155; }
+.qe-session-note > i { margin-top: .1rem; color: #64748b; }
+.qe-session-note small { color: #64748b; }
+.qe-release-err { margin-top: -.45rem; }
 
 .qe-toggle {
     display: flex;

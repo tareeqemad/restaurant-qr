@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\AdminMiddleware;
+use App\Http\Middleware\AttachRequestContext;
 use App\Http\Middleware\EnsureFirstRunSetupComplete;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\RequirePermission;
@@ -32,6 +33,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->web(append: [
+            AttachRequestContext::class,
             // Inertia middleware is inert on classic Blade
             // responses — it only shapes routes that return Inertia::render().
             HandleInertiaRequests::class,

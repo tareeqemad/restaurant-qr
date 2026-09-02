@@ -52,7 +52,6 @@ class AdminNav
 
         // ── Dashboard ────────────────────────────────────────────────
         $items[] = self::leaf(__('admin.nav.dashboard'), 'bi-house-door', route('admin.dashboard'), $is('admin.dashboard'));
-        $items[] = self::leaf(__('admin.nav.usage_guide'), 'bi-journal-bookmark', route('admin.usage-guide'), $is('admin.usage-guide'));
 
         // ── Monitoring (management roles) ────────────────────────────
         if ($u->isManagementLevel()) {
@@ -189,7 +188,8 @@ class AdminNav
         $canSettings = $u->hasPermission('settings.view');
         $canActivity = $u->can('viewAny', ActivityLog::class);
         $canLookups = $u->can('viewAny', Lookup::class);
-        if ($canMenu || $canStations || $canUsers || $canRoles || $canBranches || $canSettings || $canActivity || $canLookups) {
+        $canSystemHealth = $u->isSuperAdmin();
+        if ($canMenu || $canStations || $canUsers || $canRoles || $canBranches || $canSettings || $canActivity || $canLookups || $canSystemHealth) {
             $sys = [];
 
             if ($canMenu || $canStations) {
@@ -224,6 +224,10 @@ class AdminNav
 
             if ($canActivity) {
                 $sys[] = self::leaf(__('admin.nav.activity_log'), 'bi-clock-history', route('admin.activity-logs.index'), $is('admin.activity-logs.*'));
+            }
+
+            if ($canSystemHealth) {
+                $sys[] = self::leaf('حالة النظام', 'bi-heart-pulse-fill', route('admin.system-health'), $is('admin.system-health'));
             }
 
             if ($grp = self::group(__('admin.nav.system_admin'), 'bi-layers', $sys)) {

@@ -56,4 +56,22 @@ class ErrorPagesTest extends TestCase
             $this->assertStringContainsString("querySelectorAll('[data-error-reload]')", $html);
         }
     }
+
+    public function test_error_page_displays_the_same_request_reference_used_by_logging(): void
+    {
+        request()->attributes->set('request_reference', 'trace9a8b7c6');
+
+        $html = view('errors.500')->render();
+
+        $this->assertStringContainsString('trace9a8b7c6', $html);
+    }
+
+    public function test_normal_web_responses_expose_a_searchable_request_reference_header(): void
+    {
+        $response = $this->get('/forgot-password')->assertOk();
+        $reference = $response->headers->get('X-Request-Reference');
+
+        $this->assertNotNull($reference);
+        $this->assertMatchesRegularExpression('/^[a-z0-9]{12}$/', $reference);
+    }
 }

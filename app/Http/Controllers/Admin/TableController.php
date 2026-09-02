@@ -19,7 +19,9 @@ use BaconQrCode\Renderer\ImageRenderer;
 use BaconQrCode\Renderer\RendererStyle\RendererStyle;
 use BaconQrCode\Writer;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class TableController extends Controller
 {
@@ -56,12 +58,12 @@ class TableController extends Controller
         return AdminShell::render('Admin/Tables/Form', $this->tableFormData($table));
     }
 
-    public function update(Request $request, Table $table)
+    public function update(Request $request, Table $table, BillingService $billing)
     {
         $this->authorize('update', $table);
-        $this->applyUpdate($request, $table);
+        $result = $this->applyUpdate($request, $table, $billing);
 
-        return redirect()->route('admin.tables.index')->with('success', 'تم التحديث');
+        return redirect()->route('admin.tables.index')->with('success', $result['message']);
     }
 
     /**
@@ -70,15 +72,16 @@ class TableController extends Controller
      * Only the response shape differs (JSON, no redirect) so the board
      * can stay put mid-rush. The renumber notice rides as `info`.
      */
-    public function quickUpdate(Request $request, Table $table)
+    public function quickUpdate(Request $request, Table $table, BillingService $billing)
     {
         $this->authorize('update', $table);
-        $info = $this->applyUpdate($request, $table);
+        $result = $this->applyUpdate($request, $table, $billing);
 
         return response()->json([
             'ok' => true,
-            'message' => "تم تحديث طاولة {$table->number}.",
-            'info' => $info,
+            'message' => $result['message'],
+            'info' => $result['info'],
+            'released' => $result['released'],
         ]);
     }
 
@@ -86,47 +89,121 @@ class TableController extends Controller
      * The shared update body. Returns the renumber notice (or null) so
      * JSON callers can surface it without touching the session flash.
      */
-    protected function applyUpdate(Request $request, Table $table): ?string
+    protected function applyUpdate(Request $request, Table $table, BillingService $billing): array
     {
         $previousStatus = $table->status;
         $previousNumber = $table->number;
-        $table->update($this->valid($request, $table->id));
+        $data = $this->valid($request, $table->id);
+        $releaseRequested = (bool) ($data['release_active_session'] ?? false);
+        unset($data['release_active_session']);
 
-        // Renumber detection: if the displayed number changed and the
-        // table has historical orders or invoices, leave a notice so
-        // the manager understands the snapshot system keeps history
-        // accurate. (No data action needed — snapshots already protect
-        // every past record; this is purely an information message.)
-        $info = null;
-        if ($previousNumber !== $table->number) {
-            $hasHistory = TableSession::where('table_id', $table->id)->exists()
-                       || Order::where('table_id', $table->id)->exists();
-            if ($hasHistory) {
-                $info = "تم تغيير رقم الطاولة من «{$previousNumber}» إلى «{$table->number}». "
-                    .'السجلات السابقة تحتفظ بالرقم الأصلي للحفاظ على دقة الإيصالات والتقارير.';
-                session()->flash('info', $info);
+        $result = DB::transaction(function () use (
+            $table,
+            $data,
+            $releaseRequested,
+            $billing,
+            $previousNumber
+        ): array {
+            $table->update($data);
+            $statusChanged = $table->wasChanged('status');
+
+            // Renumber detection: if the displayed number changed and the
+            // table has historical orders or invoices, leave a notice so
+            // the manager understands the snapshot system keeps history
+            // accurate. (No data action needed — snapshots already protect
+            // every past record; this is purely an information message.)
+            $info = null;
+            if ($previousNumber !== $table->number) {
+                $hasHistory = TableSession::where('table_id', $table->id)->exists()
+                           || Order::where('table_id', $table->id)->exists();
+                if ($hasHistory) {
+                    $info = "تم تغيير رقم الطاولة من «{$previousNumber}» إلى «{$table->number}». "
+                        .'السجلات السابقة تحتفظ بالرقم الأصلي للحفاظ على دقة الإيصالات والتقارير.';
+                    session()->flash('info', $info);
+                }
             }
-        }
 
-        // If the admin marks the table available but a stale (orderless)
-        // session is still hanging on it, close that session in the same
-        // breath. Without this the customer-side scan keeps joining the
-        // ghost session forever — the very confusion the user reported.
-        if ($table->status === 'available' && $previousStatus !== 'available') {
-            $session = $table->activeSession;
-            if ($session && $session->orders()->count() === 0) {
-                $session->update([
-                    'status' => 'closed',
-                    'closed_at' => now(),
-                ]);
+            $released = false;
+            if ($releaseRequested) {
+                $released = $this->releaseStaleSession($table, $billing);
             }
-        }
 
-        if ($table->wasChanged('status')) {
+            return compact('info', 'released', 'statusChanged');
+        });
+
+        // BillingService broadcasts the session close, but a plain metadata /
+        // status edit still needs the regular board refresh event.
+        if ($result['statusChanged'] && ! $result['released']) {
             SafeBroadcast::dispatch(new TableStatusChanged($table->refresh(), $previousStatus));
         }
 
-        return $info;
+        return [
+            'message' => $result['released']
+                ? "تم حفظ طاولة {$table->number} وإغلاق الجلسة الراكدة؛ الطاولة متاحة وجاهزة الآن."
+                : "تم تحديث طاولة {$table->number}.",
+            'info' => $result['info'],
+            'released' => $result['released'],
+        ];
+    }
+
+    /**
+     * Explicitly release a stale operational session from the edit sheet.
+     *
+     * A table's configured `status` and its live session are separate facts.
+     * The old form changed the former while the board correctly kept reading
+     * the latter, producing a successful-looking save that changed nothing.
+     * This path is explicit, stale-only and uses BillingService's financial
+     * guard, so a crafted request can never discard an unpaid visit.
+     */
+    protected function releaseStaleSession(Table $table, BillingService $billing): bool
+    {
+        if ($table->status !== 'available') {
+            throw ValidationException::withMessages([
+                'release_active_session' => 'اختر حالة «متاحة» حتى يتم تحرير الطاولة.',
+            ]);
+        }
+
+        $session = $table->activeSession()->first();
+        if (! $session) {
+            return false;
+        }
+
+        $lastActivity = $session->last_activity_at ?? $session->opened_at;
+        $minimumIdle = max(1, (int) config('restaurant.order.session_attention_minutes', 75));
+        if (! $lastActivity || $lastActivity->gt(now()->subMinutes($minimumIdle))) {
+            throw ValidationException::withMessages([
+                'release_active_session' => 'الجلسة ما زالت حديثة ونشطة؛ افتح مساحة الطاولة وتأكد من مغادرة الزبون أولاً.',
+            ]);
+        }
+
+        if (! $billing->isZeroExposure($session)) {
+            throw ValidationException::withMessages([
+                'release_active_session' => 'لا يمكن تحرير الطاولة لأن الجلسة عليها مستحقات. افتح التحصيل وأغلق الحساب أولاً.',
+            ]);
+        }
+
+        try {
+            $billing->closeZeroExposureSession(
+                $session,
+                (int) auth()->id(),
+                'تحرير صريح من تعديل الطاولة'
+            );
+        } catch (\RuntimeException $e) {
+            throw ValidationException::withMessages([
+                'release_active_session' => $e->getMessage(),
+            ]);
+        }
+
+        // The manager explicitly chose “available and ready”, so this one
+        // action also acknowledges the cleaning step. The ordinary close
+        // button still leaves the table in “needs cleaning” for floor staff.
+        $table->refresh()->update([
+            'status' => 'available',
+            'needs_cleaning_since' => null,
+        ]);
+        SafeBroadcast::dispatch(new TableStatusChanged($table->refresh(), 'available'));
+
+        return true;
     }
 
     /**
@@ -142,9 +219,13 @@ class TableController extends Controller
      * click always failed. Sessions with unpaid money still need the
      * cashier flow.
      */
-    public function closeSession(Table $table, BillingService $billing)
+    public function closeSession(Request $request, Table $table, BillingService $billing)
     {
         $this->authorize('update', $table);
+
+        $data = $request->validate([
+            'mark_ready' => ['sometimes', 'boolean'],
+        ]);
 
         $session = $table->activeSession;
         if (! $session) {
@@ -159,6 +240,14 @@ class TableController extends Controller
             // Same close path as the cron sweep: frees the table and
             // broadcasts TableStatusChanged so the boards refresh.
             $billing->closeZeroExposureSession($session, (int) auth()->id(), 'إغلاق يدوي من لوحة الطاولات');
+
+            if ((bool) ($data['mark_ready'] ?? false)) {
+                $table->refresh()->update([
+                    'status' => 'available',
+                    'needs_cleaning_since' => null,
+                ]);
+                SafeBroadcast::dispatch(new TableStatusChanged($table->refresh(), 'available'));
+            }
         } catch (\RuntimeException $e) {
             // Domain guard messages are written for the UI (Arabic) — safe to show.
             return back()->with('error', $e->getMessage());
@@ -168,7 +257,12 @@ class TableController extends Controller
             return back()->with('error', 'تعذّر إغلاق الجلسة — حاول مجدداً أو راجع السجلات.');
         }
 
-        return back()->with('success', "تم إغلاق الجلسة الراكدة لطاولة {$table->number}.");
+        return back()->with(
+            'success',
+            (bool) ($data['mark_ready'] ?? false)
+                ? "تم تحرير طاولة {$table->number}؛ أُغلقت الجلسة وأصبحت متاحة وجاهزة."
+                : "تم إغلاق الجلسة الراكدة لطاولة {$table->number}."
+        );
     }
 
     /**
@@ -303,6 +397,7 @@ class TableController extends Controller
             ],
             'status' => ['required', Rule::in(['available', 'occupied', 'reserved', 'out_of_service'])],
             'active' => ['sometimes', 'boolean'],
+            'release_active_session' => ['sometimes', 'boolean'],
         ], [
             'number.unique' => 'رقم الطاولة مستخدم بالفعل في هذا الفرع.',
         ], [

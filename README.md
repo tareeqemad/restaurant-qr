@@ -127,15 +127,24 @@ DB_PORT=3306
 DB_DATABASE=restaurant_qr
 DB_USERNAME=restaurant_user
 DB_PASSWORD=change-me
+PUBLIC_STORAGE_MODE=linked
 ```
 
 ثم على سيرفر العميل:
 
 ```bash
-php artisan migrate --force
-php artisan storage:link
-php artisan optimize
+php artisan app:deploy
+php artisan app:health
 ```
+
+في الاستضافات المشتركة التي تمنع PHP من تشغيل `symlink()` أو `exec()`، اضبط:
+
+```env
+PUBLIC_STORAGE_MODE=direct
+```
+
+ثم نفّذ `php artisan app:deploy`. سيجهز `public/storage` مباشرة وينسخ الملفات
+العامة الموجودة دون حذف المصدر، ولا يعود `storage:link` مطلوباً.
 
 بعدها يدخل العميل على:
 
@@ -221,9 +230,10 @@ SYNC_TOKEN=secret-token
 - `APP_DEBUG=false`
 - تفعيل HTTPS
 - ضبط صلاحيات `storage` و `bootstrap/cache`
-- تشغيل `php artisan migrate --force`
-- تشغيل `php artisan storage:link`
-- تشغيل `php artisan optimize`
+- بناء الواجهة: `npm ci && npm run build`
+- تشغيل النشر الموحد: `php artisan app:deploy`
+- التأكد النهائي: `php artisan app:health`
+- فتح «حالة النظام» من قائمة إدارة النظام ومراجعة أي تنبيه
 - ضبط cron:
 
 ```cron
@@ -242,9 +252,13 @@ php artisan queue:work --tries=3
 php artisan backup:run
 ```
 
+أمر النسخ الاحتياطي يستخدم `mysqldump` عندما يكون متاحاً، ويتحول تلقائياً
+إلى نسخ SQL مضغوط عبر PHP على الاستضافات التي تمنع تشغيل عمليات النظام.
+
 ## الحماية وحدودها
 
 - لا تسلّم ملفات `.env` أو مفاتيح التطبيقات أو نسخ قواعد البيانات خارج مسار النشر المقصود.
+- لا ترفع `.env` إلى Git؛ احتفظ بإعداد مستقل وآمن لكل سيرفر وغيّر أي سر دخل تاريخ المستودع.
 - لا يتضمن باكج التشغيل مجلد `.git` أو الاختبارات أو ملفات الكاش والسجلات.
 - استعمل HTTPS ونسخاً احتياطية دورية، وقيّد الوصول إلى لوحة الإدارة حسب الدور والفرع.
 

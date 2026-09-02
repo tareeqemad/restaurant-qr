@@ -232,12 +232,12 @@ This package is prepared for a customer node.
 1. Upload the package to the customer server and extract it.
 2. If `vendor/` was not included, run `composer install --no-dev --optimize-autoloader`.
 3. Configure the database in `.env` if the customer is not using the included defaults.
+   On shared hosting that disables PHP symlink/exec functions, set `PUBLIC_STORAGE_MODE=direct`.
 4. Run:
 
 ```bash
-php artisan migrate --force
-php artisan storage:link
-php artisan optimize
+php artisan app:deploy
+php artisan app:health
 ```
 
 5. Open `/login` and let the customer try the demo data first.

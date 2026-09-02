@@ -22,6 +22,7 @@ import { Head, router } from '@inertiajs/vue3';
 import AdminLayout from '../../../Layouts/AdminLayout.vue';
 import AdjustStockSheet from '../../../Components/Ingredients/AdjustStockSheet.vue';
 import PageHeader from '../../../Components/Ui/PageHeader.vue';
+import Pagination from '../../../Components/Ui/Pagination.vue';
 import { formatMoney } from '../../../Composables/useMoney';
 
 defineOptions({ layout: AdminLayout });
@@ -78,12 +79,6 @@ const barHeight = (qty) => {
     return Math.max(2, Math.round((Number(qty) / max) * 100));
 };
 const trimQty = (qty) => Number(qty ?? 0).toLocaleString('en-US', { maximumFractionDigits: 3 });
-
-// ── Movement paging that does not throw you back to the first tab ────
-const pageTo = (url) => {
-    if (! url) return;
-    router.get(url, {}, { preserveState: true, preserveScroll: true });
-};
 
 // ── Adjacent-ingredient navigation ───────────────────────────────────
 // Ctrl+Home first · Ctrl+End last · Ctrl+→ previous · Ctrl+← next
@@ -510,18 +505,8 @@ const batchBadge = {
                         </table>
                     </div>
 
-                    <!-- Paged in place: the visit preserves state so you stay
-                         on this tab instead of being thrown to «نظرة عامة». -->
-                    <nav v-if="movements.links.length > 3" class="d-flex justify-content-center mt-3">
-                        <ul class="pagination mb-0">
-                            <li v-for="(link, i) in movements.links" :key="i"
-                                class="page-item" :class="{ active: link.active, disabled: ! link.url }">
-                                <button v-if="link.url" type="button" class="page-link"
-                                        @click="pageTo(link.url)" v-html="link.label"></button>
-                                <span v-else class="page-link" v-html="link.label"></span>
-                            </li>
-                        </ul>
-                    </nav>
+                    <!-- Paged in place: preserve state keeps the movement tab open. -->
+                    <Pagination :links="movements.links" :preserve-state="true" />
                 </template>
             </section>
 

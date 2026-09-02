@@ -98,7 +98,7 @@ function submit() {
 
 <template>
     <Head :title="title" />
-    <PageHeader :title="title" icon="bi-building-add"
+    <PageHeader :title="title" icon="bi-building"
                 subtitle="كل فرع مساحة تشغيل مستقلة بمخزونه وموظفيه وطلباته"
                 :crumbs="[{ label: 'الفروع', url: urls.index }]" />
 
@@ -177,7 +177,7 @@ function submit() {
                 <div class="owners-list">
                     <article v-for="(owner, index) in form.owners" :key="owner.id || `new-${index}`" class="owner-row" :class="{ primary: owner.is_primary }">
                         <header>
-                            <span class="owner-avatar"><i class="bi" :class="owner.owner_type === 'company' ? 'bi-buildings' : 'bi-person-vcard'"></i></span>
+                            <span class="owner-avatar"><i class="bi" :class="owner.owner_type === 'company' ? 'bi-building' : 'bi-person-badge'"></i></span>
                             <label><span>نوع المالك</span><select v-model="owner.owner_type" class="form-select"><option value="person">شخص</option><option value="company">شركة / جهة اعتبارية</option></select></label>
                             <label class="owner-name"><span>{{ owner.owner_type === 'company' ? 'اسم الشركة *' : 'اسم المالك الكامل *' }}</span><input v-model="owner.name" :name="`owners.${index}.name`" class="form-control" required :placeholder="owner.owner_type === 'company' ? 'الاسم القانوني للشركة' : 'الاسم الرباعي'" /><small v-if="form.errors[`owners.${index}.name`]" class="error">{{ form.errors[`owners.${index}.name`] }}</small></label>
                             <button type="button" class="remove-owner" :disabled="form.owners.length === 1" aria-label="إزالة المالك من الفرع" @click="removeOwner(index)"><i class="bi bi-trash3"></i></button>
@@ -246,7 +246,7 @@ function submit() {
             <div v-if="!editing" class="provision-box">
                 <strong><i class="bi bi-magic"></i> جاهز للعمل من أول يوم</strong>
                 <p>بعد الحفظ سينشئ النظام تلقائياً:</p>
-                <ul><li><i class="bi bi-box-seam"></i> المخزن الرئيسي</li><li><i class="bi bi-fire"></i> محطة المطبخ</li></ul>
+                <ul><li><i class="bi bi-box-seam"></i> المخزن الرئيسي</li><li><i class="bi bi-lightning-charge-fill"></i> محطة المطبخ</li></ul>
             </div>
             <div v-else class="provision-box neutral">
                 <strong><i class="bi bi-shield-check"></i> تعديل آمن</strong>

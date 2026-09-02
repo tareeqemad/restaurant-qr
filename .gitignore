@@ -3,8 +3,8 @@
 .claude/settings.local.json
 .claude/worktrees/
 *.zip
-# .env is committed per user request (local/demo project — NOT recommended in production)
-# .env
+# Runtime secrets belong on each server and must never be committed.
+.env
 .env.backup
 .env.production
 .phpactor.json

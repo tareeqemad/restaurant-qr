@@ -598,7 +598,7 @@ class TablesBoardVueTest extends TestCase
         $zone = $this->zone('تراس');
         $table = $this->table('70');
         // Ghost session: orderless, must be closed when status flips to available.
-        $ghost = $this->openSession($table, null);
+        $ghost = $this->openSession($table, null, now()->subDay());
 
         $this->actingAs($this->admin)
             ->patchJson(route('admin.tables.quick-update', $table), [
@@ -608,9 +608,10 @@ class TablesBoardVueTest extends TestCase
                 'zone_lookup_id' => $zone->id,
                 'status' => 'available',
                 'active' => true,
+                'release_active_session' => true,
             ])
             ->assertOk()
-            ->assertJson(['ok' => true]);
+            ->assertJson(['ok' => true, 'released' => true]);
 
         $fresh = $table->fresh();
         $this->assertSame('طاولة الزاوية', $fresh->name);
@@ -618,6 +619,69 @@ class TablesBoardVueTest extends TestCase
         $this->assertSame('available', $fresh->status);
         $this->assertSame('closed', $ghost->fresh()->status,
             'the ghost-session sweep must survive the JSON path');
+        $this->assertNull($fresh->needs_cleaning_since,
+            'explicitly making the table ready also acknowledges cleaning');
+    }
+
+    public function test_available_table_with_a_stale_session_can_be_released_from_quick_edit(): void
+    {
+        $table = $this->table('71');
+        $table->update(['status' => 'available']);
+        $ghost = $this->openSession($table, null, now()->subDay());
+
+        $this->actingAs($this->admin)
+            ->patchJson(route('admin.tables.quick-update', $table), [
+                'number' => '71',
+                'capacity' => 4,
+                'status' => 'available',
+                'active' => true,
+                'release_active_session' => true,
+            ])
+            ->assertOk()
+            ->assertJson([
+                'ok' => true,
+                'released' => true,
+            ]);
+
+        $this->assertSame('closed', $ghost->fresh()->status);
+        $this->assertSame('available', $table->fresh()->status);
+        $this->assertNull($table->fresh()->needs_cleaning_since);
+    }
+
+    public function test_direct_stale_release_closes_the_session_and_marks_the_table_ready(): void
+    {
+        $table = $this->table('73');
+        $session = $this->openSession($table, null, now()->subDay());
+
+        $this->actingAs($this->admin)
+            ->post(route('admin.tables.close-session', $table), ['mark_ready' => true])
+            ->assertSessionHas('success');
+
+        $this->assertSame('closed', $session->fresh()->status);
+        $this->assertSame('available', $table->fresh()->status);
+        $this->assertNull($table->fresh()->needs_cleaning_since);
+    }
+
+    public function test_quick_edit_cannot_release_a_recent_live_session(): void
+    {
+        $table = $this->table('72');
+        $session = $this->openSession($table, null, now()->subMinutes(5));
+
+        $this->actingAs($this->admin)
+            ->patchJson(route('admin.tables.quick-update', $table), [
+                'number' => '72',
+                'name' => 'لا يجب حفظه',
+                'capacity' => 4,
+                'status' => 'available',
+                'active' => true,
+                'release_active_session' => true,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['release_active_session']);
+
+        $this->assertSame('active', $session->fresh()->status);
+        $this->assertNull($table->fresh()->name,
+            'the metadata edit and release intent must roll back together');
     }
 
     public function test_quick_update_rejects_a_duplicate_number(): void
