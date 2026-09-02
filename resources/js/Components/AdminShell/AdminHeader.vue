@@ -227,10 +227,9 @@ const logout = () => formPost(props.shell.urls.logout);
 }
 .profile-dd .profile-menu {
     position: absolute;
-    inset-block-start: calc(100% + 10px) !important;
+    top: calc(100% + 10px) !important;
     inset-inline-end: 0 !important;
     inset-inline-start: auto !important;
-    top: auto !important;
     right: auto;
     left: auto;
     z-index: 1200;
@@ -373,7 +372,7 @@ const logout = () => formPost(props.shell.urls.logout);
 }
 @media (max-width: 575.98px) {
     .profile-dd .profile-menu {
-        inset-block-start: calc(100% + 8px) !important;
+        top: calc(100% + 8px) !important;
     }
 }
 @media (prefers-reduced-motion: reduce) {

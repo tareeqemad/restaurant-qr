@@ -10743,3 +10743,15 @@ html[dir="ltr"] select.tb-transfer-select:not([multiple]):not([size]) {
     border-color: #c93645 !important;
     box-shadow: 0 0 0 3px rgba(201, 54, 69, .12) !important;
 }
+
+/* Deployment-safe fallback: this file is shipped by Git even when a shared
+   host cannot rebuild Vite. Keep the account menu below its header trigger. */
+html body .app-header .profile-dd .profile-menu {
+    top: calc(100% + 10px) !important;
+}
+
+@media screen and (max-width: 575.98px) {
+    html body .app-header .profile-dd .profile-menu {
+        top: calc(100% + 8px) !important;
+    }
+}
