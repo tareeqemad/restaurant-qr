@@ -50,10 +50,71 @@ SQL;
         foreach (preg_split('/;\s*(?:\r?\n|$)/', $sql, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $statement) {
             DB::unprepared(trim($statement));
         }
+
+        $this->ensureRefundForeignKey();
     }
 
     public function down(): void
     {
+        $this->dropRefundForeignKeys();
         Schema::dropIfExists('credit_notes');
+    }
+
+    /**
+     * Legacy/production databases may have `refunds` in an older migration
+     * batch. Remove its outbound FK before this table is rolled back.
+     */
+    private function dropRefundForeignKeys(): void
+    {
+        if (! $this->refundLinkExists()) {
+            return;
+        }
+
+        DB::table('refunds')->whereNotNull('credit_note_id')->update(['credit_note_id' => null]);
+
+        foreach ($this->refundForeignKeyNames() as $constraint) {
+            $quoted = str_replace('`', '``', $constraint);
+            DB::statement("ALTER TABLE `refunds` DROP FOREIGN KEY `{$quoted}`");
+        }
+    }
+
+    /** Restore the FK when this migration is re-applied after a rollback. */
+    private function ensureRefundForeignKey(): void
+    {
+        if (! $this->refundLinkExists() || $this->refundForeignKeyNames() !== []) {
+            return;
+        }
+
+        DB::statement(
+            'ALTER TABLE `refunds` ADD CONSTRAINT `refunds_credit_note_id_foreign` '
+            .'FOREIGN KEY (`credit_note_id`) REFERENCES `credit_notes` (`id`) ON DELETE SET NULL'
+        );
+    }
+
+    private function refundLinkExists(): bool
+    {
+        return DB::connection()->getDriverName() === 'mysql'
+            && Schema::hasTable('refunds')
+            && Schema::hasColumn('refunds', 'credit_note_id');
+    }
+
+    /** @return list<string> */
+    private function refundForeignKeyNames(): array
+    {
+        if (! $this->refundLinkExists()) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map(
+            static fn (object $row): string => (string) ($row->CONSTRAINT_NAME ?? ''),
+            DB::select(<<<'SQL'
+SELECT `CONSTRAINT_NAME`
+FROM `information_schema`.`KEY_COLUMN_USAGE`
+WHERE `TABLE_SCHEMA` = DATABASE()
+  AND `TABLE_NAME` = 'refunds'
+  AND `COLUMN_NAME` = 'credit_note_id'
+  AND `REFERENCED_TABLE_NAME` = 'credit_notes'
+SQL)
+        )));
     }
 };

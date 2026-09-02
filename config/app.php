@@ -42,6 +42,13 @@ return [
     'debug' => (bool) env('APP_DEBUG', false),
 
     /*
+    | Whole-database reset commands are blocked in production by default.
+    | This escape hatch is only for disposable installations after an external
+    | backup; normal deployments must use `php artisan app:deploy`.
+    */
+    'allow_destructive_database_commands' => (bool) env('ALLOW_DESTRUCTIVE_DATABASE_COMMANDS', false),
+
+    /*
     |--------------------------------------------------------------------------
     | Application URL
     |--------------------------------------------------------------------------

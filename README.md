@@ -211,7 +211,7 @@ php artisan app:health
 
 بعد النشر نفّذ تحديثًا إجباريًا للمتصفح (`Ctrl + F5`) إذا بقيت ملفات قديمة في الكاش.
 
-> **تحذير إنتاجي:** لا تستخدم `php artisan migrate:refresh` أو `migrate:fresh` على قاعدة مطعم حقيقية؛ هذه الأوامر تهدم الجداول وقد تمسح المبيعات والقيود والمخزون. التحديث الصحيح هو `php artisan app:deploy` أو `php artisan migrate --force` ضمن خطة نسخ احتياطي.
+> **تحذير إنتاجي:** لا تستخدم `php artisan migrate:refresh` أو `migrate:fresh` على قاعدة مطعم حقيقية؛ هذه الأوامر تهدم الجداول وقد تمسح المبيعات والقيود والمخزون. يحظر النظام أوامر إعادة ضبط القاعدة في `production` حتى بعد تأكيد Laravel. التحديث الصحيح هو `php artisan app:deploy` أو `php artisan migrate --force` ضمن خطة نسخ احتياطي. مفتاح `ALLOW_DESTRUCTIVE_DATABASE_COMMANDS=true` مخصص فقط لنسخة مؤقتة قابلة للمسح بعد أخذ نسخة احتياطية خارجية، ويجب إعادته إلى `false` فورًا.
 
 ### ترقية قاعدة محاسبية قديمة
 

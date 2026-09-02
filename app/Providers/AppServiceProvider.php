@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Listeners\PreventDestructiveDatabaseCommands;
 use App\Models\Account;
 use App\Models\ActivityLog;
 use App\Models\Attendance;
@@ -56,6 +57,7 @@ use App\Policies\UserPolicy;
 use App\Support\MarketProfile;
 use App\Support\RuntimeConfig;
 use App\Sync\SyncUuid;
+use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Middleware\TrustProxies;
 use Illuminate\Pagination\Paginator;
@@ -74,6 +76,8 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        Event::listen(CommandStarting::class, PreventDestructiveDatabaseCommands::class);
+
         RuntimeConfig::apply();
 
         date_default_timezone_set(MarketProfile::timezone());
