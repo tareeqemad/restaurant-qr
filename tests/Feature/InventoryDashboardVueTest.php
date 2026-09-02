@@ -154,9 +154,14 @@ class InventoryDashboardVueTest extends TestCase
 
         $this->assertStringContainsString('@media(min-width:1181px){.pulse-grid{gap:0;', $dashboard);
         $this->assertStringContainsString('.workflow-card__body small{display:none}', $dashboard);
-        $this->assertStringContainsString('grid-template-columns:minmax(480px,1fr) auto', $workspace);
+        $this->assertStringContainsString("import { Link } from '@inertiajs/vue3';", $workspace);
+        $this->assertStringContainsString('watch(activeGroup, () => {', $workspace);
+        $this->assertStringContainsString('<Link v-for="item in shown.items"', $workspace);
+        $this->assertStringContainsString(':aria-selected="shown.id === group.id"', $workspace);
+        $this->assertStringNotContainsString('current: activeGroup === group.id', $workspace);
         $this->assertStringContainsString('html body .app-content .inv-workspace', $fallback);
         $this->assertStringContainsString('html body .app-content .inventory-board .pulse-grid', $fallback);
+        $this->assertStringContainsString('button.current:not(.active)', $fallback);
     }
 
     /**

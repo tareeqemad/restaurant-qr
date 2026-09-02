@@ -10801,12 +10801,24 @@ html body .app-content .inventory-board .workflow-card {
     border-radius: 13px;
 }
 
+/* A browsed inventory group is the only visually selected group. Older Vite
+   bundles also mark the route's group as `current`; neutralize that duplicate
+   state so operators never see two active sections at once. */
+html body .app-content .inv-workspace__groups button.current:not(.active) {
+    color: #65736a;
+    background: transparent;
+    box-shadow: none;
+}
+
+html body .app-content .inv-workspace__groups button.active {
+    color: #176b39;
+    background: #eef7f1;
+    box-shadow: inset 0 -2px #17713c;
+}
+
 @media screen and (min-width: 1181px) {
     html body .app-content .inv-workspace {
-        display: grid;
-        grid-template-columns: minmax(480px, 1fr) auto;
-        align-items: center;
-        gap: 6px;
+        display: block;
         margin-block-end: 10px;
         padding: 6px;
         border-radius: 15px;
@@ -10818,9 +10830,18 @@ html body .app-content .inventory-board .workflow-card {
     }
 
     html body .app-content .inv-workspace__links {
-        max-width: min(46vw, 640px);
-        padding: 0;
-        border-top: 0;
+        align-items: center;
+        max-width: none;
+        margin-top: 4px;
+        padding: 6px 4px 0;
+        border-top: 1px solid #edf1ee;
+        border-inline-start: 0;
+        background: #fbfdfc;
+    }
+
+    html body .app-content .inv-workspace__links a {
+        min-height: 34px;
+        padding-block: 6px;
     }
 
     html body .app-content .inventory-board .pulse-grid {
