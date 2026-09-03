@@ -10866,3 +10866,102 @@ html body .app-content .inv-workspace__groups button.active {
         display: none;
     }
 }
+
+/*
+ * Waiter customer sheet compatibility layer.
+ * Older built bundles used Dashtic's generic `.toggle` class. The theme adds
+ * ON/OFF pseudo-elements and fixed dimensions to that class, so the Arabic
+ * customer option collapsed on production. Keep this targeted fallback until
+ * every host has rebuilt the Vite bundle.
+ */
+html body .sheet-backdrop:has(> .sheet label.toggle) {
+    align-items: center !important;
+    padding: 20px !important;
+    background: rgba(15, 23, 42, .55) !important;
+    backdrop-filter: blur(3px);
+}
+
+html body .sheet-backdrop:has(> .sheet label.toggle) > .sheet {
+    width: min(520px, 100%) !important;
+    max-width: 520px !important;
+    max-height: calc(100dvh - 40px) !important;
+    border-radius: 22px !important;
+    box-shadow: 0 28px 70px -24px rgba(15, 23, 42, .58) !important;
+}
+
+html body .sheet-backdrop .field input[type="tel"] {
+    direction: ltr !important;
+    text-align: left !important;
+    unicode-bidi: plaintext;
+    font-variant-numeric: tabular-nums;
+}
+
+html body .sheet-backdrop label.toggle {
+    position: relative !important;
+    inset: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 62px !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 11px !important;
+    margin: 0 !important;
+    padding: 11px 13px !important;
+    overflow: visible !important;
+    border: 1px solid #dce6e0 !important;
+    border-radius: 14px !important;
+    color: #283a31 !important;
+    background: #f8faf9 !important;
+    box-shadow: none !important;
+    cursor: pointer;
+}
+
+html body .sheet-backdrop label.toggle > input {
+    position: static !important;
+    inset: auto !important;
+    width: 20px !important;
+    height: 20px !important;
+    flex: 0 0 20px !important;
+    margin: 0 !important;
+    opacity: 1 !important;
+    accent-color: #197252;
+}
+
+html body .sheet-backdrop label.toggle > span {
+    position: static !important;
+    inset: auto !important;
+    width: auto !important;
+    height: auto !important;
+    display: inline !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    color: #283a31 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    font-size: .82rem !important;
+    font-weight: 800 !important;
+    line-height: 1.5 !important;
+}
+
+html body .sheet-backdrop label.toggle > span::before,
+html body .sheet-backdrop label.toggle > span::after {
+    content: none !important;
+    display: none !important;
+}
+
+@media screen and (max-width: 575.98px) {
+    html body .sheet-backdrop:has(> .sheet label.toggle) {
+        align-items: flex-end !important;
+        padding: 0 !important;
+        backdrop-filter: none;
+    }
+
+    html body .sheet-backdrop:has(> .sheet label.toggle) > .sheet {
+        width: 100% !important;
+        max-width: none !important;
+        max-height: 92dvh !important;
+        border-radius: 20px 20px 0 0 !important;
+    }
+}
