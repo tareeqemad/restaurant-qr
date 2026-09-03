@@ -3,7 +3,7 @@ import { Head, Link, router } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { formatMoney } from '../../Composables/useMoney';
 // Phase-3 wiring (Claude): the page's only network surface — see waiterPosApi.js.
-import { linkCustomer, previewStock, recordTransfer, reviewOrder as reviewPendingOrder, submitOrder, REPLAYED_TOKEN_MESSAGE } from '../../waiterPosApi';
+import { cancelSessionItem, linkCustomer, previewStock, recordTransfer, reviewOrder as reviewPendingOrder, submitOrder, REPLAYED_TOKEN_MESSAGE } from '../../waiterPosApi';
 import { useWaiterCartStore } from '../../Stores/waiterCart';
 import CartSheet from '../../Components/WaiterPos/CartSheet.vue';
 import CategoryChips from '../../Components/WaiterPos/CategoryChips.vue';
@@ -14,6 +14,7 @@ import MenuGrid from '../../Components/WaiterPos/MenuGrid.vue';
 import QuickStrips from '../../Components/WaiterPos/QuickStrips.vue';
 import SearchBar from '../../Components/WaiterPos/SearchBar.vue';
 import SessionBar from '../../Components/WaiterPos/SessionBar.vue';
+import SessionDetailsSheet from '../../Components/WaiterPos/SessionDetailsSheet.vue';
 import StaffSheet from '../../Components/WaiterPos/StaffSheet.vue';
 import TransferSheet from '../../Components/WaiterPos/TransferSheet.vue';
 import NotificationsBell from '../../Components/AdminShell/NotificationsBell.vue';
@@ -58,6 +59,8 @@ const staffSheetOpen = ref(false);
 const staffEmployeeId = ref(null);
 const customerSheetOpen = ref(false);
 const customerBusy = ref(false);
+const sessionDetailsOpen = ref(false);
+const cancellingSessionItemId = ref(null);
 // Live copy of the session's customer — starts from props, updated by the
 // sheet's link/detach responses without a page reload.
 const linkedCustomer = ref(props.session.customer
@@ -300,6 +303,39 @@ async function handleCustomerLink(payload) {
     }
 }
 
+async function handleSessionItemCancel(payload) {
+    if (cancellingSessionItemId.value || !payload?.itemId || !payload?.reason?.trim()) return;
+
+    cancellingSessionItemId.value = Number(payload.itemId);
+    let reloadStarted = false;
+    try {
+        const result = await cancelSessionItem(props.table.id, payload.itemId, {
+            reason: payload.reason.trim(),
+        });
+        if (!result.ok) {
+            notify('error', result.data.message || 'تعذّر إلغاء الصنف.');
+            return;
+        }
+
+        notify('success', result.data.message || 'تم إلغاء الصنف وتحديث الحساب.');
+        reloadStarted = true;
+        router.reload({
+            only: ['carryOver', 'sessionOrders'],
+            preserveScroll: true,
+            onSuccess: () => {
+                if (!props.carryOver.has_prior) sessionDetailsOpen.value = false;
+            },
+            onFinish: () => {
+                cancellingSessionItemId.value = null;
+            },
+        });
+    } catch {
+        notify('warning', 'ما في اتصال — لم يُلغَ الصنف. حاول مرة أخرى عند رجوع النت.');
+    } finally {
+        if (!reloadStarted) cancellingSessionItemId.value = null;
+    }
+}
+
 async function handleTransferRecord(payload) {
     transferBusy.value = true;
     try {
@@ -449,6 +485,10 @@ async function flushCoverChanges() {
                 <strong>جلسة الطاولة مفتوحة · {{ carryOver.orders_count }} {{ carryOver.orders_count === 1 ? 'جولة' : 'جولات' }}</strong>
                 <span>الجولة الجديدة ستنضم لنفس الفاتورة · المتبقي {{ carryOverAmount }}</span>
             </div>
+            <button type="button" class="carry-over__details" @click="sessionDetailsOpen = true">
+                <i class="bi bi-receipt"></i>
+                عرض تفاصيل الحساب
+            </button>
         </div>
 
         <SessionBar
@@ -459,6 +499,7 @@ async function flushCoverChanges() {
             :currency="currency"
             :transfer-visible="transfer.enabled && transfer.eligible"
             @change-covers="changeCovers"
+            @open-session="sessionDetailsOpen = true"
             @open-customer="customerSheetOpen = true"
             @open-transfer="transferSheetOpen = true"
         />
@@ -543,6 +584,16 @@ async function flushCoverChanges() {
             @detach="handleCustomerLink({ phone: '', detach: true })"
         />
 
+        <SessionDetailsSheet
+            v-if="sessionDetailsOpen"
+            :orders="sessionOrders"
+            :summary="carryOver"
+            :currency="currency"
+            :cancelling-item-id="cancellingSessionItemId"
+            @close="sessionDetailsOpen = false"
+            @cancel-item="handleSessionItemCancel"
+        />
+
         <TransferSheet
             v-if="transferSheetOpen"
             :details="transfer.details"
@@ -602,6 +653,25 @@ async function flushCoverChanges() {
 .page-notice > span, .carry-over > div { flex: 1; min-width: 0; }
 .carry-over strong, .carry-over span { display: block; }
 .carry-over span { margin-top: .1rem; font-size: .78rem; }
+.carry-over__details {
+    min-height: 40px;
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    gap: .38rem;
+    padding: .45rem .75rem;
+    border: 1px solid #eab308;
+    border-radius: 10px;
+    color: #854d0e;
+    background: #fff;
+    font-family: inherit;
+    font-size: .72rem;
+    font-weight: 850;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.carry-over__details:hover { border-color: #ca8a04; background: #fefce8; }
 .page-notice.is-success { border-color: #a7f3d0; color: #047857; background: #ecfdf5; }
 .page-notice.is-error { border-color: #fecaca; color: #b91c1c; background: #fef2f2; }
 .page-notice button {
@@ -633,6 +703,8 @@ async function flushCoverChanges() {
     .connection-state { width: 44px; padding: 0; justify-content: center; overflow: hidden; color: transparent !important; }
     .connection-state i { color: #047857; font-size: 1rem; }
     .connection-state.is-offline i { color: #b45309; }
+    .carry-over { align-items: flex-start; flex-wrap: wrap; }
+    .carry-over__details { width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }

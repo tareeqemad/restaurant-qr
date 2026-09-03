@@ -33,6 +33,8 @@ Route::middleware(['auth', 'setup.complete', 'admin', 'branch'])->group(function
         ->name('waiter-orders.review');
     Route::post('waiter-orders/table/{table}/covers', [Admin\WaiterPosVueController::class, 'covers'])
         ->name('waiter-orders.covers');
+    Route::post('waiter-orders/table/{table}/items/{item}/cancel', [Admin\WaiterPosVueController::class, 'cancelItem'])
+        ->name('waiter-orders.cancel-item');
     Route::post('waiter-orders/table/{table}/customer', [Admin\WaiterPosVueController::class, 'customer'])
         ->name('waiter-orders.customer');
     Route::post('waiter-orders/table/{table}/transfer', [Admin\WaiterPosVueController::class, 'transfer'])

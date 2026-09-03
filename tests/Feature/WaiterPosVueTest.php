@@ -204,6 +204,37 @@ class WaiterPosVueTest extends TestCase
         $this->assertSame('occupied', $table->fresh()->status);
     }
 
+    public function test_open_session_exposes_the_exact_items_behind_the_waiter_balance(): void
+    {
+        $this->actingAs($this->waiter);
+        $table = $this->table('balance-details');
+        $this->get(route('admin.waiter-orders.create', $table))->assertOk();
+        $session = $table->fresh()->activeSession;
+
+        app(OrderService::class)->createFromCart(
+            $session,
+            [$this->line($this->burger)],
+            $this->waiter->id,
+        );
+
+        $this->get(route('admin.waiter-orders.create', $table))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('carryOver.has_prior', true)
+                ->where('carryOver.orders_count', 1)
+                ->where('carryOver.total', 10)
+                ->where('carryOver.settled', 0)
+                ->where('carryOver.outstanding', 10)
+                ->has('sessionOrders', 1)
+                ->where('sessionOrders.0.round', 1)
+                ->where('sessionOrders.0.total', 10)
+                ->has('sessionOrders.0.items', 1)
+                ->where('sessionOrders.0.items.0.name', 'Burger')
+                ->where('sessionOrders.0.items.0.quantity', 1)
+                ->where('sessionOrders.0.items.0.subtotal', 10)
+                ->has('sessionOrders.0.items.0.statusLabel'));
+    }
+
     public function test_full_screen_waiter_pos_keeps_live_alerts_on_the_tablet(): void
     {
         $source = file_get_contents(resource_path('js/Pages/WaiterPos/Show.vue'));
@@ -293,6 +324,48 @@ class WaiterPosVueTest extends TestCase
         $session->update(['status' => 'closed']);
         $this->postJson(route('admin.waiter-orders.covers', $table), ['delta' => 1])
             ->assertStatus(422)->assertJsonPath('ok', false);
+    }
+
+    public function test_waiter_can_cancel_an_unserved_session_item_with_an_audited_reason(): void
+    {
+        $this->actingAs($this->waiter);
+        $table = $this->table('cancel-line');
+        $this->get(route('admin.waiter-orders.create', $table))->assertOk();
+        $session = $table->fresh()->activeSession;
+        $order = app(OrderService::class)->createFromCart(
+            $session,
+            [
+                $this->line($this->burger),
+                $this->line($this->shawarma),
+            ],
+            $this->waiter->id,
+        );
+        $item = $order->items()->where('menu_item_id', $this->burger->id)->firstOrFail();
+
+        $otherTable = $this->table('wrong-table');
+        $this->get(route('admin.waiter-orders.create', $otherTable))->assertOk();
+        $this->postJson(route('admin.waiter-orders.cancel-item', [$otherTable, $item]), [
+            'reason' => 'الزبون غيّر رأيه',
+        ])->assertStatus(409);
+
+        $this->postJson(route('admin.waiter-orders.cancel-item', [$table, $item]), [
+            'reason' => 'الزبون غيّر رأيه',
+        ])->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('disposition', 'return');
+
+        $this->assertSame('cancelled', $item->fresh()->status);
+        $this->assertSame($this->waiter->id, (int) $item->fresh()->cancelled_by_user_id);
+        $this->assertSame('الزبون غيّر رأيه', $item->fresh()->cancelled_reason);
+        $this->assertSame(8.0, (float) $order->fresh()->total);
+
+        $this->get(route('admin.waiter-orders.create', $table))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('carryOver.outstanding', 8)
+                ->where('sessionOrders.0.total', 8)
+                ->where('sessionOrders.0.items.0.status', 'cancelled')
+                ->where('sessionOrders.0.items.0.cancelledReason', 'الزبون غيّر رأيه')
+                ->where('sessionOrders.0.items.0.canCancel', false));
     }
 
     // ─── preview-stock ────────────────────────────────────────────────────

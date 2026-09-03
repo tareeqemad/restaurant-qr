@@ -62,6 +62,11 @@ export function linkCustomer(tableId, payload) {
     return postJson(`/admin/waiter-orders/table/${tableId}/customer`, payload);
 }
 
+/** إلغاء صنف موثّق — { reason } → { ok, disposition, message }. */
+export function cancelSessionItem(tableId, itemId, payload) {
+    return postJson(`/admin/waiter-orders/table/${tableId}/items/${itemId}/cancel`, payload);
+}
+
 /** إعلان حوالة — { amount, sender_name, customer_phone?, notes? } → { ok }. */
 export function recordTransfer(tableId, payload) {
     return postJson(`/admin/waiter-orders/table/${tableId}/transfer`, payload);

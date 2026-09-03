@@ -15,6 +15,7 @@ use App\Models\MenuItem;
 use App\Models\MenuPromotion;
 use App\Models\Order;
 use App\Models\OrderChangeRequest;
+use App\Models\OrderItem;
 use App\Models\Setting;
 use App\Models\Table;
 use App\Models\TableSession;
@@ -62,11 +63,14 @@ class WaiterPosVueController extends Controller
             $orders = Order::query()
                 ->where('table_session_id', $session->id)
                 ->where('status', '!=', OrderStatus::Cancelled->value)
+                ->with(['items.modifiers', 'items.exclusions'])
                 ->latest()
                 ->get();
 
             $invoice = $session->invoice()->where('status', '!=', 'cancelled')->latest()->first();
             $priorTotal = (float) $orders->sum('total');
+            $sessionTotal = $invoice ? (float) $invoice->total : $priorTotal;
+            $sessionOutstanding = $invoice ? (float) $invoice->balance : $priorTotal;
             $reviewOrder = null;
             $reviewOrderId = (int) $request->query('review_order', 0);
 
@@ -100,15 +104,62 @@ class WaiterPosVueController extends Controller
                 'carryOver' => [
                     'has_prior' => $orders->isNotEmpty(),
                     'orders_count' => $orders->count(),
-                    'outstanding' => $invoice ? (float) $invoice->balance : $priorTotal,
+                    'total' => $sessionTotal,
+                    'settled' => max(0, round($sessionTotal - $sessionOutstanding, 2)),
+                    'outstanding' => $sessionOutstanding,
                 ],
-                'sessionOrders' => $orders->map(fn (Order $o) => [
-                    'id' => $o->id,
-                    'number' => $o->number,
-                    'status' => $o->status,
-                    'statusLabel' => $o->statusLabel(),
-                    'total' => (float) $o->total,
-                ])->values(),
+                'sessionOrders' => $orders->map(function (Order $order, int $index) use ($orders, $invoice) {
+                    $mayCancelItems = ! $invoice && auth()->user()?->can('cancel', $order);
+
+                    return [
+                        'id' => $order->id,
+                        'number' => $order->number,
+                        'round' => $orders->count() - $index,
+                        'status' => $order->status,
+                        'statusLabel' => $order->statusLabel(),
+                        'createdAt' => $order->created_at?->toISOString(),
+                        'createdTime' => $order->created_at?->format('H:i'),
+                        'subtotal' => (float) $order->subtotal,
+                        'discountTotal' => (float) $order->discount_total,
+                        'taxTotal' => (float) $order->tax_total,
+                        'serviceTotal' => (float) $order->service_total,
+                        'total' => (float) $order->total,
+                        'notes' => $order->customer_notes,
+                        'items' => $order->items
+                            ->sortBy('id')
+                            ->map(fn ($item) => [
+                                'id' => $item->id,
+                                'name' => (string) $item->name_snapshot,
+                                'quantity' => (float) $item->quantity,
+                                'unitPrice' => (float) $item->unit_price,
+                                'modifiersTotal' => (float) $item->modifiers_total,
+                                'subtotal' => (float) $item->subtotal,
+                                'status' => $item->status,
+                                'statusLabel' => $item->statusLabel(),
+                                'notes' => $item->notes,
+                                'cancelledReason' => $item->cancelled_reason,
+                                'canCancel' => $mayCancelItems && in_array($item->status, [
+                                    OrderItemStatus::Pending->value,
+                                    OrderItemStatus::Approved->value,
+                                    OrderItemStatus::Preparing->value,
+                                    OrderItemStatus::Ready->value,
+                                ], true),
+                                'cancelMode' => in_array($item->status, [
+                                    OrderItemStatus::Preparing->value,
+                                    OrderItemStatus::Ready->value,
+                                ], true) ? 'waste' : 'return',
+                                'modifiers' => $item->modifiers
+                                    ->pluck('name_snapshot')
+                                    ->filter()
+                                    ->values(),
+                                'exclusions' => $item->exclusions
+                                    ->pluck('name_snapshot')
+                                    ->filter()
+                                    ->values(),
+                            ])
+                            ->values(),
+                    ];
+                })->values(),
                 'categories' => $menu['categories'],
                 'menu' => $menu['items'],
                 'quickPicks' => $this->quickPicks(),
@@ -276,6 +327,70 @@ class WaiterPosVueController extends Controller
 
             return response()->json(['ok' => true, 'covers' => $covers]);
         });
+    }
+
+    /**
+     * Cancel one visible line from the waiter's current table session.
+     *
+     * The line is never deleted: OrderService keeps the actor and reason,
+     * recalculates the bill, broadcasts the change, and either returns
+     * untouched ingredients or records prepared food as waste.
+     */
+    public function cancelItem(Request $request, Table $table, OrderItem $item, OrderService $orders)
+    {
+        $item->loadMissing('order');
+        $this->authorize('cancel', $item->order);
+
+        $data = $request->validate([
+            'reason' => ['required', 'string', 'min:3', 'max:500'],
+        ]);
+
+        $session = $table->activeSession;
+        if (! $session
+            || $session->status !== 'active'
+            || (int) $item->order?->table_session_id !== (int) $session->id
+            || (int) $item->order?->table_id !== (int) $table->id) {
+            return $this->refuse('تغيّرت جلسة الطاولة. حدّث الشاشة وتحقق من الطلب الحالي.', 409);
+        }
+
+        if (! in_array($item->status, [
+            OrderItemStatus::Pending->value,
+            OrderItemStatus::Approved->value,
+            OrderItemStatus::Preparing->value,
+            OrderItemStatus::Ready->value,
+        ], true)) {
+            return $this->refuse(
+                $item->status === OrderItemStatus::Served->value
+                    ? 'تم تسليم هذا الصنف. أي تصحيح مالي بعد التسليم يتم من الكاشير حتى يبقى الحساب موثقاً.'
+                    : 'هذا الصنف ملغي أو لم يعد قابلاً للإلغاء.'
+            );
+        }
+
+        $disposition = in_array($item->status, [
+            OrderItemStatus::Preparing->value,
+            OrderItemStatus::Ready->value,
+        ], true) ? 'waste' : 'return';
+
+        try {
+            $orders->cancelItem(
+                item: $item,
+                userId: auth()->id(),
+                reason: trim($data['reason']),
+                disposition: $disposition,
+                wasteReason: $disposition === 'waste' ? trim($data['reason']) : null,
+            );
+        } catch (\Throwable $e) {
+            return $this->refuse($e->getMessage());
+        }
+
+        return response()->json([
+            'ok' => true,
+            'item_id' => $item->id,
+            'disposition' => $disposition,
+            'message' => $disposition === 'waste'
+                ? 'تم إلغاء الصنف واحتساب مكوناته كهدر لأنه دخل التحضير.'
+                : 'تم إلغاء الصنف وتحديث حساب الطاولة.',
+        ]);
     }
 
     /** §7 — { cart: CartLine[] } → { issues: [{ingredient, available}] }. */

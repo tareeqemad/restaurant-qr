@@ -16,6 +16,7 @@ const props = defineProps({
 
 const emit = defineEmits({
     'change-covers': (delta) => Number.isInteger(delta) && Math.abs(delta) === 1,
+    'open-session': () => true,
     'open-customer': () => true,
     'open-transfer': () => true,
 });
@@ -45,13 +46,15 @@ const latestOrder = computed(() => props.orders[0] ?? null);
             </button>
         </span>
 
-        <span v-if="orders.length" class="order-pill session-summary"
-              :class="`is-${latestOrder?.status ?? 'pending'}`"
-              title="كل الجولات ضمن جلسة وفاتورة واحدة">
+        <button v-if="orders.length" type="button" class="order-pill session-summary"
+                :class="`is-${latestOrder?.status ?? 'pending'}`"
+                title="عرض أصناف ومبالغ كل الجولات"
+                @click="emit('open-session')">
             <i class="bi bi-layers-fill"></i>
             <b>جلسة مفتوحة · {{ orders.length }} {{ orders.length === 1 ? 'جولة' : 'جولات' }}</b>
             <small>آخرها: {{ latestOrder?.statusLabel }}</small>
-        </span>
+            <i class="bi bi-chevron-left session-summary__arrow"></i>
+        </button>
 
         <button type="button" class="customer-pill is-action" @click="emit('open-customer')"
                 :title="customer ? 'إدارة زبون الطاولة' : 'ربط زبون بالطاولة'">
@@ -136,11 +139,14 @@ const latestOrder = computed(() => props.orders[0] ?? null);
     border: 1px solid transparent;
     color: #475569;
     background: #f1f5f9;
+    font-family: inherit;
     text-decoration: none;
 }
 .order-pill b { font-variant-numeric: tabular-nums; }
-.session-summary { gap: .4rem; }
+.session-summary { gap: .4rem; cursor: pointer; }
+.session-summary:hover { border-color: currentColor; }
 .session-summary small { padding-inline-start: .4rem; border-inline-start: 1px solid currentColor; opacity: .75; }
+.session-summary__arrow { margin-inline-start: .1rem; font-size: .7rem; }
 .order-pill.is-pending { color: #b45309; background: #fef3c7; }
 .order-pill.is-approved,
 .order-pill.is-preparing { color: #1d4ed8; background: #dbeafe; }
