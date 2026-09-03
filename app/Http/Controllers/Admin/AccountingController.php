@@ -58,11 +58,7 @@ class AccountingController extends Controller
         $canUpdate = auth()->user()->hasPermission('chart_of_accounts.update');
         $today = now()->toDateString();
         $eventLabels = $this->eventLabels();
-        $currentPeriod = AccountingPeriod::query()
-            ->whereDate('starts_on', '<=', $today)
-            ->whereDate('ends_on', '>=', $today)
-            ->orderByDesc('starts_on')
-            ->first();
+        $currentPeriod = $this->periodForDate($today);
 
         $latestEntries = JournalEntry::query()
             ->with(['lines:id,journal_entry_id,debit,credit'])
@@ -86,6 +82,7 @@ class AccountingController extends Controller
         $nextSchedule = TaxConfiguration::nextSchedule();
         $baseCurrencyCode = $this->accountingBaseCurrencyCode();
         $baseCurrency = Currency::query()->where('code', $baseCurrencyCode)->first();
+        $attention = $this->accountingAttention($today, $currentPeriod);
 
         return AdminShell::render('Admin/Accounting/Index', [
             'can' => [
@@ -96,6 +93,7 @@ class AccountingController extends Controller
                 'code' => $baseCurrencyCode,
                 'symbol' => $baseCurrency?->symbol ?: $baseCurrencyCode,
             ],
+            'today' => $today,
             'health' => [
                 'currentPeriod' => $currentPeriod ? [
                     'id' => $currentPeriod->id,
@@ -109,6 +107,7 @@ class AccountingController extends Controller
                 'supplierDebt' => round((float) SupplierInvoice::query()->where('balance', '>', 0)->sum('balance'), 2),
                 'accounts' => Account::query()->where('is_active', true)->count(),
             ],
+            'attention' => $attention,
             'latestEntries' => $latestEntries,
             'tax' => [
                 'switchOn' => TaxConfiguration::switchIsOn(),
@@ -291,16 +290,19 @@ class AccountingController extends Controller
             ->values();
 
         $today = now()->toDateString();
+        $branchId = BranchContext::current();
         $currentYear = FiscalYear::query()
             ->whereDate('starts_on', '<=', $today)
             ->whereDate('ends_on', '>=', $today)
-            ->orderByDesc('starts_on')
+            ->where(function ($query) use ($branchId) {
+                $query->whereNull('branch_id');
+                if ($branchId) {
+                    $query->orWhere('branch_id', $branchId);
+                }
+            })
+            ->orderByRaw('branch_id is null')
             ->first();
-        $currentPeriod = AccountingPeriod::query()
-            ->whereDate('starts_on', '<=', $today)
-            ->whereDate('ends_on', '>=', $today)
-            ->orderByDesc('starts_on')
-            ->first();
+        $currentPeriod = $this->periodForDate($today);
         $journalEntries = JournalEntry::query()->count();
         $openingEntries = JournalEntry::query()
             ->whereIn('event_type', ['opening_balance', 'customer_opening_debt', 'supplier_opening_debt', 'customer_advance_opening'])
@@ -3437,6 +3439,146 @@ class AccountingController extends Controller
             })
             ->orderByRaw('branch_id is null')
             ->first();
+    }
+
+    /**
+     * A short exception queue for the accounting home. Accountants should not
+     * have to open five reports just to discover what prevents a clean close.
+     */
+    private function accountingAttention(string $today, ?AccountingPeriod $currentPeriod): array
+    {
+        $branchId = BranchContext::current();
+        $items = collect();
+        $urls = $this->accountingWorkspaceUrls();
+
+        if (! $currentPeriod) {
+            $items->push([
+                'key' => 'period_missing',
+                'severity' => 'critical',
+                'title' => 'لا توجد فترة مالية تغطي اليوم',
+                'detail' => 'أنشئ السنة والفترة قبل اعتماد أي ترحيل جديد.',
+                'icon' => 'bi-calendar-x',
+                'countLabel' => null,
+                'amount' => null,
+                'actionLabel' => 'إعداد الفترات',
+                'url' => $urls['fiscalYears'] ?? $urls['periods'] ?? null,
+            ]);
+        } elseif ($currentPeriod->isClosed()) {
+            $items->push([
+                'key' => 'period_closed',
+                'severity' => 'critical',
+                'title' => 'فترة اليوم مقفلة',
+                'detail' => "{$currentPeriod->name} تمنع الترحيل بتاريخ اليوم؛ راجع الإقفال قبل التشغيل.",
+                'icon' => 'bi-lock-fill',
+                'countLabel' => null,
+                'amount' => null,
+                'actionLabel' => 'مراجعة الفترة',
+                'url' => $urls['periods'] ?? null,
+            ]);
+        }
+
+        $missingMappings = $this->missingPostingRoleCount();
+        if ($missingMappings > 0) {
+            $items->push([
+                'key' => 'posting_mappings',
+                'severity' => 'critical',
+                'title' => 'ربط الترحيل غير مكتمل',
+                'detail' => 'بعض العمليات لا تملك حساباً نظامياً صالحاً لاستقبال القيد.',
+                'icon' => 'bi-diagram-3-fill',
+                'countLabel' => $missingMappings.' ربط',
+                'amount' => null,
+                'actionLabel' => 'إكمال الربط',
+                'url' => $urls['mappings'] ?? $urls['accounts'] ?? null,
+            ]);
+        }
+
+        $varianceQuery = $this->scopeToCurrentBranch(CashReconciliation::query())
+            ->where('status', 'variance');
+        $varianceCount = (clone $varianceQuery)->count();
+        if ($varianceCount > 0) {
+            $items->push([
+                'key' => 'reconciliation_variances',
+                'severity' => 'critical',
+                'title' => 'فروقات صندوق أو بنك غير مسوّاة',
+                'detail' => 'افتح المطابقة وحدد سبب كل فرق أو أنشئ قيد التسوية الموثق.',
+                'icon' => 'bi-exclamation-diamond-fill',
+                'countLabel' => $varianceCount.' مطابقة',
+                'amount' => round((float) (clone $varianceQuery)->selectRaw('SUM(ABS(difference)) as total')->value('total'), 2),
+                'actionLabel' => 'معالجة الفروقات',
+                'url' => $urls['reconciliations'] ?? null,
+            ]);
+        }
+
+        $overdueReceivables = Invoice::query()
+            ->where('status', '!=', 'cancelled')
+            ->where('balance', '>', 0.01)
+            ->whereNotNull('due_date')
+            ->whereDate('due_date', '<', $today)
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId));
+        $overdueReceivablesCount = (clone $overdueReceivables)->count();
+        if ($overdueReceivablesCount > 0) {
+            $items->push([
+                'key' => 'overdue_receivables',
+                'severity' => 'warning',
+                'title' => 'ذمم زبائن تجاوزت موعدها',
+                'detail' => 'راجع أعمار الديون وحدد ما سيُحصّل أو يُسوّى أو يُشطب بصلاحية.',
+                'icon' => 'bi-person-exclamation',
+                'countLabel' => $overdueReceivablesCount.' فاتورة',
+                'amount' => round((float) (clone $overdueReceivables)->sum('balance'), 2),
+                'actionLabel' => 'فتح أعمار الذمم',
+                'url' => $urls['aging'],
+            ]);
+        }
+
+        $overduePayables = SupplierInvoice::query()
+            ->whereNotIn('status', ['paid', 'cancelled'])
+            ->where('balance', '>', 0.01)
+            ->whereNotNull('due_date')
+            ->whereDate('due_date', '<', $today)
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId));
+        $overduePayablesCount = (clone $overduePayables)->count();
+        if ($overduePayablesCount > 0) {
+            $items->push([
+                'key' => 'overdue_payables',
+                'severity' => 'warning',
+                'title' => 'مستحقات موردين متأخرة',
+                'detail' => 'راجع الفواتير المتأخرة ورتّب السداد من شاشة الذمم.',
+                'icon' => 'bi-truck-front-fill',
+                'countLabel' => $overduePayablesCount.' فاتورة',
+                'amount' => round((float) (clone $overduePayables)->sum('balance'), 2),
+                'actionLabel' => 'فتح أعمار الذمم',
+                'url' => $urls['aging'],
+            ]);
+        }
+
+        return $items->values()->all();
+    }
+
+    private function missingPostingRoleCount(): int
+    {
+        $definitions = collect(AccountingService::postingRoleDefinitions())
+            ->when(! TaxConfiguration::isEnabled(), fn (Collection $roles) => $roles->except(['output_vat']));
+        $mappings = AccountMapping::with('account')
+            ->where('context', AccountMapping::CONTEXT_POSTING_ROLE)
+            ->get()
+            ->keyBy('key');
+        $fallbacks = Account::query()
+            ->whereIn('code', $definitions->pluck('default')->filter()->all())
+            ->get()
+            ->keyBy('code');
+
+        return $definitions->filter(function (array $definition, string $key) use ($mappings, $fallbacks) {
+            $mapped = $mappings->get($key)?->account;
+            if ($mapped && $mapped->is_active && in_array($mapped->type, $definition['types'], true)) {
+                return false;
+            }
+
+            $fallback = $fallbacks->get($definition['default']);
+
+            return ! $fallback
+                || ! $fallback->is_active
+                || ! in_array($fallback->type, $definition['types'], true);
+        })->count();
     }
 
     private function assertPeriodInCurrentBranch(AccountingPeriod $period): void

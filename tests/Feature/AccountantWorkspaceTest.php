@@ -6,6 +6,7 @@ use App\Enums\UserRole;
 use App\Models\Account;
 use App\Models\AccountingPeriod;
 use App\Models\Branch;
+use App\Models\CashReconciliation;
 use App\Models\Currency;
 use App\Models\FiscalYear;
 use App\Models\JournalEntry;
@@ -130,6 +131,83 @@ class AccountantWorkspaceTest extends TestCase
                 ->where('urls.accounts', route('admin.accounts.index'))
                 ->where('shell.nav', fn ($nav) => collect($nav)->where('label', 'المحاسبة')->count() === 1)
             );
+    }
+
+    public function test_accounting_home_uses_the_selected_branch_period_and_surfaces_missing_setup(): void
+    {
+        $otherBranch = Branch::create([
+            'code' => 'other-accounting-period',
+            'name' => 'فرع بفترة مستقلة',
+            'is_active' => true,
+        ]);
+        AccountingPeriod::create([
+            'branch_id' => $otherBranch->id,
+            'name' => 'فترة الفرع الآخر',
+            'starts_on' => now()->startOfMonth()->toDateString(),
+            'ends_on' => now()->endOfMonth()->toDateString(),
+            'status' => 'open',
+        ]);
+
+        $this->actingAs($this->accountant)
+            ->withSession(['active_branch_id' => $this->branch->id])
+            ->get(route('admin.accounting.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/Accounting/Index')
+                ->where('today', now()->toDateString())
+                ->where('health.currentPeriod', null)
+                ->where('attention.0.key', 'period_missing')
+                ->where('attention.0.severity', 'critical')
+                ->where('attention.0.url', route('admin.accounting.fiscal-years'))
+            );
+    }
+
+    public function test_accounting_home_turns_unresolved_reconciliation_variances_into_actions(): void
+    {
+        $period = AccountingPeriod::create([
+            'branch_id' => $this->branch->id,
+            'name' => 'الفترة الحالية',
+            'starts_on' => now()->startOfMonth()->toDateString(),
+            'ends_on' => now()->endOfMonth()->toDateString(),
+            'status' => 'open',
+        ]);
+        $cash = Account::query()->where('type', 'asset')->where('is_active', true)->firstOrFail();
+        CashReconciliation::create([
+            'branch_id' => $this->branch->id,
+            'accounting_period_id' => $period->id,
+            'account_id' => $cash->id,
+            'statement_date' => now()->toDateString(),
+            'book_balance' => 100,
+            'statement_balance' => 92,
+            'difference' => -8,
+            'status' => 'variance',
+            'reconciled_at' => now(),
+            'reconciled_by' => $this->accountant->id,
+        ]);
+
+        $this->actingAs($this->accountant)
+            ->withSession(['active_branch_id' => $this->branch->id])
+            ->get(route('admin.accounting.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('health.currentPeriod.name', 'الفترة الحالية')
+                ->where('attention', fn ($items) => collect($items)->contains(
+                    fn ($item) => $item['key'] === 'reconciliation_variances'
+                        && $item['countLabel'] === '1 مطابقة'
+                        && (float) $item['amount'] === 8.0
+                        && $item['url'] === route('admin.accounting.reconciliations')
+                ))
+            );
+    }
+
+    public function test_accounting_home_navigation_uses_inertia_links_without_full_page_reload(): void
+    {
+        $source = file_get_contents(resource_path('js/Pages/Admin/Accounting/Index.vue'));
+
+        $this->assertStringContainsString("import { Head, Link, router, useForm } from '@inertiajs/vue3'", $source);
+        $this->assertStringContainsString('<Link v-for="task in tasks"', $source);
+        $this->assertStringContainsString('class="attention-center"', $source);
+        $this->assertStringNotContainsString('<a v-for="task in tasks"', $source);
     }
 
     public function test_accountant_can_manage_financial_destination_identifiers_without_global_settings_access(): void

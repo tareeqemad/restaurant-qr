@@ -36,6 +36,7 @@ cashier.start(props.initialState, props.endpoints.state);
 
 const notice = ref(null);
 const commandBusy = ref(false);
+const handoverOpen = ref(false);
 const paymentOpen = ref(false);
 const fullCash = ref(false);
 const paymentToken = ref("");
@@ -68,6 +69,43 @@ let searchTimer = null;
 
 const currency = computed(() => props.options.currency);
 const commands = computed(() => props.endpoints.commands ?? {});
+const handoverTasks = computed(() => [
+    {
+        key: "transfers",
+        attentionType: "transfer",
+        count: Number(cashier.counts.pending_transfers || 0),
+        title: "تحويلات غير مؤكدة",
+        detail: "طابقها مع البنك قبل تسليم العهدة.",
+        icon: "bi-bank",
+    },
+    {
+        key: "changes",
+        attentionType: "change",
+        count: Number(cashier.counts.pending_changes || 0),
+        title: "تصحيحات معلّقة",
+        detail: "اعتمد الطلب أو ارفضه بسبب واضح.",
+        icon: "bi-arrow-repeat",
+    },
+    {
+        key: "tables",
+        attentionType: "bill",
+        count: Number(cashier.counts.checkout_sessions || 0),
+        title: "طاولات بانتظار التحصيل",
+        detail: "افتح الحساب وتأكد من البنود والرصيد.",
+        icon: "bi-grid-3x3-gap",
+    },
+    {
+        key: "remote",
+        attentionType: "remote",
+        count: Number(cashier.counts.remote_unpaid || 0),
+        title: "طلبات خارجية غير محصّلة",
+        detail: "راجع الطلبات الهاتفية والاستلام الخارجي.",
+        icon: "bi-bag-check",
+    },
+].filter((task) => task.count > 0));
+const handoverCount = computed(() =>
+    handoverTasks.value.reduce((sum, task) => sum + task.count, 0),
+);
 const hasOpenSheet = computed(() =>
     Boolean(
         paymentOpen.value ||
@@ -214,6 +252,22 @@ async function clearWorkspace() {
     } catch {
         showNotice("error", cashier.lastError || "تعذّر إغلاق مساحة التحصيل.");
     }
+}
+
+async function focusHandoverTask(task) {
+    handoverOpen.value = false;
+    const attention = cashier.attention.find(
+        (item) => item.type === task.attentionType,
+    );
+    if (attention?.selection) {
+        await selectWorkspace(attention.selection.kind, attention.selection.id);
+        return;
+    }
+
+    cashier.search = "";
+    cashier.filter = "checkout";
+    cashier.mode = task.key === "tables" ? "tables" : task.key === "remote" ? "remote" : "all";
+    syncWorkspaceUrl();
 }
 
 async function openInitialTask() {
@@ -1281,6 +1335,18 @@ async function submitCustomerCreate(payload) {
                     <i :class="online ? 'bi bi-wifi' : 'bi bi-cloud-slash'"></i>
                     {{ online ? "متصل" : "بدون اتصال" }}
                 </span>
+                <button
+                    type="button"
+                    class="handover-trigger"
+                    :class="{ ready: handoverCount === 0 }"
+                    :aria-expanded="handoverOpen"
+                    aria-controls="cashier-handover"
+                    @click="handoverOpen = !handoverOpen"
+                >
+                    <i class="bi" :class="handoverCount ? 'bi-clipboard2-pulse' : 'bi-clipboard2-check'"></i>
+                    <span>تسليم العهدة</span>
+                    <b v-if="handoverCount">{{ handoverCount }}</b>
+                </button>
                 <Link
                     :href="endpoints.tables"
                     preserve-scroll
@@ -1355,6 +1421,34 @@ async function submitCustomerCreate(payload) {
                 <i class="bi bi-x-lg"></i>
             </button>
         </div>
+
+        <section
+            v-if="handoverOpen"
+            id="cashier-handover"
+            class="handover-panel"
+            :class="{ ready: handoverCount === 0 }"
+            aria-label="مراجعة تسليم عهدة الكاشير"
+        >
+            <header>
+                <span><i class="bi" :class="handoverCount ? 'bi-clipboard2-pulse' : 'bi-shield-check'"></i></span>
+                <div>
+                    <small>مراجعة تشغيلية قبل مغادرة الوردية</small>
+                    <strong>{{ handoverCount ? `${handoverCount} حركة تحتاج إنهاء` : 'عهدتك جاهزة للتسليم' }}</strong>
+                    <p>صافي تحصيلك {{ formatMoney(cashier.today.net, currency) }} · نقدي فعلي بعد الاستردادات {{ formatMoney(cashier.today.cash, currency) }}</p>
+                </div>
+                <button type="button" aria-label="إغلاق مراجعة العهدة" @click="handoverOpen = false"><i class="bi bi-x-lg"></i></button>
+            </header>
+            <div v-if="handoverTasks.length" class="handover-tasks">
+                <button v-for="task in handoverTasks" :key="task.key" type="button" @click="focusHandoverTask(task)">
+                    <span><i class="bi" :class="task.icon"></i></span>
+                    <span><strong>{{ task.title }}</strong><small>{{ task.detail }}</small></span>
+                    <b>{{ task.count }}</b>
+                    <i class="bi bi-arrow-left"></i>
+                </button>
+            </div>
+            <p v-else class="handover-ready"><i class="bi bi-check2-circle"></i> لا توجد تحويلات أو تصحيحات أو حسابات معلّقة في طابورك.</p>
+            <footer><i class="bi bi-info-circle"></i> هذه مراجعة لعهدة المستخدم الحالي؛ الإقفال والمطابقة النهائية ينفذهما المحاسب من مركز المحاسبة.</footer>
+        </section>
 
         <AttentionRail
             :items="cashier.attention"
@@ -1674,6 +1768,172 @@ async function submitCustomerCreate(payload) {
 .header-actions button:disabled {
     opacity: 0.55;
 }
+.header-actions .handover-trigger {
+    border-color: #e2c58f;
+    color: #875810;
+    background: #fff9ed;
+}
+.header-actions .handover-trigger.ready {
+    border-color: #b9ddc4;
+    color: #217241;
+    background: #eff9f2;
+}
+.handover-trigger b {
+    display: grid;
+    min-width: 19px;
+    height: 19px;
+    place-items: center;
+    border-radius: 999px;
+    color: #fff;
+    background: #b26a12;
+    font-size: 0.58rem;
+}
+.handover-panel {
+    max-width: 1680px;
+    margin: 0 auto 0.55rem;
+    overflow: hidden;
+    border: 1px solid #e4c88f;
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 12px 28px -26px rgba(62, 46, 16, 0.8);
+}
+.handover-panel > header {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.7rem 0.8rem;
+    background: linear-gradient(115deg, #fff8e9, #fff 72%);
+}
+.handover-panel > header > span {
+    display: grid;
+    flex: 0 0 38px;
+    width: 38px;
+    height: 38px;
+    place-items: center;
+    border-radius: 11px;
+    color: #9d620d;
+    background: #fff;
+}
+.handover-panel > header > div {
+    display: grid;
+    flex: 1;
+}
+.handover-panel > header small {
+    color: #936c30;
+    font-size: 0.59rem;
+    font-weight: 800;
+}
+.handover-panel > header strong {
+    color: #4b3718;
+    font-size: 0.82rem;
+}
+.handover-panel > header p {
+    margin: 0.1rem 0 0;
+    color: #7d7464;
+    font-size: 0.63rem;
+}
+.handover-panel > header > button {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    place-items: center;
+    border: 0;
+    border-radius: 9px;
+    color: #7e725f;
+    background: rgba(255, 255, 255, 0.82);
+}
+.handover-panel.ready {
+    border-color: #b8dcc3;
+}
+.handover-panel.ready > header {
+    background: linear-gradient(115deg, #edf8f1, #fff 72%);
+}
+.handover-panel.ready > header > span,
+.handover-panel.ready > header small {
+    color: #237443;
+}
+.handover-panel.ready > header strong {
+    color: #21442d;
+}
+.handover-tasks {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.45rem;
+    padding: 0.55rem;
+    border-top: 1px solid #f0e7d7;
+}
+.handover-tasks > button {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) auto 12px;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 58px;
+    padding: 0.45rem;
+    border: 1px solid #e7e4dd;
+    border-radius: 10px;
+    color: #35423a;
+    background: #fff;
+    text-align: start;
+}
+.handover-tasks > button:hover {
+    border-color: #d7b677;
+    background: #fffdf8;
+}
+.handover-tasks > button > span:first-child {
+    display: grid;
+    width: 31px;
+    height: 31px;
+    place-items: center;
+    border-radius: 9px;
+    color: #9b620e;
+    background: #fff4df;
+}
+.handover-tasks > button > span:nth-child(2) {
+    display: grid;
+    min-width: 0;
+}
+.handover-tasks strong {
+    overflow: hidden;
+    font-size: 0.67rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.handover-tasks small {
+    overflow: hidden;
+    color: #7d8981;
+    font-size: 0.56rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.handover-tasks b {
+    color: #9d5700;
+    font-size: 0.76rem;
+}
+.handover-tasks > button > i {
+    color: #a9aaa4;
+    font-size: 0.6rem;
+}
+.handover-ready {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0;
+    padding: 0.7rem 0.85rem;
+    border-top: 1px solid #e4eee7;
+    color: #277344;
+    font-size: 0.68rem;
+    font-weight: 800;
+}
+.handover-panel > footer {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.45rem 0.75rem;
+    border-top: 1px solid #edf0ee;
+    color: #78857d;
+    background: #fafbfa;
+    font-size: 0.57rem;
+}
 .cashier-notice {
     display: flex;
     max-width: 1680px;
@@ -1747,6 +2007,9 @@ async function submitCustomerCreate(payload) {
     .header-actions {
         justify-self: end;
     }
+    .handover-tasks {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
     .cashier-layout {
         height: auto;
         min-height: 0;
@@ -1778,6 +2041,15 @@ async function submitCustomerCreate(payload) {
     }
     .today-kpis > span {
         min-width: 112px;
+    }
+    .handover-panel > header {
+        align-items: flex-start;
+    }
+    .handover-panel > header p {
+        line-height: 1.55;
+    }
+    .handover-tasks {
+        grid-template-columns: 1fr;
     }
     .cashier-layout {
         display: flex;

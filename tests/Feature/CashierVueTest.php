@@ -384,6 +384,10 @@ class CashierVueTest extends TestCase
         $this->assertStringContainsString('await openInitialTask()', $page);
         $this->assertStringContainsString('const first = cashier.sessions[0] ?? cashier.remoteOrders[0]', $page);
         $this->assertStringContainsString('completedName === "issue"', $page);
+        $this->assertStringContainsString('تسليم العهدة', $page);
+        $this->assertStringContainsString('const handoverTasks = computed', $page);
+        $this->assertStringContainsString('cashier.counts.pending_transfers', $page);
+        $this->assertStringContainsString('هذه مراجعة لعهدة المستخدم الحالي', $page);
     }
 
     public function test_payment_sheet_defaults_to_direct_full_collection_and_keeps_partial_payment(): void
