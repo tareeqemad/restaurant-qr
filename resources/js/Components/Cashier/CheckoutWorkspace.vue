@@ -33,6 +33,17 @@ const fulfillmentStations = computed(() =>
 function quantity(value) {
     return Number(value).toLocaleString("en-US", { maximumFractionDigits: 2 });
 }
+
+function dateTime(value) {
+    if (!value) return "";
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return "";
+
+    return parsed.toLocaleString("ar-PS", {
+        dateStyle: "short",
+        timeStyle: "short",
+    });
+}
 </script>
 
 <template>
@@ -252,14 +263,53 @@ function quantity(value) {
                                         .map((item) => item.name)
                                         .join("، ")
                                 }}</small>
+                                <small
+                                    v-if="line.exclusions?.length"
+                                    class="line-exclusions"
+                                >
+                                    بدون
+                                    {{
+                                        line.exclusions
+                                            .map((item) => item.name)
+                                            .join("، ")
+                                    }}
+                                </small>
                                 <small v-if="line.notes"
                                     >ملاحظة: {{ line.notes }}</small
                                 >
+                                <small
+                                    v-if="line.status === 'cancelled'"
+                                    class="line-cancel-audit"
+                                >
+                                    <i class="bi bi-shield-check"></i>
+                                    {{ line.cancelled_reason || "إلغاء مسجّل" }}
+                                    <template v-if="line.cancelled_by">
+                                        · {{ line.cancelled_by }}
+                                    </template>
+                                    <template v-if="dateTime(line.cancelled_at)">
+                                        · {{ dateTime(line.cancelled_at) }}
+                                    </template>
+                                </small>
                             </span>
                             <span class="line-status">{{
                                 line.status_label
                             }}</span>
-                            <b>{{ formatMoney(line.subtotal, currency) }}</b>
+                            <b
+                                v-if="line.status === 'cancelled'"
+                                class="line-not-charged"
+                            >غير محسوب</b>
+                            <b v-else>{{ formatMoney(line.subtotal, currency) }}</b>
+                            <button
+                                v-if="line.can_cancel && commands.cancel_item"
+                                type="button"
+                                class="line-cancel-action"
+                                :disabled="busy"
+                                :aria-label="`إلغاء ${line.name} من الحساب`"
+                                title="إلغاء الصنف من الحساب"
+                                @click="emit('command', 'cancel-item', { line, order })"
+                            >
+                                <i class="bi bi-x-lg"></i>
+                            </button>
                         </div>
                     </div>
                     <div v-if="order.discounts.length" class="order-discounts">
@@ -987,7 +1037,7 @@ function quantity(value) {
 }
 .order-line {
     display: grid;
-    grid-template-columns: 34px minmax(0, 1fr) auto auto;
+    grid-template-columns: 34px minmax(0, 1fr) auto auto auto;
     gap: 0.45rem;
     align-items: center;
     min-height: 54px;
@@ -998,7 +1048,12 @@ function quantity(value) {
     border-top: 0;
 }
 .order-line.cancelled {
-    opacity: 0.55;
+    border-color: #f0dcdf;
+    background: #fffafb;
+}
+.order-line.cancelled .line-qty,
+.order-line.cancelled .line-copy > strong {
+    opacity: 0.58;
     text-decoration: line-through;
 }
 .line-qty {
@@ -1031,12 +1086,43 @@ function quantity(value) {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+.line-copy .line-exclusions {
+    color: #9a6210;
+    font-weight: 750;
+}
+.line-copy .line-cancel-audit {
+    color: #9b3e48;
+    font-weight: 700;
+    white-space: normal;
+}
 .line-status {
     padding: 0.16rem 0.35rem;
     border-radius: 6px;
     color: #56645b;
     background: #f0f3f1;
     font-size: 0.58rem;
+}
+.line-not-charged {
+    color: #a33641;
+    font-size: 0.62rem;
+    white-space: nowrap;
+}
+.line-cancel-action {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    place-items: center;
+    border: 1px solid #efcdd1;
+    border-radius: 9px;
+    color: #a43540;
+    background: #fff5f6;
+}
+.line-cancel-action:hover:not(:disabled) {
+    border-color: #d89299;
+    background: #ffebed;
+}
+.line-cancel-action:disabled {
+    opacity: 0.45;
 }
 .order-line > b {
     color: #34473a;
@@ -1397,7 +1483,7 @@ function quantity(value) {
         display: flex;
     }
     .order-line {
-        grid-template-columns: 30px minmax(0, 1fr) auto;
+        grid-template-columns: 30px minmax(0, 1fr) auto auto;
     }
     .line-status {
         display: none;

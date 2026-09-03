@@ -12,6 +12,7 @@ export const useCashierStore = defineStore('cashier-workspace', () => {
     const refreshing = ref(false);
     const lastError = ref('');
     const lastSuccessfulRefresh = ref(null);
+    const financialUpdate = ref(null);
     let requestSequence = 0;
     let activeRequest = null;
 
@@ -40,6 +41,26 @@ export const useCashierStore = defineStore('cashier-workspace', () => {
         return text;
     }
 
+    function workspaceMoneyState(value) {
+        if (!value) return null;
+
+        const total = value.invoice
+            ? Number(value.invoice.balance || 0)
+            : (value.orders ?? [])
+                .filter((order) => order.status !== 'cancelled')
+                .reduce((sum, order) => sum + Number(order.total || 0), 0);
+        const lines = (value.orders ?? []).flatMap((order) =>
+            (order.items ?? []).map((item) => [
+                Number(item.id),
+                item.status === 'cancelled' ? 'cancelled' : 'billable',
+                Number(item.quantity || 0),
+                Number(item.subtotal || 0),
+            ]),
+        );
+
+        return { total, signature: JSON.stringify(lines) };
+    }
+
     function start(initialState, endpoint) {
         snapshot.value = initialState;
         stateEndpoint.value = endpoint;
@@ -55,9 +76,10 @@ export const useCashierStore = defineStore('cashier-workspace', () => {
         }
 
         lastSuccessfulRefresh.value = initialState.generated_at ?? null;
+        financialUpdate.value = null;
     }
 
-    async function refresh({ force = false } = {}) {
+    async function refresh({ force = false, source = 'manual' } = {}) {
         if (!stateEndpoint.value) return { changed: false, skipped: true };
 
         const sequence = ++requestSequence;
@@ -85,11 +107,25 @@ export const useCashierStore = defineStore('cashier-workspace', () => {
             }
 
             if (result.data.data?.changed) {
+                const previousMoney = workspaceMoneyState(workspace.value);
                 snapshot.value = result.data.data;
 
                 // A payment can close a session while it is open. Returning to
                 // the queue is clearer than leaving a stale receipt on screen.
                 if (selection.value && !result.data.data.workspace) selection.value = null;
+
+                const currentMoney = workspaceMoneyState(workspace.value);
+                if (source === 'poll'
+                    && previousMoney
+                    && currentMoney
+                    && (previousMoney.total !== currentMoney.total
+                        || previousMoney.signature !== currentMoney.signature)) {
+                    financialUpdate.value = {
+                        id: Date.now(),
+                        previousTotal: previousMoney.total,
+                        currentTotal: currentMoney.total,
+                    };
+                }
             }
 
             lastSuccessfulRefresh.value = result.data.data?.generated_at ?? lastSuccessfulRefresh.value;
@@ -131,6 +167,7 @@ export const useCashierStore = defineStore('cashier-workspace', () => {
         refreshing,
         lastError,
         lastSuccessfulRefresh,
+        financialUpdate,
         attention,
         sessions,
         remoteOrders,

@@ -165,6 +165,18 @@ watch(
 
 watch(hasOpenSheet, syncBodyLock);
 
+watch(
+    () => cashier.financialUpdate?.id,
+    () => {
+        const update = cashier.financialUpdate;
+        if (!update) return;
+        showNotice(
+            "warning",
+            `تغيّر الحساب أثناء فتحه من ${formatMoney(update.previousTotal, currency.value)} إلى ${formatMoney(update.currentTotal, currency.value)}. راجع البنود المحدثة قبل إصدار الفاتورة أو التحصيل.`,
+        );
+    },
+);
+
 onMounted(async () => {
     window.addEventListener("keydown", handleEscape);
     syncBodyLock(hasOpenSheet.value);
@@ -310,6 +322,27 @@ function runCommand(name, payload = {}) {
             confirmLabel: "إغلاق وتحرير الطاولة",
             sessionId: cashier.workspace.id,
             token: commandToken(),
+        };
+        return;
+    }
+
+    if (name === "cancel-item" && payload.line) {
+        commandError.value = "";
+        commandErrors.value = {};
+        const becomesWaste = ["preparing", "ready", "served"].includes(
+            payload.line.status,
+        );
+        reasonAction.value = {
+            name,
+            item: payload.line,
+            token: commandToken(),
+            title: `إلغاء ${payload.line.name} من الحساب`,
+            message: becomesWaste
+                ? "هذا الصنف دخل التحضير أو تم تسليمه. سيُستبعد من حساب الزبون، لكن مكوناته ستبقى مستهلكة وتُسجل كهدر مع اسمك وسبب الإلغاء."
+                : "سيُستبعد الصنف من حساب الزبون، ويُعاد احتساب الجولة. أي مكونات حُجزت ولم يبدأ تحضيرها ستعود للمخزون.",
+            confirmLabel: becomesWaste
+                ? "إلغاء وتسجيل كهدر"
+                : "إلغاء وتحديث الحساب",
         };
         return;
     }
@@ -1033,6 +1066,11 @@ async function submitReasonAction(reason) {
             endpoint = commands.value.cancel_invoice.replace(
                 ":invoice",
                 reasonAction.value.invoiceId,
+            );
+        } else if (reasonAction.value.name === "cancel-item") {
+            endpoint = commands.value.cancel_item.replace(
+                ":item",
+                reasonAction.value.item.id,
             );
         } else {
             return;

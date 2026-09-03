@@ -31,6 +31,7 @@ use App\Models\MenuPromotion;
 use App\Models\Order;
 use App\Models\OrderChangeRequest;
 use App\Models\OrderDiscount;
+use App\Models\OrderItem;
 use App\Models\Payment;
 use App\Models\PendingTransfer;
 use App\Models\Refund;
@@ -109,6 +110,7 @@ class CashierVueController extends Controller
                     'customer_advance' => '/admin/cashier/api/customers/advances',
                     'reverse_customer_advance' => '/admin/cashier/api/customers/advances/:transaction/reverse',
                     'approve_order' => '/admin/cashier/api/orders/:order/approve',
+                    'cancel_item' => '/admin/cashier/api/order-items/:item/cancel',
                 ],
             ],
         ]);
@@ -187,6 +189,56 @@ class CashierVueController extends Controller
             return [
                 'message' => "تم إصدار الفاتورة {$invoice->number}.",
                 'data' => ['invoice_id' => (int) $invoice->id],
+            ];
+        });
+    }
+
+    /**
+     * Correct one line from the cashier workspace before an invoice exists.
+     * Pending food is returned; fired food stays consumed and is audited as
+     * waste. OrderService owns all invoice, stock and concurrency guards.
+     */
+    public function cancelItem(
+        ReasonRequest $request,
+        OrderItem $item,
+        OrderService $orders,
+    ): JsonResponse {
+        $item->loadMissing('order');
+        $this->authorize('cancelItem', $item->order);
+        $data = $request->validated();
+
+        return $this->idempotentCommand('order-item-cancel:'.$item->id, $data['token'], function () use ($data, $item, $orders) {
+            $item->refresh();
+            if ($item->status === OrderItemStatus::Cancelled->value) {
+                return [
+                    'message' => 'هذا الصنف ملغى مسبقاً؛ تم تحديث كشف الحساب.',
+                    'data' => ['item_id' => (int) $item->id, 'disposition' => null],
+                ];
+            }
+
+            $disposition = in_array($item->status, [
+                OrderItemStatus::Preparing->value,
+                OrderItemStatus::Ready->value,
+                OrderItemStatus::Served->value,
+            ], true) ? 'waste' : 'return';
+            $reason = trim($data['reason']);
+
+            $orders->cancelItem(
+                item: $item,
+                userId: auth()->id(),
+                reason: $reason,
+                disposition: $disposition,
+                wasteReason: $disposition === 'waste' ? $reason : null,
+            );
+
+            return [
+                'message' => $disposition === 'waste'
+                    ? 'تم إلغاء الصنف، تحديث الحساب، وتسجيل مكوناته كهدر لأنه دخل التحضير.'
+                    : 'تم إلغاء الصنف وتحديث الحساب وإرجاع مكوناته المتاحة للمخزون.',
+                'data' => [
+                    'item_id' => (int) $item->id,
+                    'disposition' => $disposition,
+                ],
             ];
         });
     }
@@ -1185,8 +1237,10 @@ class CashierVueController extends Controller
             'customer.loyaltyCustomer',
             'orders' => fn ($orders) => $orders->oldest('submitted_at'),
             'orders.items.modifiers',
+            'orders.items.exclusions',
             'orders.items.promotion',
             'orders.items.station:id,name',
+            'orders.items.cancelledBy:id,name',
             'orders.discounts.appliedBy',
             'orders.discounts.categoryLookup',
             'invoice.payments.receiver',
@@ -1210,7 +1264,9 @@ class CashierVueController extends Controller
             'status' => $session->status,
             'covers' => max(1, (int) $session->cover_count),
             'customer' => $this->customerPayload($session->customer, $session->customer_name, $session->customer_phone),
-            'orders' => $session->orders->map(fn (Order $order) => $this->orderPayload($order))->values(),
+            'orders' => $session->orders
+                ->map(fn (Order $order) => $this->orderPayload($order, (bool) $session->invoice))
+                ->values(),
             'fulfillment' => $this->fulfillmentPayload($session->orders),
             'invoice' => $this->invoicePayload($session->invoice),
             'pending_transfers' => $this->pendingTransferQueue()->where('session_id', $session->id)->values(),
@@ -1230,8 +1286,10 @@ class CashierVueController extends Controller
             ->with([
                 'customer.loyaltyCustomer',
                 'items.modifiers',
+                'items.exclusions',
                 'items.promotion',
                 'items.station:id,name',
+                'items.cancelledBy:id,name',
                 'discounts.appliedBy',
                 'discounts.categoryLookup',
                 'invoice.payments.receiver',
@@ -1254,7 +1312,7 @@ class CashierVueController extends Controller
             'type' => $order->order_type,
             'source' => $order->order_source,
             'customer' => $this->customerPayload($order->customer, $order->customer_name, $order->customer_phone),
-            'orders' => [$this->orderPayload($order)],
+            'orders' => [$this->orderPayload($order, (bool) $order->invoice)],
             'fulfillment' => $this->fulfillmentPayload(collect([$order])),
             'invoice' => $this->invoicePayload($order->invoice),
             'pending_transfers' => [],
@@ -1267,8 +1325,11 @@ class CashierVueController extends Controller
         ];
     }
 
-    private function orderPayload(Order $order): array
+    private function orderPayload(Order $order, bool $hasInvoice = false): array
     {
+        $canCancelItem = ! $hasInvoice
+            && (auth()->user()?->can('cancelItem', $order) ?? false);
+
         return [
             'id' => (int) $order->id,
             'number' => $order->number,
@@ -1291,6 +1352,15 @@ class CashierVueController extends Controller
                 'station' => $item->station?->name,
                 'notes' => $item->notes,
                 'promotion' => $item->promotion?->name,
+                'can_cancel' => $canCancelItem
+                    && $item->status !== OrderItemStatus::Cancelled->value,
+                'cancelled_reason' => $item->cancelled_reason,
+                'cancelled_by' => $item->cancelledBy?->name,
+                'cancelled_at' => $this->dateTime($item->cancelled_at),
+                'exclusions' => $item->exclusions->map(fn ($exclusion) => [
+                    'id' => (int) $exclusion->id,
+                    'name' => $exclusion->name_snapshot,
+                ])->values(),
                 'modifiers' => $item->modifiers->map(fn ($modifier) => [
                     'id' => (int) $modifier->id,
                     'name' => $modifier->name_snapshot,

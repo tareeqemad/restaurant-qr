@@ -24,6 +24,7 @@ use App\Services\Accounting\AccountingService;
 use App\Support\BranchContext;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class InventoryService
@@ -449,8 +450,15 @@ class InventoryService
                     'stock_after' => (float) $mv->ingredient->current_stock, // no change — re-classification only
                     'reference_type' => OrderItem::class,
                     'reference_id' => $orderItem->id,
-                    'reason' => __('ui.inventory.cancel_item_waste', ['item' => $orderItem->name_snapshot]),
-                    'waste_reason' => $reason,
+                    // `waste_reason` is a 32-char legacy grouping column;
+                    // preserve the full operator explanation in `reason`
+                    // while keeping the legacy value safely searchable.
+                    'reason' => Str::limit(
+                        __('ui.inventory.cancel_item_waste', ['item' => $orderItem->name_snapshot]).' — '.$reason,
+                        191,
+                        '',
+                    ),
+                    'waste_reason' => Str::limit($reason, 32, ''),
                     'user_id' => $userId ?? auth()->id(),
                     'occurred_at' => now(),
                 ]);

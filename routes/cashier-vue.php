@@ -36,4 +36,5 @@ Route::prefix('cashier/api')->name('cashier.api.')->group(function () {
     Route::post('customers/advances', [CashierVueController::class, 'depositCustomerAdvance'])->name('customers.advances.store');
     Route::post('customers/advances/{transaction}/reverse', [CashierVueController::class, 'reverseCustomerAdvance'])->name('customers.advances.reverse');
     Route::post('orders/{order}/approve', [CashierVueController::class, 'approveOrder'])->name('orders.approve');
+    Route::post('order-items/{item}/cancel', [CashierVueController::class, 'cancelItem'])->name('order-items.cancel');
 });

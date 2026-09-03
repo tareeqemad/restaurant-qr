@@ -8,6 +8,7 @@ use App\Models\Customer;
 use App\Models\CustomerAdvanceTransaction;
 use App\Models\Ingredient;
 use App\Models\IngredientStock;
+use App\Models\InventoryMovement;
 use App\Models\Invoice;
 use App\Models\InvoiceSplit;
 use App\Models\JournalEntry;
@@ -16,6 +17,7 @@ use App\Models\Modifier;
 use App\Models\ModifierGroup;
 use App\Models\Order;
 use App\Models\OrderDiscount;
+use App\Models\OrderItemIngredientExclusion;
 use App\Models\Payment;
 use App\Models\PendingTransfer;
 use App\Models\RecipeItem;
@@ -212,6 +214,89 @@ class CashierVueTest extends TestCase
             ->where('source_id', $invoice->id)
             ->where('event_type', 'invoice_issued')
             ->count());
+    }
+
+    public function test_cashier_can_audit_and_cancel_a_fired_item_before_invoicing(): void
+    {
+        [$session] = $this->checkoutSession(issueInvoice: false);
+        $order = $session->orders()->sole();
+        $item = $order->items()->sole();
+        $ingredient = Ingredient::query()->sole();
+
+        // Fire the item first so its real recipe is deducted. The exclusion
+        // below is display/audit data for the cashier and must not erase the
+        // already-recorded kitchen consumption in this scenario.
+        app(OrderService::class)->startPreparing($item->fresh(), $this->admin->id);
+
+        OrderItemIngredientExclusion::create([
+            'order_item_id' => $item->id,
+            'ingredient_id' => $ingredient->id,
+            'name_snapshot' => 'بصل',
+        ]);
+
+        $this->actingAs($this->admin);
+        $this->getJson(route('admin.cashier.api.state', [
+            'session_id' => $session->id,
+            'full' => 1,
+        ]))
+            ->assertOk()
+            ->assertJsonPath('data.workspace.orders.0.items.0.can_cancel', true)
+            ->assertJsonPath('data.workspace.orders.0.items.0.exclusions.0.name', 'بصل');
+
+        $this->postJson(route('admin.cashier.api.order-items.cancel', $item), [
+            'token' => 'cashier-cancel-fired-line',
+            'reason' => 'الزبون أعاد الصنف بعد بدء التحضير',
+        ])
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('data.disposition', 'waste');
+
+        $item->refresh();
+        $this->assertSame('cancelled', $item->status);
+        $this->assertSame($this->admin->id, $item->cancelled_by_user_id);
+        $this->assertSame('الزبون أعاد الصنف بعد بدء التحضير', $item->cancelled_reason);
+        $this->assertSame(0.0, (float) $order->fresh()->total);
+        $this->assertTrue(InventoryMovement::query()
+            ->where('reference_type', $item::class)
+            ->where('reference_id', $item->id)
+            ->where('type', 'waste')
+            ->exists());
+
+        $this->getJson(route('admin.cashier.api.state', [
+            'session_id' => $session->id,
+            'full' => 1,
+        ]))
+            ->assertOk()
+            ->assertJsonPath('data.workspace.orders.0.items.0.can_cancel', false)
+            ->assertJsonPath('data.workspace.orders.0.items.0.cancelled_reason', 'الزبون أعاد الصنف بعد بدء التحضير')
+            ->assertJsonPath('data.workspace.orders.0.items.0.cancelled_by', $this->admin->name)
+            ->assertJsonPath('data.workspace.can_close_without_billing', true)
+            ->assertJson(fn ($json) => $json
+                ->whereType('data.workspace.orders.0.items.0.cancelled_at', 'string')
+                ->etc());
+    }
+
+    public function test_cashier_item_correction_is_hidden_after_invoice_issuance(): void
+    {
+        [$session] = $this->checkoutSession();
+        $this->actingAs($this->admin);
+
+        $this->getJson(route('admin.cashier.api.state', [
+            'session_id' => $session->id,
+            'full' => 1,
+        ]))
+            ->assertOk()
+            ->assertJsonPath('data.workspace.orders.0.items.0.can_cancel', false);
+
+        $item = $session->orders()->sole()->items()->sole();
+        $this->postJson(route('admin.cashier.api.order-items.cancel', $item), [
+            'token' => 'cashier-cancel-invoiced-line',
+            'reason' => 'محاولة تعديل بعد الفاتورة',
+        ])
+            ->assertStatus(422)
+            ->assertJsonPath('ok', false);
+
+        $this->assertNotSame('cancelled', $item->fresh()->status);
     }
 
     public function test_cashier_vue_issues_a_direct_order_invoice_through_the_same_billing_service(): void

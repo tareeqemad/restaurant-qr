@@ -1,7 +1,8 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 
 /**
- * Shared-hosting refresh loop: one cheap pulse read every ten seconds, one
+ * Shared-hosting refresh loop: one cheap pulse read every six seconds while
+ * a bill is open (ten seconds on the queue), one
  * forced snapshot each minute for clock-derived urgency, and exponential
  * backoff when PHP/MySQL is unavailable. Hidden tabs do no polling at all.
  */
@@ -16,7 +17,7 @@ export function useCashierPolling(store) {
         if (stopped) return;
 
         const delay = failures === 0
-            ? 10_000
+            ? (store.selection ? 6_000 : 10_000)
             : Math.min(60_000, 10_000 * (2 ** failures));
         timer = window.setTimeout(tick, delay);
     }
@@ -28,7 +29,8 @@ export function useCashierPolling(store) {
         }
 
         try {
-            const result = await store.refresh({ force: quietPolls >= 5 });
+            const forceAfter = store.selection ? 9 : 5;
+            const result = await store.refresh({ force: quietPolls >= forceAfter, source: 'poll' });
             failures = 0;
             quietPolls = result.changed ? 0 : quietPolls + 1;
         } catch {
@@ -42,12 +44,12 @@ export function useCashierPolling(store) {
         online.value = navigator.onLine;
         if (online.value) {
             failures = 0;
-            store.refresh({ force: true }).catch(() => {});
+            store.refresh({ force: true, source: 'poll' }).catch(() => {});
         }
     }
 
     function visibilityChanged() {
-        if (!document.hidden) store.refresh({ force: true }).catch(() => {});
+        if (!document.hidden) store.refresh({ force: true, source: 'poll' }).catch(() => {});
     }
 
     onMounted(() => {

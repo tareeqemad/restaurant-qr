@@ -57,6 +57,11 @@ class OrderItem extends Model
         return $this->belongsTo(Station::class);
     }
 
+    public function cancelledBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'cancelled_by_user_id');
+    }
+
     public function modifiers(): HasMany
     {
         return $this->hasMany(OrderItemModifier::class);

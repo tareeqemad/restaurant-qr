@@ -47,6 +47,16 @@ class OrderPolicy extends BasePolicy
             && $this->inUserBranch($user, $order);
     }
 
+    /**
+     * Allow an authorised cashier to correct one dine-in line without also
+     * granting the broader ability to cancel the whole table order.
+     */
+    public function cancelItem(User $user, Order $order): bool
+    {
+        return $user->hasPermission('orders.cancel')
+            && $this->inUserBranch($user, $order);
+    }
+
     public function edit(User $user, Order $order): bool
     {
         return $user->hasPermission('orders.edit')
