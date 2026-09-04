@@ -15,6 +15,7 @@ import AdminHeader from '../Components/AdminShell/AdminHeader.vue';
 import AdminSidebar from '../Components/AdminShell/AdminSidebar.vue';
 import ConfirmHost from '../Components/Ui/ConfirmHost.vue';
 import Toaster from '../Components/Ui/Toaster.vue';
+import FormErrorSummary from '../Components/Ui/FormErrorSummary.vue';
 import InventoryWorkspaceNav from '../Components/Inventory/InventoryWorkspaceNav.vue';
 import { useToast } from '../Composables/useToast';
 
@@ -122,6 +123,7 @@ watch(
         <div class="main-content app-content" :inert="sidebarOpen || undefined">
             <div class="container-fluid">
                 <InventoryWorkspaceNav v-if="shell.workspace?.type === 'inventory'" :workspace="shell.workspace" />
+                <FormErrorSummary class="admin-global-errors" :errors="page.props.errors" />
                 <slot />
             </div>
         </div>
@@ -136,6 +138,7 @@ watch(
 </template>
 
 <style>
+.admin-global-errors { margin-block: .75rem; }
 @media (max-width: 991.98px) {
     body.mobile-admin-nav-open {
         overflow: hidden;

@@ -13,7 +13,7 @@
  * the search box is debounced, the selects and dates commit immediately.
  */
 import { computed, reactive, ref, watch } from 'vue';
-import { Head, router } from '@inertiajs/vue3';
+import { Head, Link, router } from '@inertiajs/vue3';
 import AdminLayout from '../../../Layouts/AdminLayout.vue';
 import DataPanel from '../../../Components/Ui/DataPanel.vue';
 import EmptyState from '../../../Components/Ui/EmptyState.vue';
@@ -41,6 +41,7 @@ const form = reactive({
     from: props.filters.from ?? '',
     to: props.filters.to ?? '',
 });
+const loading = ref(false);
 
 const visit = (patch = {}) => {
     Object.assign(form, patch);
@@ -50,7 +51,13 @@ const visit = (patch = {}) => {
         supplier_id: form.supplier_id || undefined,
         from: form.from || undefined,
         to: form.to || undefined,
-    }, { preserveState: true, preserveScroll: true });
+    }, {
+        preserveState: true,
+        preserveScroll: true,
+        replace: true,
+        onStart: () => { loading.value = true; },
+        onFinish: () => { loading.value = false; },
+    });
 };
 
 // Typing shouldn't fire a request per keystroke.
@@ -93,26 +100,26 @@ const visibleSuppliers = computed(() => {
 
     <DataPanel title="قائمة الأوامر" :count="pos.total" icon="bi-truck">
         <template #actions>
-            <a v-if="can.create" :href="urls.create" class="btn btn-primary">
+            <Link v-if="can.create" :href="urls.create" class="btn btn-primary">
                 <i class="bi bi-plus-lg"></i> أمر شراء جديد
-            </a>
+            </Link>
             <button v-if="hasFilters || anyFilter" type="button" class="btn btn-light" @click="clear">
                 <i class="bi bi-x-circle"></i> مسح الفلاتر
             </button>
         </template>
 
         <template #filters>
-            <form class="row g-2 align-items-end" @submit.prevent="visit()">
-                <div class="col-md-2">
+            <form class="po-filters" @submit.prevent="visit()">
+                <div class="po-filter">
                     <input v-model="form.search" class="form-control po-control" placeholder="🔍 رقم PO">
                 </div>
-                <div class="col-md-2">
+                <div class="po-filter">
                     <select v-model="form.status" class="form-select po-control" @change="visit()">
                         <option value="">كل الحالات</option>
                         <option v-for="s in statusOptions" :key="s.value" :value="s.value">{{ s.label }}</option>
                     </select>
                 </div>
-                <div class="col-md-3">
+                <div class="po-filter po-filter--supplier">
                     <input v-model="supplierSearch" class="form-control po-control po-sup-search"
                            placeholder="ابحث عن مورد...">
                     <select v-model="form.supplier_id" class="form-select po-control" @change="visit()">
@@ -120,21 +127,22 @@ const visibleSuppliers = computed(() => {
                         <option v-for="s in visibleSuppliers" :key="s.id" :value="String(s.id)">{{ s.name }}</option>
                     </select>
                 </div>
-                <div class="col-md-2">
+                <div class="po-filter">
                     <input v-model="form.from" type="date" class="form-control po-control"
                            title="من تاريخ" @change="visit()">
                 </div>
-                <div class="col-md-2">
+                <div class="po-filter">
                     <input v-model="form.to" type="date" class="form-control po-control"
                            title="إلى تاريخ" @change="visit()">
                 </div>
-                <div class="col-12 text-center mt-2">
-                    <button type="submit" class="btn btn-primary px-5"><i class="bi bi-search"></i> استعلام</button>
+                <div class="po-filter po-filter--submit">
+                    <button type="submit" class="btn btn-primary" :disabled="loading"><i class="bi" :class="loading ? 'bi-arrow-repeat po-spin' : 'bi-search'"></i> {{ loading ? 'جارٍ التحديث…' : 'استعلام' }}</button>
                 </div>
             </form>
         </template>
 
-        <div v-if="pos.data.length" class="table-responsive">
+        <div v-if="loading" class="po-loading" role="status" aria-live="polite"><i class="bi bi-arrow-repeat po-spin"></i> جارٍ تحميل النتائج…</div>
+        <div v-if="pos.data.length" class="table-responsive" :class="{ 'is-loading': loading }" :aria-busy="loading">
             <table class="table align-middle">
                 <thead class="bg-light">
                     <tr>
@@ -152,7 +160,7 @@ const visibleSuppliers = computed(() => {
                 <tbody>
                     <tr v-for="po in pos.data" :key="po.id">
                         <td>
-                            <a :href="po.urls.show" class="fw-bold po-num">{{ po.number }}</a>
+                            <Link :href="po.urls.show" class="fw-bold po-num">{{ po.number }}</Link>
                         </td>
                         <td>{{ po.supplierName }}</td>
                         <td><span class="badge bg-secondary">{{ po.itemsCount }} بند</span></td>
@@ -174,26 +182,27 @@ const visibleSuppliers = computed(() => {
                             </div>
                         </td>
                         <td class="text-nowrap">
-                            <a :href="po.urls.show" class="btn btn-sm btn-primary">
+                            <Link :href="po.urls.show" class="btn btn-sm btn-primary">
                                 <i class="bi bi-eye"></i> تفاصيل
-                            </a>
-                            <a v-if="po.canReceive" :href="po.urls.receive" class="btn btn-sm btn-success"
+                            </Link>
+                            <Link v-if="po.canReceive" :href="po.urls.receive" class="btn btn-sm btn-success"
                                title="استلام البضاعة">
                                 <i class="bi bi-box-arrow-in-down"></i>
-                            </a>
+                            </Link>
                         </td>
                     </tr>
                 </tbody>
             </table>
         </div>
 
-        <EmptyState v-else icon="bi-truck"
-                    title="ما في أوامر شراء بعد"
-                    message="أنشئ أول أمر شراء من مورد لاستلام بضاعة وتحديث المخزون تلقائياً.">
-            <template v-if="can.create" #cta>
-                <a :href="urls.create" class="btn btn-primary">
+        <EmptyState v-else-if="!loading" :icon="anyFilter ? 'bi-funnel' : 'bi-truck'"
+                    :title="anyFilter ? 'لا توجد نتائج مطابقة' : 'ما في أوامر شراء بعد'"
+                    :message="anyFilter ? 'غيّر الفلاتر أو امسحها لعرض بقية أوامر الشراء.' : 'أنشئ أول أمر شراء من مورد لاستلام بضاعة وتحديث المخزون تلقائياً.'">
+            <template v-if="can.create || anyFilter" #cta>
+                <Link v-if="!anyFilter" :href="urls.create" class="btn btn-primary">
                     <i class="bi bi-plus-lg"></i> أمر شراء جديد
-                </a>
+                </Link>
+                <button v-else type="button" class="btn btn-light" @click="clear">مسح الفلاتر</button>
             </template>
         </EmptyState>
 
@@ -208,6 +217,15 @@ const visibleSuppliers = computed(() => {
    on the receiving dock, not from a mouse. */
 .po-control { min-height: 44px; }
 .po-sup-search { margin-bottom: .35rem; }
+.po-filters { display: grid; grid-template-columns: minmax(130px,.75fr) minmax(145px,.85fr) minmax(220px,1.35fr) minmax(145px,.8fr) minmax(145px,.8fr) auto; align-items: end; gap: .6rem; }
+.po-filter { min-width: 0; }
+.po-filter--submit .btn { min-height: 44px; min-width: 112px; }
+.table-responsive { overscroll-behavior-inline: contain; scrollbar-width: thin; }
+.table { min-width: 1020px; }
+.table-responsive.is-loading { opacity: .52; pointer-events: none; }
+.po-loading { display: flex; align-items: center; justify-content: center; gap: .45rem; min-height: 42px; color: var(--primary); background: rgba(var(--primary-rgb),.055); font-size: .72rem; font-weight: 800; }
+.po-spin { display: inline-block; animation: po-rotate 1s linear infinite; }
+@keyframes po-rotate { to { transform: rotate(360deg); } }
 
 .po-num {
     color: var(--primary);
@@ -217,4 +235,13 @@ const visibleSuppliers = computed(() => {
 .po-total { color: var(--primary); }
 
 .table td .btn-sm { min-height: 38px; }
+@media (max-width: 1180px) {
+    .po-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .po-filter--supplier { grid-row: span 2; }
+    .po-filter--submit .btn { width: 100%; }
+}
+@media (max-width: 620px) {
+    .po-filters { grid-template-columns: 1fr; }
+    .po-filter--supplier { grid-row: auto; }
+}
 </style>

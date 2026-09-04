@@ -229,7 +229,12 @@ const money = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDig
 .rc-field small { font-size: .72rem; color: #94a3b8; }
 .rc-fill { min-height: 46px; font-weight: 700; }
 
+.table-responsive { overscroll-behavior-inline: contain; scrollbar-width: thin; }
+.rc-table { min-width: 1040px; }
 .rc-table th { white-space: nowrap; font-size: .8rem; }
+.rc-table th:first-child,
+.rc-table td:first-child { position: sticky; inset-inline-start: 0; z-index: 1; background: #fff; box-shadow: -1px 0 #e5e7eb; }
+.rc-table thead th:first-child { z-index: 2; background: #f8fafc; }
 .rc-name { font-weight: 700; color: #0f172a; }
 .rc-name small { display: block; font-weight: 600; color: #94a3b8; font-size: .72rem; }
 .rc-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -249,4 +254,19 @@ const money = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDig
 .rc-save { margin-inline-start: auto; font-weight: 800; }
 .rc-spin { animation: rc-rotate 1s linear infinite; display: inline-block; }
 @keyframes rc-rotate { to { transform: rotate(360deg); } }
+@media (max-width: 1399px) {
+    .rc-note { padding: .7rem .8rem; font-size: .75rem; }
+    .rc-note ul { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; padding-inline-start: 0; list-style: none; }
+    .rc-table th { font-size: .72rem; }
+    .rc-table td { padding-block: .55rem; }
+    .rc-foot { position: sticky; inset-block-end: 0; z-index: 4; margin: -.35rem; padding: .65rem; border: 1px solid #dfe8e3; border-radius: 12px; background: rgba(255,255,255,.96); box-shadow: 0 -8px 22px rgba(15,71,49,.06); }
+}
+@media (max-width: 760px) {
+    .rc-note ul { grid-template-columns: 1fr; gap: .3rem; }
+    .rc-dest { align-items: stretch; }
+    .rc-fill { width: 100%; }
+    .rc-foot { display: grid; grid-template-columns: 1fr auto; }
+    .rc-total,.rc-problem { grid-column: 1 / -1; }
+    .rc-save { margin-inline-start: 0; }
+}
 </style>

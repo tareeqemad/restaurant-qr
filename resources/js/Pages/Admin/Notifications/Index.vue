@@ -7,32 +7,234 @@ import StatRail from '../../../Components/Ui/StatRail.vue';
 import Pagination from '../../../Components/Ui/Pagination.vue';
 import EmptyState from '../../../Components/Ui/EmptyState.vue';
 import { useConfirm } from '../../../Composables/useConfirm';
+import { useToast } from '../../../Composables/useToast';
 
-defineOptions({layout:AdminLayout});
-const props=defineProps({notifications:{type:Object,required:true},stats:{type:Object,required:true},filters:{type:Object,required:true},types:{type:Array,default:()=>[]},urls:{type:Object,required:true}});
-const {ask}=useConfirm();
-const busy=ref(null);
-const filter=reactive({...props.filters});
-const hasFilters=computed(()=>filter.status!=='all'||filter.type||filter.severity);
-const csrf=()=>document.querySelector('meta[name="csrf-token"]')?.content||'';
-function visit(patch={}){Object.assign(filter,patch);router.get(props.urls.index,{status:filter.status,type:filter.type||undefined,severity:filter.severity||undefined},{preserveState:true,preserveScroll:true,replace:true})}
-function clear(){visit({status:'all',type:'',severity:''})}
-async function request(url,method='POST',payload=null){const response=await fetch(url,{method,headers:{'X-CSRF-TOKEN':csrf(),'Accept':'application/json','Content-Type':'application/json'},body:payload?JSON.stringify(payload):null});if(!response.ok)throw new Error('request failed');return response.json()}
-async function markRead(item,navigate=false){busy.value=item.id;try{await request(`${props.urls.base}/${item.id}/read`);if(navigate&&item.action_url){window.location.href=item.action_url;return}router.reload({only:['notifications','stats']})}finally{busy.value=null}}
-async function markAll(){busy.value='all';try{await request(props.urls.readAll);router.reload({only:['notifications','stats']})}finally{busy.value=null}}
-async function dismiss(item){const yes=await ask({title:'حذف الإشعار؟',message:'سيُزال من صندوقك فقط، ولن يتأثر الطلب أو الإجراء المرتبط به.',confirmLabel:'حذف الإشعار',danger:true});if(!yes)return;busy.value=item.id;try{await request(`${props.urls.base}/${item.id}`,'DELETE');router.reload({only:['notifications','stats']})}finally{busy.value=null}}
-async function quick(item){busy.value=item.id;try{await request(item.quick_action.url,'POST',item.quick_action.payload||{});await markRead(item,false)}finally{busy.value=null}}
-const typeMeta=(key)=>props.types.find(t=>t.value===key);
+defineOptions({ layout: AdminLayout });
+
+const props = defineProps({
+    notifications: { type: Object, required: true },
+    stats: { type: Object, required: true },
+    filters: { type: Object, required: true },
+    types: { type: Array, default: () => [] },
+    urls: { type: Object, required: true },
+});
+
+const { ask } = useConfirm();
+const toast = useToast();
+const busy = ref(null);
+const loading = ref(false);
+const actionError = ref('');
+const filter = reactive({ ...props.filters });
+const statuses = [
+    { value: 'all', label: 'الكل' },
+    { value: 'unread', label: 'غير المقروء' },
+    { value: 'read', label: 'المقروء' },
+];
+
+const hasFilters = computed(() => filter.status !== 'all' || filter.type || filter.severity);
+const emptyCopy = computed(() => hasFilters.value
+    ? { title: 'لا توجد نتائج مطابقة', message: 'جرّب مسح الفلاتر لعرض بقية الإشعارات.' }
+    : { title: 'صندوقك مرتب', message: 'لا يوجد ما يحتاج انتباهك الآن. ستظهر التنبيهات الجديدة هنا.' });
+const csrf = () => document.querySelector('meta[name="csrf-token"]')?.content || '';
+const typeMeta = (key) => props.types.find((type) => type.value === key);
+
+function setLoading(value) {
+    loading.value = value;
+    if (value) actionError.value = '';
+}
+
+function visit(patch = {}) {
+    Object.assign(filter, patch);
+    router.get(props.urls.index, {
+        status: filter.status,
+        type: filter.type || undefined,
+        severity: filter.severity || undefined,
+    }, {
+        preserveState: true,
+        preserveScroll: true,
+        replace: true,
+        onStart: () => setLoading(true),
+        onFinish: () => setLoading(false),
+    });
+}
+
+function clear() {
+    visit({ status: 'all', type: '', severity: '' });
+}
+
+function reloadInbox() {
+    router.reload({
+        only: ['notifications', 'stats'],
+        preserveScroll: true,
+        onStart: () => setLoading(true),
+        onFinish: () => setLoading(false),
+    });
+}
+
+async function request(url, method = 'POST', payload = null) {
+    const response = await fetch(url, {
+        method,
+        headers: {
+            'X-CSRF-TOKEN': csrf(),
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+        },
+        body: payload ? JSON.stringify(payload) : null,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || 'تعذر تنفيذ الإجراء. حاول مرة أخرى.');
+    return data;
+}
+
+async function run(itemKey, callback, successMessage = '') {
+    busy.value = itemKey;
+    actionError.value = '';
+    try {
+        await callback();
+        if (successMessage) toast.success(successMessage);
+        return true;
+    } catch (error) {
+        actionError.value = error?.message || 'تعذر تنفيذ الإجراء. حاول مرة أخرى.';
+        toast.error(actionError.value);
+        return false;
+    } finally {
+        busy.value = null;
+    }
+}
+
+async function markRead(item, navigate = false) {
+    const completed = await run(item.id, async () => {
+        if (!item.read) await request(`${props.urls.base}/${item.id}/read`);
+    });
+    if (!completed) return;
+    if (navigate && item.action_url) {
+        router.visit(item.action_url, {
+            onStart: () => setLoading(true),
+            onFinish: () => setLoading(false),
+        });
+        return;
+    }
+    reloadInbox();
+}
+
+async function markAll() {
+    const completed = await run('all', () => request(props.urls.readAll), 'تم تعليم كل الإشعارات كمقروءة.');
+    if (completed) reloadInbox();
+}
+
+async function dismiss(item) {
+    const approved = await ask({
+        title: 'حذف الإشعار؟',
+        message: 'سيُزال من صندوقك فقط، ولن يتأثر الطلب أو الإجراء المرتبط به.',
+        confirmLabel: 'حذف الإشعار',
+        danger: true,
+    });
+    if (!approved) return;
+    const completed = await run(item.id, () => request(`${props.urls.base}/${item.id}`, 'DELETE'), 'تم حذف الإشعار.');
+    if (completed) reloadInbox();
+}
+
+async function quick(item) {
+    const completed = await run(item.id, async () => {
+        await request(item.quick_action.url, 'POST', item.quick_action.payload || {});
+        if (!item.read) await request(`${props.urls.base}/${item.id}/read`);
+    }, 'تم تنفيذ الإجراء بنجاح.');
+    if (completed) reloadInbox();
+}
 </script>
+
 <template>
-<Head title="الإشعارات"/>
-<PageHeader title="الإشعارات" icon="bi-bell-fill" subtitle="ما يحتاج انتباهك أولاً، ثم السجل بهدوء"><template #actions><button v-if="stats.unread" class="btn btn-primary" type="button" :disabled="busy==='all'" @click="markAll"><i class="bi bi-check2-all"></i> قراءة الكل</button></template></PageHeader>
-<StatRail :stats="[{label:'غير مقروء',value:stats.unread,icon:'bi-bell-fill',color:'accent'},{label:'وصل اليوم',value:stats.today,icon:'bi-calendar-day-fill',color:'success'},{label:'طلبات جديدة',value:stats.newOrders,icon:'bi-bag-plus-fill',color:'primary'},{label:'طلب فاتورة',value:stats.billRequests,icon:'bi-receipt-cutoff',color:'warning'},{label:'مخزون منخفض',value:stats.lowStock,icon:'bi-exclamation-triangle-fill',color:'warning'}]"/>
-<section class="inbox"><header><div><small>صندوقك</small><h2>{{notifications.total}} إشعاراً</h2></div><button v-if="hasFilters" type="button" @click="clear"><i class="bi bi-x-circle"></i> مسح الفلاتر</button></header><div class="filters"><div class="status-tabs"><button v-for="status in [{value:'all',label:'الكل'},{value:'unread',label:'غير المقروء'},{value:'read',label:'المقروء'}]" :key="status.value" type="button" :class="{active:filter.status===status.value}" @click="visit({status:status.value})">{{status.label}}</button></div><select v-model="filter.type" @change="visit()"><option value="">كل الأنواع</option><option v-for="type in types" :key="type.value" :value="type.value">{{type.label}}</option></select><select v-model="filter.severity" @change="visit()"><option value="">كل المستويات</option><option value="danger">حرج</option><option value="warning">تحذير</option><option value="success">نجاح</option><option value="info">معلومة</option></select></div>
- <div v-if="notifications.data.length" class="notification-list"><article v-for="item in notifications.data" :key="item.id" :class="[{read:item.read},`is-${item.severity}`]"><span class="marker"></span><i class="bi avatar" :class="item.icon"></i><div class="body"><div class="title"><strong>{{item.title}}</strong><small>{{item.created_at}}</small></div><p v-if="item.body">{{item.body}}</p><span class="type"><i class="bi" :class="typeMeta(item.type_key)?.icon||'bi-bell'"></i>{{typeMeta(item.type_key)?.label||'إشعار نظام'}}</span></div><div class="actions"><button v-if="item.quick_action" type="button" class="quick" :disabled="busy===item.id" @click="quick(item)"><i class="bi bi-lightning-charge-fill"></i>{{item.quick_action.label}}</button><button v-if="item.action_url" type="button" @click="markRead(item,true)"><i class="bi bi-box-arrow-up-left"></i>{{item.action_label||'فتح'}}</button><button v-if="!item.read" type="button" title="مقروء" @click="markRead(item)"><i class="bi bi-check2"></i></button><button type="button" class="delete" title="حذف" @click="dismiss(item)"><i class="bi bi-trash3"></i></button></div></article></div>
- <EmptyState v-else icon="bi-bell-slash" title="لا توجد إشعارات هنا" message="غيّر الفلاتر أو عد لاحقاً؛ لا يوجد ما يحتاج انتباهك الآن."/><footer><Pagination :links="notifications.links"/></footer>
-</section>
+    <Head title="الإشعارات" />
+    <PageHeader title="الإشعارات" icon="bi-bell-fill" subtitle="ابدأ بما يحتاج إجراء، واترك السجل للرجوع إليه">
+        <template #actions>
+            <button v-if="stats.unread" class="btn btn-primary" type="button"
+                    :disabled="busy === 'all' || loading" @click="markAll">
+                <i class="bi" :class="busy === 'all' ? 'bi-arrow-repeat notification-spin' : 'bi-check2-all'"></i>
+                قراءة الكل
+            </button>
+        </template>
+    </PageHeader>
+
+    <StatRail :stats="[
+        { label: 'غير مقروء', value: stats.unread, icon: 'bi-bell-fill', color: 'accent' },
+        { label: 'وصل اليوم', value: stats.today, icon: 'bi-calendar-day-fill', color: 'success' },
+        { label: 'طلبات جديدة', value: stats.newOrders, icon: 'bi-bag-plus-fill', color: 'primary' },
+        { label: 'طلب فاتورة', value: stats.billRequests, icon: 'bi-receipt-cutoff', color: 'warning' },
+        { label: 'مخزون منخفض', value: stats.lowStock, icon: 'bi-exclamation-triangle-fill', color: 'warning' },
+    ]" />
+
+    <section class="inbox" :aria-busy="loading">
+        <header class="inbox__head">
+            <div>
+                <span>صندوق المتابعة</span>
+                <h2>{{ notifications.total }} إشعاراً</h2>
+                <small v-if="stats.unread">{{ stats.unread }} منها لم يُقرأ بعد</small>
+                <small v-else>اطلعت على كل الإشعارات</small>
+            </div>
+            <button v-if="hasFilters" type="button" class="clear-filters" @click="clear">
+                <i class="bi bi-x-circle"></i> مسح الفلاتر
+            </button>
+        </header>
+
+        <div class="filters" aria-label="تصفية الإشعارات">
+            <div class="status-tabs" role="group" aria-label="حالة القراءة">
+                <button v-for="status in statuses" :key="status.value" type="button"
+                        :class="{ active: filter.status === status.value }"
+                        :aria-pressed="filter.status === status.value"
+                        @click="visit({ status: status.value })">{{ status.label }}</button>
+            </div>
+            <label><span>النوع</span><select v-model="filter.type" @change="visit()">
+                <option value="">كل الأنواع</option>
+                <option v-for="type in types" :key="type.value" :value="type.value">{{ type.label }}</option>
+            </select></label>
+            <label><span>الأولوية</span><select v-model="filter.severity" @change="visit()">
+                <option value="">كل المستويات</option><option value="danger">حرج</option>
+                <option value="warning">تحذير</option><option value="success">نجاح</option><option value="info">معلومة</option>
+            </select></label>
+        </div>
+
+        <div v-if="actionError" class="inbox-error" role="alert">
+            <i class="bi bi-exclamation-triangle-fill"></i><span>{{ actionError }}</span>
+            <button type="button" aria-label="إغلاق الرسالة" @click="actionError = ''"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div v-if="loading" class="inbox-progress" role="status" aria-live="polite">
+            <i class="bi bi-arrow-repeat notification-spin"></i> جارٍ تحديث الصندوق…
+        </div>
+
+        <div v-if="notifications.data.length" class="notification-list">
+            <article v-for="item in notifications.data" :key="item.id"
+                     :class="[{ read: item.read, busy: busy === item.id }, `is-${item.severity}`]">
+                <span class="marker" aria-hidden="true"></span>
+                <span class="avatar" aria-hidden="true"><i class="bi" :class="item.icon"></i></span>
+                <div class="notification-body">
+                    <div class="notification-title"><strong>{{ item.title }}</strong><time>{{ item.created_at }}</time></div>
+                    <p v-if="item.body">{{ item.body }}</p>
+                    <span class="type"><i class="bi" :class="typeMeta(item.type_key)?.icon || 'bi-bell'"></i>{{ typeMeta(item.type_key)?.label || 'إشعار نظام' }}</span>
+                </div>
+                <div class="notification-actions">
+                    <button v-if="item.quick_action" type="button" class="quick" :disabled="busy === item.id" @click="quick(item)"><i class="bi bi-lightning-charge-fill"></i>{{ item.quick_action.label }}</button>
+                    <button v-if="item.action_url" type="button" :disabled="busy === item.id" @click="markRead(item, true)"><i class="bi bi-box-arrow-up-left"></i>{{ item.action_label || 'فتح التفاصيل' }}</button>
+                    <button v-if="!item.read" type="button" :disabled="busy === item.id" title="تعليم كمقروء" aria-label="تعليم كمقروء" @click="markRead(item)"><i class="bi bi-check2"></i></button>
+                    <button type="button" class="delete" :disabled="busy === item.id" title="حذف" aria-label="حذف الإشعار" @click="dismiss(item)"><i class="bi" :class="busy === item.id ? 'bi-arrow-repeat notification-spin' : 'bi-trash3'"></i></button>
+                </div>
+            </article>
+        </div>
+
+        <EmptyState v-else :icon="hasFilters ? 'bi-funnel' : 'bi-bell-slash'" :title="emptyCopy.title" :message="emptyCopy.message">
+            <template v-if="hasFilters" #cta><button type="button" class="btn btn-light" @click="clear">عرض كل الإشعارات</button></template>
+        </EmptyState>
+        <footer v-if="notifications.links?.length"><Pagination :links="notifications.links" /></footer>
+    </section>
 </template>
+
 <style scoped>
-.inbox{margin-top:.85rem;background:#fff;border:1px solid #dce6e0;border-radius:16px;overflow:hidden;box-shadow:0 8px 28px rgba(20,62,40,.045)}.inbox>header{display:flex;justify-content:space-between;align-items:center;padding:1rem;border-bottom:1px solid #e9efeb}.inbox h2,.inbox small{margin:0}.inbox h2{font-size:1rem}.inbox header small{font-size:.68rem;color:#839189}.inbox header button{border:0;background:#f1f5f3;color:#687a70;border-radius:9px;padding:.45rem .7rem;font-size:.7rem}.filters{display:grid;grid-template-columns:1fr 210px 170px;gap:.6rem;padding:.7rem 1rem;background:#f7faf8;border-bottom:1px solid #e8efea}.filters select{border:1px solid #dce6e0;border-radius:10px;background:#fff;padding:.5rem}.status-tabs{display:flex;background:#edf3ef;border-radius:10px;padding:.25rem}.status-tabs button{flex:1;border:0;background:transparent;border-radius:8px;padding:.4rem;font-size:.72rem;color:#64766b}.status-tabs button.active{background:#fff;color:#0d7140;font-weight:850;box-shadow:0 2px 7px rgba(20,70,43,.08)}.notification-list article{display:grid;grid-template-columns:3px 44px minmax(0,1fr) auto;gap:.7rem;align-items:center;padding:.8rem 1rem;border-bottom:1px solid #edf1ef}.notification-list article.read{opacity:.65}.marker{align-self:stretch;border-radius:6px;background:#2c8a58}.is-warning .marker{background:#d49323}.is-danger .marker{background:#c64343}.is-success .marker{background:#219564}.avatar{width:42px;height:42px;display:grid;place-items:center;border-radius:12px;background:#eef6f1;color:#167443;font-size:1rem}.is-warning .avatar{background:#fff6e5;color:#aa6d0b}.is-danger .avatar{background:#fff0f0;color:#b83838}.body{min-width:0}.title{display:flex;justify-content:space-between;gap:.5rem}.title strong{font-size:.78rem}.title small{font-size:.63rem;color:#8a9790;white-space:nowrap}.body p{font-size:.71rem;color:#6e7f76;margin:.18rem 0 .35rem}.type{display:inline-flex;align-items:center;gap:.25rem;font-size:.61rem;color:#819087}.actions{display:flex;gap:.3rem}.actions button{min-height:34px;border:1px solid #dfe7e2;border-radius:9px;background:#fff;color:#456056;padding:.35rem .52rem;font-size:.67rem}.actions .quick{background:#147443;color:#fff;border-color:#147443}.actions .delete{color:#ba3b3b}.inbox>footer{padding:.8rem}@media(max-width:760px){.filters{grid-template-columns:1fr 1fr}.status-tabs{grid-column:1/-1}.notification-list article{grid-template-columns:3px 38px 1fr;align-items:start}.avatar{width:38px;height:38px}.actions{grid-column:3;flex-wrap:wrap}.actions button{flex:1}.title{display:grid}.title small{grid-row:1}.body p{line-height:1.6}}@media(max-width:460px){.filters{grid-template-columns:1fr}.status-tabs{grid-column:auto}.notification-list article{padding:.75rem .65rem}}
+.inbox{position:relative;margin-top:.85rem;overflow:hidden;border:1px solid #dce6e0;border-radius:18px;background:#fff;box-shadow:0 10px 30px rgba(20,62,40,.05)}
+.inbox__head{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1rem 1.1rem;border-bottom:1px solid #e9efeb}.inbox__head>div{display:grid;gap:.1rem}.inbox__head span{color:#167443;font-size:.67rem;font-weight:850}.inbox__head h2{margin:0;font-size:1.05rem;font-weight:900}.inbox__head small{color:#7d8c84;font-size:.68rem}.clear-filters{min-height:38px;padding:.45rem .7rem;border:0;border-radius:10px;color:#596f63;background:#f1f5f3;font-size:.7rem;font-weight:800}
+.filters{display:grid;grid-template-columns:minmax(300px,1fr) minmax(180px,230px) minmax(160px,190px);gap:.65rem;padding:.7rem 1rem;border-bottom:1px solid #e8efea;background:#f7faf8}.filters label{display:grid;gap:.22rem;margin:0}.filters label span{color:#74837b;font-size:.61rem;font-weight:800}.filters select{min-height:42px;padding:.45rem .65rem;border:1px solid #dce6e0;border-radius:10px;color:#344b3f;background:#fff;font-size:.72rem}.status-tabs{display:flex;align-self:end;min-height:42px;padding:.25rem;border-radius:11px;background:#edf3ef}.status-tabs button{flex:1;border:0;border-radius:8px;color:#64766b;background:transparent;font-size:.72rem}.status-tabs button.active{color:#0d7140;background:#fff;box-shadow:0 2px 7px rgba(20,70,43,.08);font-weight:850}
+.inbox-error{display:flex;align-items:center;gap:.55rem;margin:.7rem 1rem 0;padding:.65rem .75rem;border:1px solid #fecaca;border-radius:10px;color:#991b1b;background:#fff7f7;font-size:.72rem}.inbox-error span{flex:1}.inbox-error button{border:0;color:inherit;background:transparent}.inbox-progress{display:flex;align-items:center;justify-content:center;gap:.45rem;min-height:38px;border-bottom:1px solid #e5eee9;color:#167443;background:#f0faf4;font-size:.7rem;font-weight:800}
+.notification-list article{display:grid;grid-template-columns:4px 44px minmax(0,1fr) auto;gap:.75rem;align-items:center;min-height:86px;padding:.85rem 1rem;border-bottom:1px solid #edf1ef;transition:background .15s ease,opacity .15s ease}.notification-list article:last-child{border-bottom:0}.notification-list article:hover{background:#fbfdfc}.notification-list article.read{opacity:.68}.notification-list article.busy{opacity:.5;pointer-events:none}.marker{align-self:stretch;border-radius:6px;background:#2c8a58}.is-warning .marker{background:#d49323}.is-danger .marker{background:#c64343}.is-success .marker{background:#219564}.avatar{display:grid;width:42px;height:42px;place-items:center;border-radius:12px;color:#167443;background:#eef6f1;font-size:1rem}.is-warning .avatar{color:#aa6d0b;background:#fff6e5}.is-danger .avatar{color:#b83838;background:#fff0f0}
+.notification-body{min-width:0}.notification-title{display:flex;justify-content:space-between;gap:.6rem}.notification-title strong{font-size:.78rem}.notification-title time{color:#8a9790;font-size:.63rem;white-space:nowrap}.notification-body p{margin:.2rem 0 .38rem;color:#6e7f76;font-size:.71rem;line-height:1.55}.type{display:inline-flex;align-items:center;gap:.25rem;color:#819087;font-size:.61rem}.notification-actions{display:flex;gap:.3rem}.notification-actions button{min-height:36px;padding:.38rem .56rem;border:1px solid #dfe7e2;border-radius:9px;color:#456056;background:#fff;font-size:.67rem;white-space:nowrap}.notification-actions button:hover:not(:disabled){border-color:#9fc5ad;background:#f2faf5}.notification-actions .quick{border-color:#147443;color:#fff;background:#147443}.notification-actions .delete{color:#ba3b3b}.notification-actions button:disabled{opacity:.55;cursor:wait}.inbox>footer{padding:.8rem;border-top:1px solid #edf1ef}.notification-spin{display:inline-block;animation:notification-rotate 1s linear infinite}@keyframes notification-rotate{to{transform:rotate(360deg)}}
+@media(max-width:1180px){.filters{grid-template-columns:1fr 1fr}.status-tabs{grid-column:1/-1}.notification-list article{grid-template-columns:4px 40px minmax(0,1fr);align-items:start}.notification-actions{grid-column:3;flex-wrap:wrap}}
+@media(max-width:680px){.inbox__head{align-items:flex-start}.filters{grid-template-columns:1fr}.status-tabs{grid-column:auto}.notification-list article{grid-template-columns:4px 36px minmax(0,1fr);padding:.75rem .65rem}.avatar{width:36px;height:36px}.notification-title{display:grid}.notification-title time{grid-row:1}.notification-actions button{flex:1 1 auto;min-height:42px}}
+@media(prefers-reduced-motion:reduce){.notification-list article{transition:none}}
 </style>

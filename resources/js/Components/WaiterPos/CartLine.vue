@@ -1,5 +1,6 @@
 <script setup>
 import { formatMoney } from '../../Composables/useMoney';
+import { useConfirm } from '../../Composables/useConfirm';
 
 const props = defineProps({
     line: { type: Object, required: true },
@@ -12,9 +13,16 @@ const emit = defineEmits({
     'change-qty': (index, delta) => Number.isInteger(index) && Number.isInteger(delta),
     remove: (index) => Number.isInteger(index) && index >= 0,
 });
+const { ask } = useConfirm();
 
-function removeLine() {
-    if (window.confirm(`حذف «${props.line.name}» من السلة؟`)) emit('remove', props.index);
+async function removeLine() {
+    const approved = await ask({
+        title: 'حذف الصنف من السلة؟',
+        message: `سيُحذف «${props.line.name}» مع الإضافات والملاحظات المسجلة عليه.`,
+        confirmLabel: 'حذف الصنف',
+        danger: true,
+    });
+    if (approved) emit('remove', props.index);
 }
 </script>
 

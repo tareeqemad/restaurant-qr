@@ -18,6 +18,7 @@ import SessionDetailsSheet from '../../Components/WaiterPos/SessionDetailsSheet.
 import StaffSheet from '../../Components/WaiterPos/StaffSheet.vue';
 import TransferSheet from '../../Components/WaiterPos/TransferSheet.vue';
 import NotificationsBell from '../../Components/AdminShell/NotificationsBell.vue';
+import ConfirmHost from '../../Components/Ui/ConfirmHost.vue';
 
 const props = defineProps({
     table: { type: Object, required: true },
@@ -603,6 +604,7 @@ async function flushCoverChanges() {
             @close="transferSheetOpen = false"
             @record="handleTransferRecord"
         />
+        <ConfirmHost />
     </main>
 </template>
 

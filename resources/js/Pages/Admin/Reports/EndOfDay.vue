@@ -110,11 +110,12 @@ onBeforeUnmount(() => document.body.classList.remove('printing-end-of-day'));
         { label: 'الخصومات', value: money(summary.discount_total), icon: 'bi-tag', color: statTones.discount },
     ]" />
 
-    <div class="row g-3">
+    <div class="row g-3 eod-grid">
         <div class="col-lg-5">
             <div class="card mb-3">
                 <div class="card-header"><strong><i class="bi bi-cash"></i> الدفعات حسب الطريقة</strong></div>
                 <div class="card-body p-0">
+                    <div class="eod-table-scroll">
                     <table class="table mb-0">
                         <thead class="bg-light"><tr><th>الطريقة</th><th>عدد</th><th>الإجمالي</th></tr></thead>
                         <tbody>
@@ -136,6 +137,7 @@ onBeforeUnmount(() => document.body.classList.remove('printing-end-of-day'));
                             </tr>
                         </tfoot>
                     </table>
+                    </div>
                 </div>
             </div>
 
@@ -153,6 +155,7 @@ onBeforeUnmount(() => document.body.classList.remove('printing-end-of-day'));
 
             <div v-if="byCollector.length" class="card">
                 <div class="card-header"><strong><i class="bi bi-person-check"></i> التحصيل حسب المستخدم</strong></div>
+                <div class="eod-table-scroll eod-table-scroll--wide">
                 <table class="table mb-0">
                     <thead class="bg-light"><tr><th>المستخدم المسؤول</th><th>عمليات</th><th>نقدي</th><th>تحويل</th><th>الإجمالي</th></tr></thead>
                     <tbody>
@@ -167,6 +170,7 @@ onBeforeUnmount(() => document.body.classList.remove('printing-end-of-day'));
                         </tr>
                     </tbody>
                 </table>
+                </div>
             </div>
         </div>
 
@@ -174,6 +178,7 @@ onBeforeUnmount(() => document.body.classList.remove('printing-end-of-day'));
             <div class="card">
                 <div class="card-header"><strong><i class="bi bi-trophy"></i> أكثر الأصناف مبيعاً</strong></div>
                 <div class="card-body p-0">
+                    <div class="eod-table-scroll">
                     <table class="table mb-0">
                         <thead class="bg-light"><tr><th>#</th><th>الصنف</th><th>كمية</th><th>إجمالي</th></tr></thead>
                         <tbody>
@@ -188,6 +193,7 @@ onBeforeUnmount(() => document.body.classList.remove('printing-end-of-day'));
                             </tr>
                         </tbody>
                     </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -202,6 +208,7 @@ onBeforeUnmount(() => document.body.classList.remove('printing-end-of-day'));
                     التكلفة محسوبة بـ <strong>متوسط سعر الشراء</strong> الفعلي للمكوّن وقت الحركة.
                 </div>
                 <div class="card-body p-0">
+                    <div class="eod-table-scroll eod-table-scroll--wide">
                     <table class="table mb-0">
                         <thead class="bg-light"><tr><th>المكون</th><th>النوع</th><th>كمية</th><th>تكلفة</th></tr></thead>
                         <tbody>
@@ -235,6 +242,7 @@ onBeforeUnmount(() => document.body.classList.remove('printing-end-of-day'));
                             </tr>
                         </tfoot>
                     </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -254,6 +262,18 @@ onBeforeUnmount(() => document.body.classList.remove('printing-end-of-day'));
     line-height: 1.55;
     background: rgba(15, 71, 49, .03);
     border-bottom: 1px solid rgba(15, 71, 49, .06);
+}
+.eod-table-scroll { width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: thin; }
+.eod-table-scroll--wide .table { min-width: 590px; }
+@media (max-width: 1399px) and (min-width: 769px) {
+    .eod-grid > [class*="col-"] { flex: 0 0 50%; width: 50%; max-width: 50%; }
+    .eod-grid > [class*="col-"]:last-child { flex-basis: 100%; width: 100%; max-width: 100%; }
+    .eod-grid .card-header { padding: .75rem .85rem; }
+    .eod-grid .table th,
+    .eod-grid .table td { padding: .6rem .7rem; font-size: .74rem; }
+}
+@media (max-width: 768px) {
+    .eod-grid > [class*="col-"] { flex: 0 0 100%; width: 100%; max-width: 100%; }
 }
 </style>
 
@@ -342,6 +362,8 @@ onBeforeUnmount(() => document.body.classList.remove('printing-end-of-day'));
     /* Tables: tighter rows, visible borders, repeating headers across page
        breaks so a 30-row table stays readable. */
     body.printing-end-of-day table { width: 100% !important; border-collapse: collapse !important; }
+    body.printing-end-of-day .eod-table-scroll { overflow: visible !important; }
+    body.printing-end-of-day .eod-table-scroll .table { min-width: 0 !important; }
     body.printing-end-of-day table thead { display: table-header-group; }
     body.printing-end-of-day table th,
     body.printing-end-of-day table td {
