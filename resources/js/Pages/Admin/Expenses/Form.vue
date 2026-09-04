@@ -4,6 +4,7 @@ import { Head, useForm } from '@inertiajs/vue3';
 import AdminLayout from '../../../Layouts/AdminLayout.vue';
 import PageHeader from '../../../Components/Ui/PageHeader.vue';
 import { useFormUx } from '../../../Composables/useFormUx';
+import { localDateInput } from '../../../Utils/dateInput';
 
 defineOptions({ layout: AdminLayout });
 
@@ -19,6 +20,7 @@ const props = defineProps({
 });
 
 const editing = computed(() => Boolean(props.expense.id));
+const today = localDateInput();
 const detailsOpen = ref(Boolean(
     props.expense.paymentReference || props.expense.vendorName || props.expense.supplierId
     || props.expense.notes || props.expense.attachmentUrl
@@ -83,7 +85,7 @@ function submit() {
                     <label class="field"><span>المبلغ *</span><input v-model="form.amount" class="form-control money" type="number" min="0.01" step="0.01" inputmode="decimal" required><small v-if="form.errors.amount" class="error">{{ form.errors.amount }}</small></label>
                     <label class="field"><span>التصنيف *</span><select v-model="form.expense_category_id" class="form-select" required><option value="">اختر التصنيف</option><option v-for="category in categories" :key="category.id" :value="category.id">{{ category.label }}</option></select><small v-if="form.errors.expense_category_id" class="error">{{ form.errors.expense_category_id }}</small></label>
                     <label class="field"><span>طريقة الدفع *</span><select v-model="form.payment_method" class="form-select" required><option v-for="method in paymentMethods" :key="method.value" :value="method.value">{{ method.label }}</option></select><small v-if="form.errors.payment_method" class="error">{{ form.errors.payment_method }}</small></label>
-                    <label class="field"><span>تاريخ المصروف *</span><input v-model="form.expense_date" class="form-control" type="date" :max="new Date().toISOString().slice(0,10)" required><small v-if="form.errors.expense_date" class="error">{{ form.errors.expense_date }}</small></label>
+                    <label class="field"><span>تاريخ المصروف *</span><input v-model="form.expense_date" class="form-control" type="date" :max="today" required><small v-if="form.errors.expense_date" class="error">{{ form.errors.expense_date }}</small></label>
                 </div>
                 <div v-if="!categories.length" class="warning"><i class="bi bi-exclamation-triangle-fill"></i><span>لا توجد تصنيفات مفعّلة، ولن يمكن الحفظ.</span><a v-if="canManageCategories" :href="urls.categories">إضافة تصنيف</a></div>
             </section>

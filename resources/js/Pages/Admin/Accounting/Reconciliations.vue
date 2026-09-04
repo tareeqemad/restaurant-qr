@@ -7,13 +7,15 @@ import AccountingNav from "../../../Components/Accounting/AccountingNav.vue";
 import AccountingPanel from "../../../Components/Accounting/AccountingPanel.vue";
 import CollectionSheet from "../../../Components/Collections/CollectionSheet.vue";
 import Pagination from "../../../Components/Ui/Pagination.vue";
+import { localDateInput } from "../../../Utils/dateInput";
 
 defineOptions({ layout: AdminLayout });
 const props = defineProps({ accounts: Array, adjustmentAccounts: Array, selectedAccount: Object, statementDate: String, bookBalance: Number, period: Object, reconciliations: Object, currency: Object, urls: Object });
 const selector = reactive({ account_id: props.selectedAccount?.id || "", statement_date: props.statementDate });
 const form = useForm({ account_id: props.selectedAccount?.id || "", statement_date: props.statementDate, statement_balance: "", notes: "" });
 const selectedVariance = ref(null);
-const resolution = useForm({ adjustment_account_id: "", posted_on: new Date().toISOString().slice(0, 10), notes: "" });
+const today = localDateInput();
+const resolution = useForm({ adjustment_account_id: "", posted_on: today, notes: "" });
 const difference = computed(() => Number(form.statement_balance || 0) - Number(props.bookBalance || 0));
 const money = (value) => `${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value || 0))} ${props.currency.symbol}`;
 const refresh = () => router.get(props.urls.index, selector, { preserveState: false, preserveScroll: true });
@@ -25,7 +27,7 @@ function openResolution(row) {
     resolution.clearErrors();
     const preferredType = Number(row.difference) < 0 ? "expense" : "revenue";
     resolution.adjustment_account_id = props.adjustmentAccounts.find((account) => account.type === preferredType)?.id ?? "";
-    resolution.posted_on = new Date().toISOString().slice(0, 10);
+    resolution.posted_on = localDateInput();
 }
 
 function resolveVariance() {
@@ -77,7 +79,7 @@ function resolveVariance() {
         <form id="reconciliationResolution" class="resolution-form" @submit.prevent="resolveVariance">
             <p><i class="bi bi-info-circle"></i> تحقّق من السبب أولاً. الفرق السالب يُسجل عادةً على مصروف عجز، والموجب على إيراد زيادة. يمكنك اختيار الحساب الأنسب من دليلك.</p>
             <label><span>حساب التسوية المقابل *</span><select v-model="resolution.adjustment_account_id" required><option value="" disabled>اختر الحساب</option><option v-for="account in adjustmentAccounts" :key="account.id" :value="account.id">{{ account.code }} — {{ account.name }}</option></select><small v-if="resolution.errors.adjustment_account_id">{{ resolution.errors.adjustment_account_id }}</small></label>
-            <label><span>تاريخ قيد التسوية *</span><input v-model="resolution.posted_on" type="date" :max="new Date().toISOString().slice(0, 10)" required /><small v-if="resolution.errors.posted_on">{{ resolution.errors.posted_on }}</small></label>
+            <label><span>تاريخ قيد التسوية *</span><input v-model="resolution.posted_on" type="date" :max="today" required /><small v-if="resolution.errors.posted_on">{{ resolution.errors.posted_on }}</small></label>
             <label><span>سبب الفرق وإجراء المراجعة *</span><textarea v-model="resolution.notes" rows="4" maxlength="1000" required placeholder="مثال: عجز عدّ وردية المساء بعد مراجعة إيصالات الصرف..."></textarea><small v-if="resolution.errors.notes">{{ resolution.errors.notes }}</small></label>
         </form>
         <template #footer><button type="button" class="btn btn-light" @click="selectedVariance = null">تراجع</button><button type="submit" form="reconciliationResolution" class="btn btn-warning" :disabled="resolution.processing"><i class="bi bi-journal-check"></i> ترحيل القيد وإغلاق الفرق</button></template>

@@ -114,7 +114,9 @@ class AdminShellTest extends TestCase
         $this->actingAs($this->waiter);
         $waiterLabels = collect(AdminNav::build())->pluck('label');
         $this->assertTrue($waiterLabels->contains(__('admin.nav.dashboard')));
-        $this->assertTrue($waiterLabels->contains(__('admin.nav.usage_guide')));
+        // The guide is intentionally available from the user menu instead of
+        // occupying the primary navigation for every operational role.
+        $this->assertFalse($waiterLabels->contains(__('admin.nav.usage_guide')));
         $this->assertFalse($waiterLabels->contains(__('admin.nav.system_admin')));
         $this->assertFalse($waiterLabels->contains(__('admin.nav.inventory_purchasing')));
         $this->assertFalse($waiterLabels->contains(__('admin.nav.reports')));

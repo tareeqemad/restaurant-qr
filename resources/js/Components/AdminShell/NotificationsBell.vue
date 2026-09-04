@@ -15,9 +15,11 @@ const props = defineProps({
     floating: { type: Boolean, default: true },
 });
 
-const { open, root, toggle } = useDropdown();
+const { open, root, toggle, close } = useDropdown();
 const unread = ref(0);
 const items = ref([]);
+const loading = ref(true);
+const markingAll = ref(false);
 const busyQuick = ref(new Set());
 const dismissedAlerts = ref(new Set());
 const toast = useToast();
@@ -51,7 +53,11 @@ const call = (url, method = 'GET', payload = null, signal = undefined) => fetch(
 }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
 
 const refresh = async () => {
-    if (document.hidden || polling || navigationBusy || ! navigator.onLine) return;
+    if (document.hidden || polling || navigationBusy) return;
+    if (! navigator.onLine) {
+        loading.value = false;
+        return;
+    }
     polling = true;
     refreshController = new AbortController();
     try {
@@ -75,7 +81,13 @@ const refresh = async () => {
     } finally {
         polling = false;
         refreshController = null;
+        loading.value = false;
     }
+};
+
+const toggleMenu = () => {
+    toggle();
+    if (open.value) refresh();
 };
 
 const markRead = (n) => {
@@ -93,18 +105,24 @@ const dismissAlert = (notification) => {
 };
 
 const openNotification = (notification) => {
+    close();
     dismissAlert(notification);
     markRead(notification);
     if (notification.action_url) router.visit(notification.action_url);
 };
 
-const markAllRead = () => {
-    call(props.urls.readAll, 'POST').then((res) => {
+const markAllRead = async () => {
+    if (markingAll.value) return;
+    markingAll.value = true;
+    try {
+        const res = await call(props.urls.readAll, 'POST');
         if (res?.ok) {
             unread.value = res.unread;
             items.value.forEach((i) => { i.read = true; });
         }
-    });
+    } finally {
+        markingAll.value = false;
+    }
 };
 
 const quickAct = async (notification) => {
@@ -158,57 +176,98 @@ onBeforeUnmount(() => {
 
 <template>
     <div class="header-element notifications-dropdown bell" ref="root">
-        <a href="#" class="header-link" :aria-expanded="open" title="الإشعارات" @click.prevent="toggle">
+        <button
+            type="button"
+            class="header-link bell-trigger"
+            :class="{ 'is-open': open }"
+            aria-haspopup="dialog"
+            aria-controls="notifications-popover"
+            :aria-expanded="open"
+            aria-label="فتح الإشعارات"
+            title="الإشعارات"
+            @click="toggleMenu"
+        >
             <svg class="header-link-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" height="24" width="24"><path opacity=".3" d="M12 6.5c-2.49 0-4 2.02-4 4.5v6h8v-6c0-2.48-1.51-4.5-4-4.5z"></path><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-11c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2v-5zm-2 6H8v-6c0-2.48 1.51-4.5 4-4.5s4 2.02 4 4.5v6z"></path></svg>
-            <span v-if="unread > 0" class="badge bg-danger rounded-pill header-icon-badge pulse pulse-danger">{{ unread }}</span>
-        </a>
+            <span v-if="unread > 0" class="bell-count" :aria-label="`${unread} إشعار غير مقروء`">{{ unread > 99 ? '99+' : unread }}</span>
+        </button>
 
-        <div v-show="open" class="main-header-dropdown dropdown-menu dropdown-menu-end notifications-menu p-0 show bell-menu">
-            <div class="d-flex align-items-center justify-content-between px-3 py-2 border-bottom">
-                <h6 class="fw-semibold mb-0 fs-14 text-dark">
-                    <i class="bi bi-bell-fill text-accent me-1"></i> الإشعارات
-                </h6>
-                <button v-if="unread > 0" type="button"
-                        class="btn btn-sm btn-link text-decoration-none p-0 fs-12 fw-semibold"
-                        @click="markAllRead">
-                    <i class="bi bi-check2-all me-1"></i> تحديد الكل كمقروء
+        <section
+            v-show="open"
+            id="notifications-popover"
+            class="main-header-dropdown dropdown-menu dropdown-menu-end notifications-menu show bell-menu"
+            role="dialog"
+            aria-modal="false"
+            aria-labelledby="notifications-title"
+        >
+            <header class="bell-menu__header">
+                <span class="bell-menu__heading-icon" aria-hidden="true"><i class="bi bi-bell-fill"></i></span>
+                <span class="bell-menu__heading">
+                    <strong id="notifications-title">الإشعارات</strong>
+                    <small>{{ unread > 0 ? `${unread} غير مقروء` : 'لا يوجد جديد' }}</small>
+                </span>
+                <button
+                    v-if="unread > 0"
+                    type="button"
+                    class="mark-all"
+                    :disabled="markingAll"
+                    @click="markAllRead"
+                >
+                    <i class="bi bi-check2-all" aria-hidden="true"></i>
+                    {{ markingAll ? 'جارٍ التحديث…' : 'قراءة الكل' }}
                 </button>
-            </div>
+            </header>
 
-            <ul class="list-unstyled mb-0 notifications-list">
-                <li v-for="n in items" :key="n.id">
-                    <div class="notification-row" :class="{ 'opacity-75': n.read }">
-                        <a :href="n.action_url || '#'" class="notification-link" @click.prevent="openNotification(n)">
+            <div class="notifications-scroll" aria-live="polite">
+                <div v-if="loading" class="notifications-loading" role="status">
+                    <span></span><span></span><span></span>
+                    <small>جارٍ التحقق من الجديد…</small>
+                </div>
+
+                <div v-else-if="items.length === 0" class="notifications-empty">
+                    <span aria-hidden="true"><i class="bi bi-check2-circle"></i></span>
+                    <strong>كل شيء تحت السيطرة</strong>
+                    <small>لا توجد إشعارات تحتاج انتباهك الآن.</small>
+                </div>
+
+                <ul v-else class="notifications-list">
+                    <li v-for="n in items" :key="n.id">
+                        <article class="notification-row" :class="{ 'is-read': n.read }">
+                            <a :href="n.action_url || '#'" class="notification-link" @click.prevent="openNotification(n)">
                             <span class="notify-avatar" :class="sevClass(n.severity)">
                                 <i class="bi" :class="n.icon || 'bi-bell'"></i>
                             </span>
-                            <div class="flex-fill min-w-0">
-                                <div class="d-flex justify-content-between align-items-baseline gap-2">
-                                    <span class="fw-semibold fs-13 text-dark">{{ n.title }}</span>
-                                    <small class="text-muted fs-11">{{ n.created_at }}</small>
-                                </div>
-                                <div class="text-muted fs-12 text-truncate">{{ n.body }}</div>
-                            </div>
-                        </a>
-                        <button v-if="n.quick_action" type="button" class="quick-action"
-                                :disabled="busyQuick.has(n.id)" @click="quickAct(n)">
-                            <i class="bi bi-check2-circle"></i>
-                            {{ busyQuick.has(n.id) ? 'جارٍ التنفيذ…' : n.quick_action.label }}
-                        </button>
-                    </div>
-                </li>
-                <li v-if="items.length === 0" class="text-center text-muted py-4 px-3">
-                    <i class="bi bi-bell-slash fs-3 d-block mb-2 op-5"></i>
-                    <span class="fs-13">لا إشعارات</span>
-                </li>
-            </ul>
-
-            <div class="border-top text-center py-2">
-                <a :href="urls.index" class="text-decoration-none fw-semibold fs-13 text-primary">
-                    فتح كل الإشعارات <i class="bi bi-arrow-left ms-1"></i>
-                </a>
+                                <span class="notification-copy">
+                                    <span class="notification-title">
+                                        <strong>{{ n.title }}</strong>
+                                        <small>{{ n.created_at }}</small>
+                                    </span>
+                                    <span v-if="n.body" class="notification-body">{{ n.body }}</span>
+                                </span>
+                                <span v-if="! n.read" class="unread-dot" aria-label="غير مقروء"></span>
+                            </a>
+                            <button
+                                v-if="n.quick_action"
+                                type="button"
+                                class="quick-action"
+                                :disabled="busyQuick.has(n.id)"
+                                @click="quickAct(n)"
+                            >
+                                <i class="bi bi-lightning-charge-fill" aria-hidden="true"></i>
+                                {{ busyQuick.has(n.id) ? 'جارٍ التنفيذ…' : n.quick_action.label }}
+                            </button>
+                        </article>
+                    </li>
+                </ul>
             </div>
-        </div>
+
+            <a :href="urls.index" class="bell-menu__footer" @click="close">
+                <span>
+                    <i class="bi bi-inbox" aria-hidden="true"></i>
+                    عرض سجل الإشعارات
+                </span>
+                <i class="bi bi-arrow-left" aria-hidden="true"></i>
+            </a>
+        </section>
 
         <aside v-if="floating && activeAlert" class="operational-float" :class="`is-${activeAlert.severity}`" role="alert">
             <span class="operational-icon"><i class="bi" :class="activeAlert.icon || 'bi-bell-fill'"></i></span>
@@ -234,20 +293,274 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.bell { position: relative; }
-.bell-menu {
-    position: absolute;
-    top: calc(100% + 8px);
-    inset-inline-end: 0;
-    min-width: 330px;
-    max-width: min(92vw, 380px);
-    z-index: 1040;
+.bell {
+    position: relative;
+    isolation: isolate;
 }
-.notification-row { border-bottom: 1px solid #eef2f0; padding: .2rem .35rem .55rem; }
-.notification-link { min-height: 56px; padding: .55rem .65rem; display: flex; align-items: flex-start; gap: .55rem; color: inherit; text-decoration: none; border-radius: 10px; }
-.notification-link:hover { background: #f7faf8; }
-.quick-action { min-height: 40px; margin-inline: .65rem; padding: 0 .8rem; border: 1px solid rgba(var(--primary-rgb), .25); border-radius: 11px; background: rgba(var(--primary-rgb), .07); color: rgb(var(--primary-rgb)); font: inherit; font-size: .75rem; font-weight: 800; }
+.bell-trigger {
+    position: relative;
+    border: 1px solid rgba(var(--primary-rgb), .11);
+    background: #fff;
+    cursor: pointer;
+}
+.bell-trigger:hover,
+.bell-trigger:focus-visible,
+.bell-trigger.is-open {
+    color: rgb(var(--primary-rgb));
+    border-color: rgba(var(--primary-rgb), .28);
+    background: rgba(var(--primary-rgb), .07);
+    outline: none;
+}
+.bell-trigger:focus-visible {
+    box-shadow: 0 0 0 3px rgba(var(--primary-rgb), .13);
+}
+.bell-count {
+    position: absolute;
+    inset-block-start: 3px;
+    inset-inline-end: 3px;
+    display: grid;
+    min-width: 17px;
+    height: 17px;
+    padding-inline: 4px;
+    place-items: center;
+    border: 2px solid #fff;
+    border-radius: 999px;
+    color: #fff;
+    background: #d33e45;
+    font-size: .5rem;
+    font-weight: 900;
+    line-height: 1;
+}
+.bell-menu {
+    position: absolute !important;
+    top: calc(100% + 10px) !important;
+    right: auto !important;
+    left: auto !important;
+    inset-inline-end: 0 !important;
+    inset-inline-start: auto !important;
+    z-index: 1200;
+    width: min(390px, calc(100vw - 1rem)) !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    padding: 0 !important;
+    overflow: hidden;
+    border: 1px solid #dce7e1;
+    border-radius: 16px !important;
+    background: #fff;
+    box-shadow: 0 22px 55px -24px rgba(18, 53, 35, .42) !important;
+    transform: none !important;
+}
+.bell-menu::before { display: none !important; }
+.bell-menu__header {
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: .6rem;
+    min-height: 66px;
+    padding: .7rem .8rem;
+    border-bottom: 1px solid #e8efeb;
+    background: linear-gradient(135deg, #fff 10%, #f3f9f5 100%);
+}
+.bell-menu__heading-icon {
+    display: grid;
+    width: 38px;
+    height: 38px;
+    place-items: center;
+    border-radius: 11px;
+    color: rgb(var(--primary-rgb));
+    background: rgba(var(--primary-rgb), .09);
+}
+.bell-menu__heading {
+    display: grid;
+    min-width: 0;
+    gap: .1rem;
+}
+.bell-menu__heading strong {
+    color: #1f382c;
+    font-size: .78rem;
+    font-weight: 900;
+}
+.bell-menu__heading small {
+    color: #7c8c84;
+    font-size: .59rem;
+    font-weight: 700;
+}
+.mark-all {
+    display: inline-flex;
+    min-height: 34px;
+    align-items: center;
+    gap: .3rem;
+    padding-inline: .6rem;
+    border: 1px solid rgba(var(--primary-rgb), .2);
+    border-radius: 9px;
+    color: rgb(var(--primary-rgb));
+    background: #fff;
+    font: inherit;
+    font-size: .6rem;
+    font-weight: 850;
+    white-space: nowrap;
+}
+.mark-all:disabled { opacity: .55; }
+.notifications-scroll {
+    max-height: min(58vh, 430px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: #c8d8cf transparent;
+}
+.notifications-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.notification-row {
+    position: relative;
+    padding: .35rem .45rem .5rem;
+    border-bottom: 1px solid #edf2ef;
+}
+.notification-row.is-read { background: #fbfcfb; }
+.notification-link {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) 8px;
+    min-height: 58px;
+    align-items: center;
+    gap: .6rem;
+    padding: .5rem .55rem;
+    border-radius: 11px;
+    color: inherit;
+    text-decoration: none;
+}
+.notification-link:hover,
+.notification-link:focus-visible {
+    background: #f3f8f5;
+    outline: none;
+}
+.notify-avatar {
+    display: grid;
+    width: 40px;
+    height: 40px;
+    place-items: center;
+    border-radius: 12px;
+    font-size: .95rem;
+}
+.notification-copy {
+    display: grid;
+    min-width: 0;
+    gap: .18rem;
+}
+.notification-title {
+    display: flex;
+    min-width: 0;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: .55rem;
+}
+.notification-title strong {
+    overflow: hidden;
+    color: #253a30;
+    font-size: .7rem;
+    font-weight: 900;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.notification-title small {
+    flex: 0 0 auto;
+    color: #8b9991;
+    font-size: .54rem;
+    white-space: nowrap;
+}
+.notification-body {
+    display: -webkit-box;
+    overflow: hidden;
+    color: #697a71;
+    font-size: .61rem;
+    line-height: 1.55;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+.unread-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: rgb(var(--primary-rgb));
+    box-shadow: 0 0 0 3px rgba(var(--primary-rgb), .11);
+}
+.is-read .unread-dot { visibility: hidden; }
+.quick-action {
+    display: inline-flex;
+    min-height: 34px;
+    align-items: center;
+    justify-content: center;
+    gap: .35rem;
+    margin-inline: 3.65rem .55rem;
+    padding: 0 .75rem;
+    border: 1px solid rgba(var(--primary-rgb), .22);
+    border-radius: 9px;
+    color: rgb(var(--primary-rgb));
+    background: rgba(var(--primary-rgb), .065);
+    font: inherit;
+    font-size: .62rem;
+    font-weight: 850;
+}
+.quick-action:hover { background: rgba(var(--primary-rgb), .11); }
 .quick-action:disabled { opacity: .55; }
+.notifications-empty,
+.notifications-loading {
+    display: grid;
+    min-height: 142px;
+    align-content: center;
+    justify-items: center;
+    gap: .3rem;
+    padding: 1.1rem;
+    text-align: center;
+}
+.notifications-empty > span {
+    display: grid;
+    width: 46px;
+    height: 46px;
+    margin-bottom: .15rem;
+    place-items: center;
+    border-radius: 14px;
+    color: #16814c;
+    background: #eaf6ee;
+    font-size: 1.2rem;
+}
+.notifications-empty strong { color: #294137; font-size: .72rem; font-weight: 900; }
+.notifications-empty small,
+.notifications-loading small { color: #819087; font-size: .59rem; }
+.notifications-loading {
+    grid-template-columns: repeat(3, 8px);
+    column-gap: .3rem;
+}
+.notifications-loading span {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgb(var(--primary-rgb));
+    animation: bell-loading .8s ease-in-out infinite alternate;
+}
+.notifications-loading span:nth-child(2) { animation-delay: .16s; }
+.notifications-loading span:nth-child(3) { animation-delay: .32s; }
+.notifications-loading small { grid-column: 1 / -1; margin-top: .3rem; }
+.bell-menu__footer {
+    display: flex;
+    min-height: 48px;
+    align-items: center;
+    justify-content: space-between;
+    gap: .7rem;
+    padding: .65rem .85rem;
+    border-top: 1px solid #e7eee9;
+    color: #285c43;
+    background: #fbfdfc;
+    font-size: .65rem;
+    font-weight: 850;
+    text-decoration: none;
+}
+.bell-menu__footer span { display: inline-flex; align-items: center; gap: .4rem; }
+.bell-menu__footer:hover,
+.bell-menu__footer:focus-visible { color: rgb(var(--primary-rgb)); background: #f1f8f4; outline: none; }
+@keyframes bell-loading { to { opacity: .28; transform: translateY(-3px); } }
 .operational-float { display: none; }
 
 @media (max-width: 1199.98px) {
@@ -314,6 +627,18 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 560px) {
+    .bell-menu {
+        position: fixed !important;
+        top: 68px !important;
+        right: 8px !important;
+        left: 8px !important;
+        width: auto !important;
+    }
+    .bell-menu__header { grid-template-columns: 36px minmax(0, 1fr) auto; }
+    .bell-menu__heading-icon { width: 36px; height: 36px; }
+    .mark-all { padding-inline: .5rem; }
+    .notification-title { display: grid; gap: .08rem; }
+    .notification-title small { grid-row: 1; }
     .operational-float { grid-template-columns: 38px minmax(0, 1fr) 34px; }
     .operational-icon { width: 38px; height: 38px; }
     .operational-action { grid-column: 1 / -1; width: 100%; }

@@ -6,6 +6,7 @@ import PageHeader from '../../../Components/Ui/PageHeader.vue'
 import AccountingNav from '../../../Components/Accounting/AccountingNav.vue'
 import AccountingPanel from '../../../Components/Accounting/AccountingPanel.vue'
 import Pagination from '../../../Components/Ui/Pagination.vue'
+import { localDateInput } from '../../../Utils/dateInput'
 
 defineOptions({ layout: AdminLayout })
 
@@ -23,7 +24,7 @@ const props = defineProps({
     urls: { type: Object, required: true },
 })
 
-const today = new Date().toISOString().slice(0, 10)
+const today = localDateInput()
 const filters = reactive({ from: props.from, to: props.to, as_of: props.asOf })
 
 function freshToken() {

@@ -7,6 +7,7 @@ import FieldError from '../../../Components/Settings/FieldError.vue'
 import SettingsSection from '../../../Components/Settings/SettingsSection.vue'
 import ToggleField from '../../../Components/Settings/ToggleField.vue'
 import { useConfirm } from '../../../Composables/useConfirm'
+import { localDateInput } from '../../../Utils/dateInput'
 
 defineOptions({ layout: AdminLayout })
 
@@ -147,7 +148,7 @@ async function deleteCurrency(currency) {
     if (yes) router.delete(currency.destroyUrl, { preserveScroll: true })
 }
 
-const today = new Date().toISOString().slice(0, 10)
+const today = localDateInput()
 const exchangeForm = useForm({ currency_code: nonBaseCurrencies.value[0]?.code ?? '', rate: '', valid_from: today, valid_to: '', note: '' })
 function createExchangeRate() {
     if (!props.can.edit) return

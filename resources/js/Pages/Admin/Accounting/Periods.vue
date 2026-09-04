@@ -7,8 +7,9 @@ import AccountingNav from '../../../Components/Accounting/AccountingNav.vue'
 import AccountingPanel from '../../../Components/Accounting/AccountingPanel.vue'
 import Pagination from '../../../Components/Ui/Pagination.vue'
 import { useConfirm } from '../../../Composables/useConfirm'
+import { localDateInput } from '../../../Utils/dateInput'
 defineOptions({layout:AdminLayout})
-const props=defineProps({periods:Object,fiscalYears:Array,urls:Object});const {ask}=useConfirm();const now=new Date();const first=new Date(now.getFullYear(),now.getMonth(),1).toISOString().slice(0,10);const last=new Date(now.getFullYear(),now.getMonth()+1,0).toISOString().slice(0,10)
+const props=defineProps({periods:Object,fiscalYears:Array,urls:Object});const {ask}=useConfirm();const now=new Date();const first=localDateInput(new Date(now.getFullYear(),now.getMonth(),1));const last=localDateInput(new Date(now.getFullYear(),now.getMonth()+1,0))
 const createForm=useForm({fiscal_year_id:'',name:'',starts_on:first,ends_on:last,notes:''});const editForm=useForm({fiscal_year_id:'',name:'',starts_on:'',ends_on:'',notes:''});const editingId=ref(null)
 function edit(period){editingId.value=period.id;Object.assign(editForm,{fiscal_year_id:period.fiscalYearId||'',name:period.name,starts_on:period.startsOn,ends_on:period.endsOn,notes:period.notes||''})}
 const saveEdit=(period)=>editForm.put(period.updateUrl,{preserveScroll:true,onSuccess:()=>editingId.value=null});const create=()=>createForm.post(props.urls.store,{preserveScroll:true,onSuccess:()=>{createForm.reset();createForm.starts_on=first;createForm.ends_on=last}})

@@ -6,8 +6,10 @@ use App\Enums\UserRole;
 use App\Models\Branch;
 use App\Models\User;
 use App\Services\Deployment\MigrationReconciler;
+use App\Services\Deployment\SystemHealthService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -66,6 +68,40 @@ class SystemOperationalReadinessTest extends TestCase
         $this->assertStringContainsString("function_exists('proc_open')", $backup);
         $this->assertStringContainsString('AccountingSchemaUpgrade', $migration);
         $this->assertStringNotContainsString('dropColumn(', $migration);
+    }
+
+    public function test_frontend_health_detects_a_build_older_than_its_sources(): void
+    {
+        $directory = storage_path('framework/testing/frontend-build-'.uniqid());
+        $manifest = $directory.'/build/manifest.json';
+        $source = $directory.'/resources/js/App.vue';
+
+        File::ensureDirectoryExists(dirname($manifest));
+        File::ensureDirectoryExists(dirname($source));
+        File::put($manifest, '{}');
+        File::put($source, '<template><main /></template>');
+
+        try {
+            $now = time();
+            touch($manifest, $now - 60);
+            touch($source, $now);
+            clearstatcache(true, $manifest);
+            clearstatcache(true, $source);
+
+            $service = app(SystemHealthService::class);
+            $stale = $service->frontendBuildState($manifest, [$source]);
+
+            $this->assertTrue($stale['exists']);
+            $this->assertTrue($stale['stale']);
+
+            touch($manifest, $now + 10);
+            clearstatcache(true, $manifest);
+            $fresh = $service->frontendBuildState($manifest, [$source]);
+
+            $this->assertFalse($fresh['stale']);
+        } finally {
+            File::deleteDirectory($directory);
+        }
     }
 
     public function test_existing_tables_can_be_reconciled_without_running_schema_sql(): void

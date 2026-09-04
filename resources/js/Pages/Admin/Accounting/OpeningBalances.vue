@@ -5,6 +5,7 @@ import AdminLayout from "../../../Layouts/AdminLayout.vue";
 import PageHeader from "../../../Components/Ui/PageHeader.vue";
 import AccountingNav from "../../../Components/Accounting/AccountingNav.vue";
 import AccountingPanel from "../../../Components/Accounting/AccountingPanel.vue";
+import { localDateInput } from "../../../Utils/dateInput";
 defineOptions({ layout: AdminLayout });
 const props = defineProps({
     accounts: Array,
@@ -19,7 +20,7 @@ const props = defineProps({
     hasBranch: Boolean,
     urls: Object,
 });
-const today = new Date().toISOString().slice(0, 10);
+const today = localDateInput();
 const active = ref("accounts");
 const search = ref("");
 const accountForm = useForm({

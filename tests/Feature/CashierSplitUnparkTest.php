@@ -130,12 +130,6 @@ class CashierSplitUnparkTest extends TestCase
     /** Un-park via the route lifts the flag and pulls the balance off the debt ledger. */
     public function test_unpark_route_restores_invoice_to_normal_collection(): void
     {
-        // The service method ships in a sibling package (C2) — skip cleanly
-        // during the parallel-work window instead of failing on a missing method.
-        if (! method_exists(BillingService::class, 'unparkSettleOnAccount')) {
-            $this->markTestSkipped('BillingService::unparkSettleOnAccount not merged yet (C2 package).');
-        }
-
         $this->actingAs($this->admin);
         [$invoice] = $this->issueMeal();                                                  // total 100
         app(BillingService::class)->addPayment($invoice, 60.0, 'cash', $this->admin->id); // balance 40

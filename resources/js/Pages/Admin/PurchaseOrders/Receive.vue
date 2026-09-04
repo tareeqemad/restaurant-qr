@@ -13,6 +13,7 @@ import AdminLayout from '../../../Layouts/AdminLayout.vue';
 import DataPanel from '../../../Components/Ui/DataPanel.vue';
 import PageHeader from '../../../Components/Ui/PageHeader.vue';
 import { useToast } from '../../../Composables/useToast';
+import { localDateInput } from '../../../Utils/dateInput';
 
 defineOptions({ layout: AdminLayout });
 
@@ -25,11 +26,11 @@ const props = defineProps({
 
 const toast = useToast();
 
-const today = new Date().toISOString().slice(0, 10);
+const today = localDateInput();
 const plusDays = (days) => {
     const d = new Date();
     d.setDate(d.getDate() + Number(days || 0));
-    return d.toISOString().slice(0, 10);
+    return localDateInput(d);
 };
 
 const locationId = ref(props.locations.find((l) => l.isDefault)?.id ?? (props.locations[0]?.id ?? ''));

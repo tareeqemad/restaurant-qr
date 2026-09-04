@@ -198,16 +198,98 @@ class SystemHealthService
     /** @return array<string,mixed> */
     private function buildCheck(): array
     {
-        $manifest = public_path('build/manifest.json');
+        try {
+            $state = $this->frontendBuildState();
+            if (! $state['exists']) {
+                return $this->check(
+                    'frontend_build',
+                    'بناء الواجهة',
+                    'danger',
+                    'ملفات الإنتاج غير مبنية',
+                    'رفع ملفات Vue وحدها لا يحدّث الشاشة المنشورة.',
+                    'npm ci && npm run build',
+                );
+            }
 
-        return $this->check(
-            'frontend_build',
-            'بناء الواجهة',
-            is_file($manifest) ? 'good' : 'danger',
-            is_file($manifest) ? 'Vite manifest موجود' : 'ملفات الإنتاج غير مبنية',
-            is_file($manifest) ? Carbon::createFromTimestamp(filemtime($manifest))->diffForHumans() : null,
-            is_file($manifest) ? null : 'npm ci && npm run build',
-        );
+            if ($state['stale']) {
+                return $this->check(
+                    'frontend_build',
+                    'بناء الواجهة',
+                    'danger',
+                    'نسخة الواجهة المنشورة أقدم من الكود',
+                    'آخر بناء '.$state['builtAt']->diffForHumans().' · تغيّر المصدر '.$state['sourceAt']->diffForHumans(),
+                    'npm ci && npm run build',
+                );
+            }
+
+            return $this->check(
+                'frontend_build',
+                'بناء الواجهة',
+                'good',
+                'ملفات Vite موجودة ومحدّثة',
+                'آخر بناء '.$state['builtAt']->diffForHumans(),
+            );
+        } catch (\Throwable $e) {
+            return $this->check(
+                'frontend_build',
+                'بناء الواجهة',
+                'danger',
+                'تعذّر التحقق من ملفات الواجهة',
+                $this->safeMessage($e),
+                'npm ci && npm run build',
+            );
+        }
+    }
+
+    /**
+     * @param  list<string>|null  $sourcePaths
+     * @return array{exists:bool,stale:bool,builtAt:?Carbon,sourceAt:?Carbon}
+     */
+    public function frontendBuildState(?string $manifestPath = null, ?array $sourcePaths = null): array
+    {
+        $manifestPath ??= public_path('build/manifest.json');
+        $sourcePaths ??= [
+            resource_path('js'),
+            resource_path('css'),
+            base_path('package.json'),
+            base_path('package-lock.json'),
+            base_path('vite.config.js'),
+        ];
+
+        if (! is_file($manifestPath)) {
+            return ['exists' => false, 'stale' => false, 'builtAt' => null, 'sourceAt' => null];
+        }
+
+        $sourceFiles = collect($sourcePaths)->flatMap(function (string $path) {
+            if (is_dir($path)) {
+                return collect(File::allFiles($path))->map(fn ($file) => $file->getPathname());
+            }
+
+            return is_file($path) ? [$path] : [];
+        });
+        $latestSourceTimestamp = $sourceFiles
+            ->map(fn (string $path) => filemtime($path))
+            ->filter(fn ($timestamp) => $timestamp !== false)
+            ->max();
+        $buildTimestamp = filemtime($manifestPath);
+
+        if ($buildTimestamp === false) {
+            throw new \RuntimeException('تعذر قراءة تاريخ Vite manifest.');
+        }
+
+        $builtAt = Carbon::createFromTimestamp($buildTimestamp);
+        $sourceAt = $latestSourceTimestamp
+            ? Carbon::createFromTimestamp((int) $latestSourceTimestamp)
+            : null;
+
+        return [
+            'exists' => true,
+            // A small tolerance avoids false alarms on files extracted from a
+            // package within the same filesystem timestamp tick.
+            'stale' => $sourceAt !== null && $sourceAt->timestamp > $builtAt->timestamp + 2,
+            'builtAt' => $builtAt,
+            'sourceAt' => $sourceAt,
+        ];
     }
 
     /** @return array<string,mixed> */

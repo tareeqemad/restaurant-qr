@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch } from "vue";
 import { formatMoney } from "../../Composables/useMoney";
+import { localDateInput } from "../../Utils/dateInput";
 
 const props = defineProps({
     open: { type: Boolean, required: true },
@@ -18,6 +19,7 @@ const emit = defineEmits({
 });
 const notes = ref("");
 const dueDate = ref("");
+const today = localDateInput();
 const resultingDebt = computed(
     () =>
         Number(props.customer?.debt || 0) + Number(props.invoice?.balance || 0),
@@ -30,7 +32,7 @@ watch(
             notes.value = "";
             const date = new Date();
             date.setDate(date.getDate() + 30);
-            dueDate.value = date.toISOString().slice(0, 10);
+            dueDate.value = localDateInput(date);
         }
     },
     { immediate: true },
@@ -93,7 +95,7 @@ watch(
                 </div>
                 <label
                     ><span>تاريخ الاستحقاق *</span
-                    ><input v-model="dueDate" type="date" :min="new Date().toISOString().slice(0, 10)"
+                    ><input v-model="dueDate" type="date" :min="today"
                     ><small v-if="errors.due_date">{{ errors.due_date[0] }}</small></label
                 >
                 <label
