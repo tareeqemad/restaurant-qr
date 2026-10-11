@@ -1,9 +1,9 @@
 <script setup>
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { formatMoney } from '../../Composables/useMoney';
 // Phase-3 wiring (Claude): the page's only network surface — see waiterPosApi.js.
-import { cancelSessionItem, linkCustomer, previewStock, recordTransfer, reviewOrder as reviewPendingOrder, submitOrder, REPLAYED_TOKEN_MESSAGE } from '../../waiterPosApi';
+import { cancelSessionItem, linkCustomer, previewStock, recordTransfer, reviewOrder as reviewPendingOrder, submitOrder } from '../../waiterPosApi';
 import { useWaiterCartStore } from '../../Stores/waiterCart';
 import CartSheet from '../../Components/WaiterPos/CartSheet.vue';
 import CategoryChips from '../../Components/WaiterPos/CategoryChips.vue';
@@ -19,6 +19,8 @@ import StaffSheet from '../../Components/WaiterPos/StaffSheet.vue';
 import TransferSheet from '../../Components/WaiterPos/TransferSheet.vue';
 import NotificationsBell from '../../Components/AdminShell/NotificationsBell.vue';
 import ConfirmHost from '../../Components/Ui/ConfirmHost.vue';
+import { useToast } from '../../Composables/useToast';
+import { requiresChoices } from '../../Support/waiterChoices';
 
 const props = defineProps({
     table: { type: Object, required: true },
@@ -31,6 +33,7 @@ const props = defineProps({
     lastRound: { type: Object, default: null },
     reviewOrder: { type: Object, default: null },
     submitToken: { type: String, required: true },
+    submissionScope: { type: String, required: true },
     currency: { type: Object, required: true },
     eligibleStaff: { type: Array, default: () => [] },
     transfer: { type: Object, default: () => ({ enabled: false, details: '', eligible: false }) },
@@ -39,6 +42,9 @@ const props = defineProps({
 });
 
 const cart = useWaiterCartStore();
+const page = usePage();
+const restaurantBrand = computed(() => page.props.restaurantBrand ?? { name: 'مطعم دار السرو', logo: '/brand/dar-al-sarw-mark.svg' });
+const toast = useToast();
 const isReviewMode = computed(() => Boolean(props.reviewOrder));
 const search = ref('');
 const selectedCategoryId = ref('');
@@ -54,6 +60,7 @@ const coverRequestRunning = ref(false);
 const isOnline = ref(typeof navigator === 'undefined' ? true : navigator.onLine);
 const notice = ref(null);
 let noticeTimer = null;
+let pageActive = true;
 
 // ── Ported features' state (staff meal / customer / transfer) ────────────
 const staffSheetOpen = ref(false);
@@ -112,13 +119,23 @@ onMounted(() => {
     cart.startSession(props.session.id, props.menu, props.reviewOrder ? {
         storageKey: `waiter_cart_vue.review.${props.reviewOrder.id}.${props.reviewOrder.updatedAt}`,
         initialLines: props.reviewOrder.lines,
-    } : {});
+    } : {
+        storageKey: `waiter_cart_vue.${props.submissionScope}`,
+        submissionScope: props.submissionScope,
+        submitToken: props.submitToken,
+    });
+    if (cart.pendingSubmission) {
+        submitNotes.value = cart.pendingSubmission.payload.notes ?? '';
+        staffEmployeeId.value = cart.pendingSubmission.payload.staff_employee_id ?? null;
+        cartOpen.value = true;
+    }
     window.addEventListener('online', updateConnectionState);
     window.addEventListener('offline', updateConnectionState);
     window.addEventListener('keydown', closeTopSheetOnEscape);
 });
 
 onBeforeUnmount(() => {
+    pageActive = false;
     window.removeEventListener('online', updateConnectionState);
     window.removeEventListener('offline', updateConnectionState);
     window.removeEventListener('keydown', closeTopSheetOnEscape);
@@ -150,16 +167,25 @@ function notify(type, message) {
 }
 
 function addItem(menuItemId) {
+    if (cart.pendingSubmission) { cartOpen.value = true; return; }
     const item = props.menu.find((candidate) => Number(candidate.id) === Number(menuItemId));
     if (!item || !item.in_stock) return;
 
-    if (item.has_mods || item.removable_ingredients?.length) {
+    if (requiresChoices(item)) {
         activeLineItem.value = item;
         activeLineIndex.value = null;
         return;
     }
 
     cart.addPlain(item);
+}
+
+function customizeItem(menuItemId) {
+    if (cart.pendingSubmission) { cartOpen.value = true; return; }
+    const item = props.menu.find((candidate) => Number(candidate.id) === Number(menuItemId));
+    if (!item?.in_stock) return;
+    activeLineItem.value = item;
+    activeLineIndex.value = null;
 }
 
 function editCartLine(index) {
@@ -191,6 +217,7 @@ function closeLineSheet() {
 }
 
 function repeatLines(lines) {
+    if (cart.pendingSubmission) { cartOpen.value = true; return; }
     if (!lines.length) return;
 
     const skipped = cart.repeatRound(lines);
@@ -205,10 +232,9 @@ function repeatLines(lines) {
  * Phase-3 wiring (Claude). The outcome map is deliberate:
  *  - transport failure (offline/server down) → KEEP the cart: it's already
  *    in localStorage, the waiter retries when the connection returns;
- *  - replayed-token refusal → the order EXISTS and only the response was
- *    lost: clear + leave, never invite a resend;
+ *  - confirmed receipt replay → clear + leave;
  *  - business refusal (stock, groups) → keep the cart, show the reason —
- *    the server released the token, an honest retry works;
+ *    unlock only when the server explicitly confirms no commit;
  *  - success with `warning` → the order exists but a post-commit step
  *    failed: longer notice so the waiter reads "لا تعد الإرسال".
  */
@@ -228,23 +254,27 @@ async function prepareSubmission(payload) {
                     notes: payload.notes,
                     cart: cart.lines,
                 })
-                : await submitOrder(props.table.id, {
-                    token: props.submitToken,
+                : await submitOrder(props.table.id, cart.beginSubmission({
                     notes: payload.notes,
                     staff_employee_id: staffEmployeeId.value,
-                    cart: cart.lines,
-                });
-        } catch {
+                }));
+        } catch (error) {
+            if (!pageActive) return;
             notify('warning', isReviewMode.value
                 ? 'ما في اتصال — تعديلات المراجعة محفوظة على الجهاز. أعد الاعتماد عند رجوع الاتصال.'
-                : 'ما في اتصال — السلة محفوظة على الجهاز، ابعتها لما يرجع الاتصال.');
+                : (cart.pendingSubmission
+                    ? 'لم يصل التأكيد. الطلب محفوظ؛ أعد المحاولة للتحقق دون تكراره.'
+                    : error.message));
             return;
         }
 
+        // Navigating to another table can reuse the shared cart store. Leave
+        // this table's saved request for receipt recovery instead of clearing
+        // the next table's draft when an old response arrives late.
+        if (!pageActive) return;
         if (!result.ok) {
-            if (!isReviewMode.value && result.data.message === REPLAYED_TOKEN_MESSAGE) {
-                finishAndReturnToFloor('الطلب كان واصل من قبل — ما انبعت مرتين.', 1400);
-                return;
+            if (!isReviewMode.value && result.data.submission_state === 'rejected') {
+                cart.rejectSubmission();
             }
             notify('error', result.data.message || (isReviewMode.value
                 ? 'تعذّر اعتماد المراجعة — افتح الجولة من جديد.'
@@ -253,26 +283,40 @@ async function prepareSubmission(payload) {
         }
 
         if (result.data.warning) {
-            finishAndReturnToFloor(result.data.warning, 4000, 'warning');
+            finishAndReturnToFloor(result.data.warning, 'warning');
             return;
         }
 
         finishAndReturnToFloor(isReviewMode.value
             ? (result.data.message || `تم اعتماد ${result.data.order_number ?? 'الجولة'} وإرسالها للمطبخ والبار.`)
-            : `تم إرسال الجولة ${result.data.order_number ?? ''}${result.data.fired ? ' للمطبخ والبار' : ' للمراجعة'}.`, 900);
+            : `تم إرسال الجولة ${result.data.order_number ?? ''}${result.data.fired ? ' للمطبخ والبار' : ' للمراجعة'}.`);
     } finally {
         submitting.value = false;
     }
 }
 
 /** Order delivered: clear everything, show the notice, land back on the floor. */
-function finishAndReturnToFloor(message, delayMs, type = 'success') {
+function finishAndReturnToFloor(message, type = 'success') {
     cart.clear();
     submitNotes.value = '';
     staffEmployeeId.value = null;
     cartOpen.value = false;
     notify(type, message);
-    window.setTimeout(() => router.visit('/admin/tables', { replace: true }), delayMs);
+    router.visit('/admin/tables', {
+        replace: true,
+        onSuccess: () => toast[type](message),
+    });
+}
+
+function checkPendingOrders() {
+    router.reload({
+        only: ['sessionOrders', 'carryOver'],
+        preserveScroll: true,
+        onSuccess: () => {
+            cartOpen.value = false;
+            sessionDetailsOpen.value = true;
+        },
+    });
 }
 
 // ── Ported features' handlers ────────────────────────────────────────────
@@ -445,7 +489,7 @@ async function flushCoverChanges() {
                 <i class="bi bi-arrow-right"></i>
             </Link>
             <div class="heading-copy">
-                <span>{{ isReviewMode ? (reviewOrder.roundLabel || 'مراجعة الجولة') : 'طلب جديد' }}</span>
+                <span>{{ restaurantBrand.name }} · {{ isReviewMode ? (reviewOrder.roundLabel || 'مراجعة الجولة') : 'طلب جديد' }}</span>
                 <h1>طاولة {{ table.number }}</h1>
             </div>
             <div class="heading-tools">
@@ -483,8 +527,7 @@ async function flushCoverChanges() {
         <div v-if="carryOver.has_prior && !isReviewMode" class="carry-over" role="status">
             <i class="bi bi-layers-fill"></i>
             <div>
-                <strong>جلسة الطاولة مفتوحة · {{ carryOver.orders_count }} {{ carryOver.orders_count === 1 ? 'جولة' : 'جولات' }}</strong>
-                <span>الجولة الجديدة ستنضم لنفس الفاتورة · المتبقي {{ carryOverAmount }}</span>
+                <strong>المتبقي على الطاولة {{ carryOverAmount }}</strong>
             </div>
             <button type="button" class="carry-over__details" @click="sessionDetailsOpen = true">
                 <i class="bi bi-receipt"></i>
@@ -505,6 +548,7 @@ async function flushCoverChanges() {
             @open-transfer="transferSheetOpen = true"
         />
 
+        <div class="order-entry-layout">
         <section class="menu-workspace" aria-label="منيو المطعم">
             <div class="menu-toolbar">
                 <SearchBar v-model="search" />
@@ -524,8 +568,20 @@ async function flushCoverChanges() {
                 :cart-quantities="cart.itemQuantities"
                 :currency="currency"
                 @add-item="addItem"
+                @customize-item="customizeItem"
             />
         </section>
+
+        <aside class="waiter-order-rail" aria-label="الجولة الحالية">
+            <header><div><small>{{ isReviewMode ? 'مراجعة الجولة' : 'الجولة الحالية' }}</small><h2>طلب الطاولة</h2></div><strong>{{ cart.unitCount }}</strong></header>
+            <p v-if="cart.pendingSubmission" class="rail-pending">طلب بانتظار التأكيد. افتح المراجعة للتحقق.</p>
+            <div v-if="cart.lines.length" class="rail-lines">
+                <button v-for="(line, index) in cart.lines" :key="line.id" type="button" :disabled="Boolean(cart.pendingSubmission) || submitting" @click="editCartLine(index)"><b>{{ line.quantity }}×</b><span><strong>{{ line.name }}</strong><small v-if="line.modifier_labels?.length">{{ line.modifier_labels.join('، ') }}</small><small v-if="line.excluded_ingredient_labels?.length">بدون {{ line.excluded_ingredient_labels.join('، ') }}</small></span><i class="bi bi-pencil"></i></button>
+            </div>
+            <p v-else class="rail-empty"><i class="bi bi-bag-plus"></i>اختر الأصناف لإضافة الجولة</p>
+            <footer><span>مجموع الأصناف <strong>{{ formatMoney(cart.total, currency) }}</strong></span><button type="button" :disabled="!cart.lines.length" @click="cartOpen = true">{{ cart.pendingSubmission ? 'التحقق من الإرسال' : (isReviewMode ? 'مراجعة واعتماد' : 'مراجعة وإرسال') }} <i class="bi bi-arrow-left"></i></button></footer>
+        </aside>
+        </div>
 
         <div v-if="cartOpen" class="cart-backdrop" @click="cartOpen = false"></div>
 
@@ -536,6 +592,7 @@ async function flushCoverChanges() {
             :currency="currency"
             v-model:notes="submitNotes"
             :submitting="submitting"
+            :pending="Boolean(cart.pendingSubmission)"
             :mode="isReviewMode ? 'review' : 'new'"
             :round-label="reviewOrder?.roundLabel ?? ''"
             :staff-name="selectedStaff?.name ?? null"
@@ -545,6 +602,7 @@ async function flushCoverChanges() {
             @remove-line="cart.removeLine"
             @open-staff="staffSheetOpen = true"
             @submit="prepareSubmission"
+            @check-orders="checkPendingOrders"
         />
 
         <FabBar
@@ -610,16 +668,16 @@ async function flushCoverChanges() {
 
 <style scoped>
 .waiter-pos-page {
-    --wp-primary: rgb(var(--primary-rgb, 22 101 52));
-    --wp-primary-dark: color-mix(in srgb, var(--wp-primary) 78%, #04150d);
+    --wp-primary: var(--brand);
+    --wp-primary-dark: var(--brand-hover);
     min-height: 100vh;
     min-height: 100dvh;
     box-sizing: border-box;
-    padding: .8rem clamp(.7rem, 2vw, 1.4rem) 96px;
-    color: #1f2937;
-    background: #f7f9f8;
+    padding: 1rem clamp(.75rem, 2vw, 1.5rem) 96px;
+    color: var(--ink);
+    background: var(--canvas);
 }
-.page-heading { display: flex; align-items: center; gap: .7rem; width: min(100%, 1180px); margin: 0 auto .65rem; }
+.page-heading { display: flex; align-items: center; gap: .7rem; width: min(100%, 1180px); margin: 0 auto .65rem; padding-bottom: .8rem; border-bottom: 1px solid var(--line); }
 .heading-copy { flex: 1; min-width: 0; }
 .heading-tools { display: flex; align-items: center; gap: .45rem; flex: 0 0 auto; }
 .waiter-live-bell :deep(.header-link) {
@@ -627,34 +685,34 @@ async function flushCoverChanges() {
     width: 44px;
     height: 44px;
     place-items: center;
-    border: 1px solid rgba(15, 71, 49, .15);
+    border: 1px solid color-mix(in srgb, var(--brand) 15%, transparent);
     border-radius: 12px;
     color: var(--wp-primary);
-    background: #fff;
+    background: var(--surface);
 }
 .waiter-live-bell :deep(.bell-menu) { inset-inline-end: 0; inset-inline-start: auto; }
-.page-heading span { color: #64748b; font-size: .76rem; font-weight: 700; }
-.page-heading h1 { margin: .05rem 0 0; color: #17221c; font-size: 1.25rem; font-weight: 900; }
+.page-heading span { color: #315B6B; font-size: .875rem; font-weight: 700; }
+.page-heading h1 { margin: .05rem 0 0; color: var(--ink); font-size: 1.6rem; font-weight: 800; }
 .back-to-floor {
     display: inline-flex; align-items: center; justify-content: center;
     width: 44px; height: 44px; flex: 0 0 44px;
-    border: 1px solid rgba(15, 71, 49, .15); border-radius: 12px;
-    color: var(--wp-primary); background: #fff; text-decoration: none;
+    border: 1px solid color-mix(in srgb, var(--brand) 15%, transparent); border-radius: 12px;
+    color: var(--wp-primary); background: var(--surface); text-decoration: none;
 }
 .connection-state {
     display: inline-flex; align-items: center; gap: .35rem; min-height: 44px;
-    padding-inline: .7rem; border-radius: 999px;
-    color: #047857 !important; background: #ecfdf5; white-space: nowrap;
+    padding-inline: .7rem; border-radius: 8px;
+    color: var(--muted) !important !important; background: var(--surface); white-space: nowrap; border: 1px solid var(--line);
 }
-.connection-state.is-offline { color: #b45309 !important; background: #fff7ed; }
+.connection-state.is-offline { color: #92400E !important !important; background: #F8F0E2; }
 .page-notice, .carry-over {
     display: flex; align-items: center; gap: .65rem; width: min(100%, 1180px);
     box-sizing: border-box; margin: 0 auto .65rem; padding: .7rem .8rem;
-    border: 1px solid #fde68a; border-radius: 12px; color: #92400e; background: #fffbeb;
+    border: 1px solid var(--accent); border-radius: 12px; color: #92400e; background: var(--canvas);
 }
 .page-notice > span, .carry-over > div { flex: 1; min-width: 0; }
 .carry-over strong, .carry-over span { display: block; }
-.carry-over span { margin-top: .1rem; font-size: .78rem; }
+.carry-over span { margin-top: .1rem; font-size: .875rem; }
 .carry-over__details {
     min-height: 40px;
     display: inline-flex;
@@ -664,46 +722,47 @@ async function flushCoverChanges() {
     gap: .38rem;
     padding: .45rem .75rem;
     border: 1px solid #eab308;
-    border-radius: 10px;
-    color: #854d0e;
-    background: #fff;
+    border-radius: 8px;
+    color: var(--brand);
+    background: var(--surface);
     font-family: inherit;
-    font-size: .72rem;
-    font-weight: 850;
+    font-size: .875rem;
+    font-weight: 800;
     white-space: nowrap;
     cursor: pointer;
+    border-color: var(--line);
 }
-.carry-over__details:hover { border-color: #ca8a04; background: #fefce8; }
-.page-notice.is-success { border-color: #a7f3d0; color: #047857; background: #ecfdf5; }
-.page-notice.is-error { border-color: #fecaca; color: #b91c1c; background: #fef2f2; }
+.carry-over__details:hover { border-color: #ca8a04; background: var(--canvas); }
+.page-notice.is-success { border-color: var(--line); color: var(--ink); background: var(--canvas); }
+.page-notice.is-error { border-color: #fecaca; color: #b91c1c; background: var(--canvas); }
 .page-notice button {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 44px; height: 44px; border: 0; border-radius: 10px;
+    width: 44px; height: 44px; border: 0; border-radius: 8px;
     color: currentColor; background: transparent; cursor: pointer;
 }
 .review-banner {
     display: flex; align-items: flex-start; gap: .7rem; width: min(100%, 1180px);
     box-sizing: border-box; margin: 0 auto .65rem; padding: .8rem;
-    border: 1px solid #fbbf24; border-radius: 13px; background: #fffbeb; color: #78350f;
+    border: 1px solid #fbbf24; border-radius: 12px; background: var(--canvas); color: #78350f;
 }
-.review-step { display: inline-grid; place-items: center; flex: 0 0 34px; width: 34px; height: 34px; border-radius: 50%; background: #b45309; color: #fff; font-weight: 950; }
+.review-step { display: inline-grid; place-items: center; flex: 0 0 34px; width: 34px; height: 34px; border-radius: 50%; background: #b45309; color: #FFFDFA; font-weight: 800; }
 .review-banner > div { min-width: 0; flex: 1; }
-.review-banner strong { font-size: .88rem; font-weight: 900; }
-.review-banner p { margin: .12rem 0 0; color: #92400e; font-size: .75rem; line-height: 1.5; }
+.review-banner strong { font-size: .88rem; font-weight: 800; }
+.review-banner p { margin: .12rem 0 0; color: #92400e; font-size: .875rem; line-height: 1.5; }
 .review-changes { display: grid; gap: .3rem; margin: .5rem 0 0; padding: 0; list-style: none; }
-.review-changes li { display: flex; flex-wrap: wrap; gap: .25rem .55rem; padding: .4rem .5rem; border-radius: 8px; background: #fff; font-size: .72rem; }
+.review-changes li { display: flex; flex-wrap: wrap; gap: .25rem .55rem; padding: .4rem .5rem; border-radius: 8px; background: var(--surface); font-size: .875rem; }
 .review-changes li b { color: #9a3412; }
-.review-changes li span { color: #64748b; }
+.review-changes li span { color: #315B6B; }
 .menu-workspace { width: min(100%, 1180px); margin-inline: auto; }
 .menu-toolbar {
     position: sticky; top: 0; z-index: 20; margin-bottom: .55rem;
-    padding: .5rem 0 .55rem; border-bottom: 1px solid rgba(15, 71, 49, .08);
-    background: #f7f9f8;
+    padding: .5rem 0 .55rem; border-bottom: 1px solid color-mix(in srgb, var(--brand) 8%, transparent);
+    background: var(--canvas);
 }
 .cart-backdrop { position: fixed; inset: 0; z-index: 1060; background: rgba(15, 23, 42, .45); }
 @media (max-width: 560px) {
     .connection-state { width: 44px; padding: 0; justify-content: center; overflow: hidden; color: transparent !important; }
-    .connection-state i { color: #047857; font-size: 1rem; }
+    .connection-state i { color: var(--brand); font-size: 1rem; }
     .connection-state.is-offline i { color: #b45309; }
     .carry-over { align-items: flex-start; flex-wrap: wrap; }
     .carry-over__details { width: 100%; }
@@ -711,4 +770,12 @@ async function flushCoverChanges() {
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
 }
+.carry-over {
+    background: var(--surface);
+    border-color: var(--line);
+    color: var(--ink);
+}
+
+/* Task-focused workspace layout. */
+.waiter-pos-page{max-width:1480px;margin:auto;padding:20px 24px 100px}.page-heading{padding:0 0 18px;margin-bottom:14px}.heading-copy h1{font-size:28px}.order-entry-layout{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:22px;align-items:start;margin-top:18px}.menu-workspace{min-width:0;border:0;background:transparent;padding:0}.menu-toolbar{position:sticky;top:0;z-index:30;background:var(--canvas);padding:0 0 14px;gap:12px}.waiter-order-rail{position:sticky;top:20px;display:flex;flex-direction:column;max-height:calc(100dvh - 40px);border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}.waiter-order-rail>header{display:flex;justify-content:space-between;align-items:center;padding:18px;border-bottom:1px solid var(--line)}.waiter-order-rail h2{font-size:19px;margin:4px 0 0}.waiter-order-rail small{font-size:14px;color:var(--muted)}.waiter-order-rail header>strong{font-size:24px;color:var(--brand)}.rail-lines{overflow-y:auto;padding:0 16px}.rail-lines>button{display:grid;grid-template-columns:28px minmax(0,1fr) 18px;gap:8px;align-items:start;width:100%;padding:16px 0;background:none;border:0;border-bottom:1px solid var(--line);color:var(--ink);font:inherit;text-align:start}.rail-lines>button>span{display:grid;gap:4px}.rail-lines strong{font-size:15px}.rail-lines>button>i{font-size:14px;color:var(--muted)}.waiter-order-rail>footer{display:grid;gap:14px;padding:18px;background:var(--canvas);margin-top:auto}.waiter-order-rail footer>span{display:flex;justify-content:space-between;font-size:14px;gap:8px}.waiter-order-rail footer strong{font-size:18px}.waiter-order-rail footer>button{min-height:48px;border:0;border-radius:8px;background:var(--brand);color:#fff;font:inherit;font-weight:700}.waiter-order-rail footer>button:disabled{opacity:.5}.rail-empty{display:grid;justify-items:center;gap:12px;padding:40px 16px;margin:0;color:var(--muted);font-size:14px}.rail-empty i{font-size:32px;color:var(--accent)}.rail-pending{padding:12px;margin:12px;background:#fff4df;color:#755522;font-size:14px;border-inline-start:3px solid var(--accent)}@media(min-width:1000px){:deep(.cart-fab){display:none}}@media(max-width:999px){.order-entry-layout{grid-template-columns:1fr}.waiter-order-rail{display:none}.waiter-pos-page{padding:16px 14px 110px}}
 </style>

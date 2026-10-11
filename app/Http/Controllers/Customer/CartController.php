@@ -85,13 +85,12 @@ class CartController extends Controller
             return $this->rejectAdd($request, __('ui.customer_order.item_currently_unavailable'));
         }
 
-        $allowedExclusions = $item->recipeItems
-            ->filter(fn ($recipe) => $recipe->ingredient !== null)
+        $allowedExclusions = $item->removableRecipeItems()
             ->keyBy(fn ($recipe) => (int) $recipe->ingredient_id);
         $excludedIngredientIds = collect($data['excluded_ingredient_ids'] ?? [])
             ->map(fn ($id) => (int) $id)->filter()->unique();
         if ($excludedIngredientIds->diff($allowedExclusions->keys()->map(fn ($id) => (int) $id))->isNotEmpty()) {
-            return $this->rejectAdd($request, 'أحد المكوّنات المستبعدة لا ينتمي إلى هذا الصنف. أعد فتحه واختر من القائمة.');
+            return $this->rejectAdd($request, 'لا يمكن استبعاد أحد المكوّنات المحددة من هذا الصنف. أعد فتحه واختر من القائمة.');
         }
 
         $cart = session('cart.'.$session->token, []);

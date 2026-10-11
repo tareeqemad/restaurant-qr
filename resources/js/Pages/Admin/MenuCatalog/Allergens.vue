@@ -1,4 +1,5 @@
 <script setup>
+import ManagementPage from '../../../Components/Inventory/ManagementPage.vue';
 import { ref } from 'vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import AdminLayout from '../../../Layouts/AdminLayout.vue';
@@ -22,6 +23,7 @@ async function destroy(item){if(!item.can.delete)return;const yes=await ask({tit
 </script>
 
 <template>
+    <ManagementPage mode="workspace">
 <Head title="مسببات الحساسية"/>
 <CatalogWorkspacePage :navigation="navigation" title="مسببات الحساسية" icon="bi-shield-exclamation"
                       subtitle="تنبيهات قصيرة وموحّدة يراها الزبون قبل إضافة الصنف"
@@ -53,28 +55,29 @@ async function destroy(item){if(!item.can.delete)return;const yes=await ask({tit
  </form>
  <template #footer><button type="button" class="btn btn-light" @click="close">تراجع</button><button type="submit" form="allergen-form" class="btn btn-primary" :disabled="form.processing"><span v-if="form.processing" class="spinner-border spinner-border-sm"></span><i v-else class="bi bi-check-circle-fill"></i> حفظ</button></template>
 </MenuSheet>
+    </ManagementPage>
 </template>
 
 <style scoped>
 .ma-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(290px, 100%), 1fr)); gap: .65rem; }
-.ma-card { display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; gap: .68rem; align-items: start; min-height: 112px; padding: .75rem; border: 1px solid var(--catalog-line); border-radius: 14px; background: #fff; box-shadow: 0 6px 18px rgba(18, 63, 49, .03); }
-.ma-symbol { display: grid; place-items: center; width: 58px; height: 58px; border-radius: 14px; color: #8e2b37; background: #fff2f3; font-size: 1.5rem; }
+.ma-card { display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; gap: .68rem; align-items: start; min-height: 112px; padding: .75rem; border: 1px solid var(--catalog-line); border-radius: 12px; background: var(--surface, #FFFDFA); box-shadow: none; }
+.ma-symbol { display: grid; place-items: center; width: 58px; height: 58px; border-radius: 12px; color: #8e2b37; background: #fff2f3; font-size: 1.5rem; }
 .ma-copy { min-width: 0; }
-.ma-copy h3 { margin: 0; color: var(--catalog-primary-deep); font-size: .86rem; font-weight: 950; }
-.ma-copy small { color: #8b9790; font-size: .63rem; }
-.ma-copy p { display: -webkit-box; overflow: hidden; margin: .32rem 0; color: #718078; font-size: .68rem; line-height: 1.5; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.ma-copy > span { display: inline-flex; align-items: center; gap: .24rem; color: #697a70; font-size: .64rem; }
+.ma-copy h3 { margin: 0; color: var(--catalog-primary-deep); font-size: .875rem; font-weight: 950; }
+.ma-copy small { color: var(--muted, #626B6D); font-size: .875rem; }
+.ma-copy p { display: -webkit-box; overflow: hidden; margin: .32rem 0; color: var(--muted, #626B6D); font-size: .875rem; line-height: 1.5; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.ma-copy > span { display: inline-flex; align-items: center; gap: .24rem; color: var(--muted, #626B6D); font-size: .875rem; }
 .ma-actions { display: flex; gap: .28rem; align-items: center; }
-.ma-actions button { display: inline-grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--catalog-line); border-radius: 10px; color: var(--catalog-primary-deep); background: #fff; cursor: pointer; }
+.ma-actions button { display: inline-grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--catalog-line); border-radius: 10px; color: var(--catalog-primary-deep); background: var(--surface, #FFFDFA); cursor: pointer; }
 .ma-actions button:hover { color: var(--catalog-primary); background: var(--catalog-primary-soft); }
 .ma-actions button.danger { color: #ad2938; border-color: #efd2d5; background: #fff8f8; }
-.ma-actions > i { padding-top: .55rem; color: #9a8b68; }
-.ma-error { display: block; color: #b42334; font-size: .67rem; }
+.ma-actions > i { padding-top: .55rem; color: var(--muted, #626B6D); }
+.ma-error { display: block; color: #b42334; font-size: .875rem; }
 .ma-preview { display: flex; align-items: center; gap: .7rem; padding: .7rem; border: 1px solid #f0d9dc; border-radius: 12px; background: #fff7f8; }
 .ma-preview > span { font-size: 1.6rem; }
 .ma-preview > div { display: flex; flex-direction: column; }
-.ma-preview b { color: #6d2730; font-size: .78rem; }
-.ma-preview small { color: #8b6970; font-size: .67rem; }
+.ma-preview b { color: #6d2730; font-size: .875rem; }
+.ma-preview small { color: #8b6970; font-size: .875rem; }
 @media (max-width: 420px) {
     .ma-card { grid-template-columns: 52px minmax(0, 1fr) auto; padding: .65rem; }
     .ma-symbol { width: 52px; height: 52px; }

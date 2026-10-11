@@ -11,6 +11,7 @@ const props = defineProps({
     currency: { type: Object, required: true },
     notes: { type: String, default: '' },
     submitting: { type: Boolean, default: false },
+    pending: { type: Boolean, default: false },
     mode: { type: String, default: 'new' },
     roundLabel: { type: String, default: '' },
     /** Selected staff-meal consumer's name (null = normal table order). */
@@ -24,6 +25,7 @@ const emit = defineEmits({
     'remove-line': (index) => Number.isInteger(index) && index >= 0,
     'update:notes': (notes) => typeof notes === 'string',
     'open-staff': () => true,
+    'check-orders': () => true,
     submit: (payload) => payload && typeof payload.notes === 'string',
 });
 
@@ -68,7 +70,11 @@ function requestSubmit() {
         </header>
 
         <template v-if="lines.length">
-            <div class="cart-lines">
+            <div v-if="pending && !submitting" class="pending-order" role="status">
+                <span>لم يصل تأكيد الإرسال. إعادة المحاولة تتحقق من الطلب نفسه.</span>
+                <button type="button" @click="emit('check-orders')">عرض طلبات الطاولة</button>
+            </div>
+            <fieldset class="cart-lines" :disabled="pending || submitting">
                 <CartLine
                     v-for="(line, index) in lines"
                     :key="line.id"
@@ -79,13 +85,16 @@ function requestSubmit() {
                     @change-qty="forwardQuantity"
                     @remove="emit('remove-line', $event)"
                 />
-            </div>
+            </fieldset>
 
             <footer class="cart-footer">
                 <div class="total-row">
-                    <span>المجموع</span>
+                    <span>مجموع الأصناف</span>
                     <strong>{{ formatMoney(total, currency) }}</strong>
                 </div>
+                <fieldset class="cart-options-lock" :disabled="pending || submitting">
+                <details class="cart-options" :open="Boolean(notes || staffName)">
+                <summary>ملاحظة أو وجبة موظف</summary>
                 <small class="tax-note">
                     <i class="bi bi-info-circle"></i>
                     الضريبة والخدمة تُحسب عند إرسال الطلب حسب الإعدادات.
@@ -103,8 +112,10 @@ function requestSubmit() {
                 <button v-if="!isReview" type="button" class="staff-meal" :class="{ 'is-on': staffName }" @click="emit('open-staff')">
                     <i class="bi bi-person-badge"></i>
                     <template v-if="staffName">وجبة موظف: <b>{{ staffName }}</b></template>
-                    <template v-else>وجبة موظف؟</template>
+                    <template v-else>تسجيل وجبة موظف</template>
                 </button>
+                </details>
+                </fieldset>
 
                 <button
                     type="button"
@@ -118,7 +129,7 @@ function requestSubmit() {
                     </template>
                     <template v-else>
                         <i class="bi" :class="isReview ? 'bi-check2-circle' : 'bi-send-check'"></i>
-                        {{ isReview ? 'اعتماد وإرسال الجولة' : 'إرسال الجولة' }}
+                        {{ isReview ? 'اعتماد وإرسال الجولة' : (pending ? 'التحقق وإعادة المحاولة' : 'إرسال الجولة') }}
                     </template>
                 </button>
             </footer>
@@ -134,6 +145,9 @@ function requestSubmit() {
 
 <style scoped>
 .cart-sheet {
+    /* DialogSurface teleports outside the page's CSS variable scope. */
+    --wp-primary: var(--brand);
+    --wp-primary-dark: var(--brand-hover);
     display: flex;
     flex-direction: column;
     width: 100%;
@@ -141,23 +155,23 @@ function requestSubmit() {
     max-height: 84dvh;
     box-sizing: border-box;
     overflow: hidden;
-    border: 2px solid var(--wp-primary);
+    border: 1px solid var(--line);
     border-bottom: 0;
-    border-radius: 18px 18px 0 0;
-    background: #fff;
+    border-radius: 12px 12px 0 0;
+    background: var(--surface);
 }
 .cart-header {
     display: flex;
     align-items: center;
     gap: .6rem;
     padding: .9rem 1rem;
-    color: #fff;
-    background: var(--wp-primary-dark);
+    color: #FFFDFA;
+    background: var(--brand-dark);
     font-size: 15px;
     font-weight: 800;
 }
 .cart-header > strong { flex: 1; }
-.cart-count { padding: .1rem .6rem; border-radius: 999px; background: rgba(255, 255, 255, .22); font-size: 13px; font-weight: 800; }
+.cart-count { padding: .1rem .6rem; border-radius: 8px; background: rgba(255, 255, 255, .22); font-size: 14px; font-weight: 800; }
 .close-cart {
     display: inline-flex;
     align-items: center;
@@ -166,18 +180,23 @@ function requestSubmit() {
     height: 44px;
     border: 0;
     border-radius: 10px;
-    color: #fff;
+    color: #FFFDFA;
     background: rgba(255, 255, 255, .16);
     font-size: 1.05rem;
     cursor: pointer;
 }
 .close-cart:hover { background: rgba(255, 255, 255, .24); }
-.cart-lines { min-height: 0; overflow-y: auto; padding: .25rem 0; overscroll-behavior: contain; }
-.cart-footer { padding: .9rem 1rem 1rem; border-top: 1px solid #e5e7eb; background: #f8fafc; }
+.cart-lines { min-width: 0; min-height: 0; margin: 0; border: 0; overflow-y: auto; padding: .25rem 0; overscroll-behavior: contain; }
+.cart-options-lock { min-width: 0; margin: 0; padding: 0; border: 0; }
+.pending-order { display: grid; gap: .4rem; padding: .7rem 1rem; color: #92400e; background: #F8F0E2; font-size: 14px; }
+.pending-order button { min-height: 44px; border: 1px solid #f59e0b; border-radius: 8px; background: var(--surface); color: inherit; font: inherit; cursor: pointer; border-color: var(--accent); }
+.cart-footer { padding: .9rem 1rem 1rem; border-top: 1px solid var(--line); background: var(--surface); }
 .total-row { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; margin-bottom: .5rem; }
-.total-row > span { color: #374151; font-size: 15px; font-weight: 700; }
-.total-row strong { color: var(--wp-primary); font-size: 1.55rem; font-weight: 800; }
-.tax-note { display: block; margin-bottom: .6rem; color: #6b7280; font-size: 11px; }
+.total-row > span { color: var(--ink); font-size: 15px; font-weight: 700; }
+.total-row strong { color: var(--ink); font-size: 1.55rem; font-weight: 800; }
+.tax-note { display: block; margin-bottom: .6rem; color: var(--muted); font-size: 14px; }
+.cart-options { margin-bottom: .6rem; }
+.cart-options summary { display: list-item; min-height: 44px; padding: .65rem .35rem; box-sizing: border-box; color: var(--ink); font-size: 14px; cursor: pointer; }
 .notes-label {
     position: absolute;
     width: 1px;
@@ -195,9 +214,9 @@ function requestSubmit() {
     box-sizing: border-box;
     margin-bottom: .6rem;
     padding: .5rem .6rem;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--line);
     border-radius: 8px;
-    font-size: 13px;
+    font-size: 14px;
 }
 .notes-input:focus { outline: 2px solid color-mix(in srgb, var(--wp-primary) 30%, transparent); border-color: var(--wp-primary); }
 .submit-order {
@@ -209,10 +228,10 @@ function requestSubmit() {
     min-height: 50px;
     padding: .75rem;
     border: 0;
-    border-radius: 12px;
-    color: #fff;
+    border-radius: 8px;
+    color: #FFFDFA;
     background: var(--wp-primary);
-    box-shadow: 0 6px 16px -8px rgba(22, 101, 52, .7);
+    box-shadow: none;
     font-size: 15.5px;
     font-weight: 800;
     cursor: pointer;
@@ -222,15 +241,18 @@ function requestSubmit() {
 .staff-meal {
     display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
     width: 100%; min-height: 44px; margin-bottom: .6rem;
-    border: 1.5px dashed #cbd5e1; border-radius: 10px;
-    background: #fff; color: #475569;
-    font-family: inherit; font-size: .85rem; font-weight: 700; cursor: pointer;
+    border: 1.5px dashed var(--line); border-radius: 10px;
+    background: var(--surface); color: var(--ink);
+    font-family: inherit; font-size: .875rem; font-weight: 700; cursor: pointer;
 }
 .staff-meal.is-on {
     border-style: solid; border-color: #b45309;
-    background: #fffbeb; color: #92400e;
+    background: var(--canvas); color: #92400e;
 }
-.empty-cart { padding: 2.2rem 1rem; color: #9ca3af; text-align: center; }
+.empty-cart { padding: 2.2rem 1rem; color: var(--muted); text-align: center; }
 .empty-cart i { display: block; margin-bottom: .4rem; font-size: 1.8rem; }
-.empty-cart p { margin: 0; font-size: 13px; }
+.empty-cart p { margin: 0; font-size: 14px; }
+
+/* Task-specific component layout. */
+.cart-sheet{max-height:90dvh;border-radius:12px 12px 0 0;background:var(--surface)}.cart-header{padding:20px 24px;background:var(--surface);color:var(--ink);border-bottom:1px solid var(--line);gap:12px}.cart-header strong{font-size:22px}.cart-header strong>i{display:none}.cart-count{background:var(--brand-soft);color:var(--brand);border-radius:6px;min-width:30px}.close-cart{background:var(--canvas);color:var(--ink);width:44px;height:44px;border-radius:8px}.cart-lines{padding:0 24px}.cart-footer{padding:20px 24px;border-top:1px solid var(--line);background:var(--surface);gap:16px}.total-row{padding:0 0 16px;border-bottom:1px solid var(--line)}.total-row strong{font-size:27px}.cart-options{padding:12px;background:var(--canvas);border:1px solid var(--line);border-radius:6px}.cart-options summary{min-height:24px;font-size:14px}.submit-order{min-height:54px;border-radius:8px;font-size:17px}.pending-order{margin:16px 24px;padding:14px;line-height:1.7;border-radius:6px}
 </style>

@@ -1,4 +1,5 @@
 <script setup>
+import ManagementPage from '../../../Components/Inventory/ManagementPage.vue';
 /**
  * التحويلات بين الفروع — القائمة.
  *
@@ -71,6 +72,7 @@ const STATUSES = [
 </script>
 
 <template>
+    <ManagementPage mode="records">
     <Head title="التحويلات بين الفروع" />
 
     <PageHeader title="التحويلات بين الفروع" icon="bi-arrow-left-right"
@@ -160,6 +162,7 @@ const STATUSES = [
             <Pagination :links="transfers.links" />
         </template>
     </DataPanel>
+    </ManagementPage>
 </template>
 
 <style scoped>

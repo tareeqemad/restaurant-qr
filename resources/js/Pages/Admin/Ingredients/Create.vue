@@ -1,4 +1,5 @@
 <script setup>
+import ManagementPage from '../../../Components/Inventory/ManagementPage.vue';
 /**
  * مكون جديد — the catalogue form plus the branch/location "home" block.
  * All the behaviour lives in IngredientForm.vue, shared with the edit
@@ -27,6 +28,7 @@ const props = defineProps({
 </script>
 
 <template>
+    <ManagementPage mode="form">
     <Head title="مكون جديد" />
 
     <PageHeader title="مكون جديد" icon="bi-plus-circle-fill"
@@ -49,4 +51,5 @@ const props = defineProps({
                         :submit-url="urls.store"
                         :urls="urls" />
     </DataPanel>
+    </ManagementPage>
 </template>

@@ -11,20 +11,24 @@ class FirstRunSetup
 {
     public static function needsSetup(): bool
     {
-        if (! static::tablesReady()) {
+        try {
+            // The normal, installed path needs two indexed existence checks,
+            // not repeated information_schema lookups or whole-table counts.
+            if (User::query()->exists() && Branch::query()->exists()) {
+                return false;
+            }
+
+            // An empty database is only installable once all setup tables
+            // exist. Preserve the migration-time behavior for partial schemas.
+            return static::tablesReady();
+        } catch (\Throwable) {
             return false;
         }
-
-        if (User::query()->count() === 0 || Branch::query()->count() === 0) {
-            return true;
-        }
-
-        return false;
     }
 
     public static function shouldRunWizard(): bool
     {
-        return static::tablesReady() && static::needsSetup();
+        return static::needsSetup();
     }
 
     public static function wizardAvailable(): bool

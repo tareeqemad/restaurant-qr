@@ -1,4 +1,7 @@
 <script setup>
+import { getCurrentInstance } from 'vue';
+import DialogSurface from '../Ui/DialogSurface.vue';
+const titleId = 'collection-title-' + getCurrentInstance().uid;
 defineProps({
     open: { type: Boolean, default: false },
     title: { type: String, default: '' },
@@ -11,39 +14,29 @@ defineEmits(['close']);
 </script>
 
 <template>
-    <Teleport to="body">
-        <Transition name="collection-sheet">
-            <div v-if="open" class="collection-sheet__backdrop" @click.self="$emit('close')">
-                <section class="collection-sheet" :class="{ danger }" role="dialog" aria-modal="true" :aria-label="title">
-                    <header>
-                        <span class="collection-sheet__icon"><i class="bi" :class="icon"></i></span>
-                        <div><small v-if="eyebrow">{{ eyebrow }}</small><h2>{{ title }}</h2></div>
-                        <button type="button" aria-label="إغلاق" @click="$emit('close')"><i class="bi bi-x-lg"></i></button>
-                    </header>
-                    <div class="collection-sheet__body"><slot /></div>
-                    <footer v-if="$slots.footer"><slot name="footer" /></footer>
-                </section>
-            </div>
-        </Transition>
-    </Teleport>
+    <DialogSurface :open="open" variant="sheet-end" :title-id="titleId" max-width="600px" @close="$emit('close')">
+        <section class="collection-sheet" :class="{danger}">
+            <header>
+                <span class="collection-sheet__icon"><i class="bi" :class="icon"></i></span>
+                <div><small v-if="eyebrow">{{eyebrow}}</small><h2 :id="titleId">{{title}}</h2></div>
+                <button type="button" aria-label="إغلاق" @click="$emit('close')"><i class="bi bi-x-lg"></i></button>
+            </header>
+            <div class="collection-sheet__body"><slot /></div>
+            <footer v-if="$slots.footer"><slot name="footer" /></footer>
+        </section>
+    </DialogSurface>
 </template>
-
 <style scoped>
-.collection-sheet__backdrop { position: fixed; inset: 0; z-index: 1090; display: grid; place-items: center; padding: 1rem; background: rgba(13, 29, 20, .48); backdrop-filter: blur(2px); }
-.collection-sheet { width: min(520px, 96vw); max-height: min(760px, 92vh); display: flex; flex-direction: column; overflow: hidden; border-radius: 18px; background: #fff; box-shadow: 0 28px 80px rgba(0, 0, 0, .24); }
-.collection-sheet > header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .7rem; padding: .9rem 1rem; border-bottom: 1px solid #e5ebe7; }
-.collection-sheet__icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 12px; background: #eaf6ef; color: #11733e; font-size: 1.05rem; }
-.collection-sheet.danger .collection-sheet__icon { background: #fff0f0; color: #b83232; }
-.collection-sheet header small { color: #839188; font-size: .66rem; }
-.collection-sheet h2 { margin: .08rem 0 0; color: #173528; font-size: 1rem; }
-.collection-sheet header button { width: 40px; height: 40px; border: 0; border-radius: 10px; background: #f2f5f3; color: #53665c; }
-.collection-sheet__body { padding: 1rem; overflow-y: auto; }
-.collection-sheet > footer { display: flex; gap: .55rem; justify-content: flex-end; padding: .8rem 1rem; border-top: 1px solid #e5ebe7; background: #fbfcfb; }
-.collection-sheet > footer :deep(.btn) { min-height: 44px; }
-.collection-sheet-enter-active, .collection-sheet-leave-active { transition: opacity .16s ease; }
-.collection-sheet-enter-from, .collection-sheet-leave-to { opacity: 0; }
-@media (max-width: 575.98px) {
-    .collection-sheet__backdrop { place-items: end center; padding: 0; }
-    .collection-sheet { width: 100%; max-height: 92vh; border-radius: 20px 20px 0 0; }
-}
+.collection-sheet{display:flex;min-height:100%;flex-direction:column;background:#FFFDFA;color:#25343A}
+.collection-sheet>header{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:14px;padding:24px;border-bottom:1px solid #DFD7CB}
+.collection-sheet__icon{display:grid;width:46px;height:46px;place-items:center;border:1px solid #DFD7CB;border-radius:12px;color:#A3422B;background:#F7F3ED;font-size:21px}
+.collection-sheet.danger .collection-sheet__icon{color:#B83232;background:#FFF0F0}
+.collection-sheet header small{font-size:13px;color:#626B6D}
+.collection-sheet h2{margin:4px 0 0;font-size:22px;font-weight:800}
+.collection-sheet header button{width:42px;height:42px;border:1px solid #DFD7CB;border-radius:50%;background:transparent;color:#626B6D}
+.collection-sheet__body{flex:1;padding:24px;overflow-y:auto}
+.collection-sheet>footer{display:flex;flex-wrap:wrap;gap:12px;justify-content:flex-end;position:sticky;bottom:0;padding:18px 24px;border-top:1px solid #DFD7CB;background:#F7F3ED}
+.collection-sheet :deep(.btn){min-height:44px;font-size:14px}
+.collection-sheet :deep(input:not([type=checkbox]):not([type=radio])),.collection-sheet :deep(select){min-height:44px;font-size:14px}
+@media(max-width:600px){.collection-sheet>header,.collection-sheet__body{padding:18px}.collection-sheet>footer{padding:16px 18px}}
 </style>

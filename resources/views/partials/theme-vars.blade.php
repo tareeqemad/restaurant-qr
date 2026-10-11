@@ -37,6 +37,15 @@
     --brand-dark: var(--dark);
     --brand-light: {{ $theme['primary_light'] }};
     --brand-soft: {{ $theme['primary_soft'] }};
+    --brand-hover: color-mix(in srgb, var(--brand) 80%, #000);
+    --canvas: #f7f3ed;
+    --surface: #fffdfa;
+    --surface-muted: #efe9e0;
+    --ink: #25343a;
+    --muted: #626b6d;
+    --line: #dfd7cb;
+    --radius-card: 12px;
+    --radius-control: 8px;
     --gold-soft: var(--accent-soft);
     /* Semantic state colors are intentionally NOT tied to the brand palette:
        success/warning/info must stay readable as states even if the admin
@@ -44,7 +53,7 @@
     --success: #16a34a;
     --warning: #d97706;
     --info: #2563eb;
-    --brand-gradient: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
+    --brand-gradient: linear-gradient(var(--brand), var(--brand));
     --brand-gradient-y: linear-gradient(135deg, var(--brand) 0%, var(--accent) 100%);
     --gold-gradient: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
 }

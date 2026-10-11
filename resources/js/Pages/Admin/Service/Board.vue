@@ -229,7 +229,7 @@ const heroTone = computed(() => {
     <Head title="طلبات الصالة" />
 
     <PageHeader title="طلبات الصالة" icon="bi-person-check-fill"
-                subtitle="كل شي محتاج تدخّلك — مرتّب بالأهم أولاً">
+                >
         <template #actions>
             <button type="button" class="sv-sound" :class="{ 'is-off': ! soundOn }" @click="toggleSound">
                 <i class="bi" :class="soundOn ? 'bi-volume-up-fill' : 'bi-volume-mute-fill'"></i>
@@ -267,15 +267,16 @@ const heroTone = computed(() => {
         </div>
 
         <!-- ── Focus chips ────────────────────────────────────────── -->
-        <div class="sv-chips">
+        <div class="sv-workspace"><nav class="sv-chips" aria-label="نوع المهمة">
             <button v-for="chip in chips" :key="chip.key" type="button"
                     class="sv-chip" :class="[{ 'is-active': filters.focus === chip.key }, chip.tone ? `sv-chip--${chip.tone}` : '']"
                     @click="setFocus(chip.key)">
                 {{ chip.label }}
                 <span v-if="chip.count" class="sv-chip-n">{{ chip.count }}</span>
             </button>
-        </div>
+        </nav>
 
+        <div class="sv-task-content">
         <!-- ── Change requests — the guest is waiting on these ────── -->
         <section v-if="changeRequests.length" class="sv-changes">
             <h3><i class="bi bi-pencil-square"></i> طلبات تعديل من الزبائن <span>{{ changeRequests.length }}</span></h3>
@@ -297,16 +298,17 @@ const heroTone = computed(() => {
                         icon="bi-funnel" title="ما في مهام بهذا الفلتر"
                         message="جرّب «الكل» لتشوف باقي المهام." />
         </section>
+        </div></div>
     </div>
 </template>
 
 <style scoped>
 .sv-board { display: flex; flex-direction: column; gap: .8rem; padding-bottom: 2rem; }
-.sv-offline { display: flex; align-items: center; gap: .6rem; padding: .7rem .85rem; border: 1px solid #fecaca; border-radius: 13px; background: #fff5f5; color: #991b1b; }
+.sv-offline { display: flex; align-items: center; gap: .6rem; padding: .7rem .85rem; border: 1px solid #fecaca; border-radius: 12px; background: #fff5f5; color: #991b1b; }
 .sv-offline > i { font-size: 1.1rem; }
 .sv-offline span, .sv-offline strong, .sv-offline small { display: block; }
-.sv-offline strong { font-size: .8rem; font-weight: 950; }
-.sv-offline small { margin-top: .08rem; font-size: .68rem; line-height: 1.45; }
+.sv-offline strong { font-size: .875rem; font-weight: 800; }
+.sv-offline small { margin-top: .08rem; font-size: .875rem; line-height: 1.45; }
 
 .sv-sound {
     display: inline-flex;
@@ -314,16 +316,16 @@ const heroTone = computed(() => {
     gap: .4rem;
     min-height: 40px;
     padding: 0 .9rem;
-    border: 1px solid #e2e8f0;
-    border-radius: 999px;
-    background: #fff;
-    color: #334155;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface);
+    color: var(--ink);
     font: inherit;
-    font-size: .8rem;
+    font-size: .875rem;
     font-weight: 700;
     cursor: pointer;
 }
-.sv-sound.is-off { color: #94a3b8; }
+.sv-sound.is-off { color: var(--muted); }
 
 .sv-hero {
     display: flex;
@@ -331,16 +333,16 @@ const heroTone = computed(() => {
     justify-content: space-between;
     gap: 1rem;
     flex-wrap: wrap;
-    border-radius: 16px;
+    border-radius: 12px;
     padding: .9rem 1.1rem;
     font-weight: 800;
 }
-.sv-hero.is-calm { background: #ecfdf5; color: #065f46; }
+.sv-hero.is-calm { background: var(--brand-soft); color: var(--brand); }
 .sv-hero.is-warm { background: #fffbeb; color: #92400e; }
 .sv-hero.is-hot { background: #fef2f2; color: #991b1b; }
 .sv-hero-main { display: flex; align-items: center; gap: .55rem; font-size: 1rem; }
 .sv-hero-main strong { font-size: 1.3rem; }
-.sv-hero-side { display: flex; gap: .9rem; flex-wrap: wrap; font-size: .82rem; font-weight: 700; opacity: .9; }
+.sv-hero-side { display: flex; gap: .9rem; flex-wrap: wrap; font-size: .875rem; font-weight: 700; opacity: .9; }
 
 .sv-tablefilter {
     display: flex;
@@ -351,7 +353,7 @@ const heroTone = computed(() => {
     color: #1e40af;
     border-radius: 12px;
     padding: .55rem .8rem;
-    font-size: .82rem;
+    font-size: .875rem;
     font-weight: 700;
 }
 .sv-tablefilter button {
@@ -363,7 +365,7 @@ const heroTone = computed(() => {
     min-height: 34px;
     padding: 0 .6rem;
     font: inherit;
-    font-size: .76rem;
+    font-size: .875rem;
     font-weight: 800;
     cursor: pointer;
 }
@@ -377,24 +379,24 @@ const heroTone = computed(() => {
     gap: .35rem;
     min-height: 42px;
     padding: 0 .9rem;
-    border: 1px solid #e2e8f0;
-    border-radius: 999px;
-    background: #fff;
-    color: #334155;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--ink);
     font: inherit;
-    font-size: .82rem;
+    font-size: .875rem;
     font-weight: 800;
     cursor: pointer;
     white-space: nowrap;
 }
-.sv-chip.is-active { background: rgb(var(--primary-rgb)); border-color: rgb(var(--primary-rgb)); color: #fff; }
+.sv-chip.is-active { background: rgb(var(--primary-rgb)); border-color: rgb(var(--primary-rgb)); color: #FFFDFA; }
 .sv-chip--hot.is-active { background: #b91c1c; border-color: #b91c1c; }
 .sv-chip--ready.is-active { background: #047857; border-color: #047857; }
 .sv-chip-n {
     background: rgba(15, 23, 42, .08);
-    border-radius: 999px;
+    border-radius: 8px;
     padding: 0 .4rem;
-    font-size: .72rem;
+    font-size: .875rem;
 }
 .sv-chip.is-active .sv-chip-n { background: rgba(255, 255, 255, .25); }
 
@@ -405,15 +407,18 @@ const heroTone = computed(() => {
     gap: .45rem;
     margin: 0;
     font-size: .92rem;
-    font-weight: 900;
+    font-weight: 800;
     color: #92400e;
 }
 .sv-changes h3 span {
     background: #fef3c7;
-    border-radius: 999px;
+    border-radius: 12px;
     padding: 0 .5rem;
-    font-size: .76rem;
+    font-size: .875rem;
 }
 
 .sv-list { display: flex; flex-direction: column; gap: .6rem; }
+
+/* Operational layout and responsive hierarchy. */
+.sv-board{gap:16px}.sv-hero{padding:14px 18px;border:1px solid var(--line);border-radius:8px;background:var(--surface)!important;color:var(--ink)!important;border-inline-start:4px solid var(--brand)}.sv-hero.is-hot{border-inline-start-color:#b83434}.sv-hero-side{font-size:14px;gap:18px}.sv-workspace{display:grid;grid-template-columns:200px minmax(0,1fr);gap:20px;align-items:start}.sv-chips{display:flex;flex-direction:column;gap:4px;position:sticky;top:16px;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--surface)}.sv-chip{justify-content:space-between;min-height:48px;border:0;border-radius:6px;font-size:15px;background:transparent}.sv-chip.is-active{background:var(--brand-soft);color:var(--brand);box-shadow:inset -3px 0 var(--brand)}.sv-chip-n{border-radius:4px;font-size:14px}.sv-task-content{min-width:0;display:grid;gap:20px}.sv-list,.sv-changes{gap:14px}.sv-sound{border-radius:8px;min-height:44px;font-size:14px}.sv-changes h3{font-size:18px}@media(max-width:760px){.sv-workspace{grid-template-columns:1fr}.sv-chips{position:static;flex-direction:row;overflow-x:auto}.sv-chip{flex:0 0 auto;gap:12px}.sv-hero{gap:10px}}
 </style>

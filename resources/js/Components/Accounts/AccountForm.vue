@@ -114,7 +114,7 @@ function syncBalance() {
                         maxlength="191"
                         placeholder="مثال: مصاريف صيانة"
                     >
-                    <small>استخدم اسماً يفهمه المحاسب والمدير دون شرح إضافي.</small>
+
                 </label>
 
                 <label v-if="isModal">
@@ -201,9 +201,9 @@ function syncBalance() {
     gap: 10px;
     margin-bottom: 10px;
     padding: 11px 13px;
-    border: 1px solid #bdd9c6;
+    border: 1px solid #F7F3ED;
     border-radius: 12px;
-    color: #28543a;
+    color: #25343A;
     background: #f0f8f3;
 }
 
@@ -223,12 +223,12 @@ function syncBalance() {
 }
 
 .account-notice strong {
-    font-size: .72rem;
+    font-size: .875rem;
 }
 
 .account-notice small {
-    color: #708078;
-    font-size: .62rem;
+    color: #A3422B;
+    font-size: .875rem;
     line-height: 1.55;
 }
 
@@ -294,12 +294,12 @@ function syncBalance() {
 }
 
 .account-form__section > header strong {
-    font-size: .75rem;
+    font-size: .875rem;
 }
 
 .account-form__section > header small {
     color: #839087;
-    font-size: .61rem;
+    font-size: .875rem;
 }
 
 .account-form__grid {
@@ -320,14 +320,14 @@ function syncBalance() {
 }
 
 .account-form__grid label > span {
-    color: #4f6056;
-    font-size: .66rem;
+    color: #A3422B;
+    font-size: .875rem;
     font-weight: 850;
 }
 
 .account-form__grid label > small {
     color: #8b978f;
-    font-size: .57rem;
+    font-size: .875rem;
     line-height: 1.45;
 }
 
@@ -359,7 +359,7 @@ function syncBalance() {
     flex: 0 0 44px;
     width: 44px;
     place-items: center;
-    border: 1px solid #b7d5c1;
+    border: 1px solid #F7F3ED;
     border-inline-start: 0;
     border-start-end-radius: 10px;
     border-end-end-radius: 10px;
@@ -377,7 +377,7 @@ function syncBalance() {
 }
 
 .form-control.suggested {
-    border-color: #8dbda0;
+    border-color: #F3E3D8;
     background: #f5fbf7;
 }
 
@@ -408,12 +408,12 @@ function syncBalance() {
 }
 
 .account-active strong {
-    font-size: .72rem;
+    font-size: .875rem;
 }
 
 .account-active small {
     color: #849188;
-    font-size: .59rem;
+    font-size: .875rem;
 }
 
 .account-errors {
@@ -434,11 +434,11 @@ function syncBalance() {
 }
 
 .account-errors strong {
-    font-size: .7rem;
+    font-size: .875rem;
 }
 
 .account-errors small {
-    font-size: .6rem;
+    font-size: .875rem;
 }
 
 @media (max-width: 720px) {
@@ -452,4 +452,6 @@ function syncBalance() {
         grid-column: auto;
     }
 }
+
+.account-form{gap:24px}.account-form__section{padding:24px;border-radius:16px;background:#FFFDFA}.account-form__section>header{padding-bottom:18px;margin-bottom:20px;border-bottom:1px solid #DFD7CB}.account-form__section>header strong{font-size:18px}.account-form__grid{gap:20px}.account-form__grid label>span{font-size:14px}.account-form__grid input,.account-form__grid select,.account-form__grid textarea{min-height:44px;font-size:15px}.account-form__grid small{font-size:13px}.account-notice{padding:18px 20px}@media(max-width:640px){.account-form__section{padding:18px}}
 </style>

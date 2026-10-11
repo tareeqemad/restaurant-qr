@@ -100,7 +100,7 @@ const compactHidden = (link) => link.page !== null
 </template>
 
 <style scoped>
-.app-pagination { width: 100%; color: #334155; }
+.app-pagination { width: 100%; color: var(--ink, #25343a); }
 .app-pagination__inner {
     display: grid;
     grid-template-columns: minmax(7rem, 1fr) auto minmax(7rem, 1fr);
@@ -115,14 +115,14 @@ const compactHidden = (link) => link.page !== null
     gap: .3rem;
     justify-self: start;
     margin: 0;
-    color: #718078;
-    font-size: .72rem;
+    color: var(--muted, #626b6d);
+    font-size: .8125rem;
     font-weight: 700;
     white-space: nowrap;
 }
 .app-pagination__summary strong {
-    color: #164f35;
-    font-size: .78rem;
+    color: var(--ink, #25343a);
+    font-size: .8125rem;
     font-variant-numeric: tabular-nums;
 }
 .app-pagination__controls, .app-pagination__pages { display: flex; align-items: center; }
@@ -134,39 +134,39 @@ const compactHidden = (link) => link.page !== null
     justify-content: center;
     min-width: 42px;
     min-height: 42px;
-    border: 1px solid #dce6e0;
+    border: 1px solid var(--line, #dfd7cb);
     border-radius: 11px;
     background: #fff;
-    color: #355548;
+    color: var(--ink, #25343a);
     text-decoration: none;
-    font-size: .78rem;
+    font-size: .8125rem;
     font-weight: 800;
     line-height: 1;
     font-variant-numeric: tabular-nums;
     transition: border-color .16s ease, background-color .16s ease, color .16s ease, transform .16s ease;
 }
 .app-pagination__nav { gap: .4rem; min-width: 88px; padding-inline: .8rem; }
-.app-pagination__ellipsis { border-color: transparent; background: transparent; color: #94a3b8; }
+.app-pagination__ellipsis { border-color: transparent; background: transparent; color: var(--muted, #626b6d); }
 .app-pagination__nav:not(.is-disabled):hover, .app-pagination__page:not(.is-active):hover {
-    border-color: #9fc9b2;
-    background: #f1f8f4;
-    color: #0f6b42;
+    border-color: var(--brand, #a3422b);
+    background: var(--brand-soft, #f3e3d8);
+    color: var(--brand, #a3422b);
     transform: translateY(-1px);
 }
 .app-pagination__page.is-active {
-    border-color: #197149;
-    background: #197149;
+    border-color: var(--brand, #a3422b);
+    background: var(--brand, #a3422b);
     color: #fff;
-    box-shadow: 0 7px 16px -10px rgba(25, 113, 73, .8);
+    box-shadow: 0 7px 16px -10px rgba(163, 66, 43, .15);
 }
 .app-pagination__nav.is-disabled {
-    border-color: #e8eeeb;
-    background: #f7f9f8;
-    color: #b2bdb7;
+    border-color: var(--line, #dfd7cb);
+    background: var(--surface-muted, #efe9e0);
+    color: #768183;
     cursor: not-allowed;
 }
 .app-pagination__nav:focus-visible, .app-pagination__page:focus-visible {
-    outline: 3px solid rgba(25, 113, 73, .2);
+    outline: 3px solid rgba(163, 66, 43, .2);
     outline-offset: 2px;
 }
 @media (max-width: 720px) {

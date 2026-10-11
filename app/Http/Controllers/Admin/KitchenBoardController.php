@@ -63,7 +63,7 @@ class KitchenBoardController extends Controller
                     default => '🍽️',
                 },
             ],
-            'board' => $this->boardPayload($station, $sort, $filterTable),
+            'board' => $this->boardPayload($station, $sort),
             'filters' => ['sort' => $sort, 'table' => $filterTable],
             'live' => [
                 'version' => LiveRefreshPulse::version($this->stationBranchId($station)),
@@ -78,11 +78,16 @@ class KitchenBoardController extends Controller
     }
 
     /** Cheap poll target, gated by the same station permission. */
-    public function pulse(string $code)
+    public function pulse(Request $request, string $code)
     {
         $station = $this->resolveStation($code);
+        $version = LiveRefreshPulse::version($this->stationBranchId($station));
+        $payload = ['version' => $version];
+        if ($request->boolean('refresh') || ($request->has('version') && $request->query('version') !== $version)) {
+            $payload['board'] = $this->boardPayload($station, 'time');
+        }
 
-        return response()->json(['version' => LiveRefreshPulse::version($this->stationBranchId($station))]);
+        return response()->json($payload);
     }
 
     /**
@@ -98,26 +103,41 @@ class KitchenBoardController extends Controller
             'verb' => ['required', 'in:start,ready,undo-start,undo-ready,start-all,ready-all,cancel-item'],
             'item_id' => ['nullable', 'integer'],
             'order_id' => ['nullable', 'integer'],
+            'item_ids' => ['sometimes', 'array', 'min:1', 'max:500'],
+            'item_ids.*' => ['integer'],
             'disposition' => ['nullable', 'in:return,waste'],
             'reason' => ['nullable', 'string', 'max:255'],
+            'include_board' => ['sometimes', 'boolean'],
         ]);
 
         try {
             $message = $this->runVerb($station, $data, $service);
 
-            return response()->json(['ok' => true, 'message' => $message]);
+            return response()->json($this->actionPayload($station, $request, true, $message));
         } catch (HttpExceptionInterface $e) {
             // Real authorization failures (403/404) keep their status page.
             throw $e;
         } catch (\RuntimeException $e) {
             // Stale tap — the line moved on another screen. Domain message
             // is written for the UI (Arabic); the client refreshes after.
-            return response()->json(['ok' => false, 'message' => $e->getMessage()], 409);
+            return response()->json($this->actionPayload($station, $request, false, $e->getMessage()), 409);
         } catch (\Throwable $e) {
             report($e);
 
             return response()->json(['ok' => false, 'message' => 'حدث خطأ غير متوقع — أعد المحاولة أو حدّث الصفحة.'], 500);
         }
+    }
+
+    protected function actionPayload(Station $station, Request $request, bool $ok, ?string $message): array
+    {
+        $payload = ['ok' => $ok, 'message' => $message];
+        if ($request->boolean('include_board')) {
+            // Capture the version first: a later change must still trigger the next pulse.
+            $payload['version'] = LiveRefreshPulse::version($this->stationBranchId($station));
+            $payload['board'] = $this->boardPayload($station, 'time');
+        }
+
+        return $payload;
     }
 
     protected function runVerb(Station $station, array $data, OrderService $service): ?string
@@ -160,6 +180,7 @@ class KitchenBoardController extends Controller
             case 'start-all':
                 $this->ensureStationAccess($station);
                 $items = $this->scopeToBoard($station, OrderItem::where('order_id', (int) $data['order_id']))
+                    ->when(isset($data['item_ids']), fn ($query) => $query->whereIn('id', $data['item_ids']))
                     ->where('status', OrderItemStatus::Approved->value)
                     ->whereDoesntHave('changeRequests', fn ($query) => $query
                         ->where('status', OrderChangeRequest::STATUS_PENDING))
@@ -185,6 +206,7 @@ class KitchenBoardController extends Controller
                 // preparing first so timing stamps and the 'preparing'
                 // deduction stage stay consistent.
                 $items = $this->scopeToBoard($station, OrderItem::where('order_id', (int) $data['order_id']))
+                    ->when(isset($data['item_ids']), fn ($query) => $query->whereIn('id', $data['item_ids']))
                     ->whereIn('status', [OrderItemStatus::Approved->value, OrderItemStatus::Preparing->value])
                     ->whereDoesntHave('changeRequests', fn ($query) => $query
                         ->where('status', OrderChangeRequest::STATUS_PENDING))
@@ -239,13 +261,15 @@ class KitchenBoardController extends Controller
 
     // ── Board payload — verbatim v3 semantics ────────────────────────
 
-    protected function boardPayload(Station $station, string $sort, string $filterTable): array
+    protected function boardPayload(Station $station, string $sort): array
     {
         $rows = $this->scopeToBoard($station,
             OrderItem::with([
                 'order.table',
                 'order.customer',
-                'order.tableSession.orders',
+                'order.tableSession.orders:id,table_session_id,created_at',
+                'order.tableSession.invoice:invoices.id,invoices.table_session_id,invoices.status',
+                'order.invoice:invoices.id,invoices.order_id,invoices.status',
                 'order.tableSession.assignedWaiter:id,name,role,status',
                 'order.approver:id,name,role,status',
                 'order.changeRequests' => fn ($query) => $query
@@ -273,18 +297,6 @@ class KitchenBoardController extends Controller
             && $it->station_id === null
             && $it->prep_started_at === null);
 
-        if ($filterTable !== '') {
-            // EXACT number match — substring matching caught tables 10-19
-            // when filtering for table 1.
-            $rows = $rows->filter(function ($it) use ($filterTable) {
-                $num = trim((string) ($it->order?->table?->number ?? ''));
-
-                return is_numeric($num) && is_numeric($filterTable)
-                    ? (int) $num === (int) $filterTable
-                    : $num === $filterTable;
-            });
-        }
-
         $waiting = collect();
         $cooking = collect();
         $ready = collect();
@@ -297,13 +309,20 @@ class KitchenBoardController extends Controller
             }
 
             $statuses = $items->pluck('status')->unique()->values();
+            $stageCounts = [
+                'waiting' => $items->where('status', OrderItemStatus::Approved->value)->count(),
+                'cooking' => $items->where('status', OrderItemStatus::Preparing->value)->count(),
+                'ready' => $items->where('status', OrderItemStatus::Ready->value)->count(),
+            ];
+            $readyItems = $items->where('status', OrderItemStatus::Ready->value);
+            $oldestReadyAt = $readyItems->pluck('ready_at')->filter()->min();
+            $readyAgeMin = $oldestReadyAt ? (int) $oldestReadyAt->diffInMinutes(now()) : 0;
             $bucket = $statuses->contains(OrderItemStatus::Approved->value) ? 'waiting'
                 : ($statuses->contains(OrderItemStatus::Preparing->value) ? 'cooking' : 'ready');
 
             // Ready age = time sitting on the pass (ready_at), not order age —
             // otherwise the strip stays green while food goes cold.
             if ($bucket === 'ready') {
-                $oldestReadyAt = $items->pluck('ready_at')->filter()->min();
                 $ageMin = $oldestReadyAt ? (int) $oldestReadyAt->diffInMinutes(now())
                     : (int) $first->approved_at?->diffInMinutes(now());
             } else {
@@ -325,6 +344,11 @@ class KitchenBoardController extends Controller
             }
 
             $urgency = $this->urgency($station, $ageMin, $bucket);
+            $readyUrgency = $this->urgency($station, $readyAgeMin, 'ready');
+            $urgencyRanks = ['red' => 4, 'orange' => 3, 'amber' => 2, 'green' => 1];
+            if ($readyItems->isNotEmpty() && $urgencyRanks[$readyUrgency] > $urgencyRanks[$urgency]) {
+                $urgency = $readyUrgency;
+            }
             $isOffTable = $order->isOffTable();
             $round = OrderRoundContext::for($order);
             $waiter = $order->tableSession?->assignedWaiter;
@@ -340,7 +364,11 @@ class KitchenBoardController extends Controller
             $card = [
                 'orderId' => $order->id,
                 'number' => $order->number,
-                'tableNum' => (int) ($order->table?->number ?? 0),
+                'tableNum' => (string) ($order->table?->number ?? ''),
+                'stageCounts' => $stageCounts,
+                'readyQuantity' => $this->fmtQty((float) $readyItems->sum('quantity')),
+                'readyAgeMin' => $readyAgeMin,
+                'readyUrgency' => $readyUrgency,
                 'roundNumber' => $round['number'],
                 'roundLabel' => $round['label'],
                 'isAddition' => $round['isAddition'],
@@ -348,7 +376,7 @@ class KitchenBoardController extends Controller
                 'notes' => trim((string) ($order->customer_notes ?? '')),
                 'ageMin' => $ageMin,
                 'urgency' => $urgency,
-                'urgencyRank' => ['red' => 4, 'orange' => 3, 'amber' => 2, 'green' => 1][$urgency] ?? 0,
+                'urgencyRank' => $urgencyRanks[$urgency],
                 'etaMin' => $etaMin,
                 'etaLabel' => $etaLabel,
                 'flash' => (bool) $items->min('approved_at')?->gt(now()->subSeconds(15)),
@@ -400,15 +428,30 @@ class KitchenBoardController extends Controller
         $active = $waiting->merge($cooking);
         $cards = $active->merge($ready);
 
-        // All-day batching: identical dishes summed across open tickets.
-        $allDay = $active->flatMap(fn ($c) => $c['items'])
+        // Batch only identical preparation instructions; removals must never
+        // disappear into the total for the default version of a dish.
+        $allDay = $active->flatMap(fn ($c) => array_map(fn ($item) => $item + ['orderNotes' => $c['notes']], $c['items']))
             ->filter(fn ($i) => ! $i['changePending'] && in_array($i['status'], ['approved', 'preparing'], true))
-            ->groupBy('name')
-            ->map(fn ($g, $name) => ['name' => $name, 'qty' => $this->fmtQty($g->sum(fn ($i) => (float) $i['rawQty']))])
+            ->groupBy(fn ($i) => json_encode([
+                $i['menuItemId'], $i['name'],
+                collect($i['mods'])->pluck('name')->sort()->values()->all(),
+                collect($i['exclusions'])->sort()->values()->all(),
+                trim((string) $i['notes']),
+                $i['orderNotes'],
+            ], JSON_UNESCAPED_UNICODE))
+            ->map(fn ($g, $key) => [
+                'key' => hash('sha256', $key),
+                'name' => $g->first()['name'],
+                'qty' => $this->fmtQty($g->sum(fn ($i) => (float) $i['rawQty'])),
+                'mods' => $g->first()['mods'],
+                'exclusions' => $g->first()['exclusions'],
+                'notes' => $g->first()['notes'],
+                'orderNotes' => $g->first()['orderNotes'],
+            ])
             ->values()->all();
 
         // Tables with >1 open ticket get the follow-up chip.
-        $followUp = $active->pluck('tableNum')->filter()
+        $followUp = $active->pluck('tableNum')->filter(fn ($number) => $number !== '')
             ->countBy()->filter(fn ($n) => $n > 1)->keys()->all();
 
         $activeItems = $cards->sum(fn ($c) => count($c['items']));
@@ -421,9 +464,10 @@ class KitchenBoardController extends Controller
             'ready' => $ready->values()->all(),
             'followUpTables' => $followUp,
             'allDay' => $allDay,
-            'activeTables' => $cards->pluck('tableNum')->filter()->unique()->sort()->values()->all(),
+            'activeTables' => $cards->pluck('tableNum')->filter(fn ($number) => $number !== '')
+                ->unique()->sort(SORT_NATURAL)->values()->all(),
             'orderIds' => $active->pluck('orderId')->values()->all(),
-            'readyIds' => $ready->pluck('orderId')->values()->all(),
+            'readyIds' => $cards->filter(fn ($c) => $c['stageCounts']['ready'] > 0)->pluck('orderId')->values()->all(),
             'changeRequestIds' => $cards->pluck('changeRequest.id')->filter()->unique()->values()->all(),
             'load' => [
                 // Load tracks TICKET count — 8/14 is where one cook drowns.
@@ -437,7 +481,7 @@ class KitchenBoardController extends Controller
                 'totalTickets' => $totalTickets,
                 'waitingTickets' => $waiting->count(),
                 'cookingTickets' => $cooking->count(),
-                'readyTickets' => $ready->count(),
+                'readyTickets' => $cards->filter(fn ($c) => $c['stageCounts']['ready'] > 0)->count(),
                 'oldestAge' => (int) ($cards->max('ageMin') ?? 0),
                 'redCards' => $cards->where('urgency', 'red')->count(),
             ],
@@ -462,18 +506,22 @@ class KitchenBoardController extends Controller
         }
 
         // Undo windows shipped as REMAINING seconds (device-anchored client-side).
+        $invoice = $it->order?->tableSession?->invoice ?? $it->order?->invoice;
+        $canCorrect = (! $invoice || $invoice->status === 'cancelled')
+            && ! in_array($it->order?->status, ['delivered', 'completed', 'cancelled'], true);
         $undoStart = null;
-        if ($it->status === 'preparing' && $it->prep_started_at) {
+        if ($canCorrect && $it->status === 'preparing' && $it->prep_started_at) {
             $undoStart = max(0, 60 - (int) $it->prep_started_at->diffInSeconds(now()));
         }
         $undoReady = null;
-        if ($it->status === 'ready') {
+        if ($canCorrect && $it->status === 'ready') {
             $readyAgo = ($it->ready_at ?? $it->updated_at)?->diffInSeconds(now());
             $undoReady = $readyAgo !== null ? max(0, 120 - (int) $readyAgo) : null;
         }
 
         return [
             'id' => $it->id,
+            'menuItemId' => $it->menu_item_id,
             'name' => $it->name_snapshot,
             'qty' => $this->fmtQty((float) $it->quantity),
             'rawQty' => (float) $it->quantity,
@@ -488,6 +536,7 @@ class KitchenBoardController extends Controller
             'delay' => $delay,
             'undoStartRemaining' => $undoStart,
             'undoReadyRemaining' => $undoReady,
+            'canCancel' => $canCorrect,
             // Removals tint red, additions green — a wrong chip is a remade
             // plate or an allergy incident.
             'mods' => $it->modifiers->map(fn ($m) => [

@@ -5,7 +5,7 @@
  * bank-transfer declaration stays a REAL multipart form (proof image) so
  * the server keeps its upload pipeline untouched.
  */
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import Toaster from '../../Components/Ui/Toaster.vue';
 import { useToast } from '../../Composables/useToast';
@@ -22,6 +22,7 @@ const props = defineProps({
 
 const toast = useToast();
 const page = usePage();
+const restaurantBrand = computed(() => page.props.restaurantBrand ?? { name: 'مطعم دار السرو', logo: '/brand/dar-al-sarw-mark.svg' });
 
 watch(() => page.props.flash, (flash) => {
     if (! flash) return;
@@ -80,12 +81,16 @@ const submitTransfer = () => {
 
     <div class="bl">
         <header class="bl-top">
-            <div>
+            <div class="bl-heading">
+                <img :src="restaurantBrand.logo || '/brand/dar-al-sarw-mark.svg'" alt="">
+                <div>
+                <small class="bl-brand">{{ restaurantBrand.name }}</small>
                 <h1><i class="bi bi-receipt-cutoff"></i> فاتورتك</h1>
                 <small>
                     <template v-if="sessionInfo.tableNumber">طاولة {{ sessionInfo.tableNumber }} · </template>
                     {{ orders.length }} {{ orders.length === 1 ? 'طلب' : 'طلبات' }}
                 </small>
+                </div>
             </div>
             <Link :href="urls.track" class="bl-chip" view-transition><i class="bi bi-arrow-right"></i> طلباتي</Link>
         </header>
@@ -122,7 +127,7 @@ const submitTransfer = () => {
         </div>
 
         <template v-else>
-            <section class="bl-card">
+            <section class="bl-card"><header class="bl-receipt-heading"><h2>تفاصيل الحساب</h2><span>{{ orders.length }} جولات</span></header>
                 <div v-for="order in orders" :key="order.id" class="bl-order">
                     <header>
                         <span class="bl-order-num"><i class="bi bi-hash"></i>{{ order.number }}</span>
@@ -233,8 +238,8 @@ const submitTransfer = () => {
 <style scoped>
 .bl {
     min-height: 100dvh;
-    background: #f8fafc;
-    color: #0f172a;
+    background: var(--canvas);
+    color: var(--ink);
     padding: 1rem .9rem 2.5rem;
     max-width: 640px;
     margin-inline: auto;
@@ -243,20 +248,20 @@ const submitTransfer = () => {
     gap: .8rem;
 }
 .bl-top { display: flex; align-items: center; justify-content: space-between; }
-.bl-top h1 { margin: 0; font-size: 1.2rem; font-weight: 900; display: flex; align-items: center; gap: .45rem; }
-.bl-top h1 i { color: rgb(var(--primary-rgb)); }
-.bl-top small { color: #64748b; }
+.bl-top h1 { margin: 0; font-size: 1.2rem; font-weight: 800; display: flex; align-items: center; gap: .45rem; }
+.bl-top h1 i { color: var(--brand); }
+.bl-top small { color: #315B6B; }
 .bl-chip {
     display: inline-flex;
     align-items: center;
     gap: .4rem;
     min-height: 40px;
     padding: 0 .9rem;
-    border: 1px solid #e2e8f0;
-    border-radius: 999px;
-    background: #fff;
-    color: #334155;
-    font-size: .82rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--ink);
+    font-size: .875rem;
     font-weight: 700;
     text-decoration: none;
 }
@@ -265,25 +270,25 @@ const submitTransfer = () => {
     display: flex;
     gap: .7rem;
     align-items: flex-start;
-    border-radius: 14px;
+    border-radius: 12px;
     padding: .85rem .95rem;
-    font-size: .84rem;
+    font-size: .875rem;
 }
 .bl-status > i { font-size: 1.15rem; margin-top: 1px; }
 .bl-status strong { display: block; }
-.bl-status--wait { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
-.bl-status--ok { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
+.bl-status--wait { background: var(--canvas); border: 1px solid var(--accent); color: #92400e; }
+.bl-status--ok { background: var(--canvas); border: 1px solid var(--brand); color: var(--brand); }
 
-.bl-empty { text-align: center; padding: 3rem 1rem; color: #94a3b8; }
+.bl-empty { text-align: center; padding: 3rem 1rem; color: #315B6B; }
 .bl-empty i { font-size: 2.6rem; }
-.bl-empty h3 { margin: .8rem 0 .2rem; color: #334155; font-weight: 900; font-size: 1.05rem; }
-.bl-empty p { margin: 0 0 1rem; font-size: .86rem; }
+.bl-empty h3 { margin: .8rem 0 .2rem; color: var(--ink); font-weight: 800; font-size: 1.05rem; }
+.bl-empty p { margin: 0 0 1rem; font-size: .875rem; }
 .bl-cta {
     min-height: 46px;
     padding: 0 1.4rem;
-    border-radius: 13px;
-    background: rgb(var(--primary-rgb));
-    color: #fff;
+    border-radius: 12px;
+    background: var(--brand);
+    color: #FFFDFA;
     font-weight: 800;
     text-decoration: none;
     display: inline-flex;
@@ -292,83 +297,84 @@ const submitTransfer = () => {
 }
 
 .bl-card {
-    background: #fff;
-    border: 1px solid #eef0f3;
-    border-radius: 18px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
     overflow: hidden;
 }
-.bl-order { padding: .9rem 1rem 0; }
+.bl-order { padding: .9rem 1rem 0; border-color: var(--line); }
 .bl-order header {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
     margin-bottom: .35rem;
 }
-.bl-order-num { font-weight: 900; font-size: .85rem; color: rgb(var(--primary-rgb)); }
-.bl-order header small { color: #94a3b8; font-size: .72rem; }
+.bl-order-num { font-weight: 800; font-size: .875rem; color: var(--brand); }
+.bl-order header small { color: #315B6B; font-size: .875rem; }
 .bl-item {
     display: flex;
     justify-content: space-between;
     gap: .7rem;
     padding: .45rem 0;
-    border-bottom: 1px dashed #eef0f3;
+    border-bottom: 1px dashed var(--line);
 }
 .bl-item:last-child { border-bottom: 0; }
-.bl-item.is-cancelled .bl-item-name { text-decoration: line-through; color: #94a3b8; }
+.bl-item.is-cancelled .bl-item-name { text-decoration: line-through; color: #315B6B; }
 .bl-item-main { display: flex; flex-direction: column; gap: .12rem; min-width: 0; }
 .bl-item-name { font-size: .88rem; font-weight: 800; }
 .bl-qty {
     display: inline-block;
-    background: #f1f5f9;
+    background: var(--canvas);
     border-radius: 7px;
     padding: 0 .35rem;
-    font-size: .72rem;
-    font-weight: 900;
-    color: #475569;
+    font-size: .875rem;
+    font-weight: 800;
+    color: var(--ink);
 }
-.bl-cancelled-tag { color: #b91c1c; font-size: .68rem; font-weight: 900; }
-.bl-item-main small { color: #64748b; font-size: .72rem; }
-.bl-item-price { font-weight: 900; font-size: .84rem; white-space: nowrap; }
+.bl-cancelled-tag { color: #b91c1c; font-size: .875rem; font-weight: 800; }
+.bl-item-main small { color: #315B6B; font-size: .875rem; }
+.bl-item-price { font-weight: 800; font-size: .875rem; white-space: nowrap; }
 
-.bl-totals { background: #f8fafc; border-top: 1px solid #eef0f3; padding: .8rem 1rem; margin-top: .6rem; }
-.bl-row { display: flex; justify-content: space-between; font-size: .82rem; color: #475569; padding: .18rem 0; }
+.bl-totals { background: var(--surface); border-top: 1px solid var(--line); padding: .8rem 1rem; margin-top: .6rem; }
+.bl-row { display: flex; justify-content: space-between; font-size: .875rem; color: var(--ink); padding: .18rem 0; }
 .bl-grand {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    border-top: 1px solid #e2e8f0;
+    border-top: 1px solid var(--line);
     margin-top: .4rem;
     padding-top: .55rem;
+    font-size: 1.15rem;
 }
-.bl-grand span { font-weight: 800; color: #334155; }
-.bl-grand strong { font-size: 1.25rem; font-weight: 900; color: rgb(var(--primary-rgb)); }
+.bl-grand span { font-weight: 800; color: var(--ink); }
+.bl-grand strong { font-size: 1.25rem; font-weight: 800; color: var(--brand); }
 
 .bl-note {
     display: flex;
     gap: .55rem;
     align-items: flex-start;
-    color: #64748b;
-    font-size: .78rem;
+    color: #315B6B;
+    font-size: .875rem;
     padding: 0 .3rem;
 }
 
 .bl-request { display: flex; flex-direction: column; gap: .55rem; }
 .bl-request textarea {
-    border: 1.5px solid #e2e8f0;
-    border-radius: 13px;
+    border: 1.5px solid var(--line);
+    border-radius: 12px;
     padding: .7rem .85rem;
     font: inherit;
-    font-size: .86rem;
+    font-size: .875rem;
     resize: none;
     min-height: 64px;
-    background: #fff;
+    background: var(--surface);
 }
 .bl-request-btn {
     min-height: 50px;
     border: 0;
-    border-radius: 13px;
-    background: rgb(var(--primary-rgb));
-    color: #fff;
+    border-radius: 8px;
+    background: var(--brand);
+    color: #FFFDFA;
     font: inherit;
     font-size: .95rem;
     font-weight: 800;
@@ -387,10 +393,10 @@ const submitTransfer = () => {
     gap: .5rem;
     min-height: 48px;
     padding: 0 1rem;
-    border: 1px solid #e2e8f0;
-    border-radius: 13px;
-    background: #fff;
-    color: #334155;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface);
+    color: var(--ink);
     font: inherit;
     font-size: .88rem;
     font-weight: 800;
@@ -399,51 +405,51 @@ const submitTransfer = () => {
 }
 .bl-transfer-toggle .ms-auto { margin-inline-start: auto; }
 .bl-transfer-body {
-    background: #fff;
-    border: 1px solid #eef0f3;
-    border-radius: 14px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
     padding: .9rem 1rem;
     display: flex;
     flex-direction: column;
     gap: .7rem;
 }
-.bl-transfer-details { background: #f4f6f1; border-radius: 10px; padding: .6rem .8rem; font-size: .82rem; }
+.bl-transfer-details { background: var(--canvas); border-radius: 10px; padding: .6rem .8rem; font-size: .875rem; }
 .bl-transfer-details pre {
     margin: .25rem 0 0;
-    
+
     unicode-bidi: plaintext;
     font-family: monospace;
     white-space: pre-wrap;
-    color: #17211b;
+    color: var(--ink);
 }
-.bl-transfer-hint { margin: 0; color: #64748b; font-size: .8rem; }
+.bl-transfer-hint { margin: 0; color: #315B6B; font-size: .875rem; }
 .bl-transfer-form { display: flex; flex-direction: column; gap: .6rem; }
 .bl-transfer-form label {
     display: flex;
     flex-direction: column;
     gap: .25rem;
     margin: 0;
-    font-size: .8rem;
+    font-size: .875rem;
     font-weight: 700;
-    color: #334155;
+    color: var(--ink);
 }
 .bl-transfer-form label span { color: #b91c1c; }
 .bl-transfer-form input {
-    border: 1.5px solid #e2e8f0;
-    border-radius: 10px;
+    border: 1.5px solid var(--line);
+    border-radius: 8px;
     min-height: 44px;
     padding: 0 .75rem;
     font: inherit;
     font-size: .88rem;
 }
 .bl-transfer-form input[type="file"] { padding: .5rem .75rem; }
-.bl-field-error { color: #b91c1c; font-size: .72rem; font-weight: 700; }
+.bl-field-error { color: #b91c1c; font-size: .875rem; font-weight: 700; }
 .bl-transfer-btn {
     min-height: 48px;
     border: 0;
-    border-radius: 12px;
-    background: rgb(var(--primary-rgb));
-    color: #fff;
+    border-radius: 8px;
+    background: var(--brand);
+    color: #FFFDFA;
     font: inherit;
     font-size: .92rem;
     font-weight: 800;
@@ -456,4 +462,24 @@ const submitTransfer = () => {
 .bl-transfer-btn:disabled { opacity: .62; cursor: wait; }
 .bl-spin { animation: bl-spin .8s linear infinite; }
 @keyframes bl-spin { to { transform: rotate(360deg); } }
+.bl-heading {
+    display: flex;
+    align-items: center;
+    gap: .8rem;
+}
+.bl-heading img {
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
+    background: var(--brand-soft);
+    border-radius: 12px;
+    padding: .25rem;
+}
+.bl-top .bl-brand {
+    color: var(--brand);
+    font-weight: 700;
+}
+
+/* Operational layout and responsive hierarchy. */
+.bl{max-width:760px;padding:24px 20px 40px;gap:18px}.bl-top{padding-bottom:20px;border-bottom:1px solid var(--line);margin-bottom:4px}.bl-top h1{font-size:26px}.bl-card{border-radius:8px;background:var(--surface);border:1px solid var(--line);overflow:hidden}.bl-receipt-heading{display:flex;justify-content:space-between;align-items:center;padding:18px 20px;background:var(--ink);color:var(--surface)}.bl-receipt-heading h2{font-size:19px;margin:0;color:var(--surface)}.bl-receipt-heading span{font-size:14px}.bl-order{padding:0 20px}.bl-order>header{padding:16px 0;border-bottom:1px solid var(--line)}.bl-item{padding:14px 0;border-bottom:1px solid var(--line);gap:18px}.bl-item-name{font-size:16px;line-height:1.5}.bl-qty{display:inline-block;min-width:32px;color:var(--muted);font-size:14px}.bl-item-price{font-size:16px;font-variant-numeric:tabular-nums;white-space:nowrap}.bl-totals{padding:20px;background:var(--canvas);border-top:1px solid var(--line)}.bl-row{font-size:15px;padding:6px 0}.bl-grand{padding-top:16px;border-top:1px solid var(--line);margin-top:10px}.bl-grand strong{font-size:29px;color:var(--ink)}.bl-request{display:grid;gap:12px;padding:18px;background:var(--surface);border:1px solid var(--line);border-radius:8px}.bl-request textarea{min-height:64px}.bl-request-btn{min-height:52px;border-radius:8px;font-size:16px}.bl-status{border-radius:6px;border-inline-start:3px solid var(--accent);background:var(--surface)}.bl-transfer-toggle{min-height:52px;border-radius:8px}.bl-note{font-size:14px;line-height:1.7;background:transparent;padding:0 4px}
 </style>

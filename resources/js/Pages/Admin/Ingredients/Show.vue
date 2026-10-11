@@ -1,4 +1,5 @@
 <script setup>
+import ManagementPage from '../../../Components/Inventory/ManagementPage.vue';
 /**
  * كرت الصنف — one screen that answers "what's going on with sugar today?"
  * without bouncing between four others: stock by location, FIFO batches,
@@ -130,6 +131,7 @@ const batchBadge = {
 </script>
 
 <template>
+    <ManagementPage mode="detail">
     <Head :title="`كرت الصنف: ${ingredient.name}`" />
 
     <PageHeader :title="`كرت الصنف: ${ingredient.name}`" icon="bi-card-text"
@@ -722,32 +724,33 @@ const batchBadge = {
 
     <AdjustStockSheet :open="adjustOpen" :ingredient="adjustSeed" :units="adjust.units"
                       :today="today" @close="adjustOpen = false" />
+    </ManagementPage>
 </template>
 
 <style scoped>
 .ing-head-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
 .ing-head-actions .btn { min-height: 44px; }
 
-.ing-hero { border-radius: 14px; overflow: hidden; }
-.ing-hero__body { background: linear-gradient(135deg, rgba(15, 71, 49, .04), rgba(15, 71, 49, .01)); }
+.ing-hero { border-radius: 12px; overflow: hidden; }
+.ing-hero__body { background: var(--surface, #FFFDFA); }
 .ing-hero__icon {
     width: 56px;
     height: 56px;
-    border-radius: 14px;
-    background: rgba(15, 71, 49, .1);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--brand, #A3422B) 10%, transparent);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #0f4731;
+    color: var(--ink, #25343A);
     font-size: 1.6rem;
     flex-shrink: 0;
 }
 .ing-hero__box {
     text-align: center;
     padding: .5rem;
-    background: #fff;
+    background: var(--surface, #FFFDFA);
     border-radius: 10px;
-    border: 1px solid rgba(15, 71, 49, .1);
+    border: 1px solid color-mix(in srgb, var(--brand, #A3422B) 10%, transparent);
 }
 
 .ing-tabs { border-bottom: none; flex-wrap: wrap; }
@@ -755,13 +758,13 @@ const batchBadge = {
     border: 0;
     background: none;
     font: inherit;
-    font-size: .84rem;
+    font-size: .875rem;
     font-weight: 700;
     min-height: 46px;
     cursor: pointer;
-    color: #475569;
+    color: var(--muted, #626B6D);
 }
-.ing-tabs .nav-link.active { color: rgb(var(--primary-rgb)); border-bottom: 2px solid rgb(var(--primary-rgb)); }
+.ing-tabs .nav-link.active { color: var(--brand, #A3422B); border-bottom: 2px solid var(--brand, #A3422B); }
 
 /* 30-day consumption chart — plain CSS bars, zero libraries. */
 .ing-chart {
@@ -785,22 +788,25 @@ const batchBadge = {
 }
 .ing-chart__bar {
     width: 100%;
-    background: rgba(15, 71, 49, .55);
+    background: color-mix(in srgb, var(--brand, #A3422B) 55.00000000000001%, transparent);
     border-radius: 4px 4px 0 0;
     min-height: 1px;
     transition: background-color .15s;
 }
-.ing-chart__col:hover .ing-chart__bar { background: rgba(15, 71, 49, .85); }
+.ing-chart__col:hover .ing-chart__bar { background: color-mix(in srgb, var(--brand, #A3422B) 85%, transparent); }
 .ing-chart__lbl {
     position: absolute;
     bottom: -20px;
-    font-size: 9px;
-    color: #94a3b8;
+    font-size: 14px;
+    color: var(--muted, #626B6D);
     white-space: nowrap;
-    
+
 }
 
 .ing-notes { white-space: pre-line; }
 
 .pagination .page-link { border: 0; background: none; font: inherit; cursor: pointer; }
+
+/* Dar Al Sarw management layout */
+.ing-hero { border: 1px solid var(--line); border-radius: 12px; } .ing-hero__body { padding: 22px; background: var(--surface); } .ing-hero__icon { border-radius: 10px; color: var(--brand); background: var(--brand-soft); } .nav-tabs { overflow-x: auto; flex-wrap: nowrap; } .nav-tabs .nav-link { white-space: nowrap; }
 </style>

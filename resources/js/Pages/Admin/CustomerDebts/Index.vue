@@ -1,4 +1,5 @@
 <script setup>
+import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 /**
  * Global customer debt desk. Collection is intentionally available on every
  * card so the cashier does not have to open the customer statement first.
@@ -105,9 +106,10 @@ const creditWidth = (customer) => {
 </script>
 
 <template>
-    <Head title="ديون الزبائن" />
-
-    <PageHeader
+<Head title="ديون الزبائن" />
+<FinancialWorkspace area="الذمم والتحصيل" mode="records">
+<template #heading>
+<PageHeader
         title="ديون الزبائن"
         icon="bi-wallet2"
         subtitle="دفتر واحد لكل الفروع، والتحصيل يوزّع تلقائياً على أقدم الفواتير"
@@ -118,10 +120,12 @@ const creditWidth = (customer) => {
             >
         </template>
     </PageHeader>
-
-    <CollectionNav :items="collectionNav" active="debts" />
-
-    <StatRail
+</template>
+<template #navigation>
+<CollectionNav :items="collectionNav" active="debts" />
+</template>
+<template #metrics>
+<StatRail
         :stats="[
             {
                 label: 'إجمالي الدين',
@@ -143,8 +147,8 @@ const creditWidth = (customer) => {
             },
         ]"
     />
-
-    <DataPanel
+</template>
+<DataPanel
         title="من يحتاج تحصيلاً"
         :count="debts.total"
         icon="bi-person-exclamation"
@@ -260,8 +264,8 @@ const creditWidth = (customer) => {
 
         <template #footer><Pagination :links="debts.links" /></template>
     </DataPanel>
-
-    <CollectionSheet
+</FinancialWorkspace>
+<CollectionSheet
         :open="Boolean(collecting)"
         title="تحصيل دفعة"
         eyebrow="تُوزّع على أقدم الفواتير أولاً"
@@ -384,8 +388,8 @@ const creditWidth = (customer) => {
     background: #fff;
 }
 .debt-search label:focus-within {
-    border-color: #16804a;
-    box-shadow: 0 0 0 3px rgba(22, 128, 74, 0.08);
+    border-color: #A3422B;
+    box-shadow: 0 0 0 3px rgba(37,52,58, 0.08);
 }
 .debt-search input {
     width: 100%;
@@ -431,7 +435,7 @@ const creditWidth = (customer) => {
     place-items: center;
     border-radius: 12px;
     background: #edf6f0;
-    color: #11703d;
+    color: #A3422B;
     font-size: 1rem;
     font-weight: 850;
 }
@@ -440,13 +444,13 @@ const creditWidth = (customer) => {
     display: block;
 }
 .debt-identity strong {
-    color: #17372a;
+    color: #25343A;
     font-size: 0.88rem;
 }
 .debt-identity span {
     margin-top: 0.12rem;
     color: #839087;
-    font-size: 0.67rem;
+    font-size: .875rem;
 }
 .debt-total {
     text-align: end;
@@ -457,7 +461,7 @@ const creditWidth = (customer) => {
 }
 .debt-total small {
     color: #8a968f;
-    font-size: 0.61rem;
+    font-size: .875rem;
 }
 .debt-total b {
     color: #b93232;
@@ -474,12 +478,12 @@ const creditWidth = (customer) => {
     padding: 0.25rem 0.45rem;
     border-radius: 7px;
     background: #f3f6f4;
-    color: #66776e;
-    font-size: 0.64rem;
+    color: #A3422B;
+    font-size: .875rem;
 }
 .debt-signals i {
     margin-inline-end: 0.25rem;
-    color: #177746;
+    color: #A3422B;
 }
 .debt-signals .danger {
     color: #ad3030;
@@ -489,7 +493,7 @@ const creditWidth = (customer) => {
     color: inherit;
 }
 .debt-signals .advance {
-    color: #12693c;
+    color: #A3422B;
     background: #eaf7ef;
 }
 .debt-credit {
@@ -498,8 +502,8 @@ const creditWidth = (customer) => {
 .debt-credit > div:first-child {
     display: flex;
     justify-content: space-between;
-    color: #829087;
-    font-size: 0.61rem;
+    color: #A3422B;
+    font-size: .875rem;
 }
 .debt-credit__track {
     height: 5px;
@@ -533,19 +537,19 @@ const creditWidth = (customer) => {
     justify-content: center;
     gap: 0.35rem;
     border-radius: 10px;
-    font-size: 0.72rem;
+    font-size: .875rem;
     font-weight: 800;
     text-decoration: none;
 }
 .debt-actions .collect {
-    border: 1px solid #16804a;
-    background: #16804a;
+    border: 1px solid #A3422B;
+    background: #A3422B;
     color: #fff;
 }
 .debt-actions .details {
     border: 1px solid #dce5e0;
     background: #fff;
-    color: #52685c;
+    color: #A3422B;
 }
 .collection-form {
     display: grid;
@@ -559,7 +563,7 @@ const creditWidth = (customer) => {
     background: #f1f8f4;
 }
 .collection-customer span {
-    color: #1d3c2e;
+    color: #25343A;
     font-weight: 800;
 }
 .collection-customer strong {
@@ -569,21 +573,21 @@ const creditWidth = (customer) => {
 .collection-customer small {
     grid-column: 1 / -1;
     color: #839087;
-    font-size: 0.63rem;
+    font-size: .875rem;
 }
 .collection-customer em {
     grid-column: 1 / -1;
     margin-top: 0.3rem;
-    color: #126c3e;
-    font-size: 0.64rem;
+    color: #A3422B;
+    font-size: .875rem;
     font-style: normal;
     font-weight: 750;
 }
 .collection-form > label {
     display: grid;
     gap: 0.3rem;
-    color: #4e6257;
-    font-size: 0.72rem;
+    color: #A3422B;
+    font-size: .875rem;
     font-weight: 750;
 }
 .collection-form label span small {
@@ -615,7 +619,7 @@ const creditWidth = (customer) => {
     position: absolute;
     inset-inline-end: 0.8rem;
     inset-block-start: 0.8rem;
-    color: #1a7545;
+    color: #A3422B;
 }
 .method-grid {
     display: grid;
@@ -630,13 +634,13 @@ const creditWidth = (customer) => {
     gap: 0.4rem;
     border: 1px solid #dce5e0;
     border-radius: 10px;
-    color: #56695f;
+    color: #A3422B;
     cursor: pointer;
 }
 .method-grid label.selected {
-    border-color: #16804a;
+    border-color: #A3422B;
     background: #eef8f2;
-    color: #0d6d3a;
+    color: #A3422B;
 }
 .method-grid input {
     display: none;
@@ -646,12 +650,12 @@ const creditWidth = (customer) => {
     padding: 0.55rem 0.65rem;
     border-radius: 9px;
     background: #f5f7f6;
-    color: #6e7d75;
-    font-size: 0.65rem;
+    color: #A3422B;
+    font-size: .875rem;
 }
 .fifo-note i {
     margin-inline-end: 0.3rem;
-    color: #167542;
+    color: #A3422B;
 }
 .error {
     color: #b62f2f;

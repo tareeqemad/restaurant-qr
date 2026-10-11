@@ -5,7 +5,7 @@
  * everything at submit (server-is-truth doctrine). Same sheet language as
  * the rest of the app: bottom sheet on phones, centered card on wide.
  */
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
 
 const props = defineProps({
     item: { type: Object, default: null },   // open when non-null
@@ -16,6 +16,60 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['close', 'add']);
+const dialogPanel = ref(null);
+const closeButton = ref(null);
+let previousFocus = null;
+let focusRevision = 0;
+
+function restoreDialogFocus() {
+    const target = previousFocus;
+    previousFocus = null;
+    const revision = ++focusRevision;
+    nextTick(() => {
+        if (revision === focusRevision && target?.isConnected) target.focus({ preventScroll: true });
+    });
+}
+
+watch(() => Boolean(props.item), (open) => {
+    if (!open) {
+        restoreDialogFocus();
+        return;
+    }
+    previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const revision = ++focusRevision;
+    nextTick(() => {
+        if (revision !== focusRevision || !props.item) return;
+        (closeButton.value || dialogPanel.value)?.focus({ preventScroll: true });
+    });
+}, { immediate: true });
+
+onBeforeUnmount(restoreDialogFocus);
+
+function handleDialogKeydown(event) {
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        emit('close');
+        return;
+    }
+    if (event.key !== 'Tab' || !dialogPanel.value) return;
+
+    const focusable = [...dialogPanel.value.querySelectorAll(
+        'a[href], button, input, select, textarea, summary, [tabindex]',
+    )].filter((element) => element.tabIndex >= 0 && !element.disabled
+        && element.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden');
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (!first) {
+        event.preventDefault();
+        dialogPanel.value.focus({ preventScroll: true });
+    } else if (!dialogPanel.value.contains(active) || active === dialogPanel.value
+        || (event.shiftKey ? active === first : active === last)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+    }
+}
 
 const qty = ref(1);
 const notes = ref('');
@@ -106,15 +160,16 @@ const confirm = () => {
     <Teleport to="body">
         <Transition name="cs">
             <div v-if="item" class="cs-backdrop" @click.self="$emit('close')">
-                <div class="cs-sheet" role="dialog" aria-modal="true" :aria-label="item.name">
+                <div ref="dialogPanel" class="cs-sheet" role="dialog" aria-modal="true" :aria-label="item.name"
+                     tabindex="-1" @keydown="handleDialogKeydown">
                     <div v-if="item.image" class="cs-hero">
                         <img :src="item.image" :alt="item.name">
-                        <button type="button" class="cs-close" aria-label="إغلاق" @click="$emit('close')">
+                        <button ref="closeButton" type="button" class="cs-close" aria-label="إغلاق" @click="$emit('close')">
                             <i class="bi bi-x-lg"></i>
                         </button>
                     </div>
                     <header v-else class="cs-plainhead">
-                        <button type="button" class="cs-close is-inline" aria-label="إغلاق" @click="$emit('close')">
+                        <button ref="closeButton" type="button" class="cs-close is-inline" aria-label="إغلاق" @click="$emit('close')">
                             <i class="bi bi-x-lg"></i>
                         </button>
                     </header>
@@ -146,12 +201,12 @@ const confirm = () => {
                             </div>
                         </div>
 
-                        <section v-if="item.ingredients?.length" class="cs-ingredients">
-                            <h4><i class="bi bi-list-check"></i> {{ t('dish_ingredients') ?? 'مكوّنات الطبق' }}</h4>
+                        <details v-if="item.ingredients?.length" class="cs-ingredients cs-disclosure">
+                            <summary>{{ t('dish_ingredients') ?? 'مكوّنات الطبق' }}</summary>
                             <div class="cs-tags">
                                 <span v-for="ing in item.ingredients" :key="ing" class="cs-tag">{{ ing }}</span>
                             </div>
-                        </section>
+                        </details>
 
                         <div v-if="item.allergens.length" class="cs-allergy">
                             <i class="bi bi-exclamation-diamond-fill"></i>
@@ -159,14 +214,11 @@ const confirm = () => {
                         </div>
 
                         <template v-if="item.can_order && orderingEnabled">
-                            <section v-if="item.removable_ingredients?.length" class="cs-exclusions">
-                                <header>
-                                    <div>
-                                        <strong><i class="bi bi-slash-circle"></i> بدك الطبق بدون مكوّن؟</strong>
-                                        <small>اختره بوضوح؛ سيظهر مع الصنف للمطبخ أثناء التحضير.</small>
-                                    </div>
+                            <details v-if="item.removable_ingredients?.length" class="cs-exclusions cs-disclosure">
+                                <summary>
+                                    تعديل المكونات (اختياري)
                                     <span v-if="excludedIds.length">{{ excludedIds.length }} مستبعد</span>
-                                </header>
+                                </summary>
                                 <div class="cs-exclusion-options">
                                     <button v-for="ingredient in item.removable_ingredients" :key="ingredient.id" type="button"
                                             class="cs-exclusion" :class="{ 'is-on': isExcluded(ingredient) }"
@@ -176,7 +228,7 @@ const confirm = () => {
                                         <small v-if="ingredient.requires_confirmation">مكوّن أساسي</small>
                                     </button>
                                 </div>
-                            </section>
+                            </details>
 
                             <section v-for="g in item.modifier_groups" :key="g.id" class="cs-group">
                                 <header>
@@ -244,13 +296,13 @@ const confirm = () => {
     max-height: 94dvh;
     display: flex;
     flex-direction: column;
-    background: #fff;
-    border-radius: 20px 20px 0 0;
+    background: var(--surface);
+    border-radius: 12px 12px 0 0;
     overflow: hidden;
 }
 @media (min-width: 768px) {
     .cs-backdrop { align-items: center; padding: 1rem; }
-    .cs-sheet { border-radius: 20px; }
+    .cs-sheet { border-radius: 12px; }
 }
 
 .cs-hero { position: relative; aspect-ratio: 16 / 9; flex-shrink: 0; }
@@ -265,79 +317,79 @@ const confirm = () => {
     border: 0;
     border-radius: 50%;
     background: rgba(15, 23, 42, .55);
-    color: #fff;
+    color: #FFFDFA;
     cursor: pointer;
 }
-.cs-close.is-inline { position: static; background: #f1f5f9; color: #475569; }
+.cs-close.is-inline { position: static; background: var(--canvas); color: var(--ink); }
 
 .cs-body { padding: 1rem 1.1rem; overflow-y: auto; display: flex; flex-direction: column; gap: .8rem; }
 .cs-title { display: flex; align-items: flex-start; justify-content: space-between; gap: .8rem; }
-.cs-title h3 { margin: 0; font-size: 1.12rem; font-weight: 900; color: #0f172a; }
+.cs-title h3 { margin: 0; font-size: 1.12rem; font-weight: 800; color: var(--ink); }
 .cs-price { text-align: end; flex-shrink: 0; }
-.cs-price strong { display: block; font-size: 1.05rem; font-weight: 900; color: rgb(var(--primary-rgb)); }
-.cs-price s { font-size: .76rem; color: #94a3b8; }
-.cs-desc { margin: 0; font-size: .86rem; color: #475569; line-height: 1.6; }
+.cs-price strong { display: block; font-size: 1.05rem; font-weight: 800; color: var(--brand); }
+.cs-price s { font-size: .875rem; color: #315B6B; }
+.cs-desc { margin: 0; font-size: .875rem; color: var(--ink); line-height: 1.6; }
 .cs-unavailable {
     display: flex;
     align-items: flex-start;
     gap: .65rem;
     padding: .7rem .75rem;
-    border: 1px solid #fed7aa;
-    border-radius: 13px;
-    background: #fff7ed;
+    border: 1px solid var(--accent);
+    border-radius: 12px;
+    background: var(--canvas);
     color: #9a3412;
 }
 .cs-unavailable > i { margin-top: .1rem; font-size: 1rem; }
 .cs-unavailable div { display: flex; flex-direction: column; gap: .14rem; }
-.cs-unavailable strong { font-size: .84rem; font-weight: 850; }
-.cs-unavailable span { color: #9a5a36; font-size: .75rem; line-height: 1.5; }
-.cs-readonly { border-color: #bfdbfe; background: #eff6ff; color: #1e40af; }
-.cs-readonly span { color: #475569; }
+.cs-unavailable strong { font-size: .875rem; font-weight: 800; }
+.cs-unavailable span { color: #9a5a36; font-size: .875rem; line-height: 1.5; }
+.cs-readonly { border-color: var(--line); background: var(--canvas); color: #315B6B; }
+.cs-readonly span { color: var(--ink); }
 
 .cs-ingredients {
     padding: .7rem .75rem;
-    border: 1px solid #e3ece6;
-    border-radius: 13px;
-    background: #f8faf9;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--canvas);
 }
 .cs-ingredients h4 {
     display: flex;
     align-items: center;
     gap: .4rem;
     margin: 0 0 .55rem;
-    color: rgb(var(--primary-rgb));
-    font-size: .82rem;
-    font-weight: 850;
+    color: var(--brand);
+    font-size: .875rem;
+    font-weight: 800;
 }
 .cs-tags { display: flex; flex-wrap: wrap; gap: .35rem; }
 .cs-tag {
-    background: #fff;
-    border: 1px solid #dce8e0;
-    color: #3f5147;
-    border-radius: 999px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--brand);
+    border-radius: 12px;
     padding: .18rem .6rem;
-    font-size: .72rem;
+    font-size: .875rem;
     font-weight: 600;
 }
 .cs-exclusions {
     padding: .72rem .75rem;
     border: 1px solid #fecaca;
-    border-radius: 13px;
-    background: #fff8f8;
+    border-radius: 12px;
+    background: var(--surface);
 }
 .cs-exclusions header { display: flex; align-items: flex-start; justify-content: space-between; gap: .55rem; margin-bottom: .55rem; }
 .cs-exclusions header div { display: grid; gap: .12rem; }
-.cs-exclusions header strong { display: flex; align-items: center; gap: .35rem; color: #991b1b; font-size: .82rem; }
-.cs-exclusions header small { color: #7f1d1d; font-size: .69rem; line-height: 1.45; }
-.cs-exclusions header > span { flex: 0 0 auto; padding: .18rem .45rem; border-radius: 999px; background: #fee2e2; color: #991b1b; font-size: .67rem; font-weight: 850; }
+.cs-exclusions header strong { display: flex; align-items: center; gap: .35rem; color: #991b1b; font-size: .875rem; }
+.cs-exclusions header small { color: #7f1d1d; font-size: .875rem; line-height: 1.45; }
+.cs-exclusions header > span { flex: 0 0 auto; padding: .18rem .45rem; border-radius: 12px; background: #fee2e2; color: #991b1b; font-size: .875rem; font-weight: 800; }
 .cs-exclusion-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .38rem; }
 .cs-exclusion {
     min-height: 44px; display: flex; align-items: center; gap: .38rem;
     padding: .42rem .52rem; border: 1px solid #fecaca; border-radius: 10px;
-    color: #7f1d1d; background: #fff; text-align: start; font: inherit; cursor: pointer;
+    color: #7f1d1d; background: var(--surface); text-align: start; font: inherit; cursor: pointer;
 }
-.cs-exclusion > span { flex: 1; min-width: 0; font-size: .76rem; font-weight: 750; }
-.cs-exclusion > small { color: #a16207; font-size: .61rem; }
+.cs-exclusion > span { flex: 1; min-width: 0; font-size: .875rem; font-weight: 750; }
+.cs-exclusion > small { color: #a16207; font-size: .875rem; }
 .cs-exclusion > i { color: #fca5a5; }
 .cs-exclusion.is-on { border-color: #ef4444; background: #fee2e2; color: #991b1b; }
 .cs-exclusion.is-on > i { color: #dc2626; }
@@ -345,12 +397,12 @@ const confirm = () => {
     display: flex;
     align-items: center;
     gap: .5rem;
-    background: #fffbeb;
-    border: 1px solid #fde68a;
+    background: var(--canvas);
+    border: 1px solid var(--accent);
     color: #92400e;
     border-radius: 10px;
     padding: .5rem .7rem;
-    font-size: .78rem;
+    font-size: .875rem;
     font-weight: 700;
 }
 
@@ -360,8 +412,8 @@ const confirm = () => {
     gap: .5rem;
     margin-bottom: .45rem;
 }
-.cs-group header strong { font-size: .9rem; color: #0f172a; }
-.cs-group header small { color: #94a3b8; font-weight: 600; }
+.cs-group header strong { font-size: .9rem; color: var(--ink); }
+.cs-group header small { color: #315B6B; font-weight: 600; }
 .cs-group header small.is-need { color: #b45309; }
 .cs-mods { display: flex; flex-direction: column; gap: .35rem; }
 .cs-mod {
@@ -370,82 +422,82 @@ const confirm = () => {
     gap: .6rem;
     min-height: 46px;
     padding: 0 .8rem;
-    border: 1.5px solid #e2e8f0;
+    border: 1.5px solid var(--line);
     border-radius: 12px;
-    background: #fff;
+    background: var(--surface);
     font: inherit;
-    font-size: .86rem;
+    font-size: .875rem;
     font-weight: 600;
-    color: #334155;
+    color: var(--ink);
     cursor: pointer;
     text-align: start;
 }
 .cs-mod > span { flex: 1; min-width: 0; }
-.cs-mod > small { color: #64748b; font-weight: 700; }
-.cs-mod > i { color: #cbd5e1; font-size: 1rem; }
-.cs-mod.is-on { border-color: rgb(var(--primary-rgb)); background: rgba(var(--primary-rgb), .05); }
-.cs-mod.is-on > i { color: rgb(var(--primary-rgb)); }
+.cs-mod > small { color: #315B6B; font-weight: 700; }
+.cs-mod > i { color: #FFFDFA; font-size: 1rem; }
+.cs-mod.is-on { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 5%, transparent); }
+.cs-mod.is-on > i { color: var(--brand); }
 
 .cs-notes { display: flex; flex-direction: column; gap: .35rem; margin: 0; }
-.cs-notes span { font-size: .8rem; font-weight: 700; color: #334155; }
+.cs-notes span { font-size: .875rem; font-weight: 700; color: var(--ink); }
 .cs-notes textarea {
-    border: 1.5px solid #e2e8f0;
+    border: 1.5px solid var(--line);
     border-radius: 12px;
     padding: .6rem .8rem;
     font: inherit;
-    font-size: .86rem;
+    font-size: .875rem;
     resize: none;
 }
-.cs-notes textarea:focus { outline: none; border-color: rgb(var(--primary-rgb)); }
+.cs-notes textarea:focus { outline: none; border-color: var(--brand); }
 
 .cs-foot {
     display: flex;
     gap: .6rem;
     padding: .8rem 1.1rem calc(.8rem + env(safe-area-inset-bottom));
-    border-top: 1px solid #eef2f6;
-    background: #fff;
+    border-top: 1px solid var(--line);
+    background: var(--surface);
     flex-shrink: 0;
 }
 .cs-foot--unavailable { display: block; }
 .cs-back-menu {
     width: 100%;
     min-height: 48px;
-    border: 1px solid #d9e5dd;
-    border-radius: 13px;
-    background: #f8faf9;
-    color: rgb(var(--primary-rgb));
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--canvas);
+    color: var(--brand);
     font: inherit;
     font-size: .9rem;
-    font-weight: 850;
+    font-weight: 800;
     cursor: pointer;
 }
 .cs-stepper {
     display: inline-flex;
     align-items: center;
     gap: .1rem;
-    background: #f1f5f9;
-    border-radius: 13px;
+    background: var(--canvas);
+    border-radius: 8px;
     padding: 3px;
 }
 .cs-stepper button {
     width: 42px;
     height: 42px;
     border: 0;
-    border-radius: 10px;
+    border-radius: 8px;
     background: transparent;
-    color: #0f172a;
+    color: var(--ink);
     font-size: .95rem;
     cursor: pointer;
 }
 .cs-stepper button:disabled { opacity: .35; }
-.cs-stepper span { min-width: 2em; text-align: center; font-weight: 900; font-size: 1.05rem; }
+.cs-stepper span { min-width: 2em; text-align: center; font-weight: 800; font-size: 1.05rem; }
 .cs-add {
     flex: 1;
     min-height: 48px;
     border: 0;
-    border-radius: 13px;
-    background: rgb(var(--primary-rgb));
-    color: #fff;
+    border-radius: 12px;
+    background: var(--brand);
+    color: #FFFDFA;
     font: inherit;
     font-size: .95rem;
     font-weight: 800;
@@ -465,4 +517,14 @@ const confirm = () => {
     .cs-enter-active, .cs-leave-active { transition: none; }
 }
 @media (max-width: 390px) { .cs-exclusion-options { grid-template-columns: 1fr; } }
+
+/* Task-specific component layout. */
+.cs-sheet{border-radius:12px;max-height:94dvh;overflow-y:auto;background:var(--surface)}.cs-hero{height:210px;border-radius:0}.cs-hero img{object-fit:cover;height:100%;width:100%}.cs-close{width:44px;height:44px;border-radius:8px;top:16px;inset-inline-end:16px}.cs-body{padding:24px}.cs-title{display:flex;justify-content:space-between;gap:16px;align-items:start;border-bottom:1px solid var(--line);padding-bottom:18px;margin-bottom:18px}.cs-title h2{font-size:25px;line-height:1.4}.cs-price{font-size:23px;white-space:nowrap}.cs-desc{font-size:15px;line-height:1.75}.cs-ingredients,.cs-group,.cs-exclusions,.cs-notes{padding:18px 0;border:0;border-top:1px solid var(--line);border-radius:0;background:transparent}.cs-group h3,.cs-ingredients h3,.cs-exclusions h3{font-size:17px}.cs-mods,.cs-exclusion-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.cs-mod,.cs-exclusion{min-height:54px;padding:12px;border-radius:6px;font-size:15px}.cs-foot{position:sticky;bottom:0;display:flex;gap:14px;padding:18px 24px;background:var(--surface);border-top:1px solid var(--line);z-index:2}.cs-add{min-height:52px;border-radius:8px;font-size:16px}.cs-stepper button{width:44px;height:48px}.cs-notes textarea{font-size:15px;min-height:85px;border-radius:6px}.cs-allergy{font-size:14px;line-height:1.65;padding:12px;border-radius:6px}@media(max-width:560px){.cs-body{padding:18px}.cs-foot{padding:16px 18px;gap:10px}.cs-mods,.cs-exclusion-options{grid-template-columns:1fr}.cs-title h2{font-size:22px}.cs-price{font-size:20px}}
+.cs-disclosure > summary { min-height: 44px; padding: 10px 0; cursor: pointer; color: var(--ink); font-size: 15px; font-weight: 750; }
+.cs-disclosure > summary::marker { color: var(--brand); }
+.cs-disclosure > summary:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; border-radius: 4px; }
+.cs-disclosure > summary > span { display: inline-block; margin-inline-start: 8px; padding: 2px 6px; border-radius: 4px; background: var(--brand-soft); color: var(--brand); font-size: 14px; }
+.cs-disclosure.cs-ingredients, .cs-disclosure.cs-exclusions { padding: 4px 0; }
+.cs-disclosure[open] > summary { margin-bottom: 8px; }
+.cs-disclosure[open] { padding-bottom: 14px; }
 </style>

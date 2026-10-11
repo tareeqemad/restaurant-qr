@@ -1,4 +1,5 @@
 <script setup>
+import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 /**
  * تقييم المخزون — how much money is frozen in inventory right now, or as
  * it stood on any past date, ranked by value with an ABC/Pareto class.
@@ -72,14 +73,24 @@ const submit = () => {
 </script>
 
 <template>
-    <Head title="تقييم المخزون" />
-
-    <PageHeader title="تقييم المخزون" icon="bi-cash-stack"
+<Head title="تقييم المخزون" />
+<FinancialWorkspace area="التقارير والتحليل" mode="report">
+<template #heading>
+<PageHeader title="تقييم المخزون" icon="bi-cash-stack"
                 subtitle="قيمة كل صنف = كميته × تكلفته. يدعم نقطة زمنية في الماضي لإقفال الشهور المحاسبية."
                 :crumbs="[{ label: 'التقارير', url: urls.reportsIndex }]" />
-
-    <!-- Branch context chip — informational, states which scope the numbers belong to -->
-    <div class="sv-context mb-3">
+</template>
+<template #metrics>
+<StatRail :stats="[
+        { label: 'إجمالي قيمة المخزون', value: money(totalValue), icon: 'bi-cash-stack', color: 'primary' },
+        { label: 'عدد الأصناف', value: rowCount, icon: 'bi-collection-fill', color: 'info' },
+        { label: 'قيمة المنخفض المخزون', value: money(lowStockValue), icon: 'bi-exclamation-triangle', color: 'warning' },
+        { label: 'فئة A (الأهم)', value: abcCounts.A, icon: 'bi-star-fill', color: 'danger' },
+        { label: 'قيمة فئة A', value: money(abcValues.A), icon: 'bi-cash', color: 'danger' },
+        { label: 'كـ %', value: abcAPct === null ? '0%' : pct(abcAPct, 1) + '%', icon: 'bi-pie-chart-fill', color: 'accent' },
+    ]" />
+</template>
+<div class="sv-context mb-3">
         <div class="sv-context__main">
             <i class="bi" :class="branchId ? 'bi-shop' : 'bi-building-fill'"></i>
             <span>التقرير معروض لـ:</span>
@@ -92,9 +103,7 @@ const submit = () => {
             غيّر الفرع من المبدّل أعلى الصفحة لرؤية تقييم فرع آخر.
         </small>
     </div>
-
-    <!-- Native <details> on purpose: the disclosure works with JS broken. -->
-    <details class="sv-help mb-3" open>
+<details class="sv-help mb-3" open>
         <summary class="sv-help__head">
             <span class="sv-help__title">
                 <i class="bi bi-info-circle-fill"></i>
@@ -130,17 +139,7 @@ const submit = () => {
             </div>
         </div>
     </details>
-
-    <StatRail :stats="[
-        { label: 'إجمالي قيمة المخزون', value: money(totalValue), icon: 'bi-cash-stack', color: 'primary' },
-        { label: 'عدد الأصناف', value: rowCount, icon: 'bi-collection-fill', color: 'info' },
-        { label: 'قيمة المنخفض المخزون', value: money(lowStockValue), icon: 'bi-exclamation-triangle', color: 'warning' },
-        { label: 'فئة A (الأهم)', value: abcCounts.A, icon: 'bi-star-fill', color: 'danger' },
-        { label: 'قيمة فئة A', value: money(abcValues.A), icon: 'bi-cash', color: 'danger' },
-        { label: 'كـ %', value: abcAPct === null ? '0%' : pct(abcAPct, 1) + '%', icon: 'bi-pie-chart-fill', color: 'accent' },
-    ]" />
-
-    <DataPanel :title="isHistorical ? 'صورة المخزون كما كان في ' + asOf : 'صورة المخزون الحالية'"
+<DataPanel :title="isHistorical ? 'صورة المخزون كما كان في ' + asOf : 'صورة المخزون الحالية'"
                icon="bi-table" :count="rowCount">
         <template #actions>
             <!-- Streamed file: a plain <a>, never an Inertia visit. -->
@@ -271,6 +270,8 @@ const submit = () => {
             </div>
         </template>
     </DataPanel>
+</FinancialWorkspace>
+
 </template>
 
 <style scoped>
@@ -278,16 +279,16 @@ const submit = () => {
 .sv-context {
     display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
     gap: .75rem;
-    background: linear-gradient(90deg, #f0fdf4 0%, #fff 100%);
-    border: 1px solid #bbf7d0;
+    background: #f0fdf4;
+    border: 1px solid #F3E3D8;
     border-radius: 12px;
     padding: .65rem 1rem;
 }
 .sv-context__main {
     display: inline-flex; align-items: center; gap: .5rem; flex-wrap: wrap;
-    font-size: .9rem; color: #14532d;
+    font-size: .9rem; color: #25343A;
 }
-.sv-context__main i { font-size: 1.1rem; color: #16a34a; }
+.sv-context__main i { font-size: 1.1rem; color: #A3422B; }
 .sv-context__main strong { color: #0f172a; font-size: 1rem; }
 
 /* ─── Help banner — native <details>/<summary> ─────────────────── */
@@ -304,14 +305,14 @@ const submit = () => {
 
 .sv-help__head {
     display: flex; align-items: center; justify-content: space-between;
-    background: linear-gradient(90deg, #eff6ff 0%, #fff 100%);
+    background: #eff6ff;
     padding: .85rem 1.1rem;
     min-height: 44px;
     font-weight: 700; cursor: pointer;
     transition: background .15s;
     user-select: none;
 }
-.sv-help__head:hover { background: linear-gradient(90deg, #dbeafe 0%, #fff 100%); }
+.sv-help__head:hover { background: #dbeafe; }
 .sv-help__title { display: inline-flex; align-items: center; gap: .55rem; color: #1e3a8a; }
 .sv-help__title i { color: #2563eb; font-size: 1.1rem; }
 
@@ -333,7 +334,7 @@ const submit = () => {
 }
 .sv-help__card ul {
     list-style: none; padding: 0; margin: 0;
-    font-size: .82rem; color: #475569; line-height: 1.7;
+    font-size: .875rem; color: #475569; line-height: 1.7;
 }
 .sv-help__card ul li { padding: 2px 0; }
 .sv-help__card ul li b { color: #0f172a; }
@@ -348,7 +349,7 @@ const submit = () => {
 }
 .sv-cum__pct {
     font-weight: 800;
-    font-size: .82rem;
+    font-size: .875rem;
     font-variant-numeric: tabular-nums;
     color: #0f172a;
 }

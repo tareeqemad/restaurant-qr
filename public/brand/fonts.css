@@ -1,0 +1,5 @@
+/* Bundled Arabic type: works on the restaurant LAN without a font service. */
+@font-face{font-family:Cairo;font-style:normal;font-weight:400;font-display:swap;src:url('../assets/fonts/cairo/Cairo-Regular.ttf') format('truetype')}
+@font-face{font-family:Cairo;font-style:normal;font-weight:600;font-display:swap;src:url('../assets/fonts/cairo/Cairo-SemiBold.ttf') format('truetype')}
+@font-face{font-family:Cairo;font-style:normal;font-weight:700;font-display:swap;src:url('../assets/fonts/cairo/Cairo-Bold.ttf') format('truetype')}
+@font-face{font-family:Cairo;font-style:normal;font-weight:800 950;font-display:swap;src:url('../assets/fonts/cairo/Cairo-ExtraBold.ttf') format('truetype')}

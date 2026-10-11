@@ -1,4 +1,6 @@
 <script setup>
+import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
+import { createAccountingToken } from '../../../Components/Accounting/accountingToken'
 import { computed, reactive } from 'vue'
 import { Head, Link, router, useForm } from '@inertiajs/vue3'
 import AdminLayout from '../../../Layouts/AdminLayout.vue'
@@ -27,9 +29,7 @@ const props = defineProps({
 const today = localDateInput()
 const filters = reactive({ from: props.from, to: props.to, as_of: props.asOf })
 
-function freshToken() {
-    return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`
-}
+const freshToken = createAccountingToken
 
 function preferredMethod(code) {
     return props.paymentMethods.find((method) => method.code === code)?.code
@@ -92,7 +92,12 @@ function refresh() {
 function transferWallet() {
     walletForm.post(props.urls.walletTransfer, {
         preserveScroll: true,
-        onFinish: () => { walletForm._idem = freshToken() },
+        onSuccess: (page) => {
+            if (page.props.flash?.success || page.props.flash?.info) {
+                walletForm.reset('amount', 'notes')
+                walletForm._idem = freshToken()
+            }
+        },
     })
 }
 
@@ -114,30 +119,28 @@ function settlementIcon(type) {
 </script>
 
 <template>
-    <Head title="التسويات المحاسبية" />
-    <PageHeader
+<Head title="التسويات المحاسبية" />
+<FinancialWorkspace area="المحاسبة" mode="records">
+<template #heading>
+<PageHeader
         title="التسويات المحاسبية"
         icon="bi-arrow-left-right"
         subtitle="حوّل المحافظ، اصرف المستحقات، وسوِّ الرصيد من مكان واحد"
     />
-    <AccountingNav :urls="urls" active="settlements" />
-
-    <section class="settlement-note">
-        <span><i class="bi bi-bank"></i></span>
-        <div>
-            <strong>الفيزا والتحويل البنكي يصلان إلى البنك مباشرة</strong>
-            <small>PalPay وJawwal Pay فقط يبقيان كرصيد محفظة حتى يؤكد المحاسب تحويلهما إلى البنك.</small>
-        </div>
-    </section>
-
-    <form class="settlement-filter" @submit.prevent="refresh">
+</template>
+<template #navigation>
+<AccountingNav :urls="urls" active="settlements" />
+</template>
+<template #filters>
+<form class="settlement-filter" @submit.prevent="refresh">
         <label v-if="showTaxSettlement"><span>الضريبة من</span><input v-model="filters.from" type="date" class="form-control"></label>
         <label v-if="showTaxSettlement"><span>الضريبة إلى</span><input v-model="filters.to" type="date" class="form-control"></label>
         <label><span>الأرصدة حتى</span><input v-model="filters.as_of" type="date" class="form-control"></label>
         <button class="btn btn-primary"><i class="bi bi-arrow-repeat"></i> تحديث</button>
     </form>
-
-    <div class="settlement-summary">
+</template>
+<template #metrics>
+<div class="settlement-summary">
         <article v-for="wallet in wallets" :key="wallet.method" :class="{ warn: Number(wallet.balance) > 0 }">
             <span><i class="bi bi-wallet2"></i></span>
             <div><small>{{ wallet.label }}</small><strong>{{ money(wallet.balance) }}</strong><em>{{ wallet.accountCode }}</em></div>
@@ -151,8 +154,15 @@ function settlementIcon(type) {
             <div><small>{{ taxAmounts.label }}</small><strong>{{ money(taxAmounts.payable) }}</strong><em>صافي مستحق</em></div>
         </article>
     </div>
-
-    <div class="settlement-grid">
+</template>
+<section class="settlement-note">
+        <span><i class="bi bi-bank"></i></span>
+        <div>
+            <strong>الفيزا والتحويل البنكي يصلان إلى البنك مباشرة</strong>
+            <small>PalPay وJawwal Pay فقط يبقيان كرصيد محفظة حتى يؤكد المحاسب تحويلهما إلى البنك.</small>
+        </div>
+    </section>
+<div class="settlement-grid">
         <AccountingPanel title="تحويل محفظة إلى البنك" description="ينقل الرصيد محاسبياً بعد تنفيذ التحويل الفعلي من تطبيق المحفظة." icon="bi-wallet2" tone="blue">
             <div class="wallet-tabs">
                 <button
@@ -208,8 +218,7 @@ function settlementIcon(type) {
             </form>
         </AccountingPanel>
     </div>
-
-    <AccountingPanel title="سجل التسويات" :description="`${recentSettlements.total} حركة محفوظة وقابلة للتدقيق`" icon="bi-clock-history" compact>
+<AccountingPanel title="سجل التسويات" :description="`${recentSettlements.total} حركة محفوظة وقابلة للتدقيق`" icon="bi-clock-history" compact>
         <div v-if="recentSettlements.data.length" class="settlement-history">
             <Link v-for="entry in recentSettlements.data" :key="entry.id" :href="entry.journalUrl" preserve-scroll>
                 <span class="event"><i class="bi" :class="settlementIcon(entry.type)"></i></span>
@@ -223,6 +232,8 @@ function settlementIcon(type) {
         <div v-else class="settlement-empty"><i class="bi bi-arrow-left-right"></i><strong>لا توجد تسويات بعد</strong><small>ستظهر هنا أول عملية تحويل أو صرف.</small></div>
         <template #footer><Pagination :links="recentSettlements.links" /></template>
     </AccountingPanel>
+</FinancialWorkspace>
+
 </template>
 
 <style scoped>
@@ -232,10 +243,10 @@ function settlementIcon(type) {
     gap: 10px;
     margin-bottom: 10px;
     padding: 12px 14px;
-    border: 1px solid #add1b8;
-    border-radius: 14px;
-    color: #24583b;
-    background: #eff8f2;
+    border: 1px solid var(--line, #DFD7CB);
+    border-radius: 12px;
+    color: var(--ink, #25343A);
+    background: var(--surface, #FFFDFA);
 }
 
 .settlement-note > span {
@@ -246,7 +257,7 @@ function settlementIcon(type) {
     place-items: center;
     border-radius: 11px;
     color: #fff;
-    background: #1f6b50;
+    background: var(--brand, #A3422B);
 }
 
 .settlement-note > div {
@@ -254,12 +265,12 @@ function settlementIcon(type) {
 }
 
 .settlement-note strong {
-    font-size: .75rem;
+    font-size: .875rem;
 }
 
 .settlement-note small {
-    color: #708078;
-    font-size: .62rem;
+    color: var(--muted, #626B6D);
+    font-size: .875rem;
     line-height: 1.55;
 }
 
@@ -269,9 +280,9 @@ function settlementIcon(type) {
     gap: 8px;
     margin-bottom: 10px;
     padding: 10px;
-    border: 1px solid #dce6df;
-    border-radius: 13px;
-    background: #fff;
+    border: 1px solid var(--line, #DFD7CB);
+    border-radius: 12px;
+    background: var(--surface, #FFFDFA);
 }
 
 .settlement-filter label,
@@ -283,8 +294,8 @@ function settlementIcon(type) {
 
 .settlement-filter label > span,
 .settlement-action label > span {
-    color: #5e6e64;
-    font-size: .61rem;
+    color: var(--muted, #626B6D);
+    font-size: .875rem;
     font-weight: 850;
 }
 
@@ -309,9 +320,9 @@ function settlementIcon(type) {
     align-items: center;
     gap: 9px;
     padding: 10px;
-    border: 1px solid #dfe7e2;
-    border-radius: 13px;
-    background: #fff;
+    border: 1px solid var(--line, #DFD7CB);
+    border-radius: 12px;
+    background: var(--surface, #FFFDFA);
 }
 
 .settlement-summary article.warn {
@@ -326,8 +337,8 @@ function settlementIcon(type) {
     height: 36px;
     place-items: center;
     border-radius: 10px;
-    color: #1f6b50;
-    background: #e9f4ed;
+    color: var(--ink, #25343A);
+    background: var(--brand-soft, #F3E3D8);
 }
 
 .settlement-summary article.warn > span {
@@ -342,13 +353,13 @@ function settlementIcon(type) {
 
 .settlement-summary small,
 .settlement-summary em {
-    color: #839087;
-    font-size: .55rem;
+    color: var(--muted, #626B6D);
+    font-size: .875rem;
     font-style: normal;
 }
 
 .settlement-summary strong {
-    font-size: .72rem;
+    font-size: .875rem;
 }
 
 .settlement-grid {
@@ -372,18 +383,18 @@ function settlementIcon(type) {
     align-items: center;
     gap: 8px;
     padding: 8px 10px;
-    border: 1px solid #dce5df;
-    border-radius: 11px;
-    color: #4f6056;
-    background: #fff;
+    border: 1px solid var(--line, #DFD7CB);
+    border-radius: 8px;
+    color: var(--muted, #626B6D);
+    background: var(--surface, #FFFDFA);
     text-align: start;
 }
 
 .wallet-tabs button.active {
-    border-color: #8bb89d;
-    color: #1f6b50;
-    background: #eff8f2;
-    box-shadow: inset 0 0 0 1px rgba(31, 107, 80, .08);
+    border-color: var(--line, #DFD7CB);
+    color: var(--ink, #25343A);
+    background: var(--surface, #FFFDFA);
+    box-shadow: inset 0 0 0 1px rgba(37,52,58, .08);
 }
 
 .wallet-tabs button > span {
@@ -392,16 +403,16 @@ function settlementIcon(type) {
 }
 
 .wallet-tabs strong {
-    font-size: .68rem;
+    font-size: .875rem;
 }
 
 .wallet-tabs small {
-    color: #89958d;
-    font-size: .54rem;
+    color: var(--muted, #626B6D);
+    font-size: .875rem;
 }
 
 .wallet-tabs bdi {
-    font-size: .66rem;
+    font-size: .875rem;
     font-weight: 900;
 }
 
@@ -426,14 +437,14 @@ function settlementIcon(type) {
     border-radius: 9px;
     color: #955707;
     background: #fff2de;
-    font-size: .59rem;
+    font-size: .875rem;
 }
 
 .entry-preview {
     display: flex;
     gap: 6px;
-    color: #718078;
-    font-size: .57rem;
+    color: var(--muted, #626B6D);
+    font-size: .875rem;
 }
 
 .payable-balance {
@@ -447,7 +458,7 @@ function settlementIcon(type) {
 }
 
 .payable-balance small {
-    font-size: .61rem;
+    font-size: .875rem;
 }
 
 .payable-balance strong {
@@ -463,16 +474,16 @@ function settlementIcon(type) {
     display: flex;
     justify-content: space-between;
     padding: 8px 0;
-    border-bottom: 1px solid #edf1ee;
+    border-bottom: 1px solid var(--line, #DFD7CB);
 }
 
 .tax-breakdown small {
-    color: #79877e;
-    font-size: .61rem;
+    color: var(--muted, #626B6D);
+    font-size: .875rem;
 }
 
 .tax-breakdown strong {
-    font-size: .68rem;
+    font-size: .875rem;
 }
 
 .tax-breakdown .total {
@@ -480,8 +491,8 @@ function settlementIcon(type) {
     padding: 10px;
     border: 0;
     border-radius: 10px;
-    color: #1f6b50;
-    background: #eaf5ed;
+    color: var(--ink, #25343A);
+    background: var(--brand-soft, #F3E3D8);
 }
 
 .settlement-history {
@@ -495,8 +506,8 @@ function settlementIcon(type) {
     align-items: center;
     gap: 8px;
     padding: 9px 13px;
-    border-bottom: 1px solid #edf1ee;
-    color: #35463b;
+    border-bottom: 1px solid var(--line, #DFD7CB);
+    color: var(--ink, #25343A);
 }
 
 .settlement-history > a:last-child {
@@ -509,8 +520,8 @@ function settlementIcon(type) {
     height: 32px;
     place-items: center;
     border-radius: 9px;
-    color: #1f6b50;
-    background: #e8f4eb;
+    color: var(--ink, #25343A);
+    background: var(--brand-soft, #F3E3D8);
 }
 
 .settlement-history a > div {
@@ -526,24 +537,24 @@ function settlementIcon(type) {
 }
 
 .settlement-history strong {
-    font-size: .66rem;
+    font-size: .875rem;
 }
 
 .settlement-history small,
 .settlement-history time,
 .settlement-history .creator {
-    color: #819087;
-    font-size: .57rem;
+    color: var(--muted, #626B6D);
+    font-size: .875rem;
 }
 
 .settlement-history bdi {
-    font-size: .64rem;
+    font-size: .875rem;
     font-weight: 850;
 }
 
 .settlement-history a > i {
-    color: #94a098;
-    font-size: .55rem;
+    color: var(--muted, #626B6D);
+    font-size: .875rem;
 }
 
 .settlement-empty {
@@ -551,7 +562,7 @@ function settlementIcon(type) {
     justify-items: center;
     gap: 4px;
     padding: 45px;
-    color: #839087;
+    color: var(--muted, #626B6D);
 }
 
 .settlement-empty > i {
@@ -559,12 +570,12 @@ function settlementIcon(type) {
 }
 
 .settlement-empty strong {
-    color: #526159;
-    font-size: .72rem;
+    color: var(--muted, #626B6D);
+    font-size: .875rem;
 }
 
 .settlement-empty small {
-    font-size: .58rem;
+    font-size: .875rem;
 }
 
 @media (max-width: 980px) {

@@ -2,9 +2,9 @@
 
 @section('title', 'محاولات متكررة')
 @section('code', '429')
-@section('accent', '#e48a8a')
+@section('accent', '#A3422B')
 @section('headline', 'مهلاً، نحتاج لحظة قصيرة')
-@section('message', 'وصلت عدة محاولات خلال وقت قصير، لذلك أوقفنا التنفيذ مؤقتاً لحماية النظام. انتظر قليلاً ثم جرّب من جديد.')
+@section('message', 'وصلت محاولات كثيرة خلال وقت قصير. انتظر قليلاً ثم حاول مجدداً.')
 
 @section('illustration')
     {{-- Stopwatch --}}

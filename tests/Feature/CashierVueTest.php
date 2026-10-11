@@ -6,6 +6,7 @@ use App\Models\Branch;
 use App\Models\Category;
 use App\Models\Customer;
 use App\Models\CustomerAdvanceTransaction;
+use App\Models\DebtWriteoff;
 use App\Models\Ingredient;
 use App\Models\IngredientStock;
 use App\Models\InventoryMovement;
@@ -16,6 +17,7 @@ use App\Models\MenuItem;
 use App\Models\Modifier;
 use App\Models\ModifierGroup;
 use App\Models\Order;
+use App\Models\OrderChangeRequest;
 use App\Models\OrderDiscount;
 use App\Models\OrderItemIngredientExclusion;
 use App\Models\Payment;
@@ -36,9 +38,11 @@ use App\Services\CustomerAdvanceService;
 use App\Services\OrderService;
 use App\Services\PendingTransferService;
 use App\Support\BranchContext;
+use App\Support\LiveRefreshPulse;
 use App\Support\PaymentMethods;
 use Database\Seeders\PermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -216,6 +220,91 @@ class CashierVueTest extends TestCase
             ->count());
     }
 
+    public function test_cashier_can_open_one_bill_without_rebuilding_queues_or_daily_totals(): void
+    {
+        [$session, $invoice] = $this->checkoutSession();
+        $this->actingAs($this->admin);
+        $version = LiveRefreshPulse::version($this->branch->id);
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        try {
+            $this->getJson(route('admin.cashier.api.state', [
+                'scope' => 'workspace',
+                'session_id' => $session->id,
+                'since' => $version,
+            ]))
+                ->assertOk()
+                ->assertJsonPath('data.changed', true)
+                ->assertJsonPath('data.scope', 'workspace')
+                ->assertJsonPath('data.workspace.invoice.id', $invoice->id)
+                ->assertJsonMissingPath('data.queues')
+                ->assertJsonMissingPath('data.today')
+                ->assertJsonMissingPath('data.version');
+
+            $dailyTotals = collect(DB::getQueryLog())->filter(fn ($query) => str_contains(strtolower($query['query']), 'group by')
+                && (str_contains(strtolower($query['query']), 'payments')
+                    || str_contains(strtolower($query['query']), 'refunds')));
+            $this->assertCount(0, $dailyTotals, 'Opening one bill must not recalculate the cashier daily totals.');
+        } finally {
+            DB::disableQueryLog();
+        }
+    }
+
+    public function test_selected_cashier_bill_keeps_its_alerts_beyond_the_global_queue_limit(): void
+    {
+        [$session] = $this->checkoutSession(issueInvoice: false);
+        $order = $session->orders()->sole();
+        $otherTable = Table::create([
+            'branch_id' => $this->branch->id, 'number' => 'overflow',
+            'capacity' => 2, 'status' => 'occupied', 'active' => true,
+        ]);
+        $otherSession = TableSession::create([
+            'table_id' => $otherTable->id, 'status' => 'active', 'cover_count' => 1,
+        ]);
+        $otherOrder = app(OrderService::class)->createFromCart(
+            $otherSession,
+            [['menu_item_id' => $this->menuItem->id, 'quantity' => 1, 'modifier_ids' => []]],
+            $this->admin->id,
+        );
+        $selectedTransfer = PendingTransfer::create([
+            'branch_id' => $this->branch->id, 'table_session_id' => $session->id,
+            'amount' => 10, 'sender_name' => 'Selected bill', 'status' => 'pending',
+        ]);
+        $selectedTransfer->forceFill(['created_at' => now()->subHour()])->save();
+        $selectedChange = OrderChangeRequest::create([
+            'branch_id' => $this->branch->id, 'order_id' => $order->id,
+            'type' => 'cancel_order', 'status' => 'pending',
+        ]);
+
+        for ($i = 0; $i < 51; $i++) {
+            PendingTransfer::create([
+                'branch_id' => $this->branch->id, 'table_session_id' => $otherSession->id,
+                'amount' => 1, 'sender_name' => 'Other bill '.$i, 'status' => 'pending',
+            ]);
+            $change = OrderChangeRequest::create([
+                'branch_id' => $this->branch->id, 'order_id' => $otherOrder->id,
+                'type' => 'cancel_order', 'status' => 'pending',
+            ]);
+            $change->forceFill(['created_at' => now()->subHour()])->save();
+        }
+
+        $this->actingAs($this->admin)
+            ->getJson(route('admin.cashier.api.state', ['session_id' => $session->id, 'full' => 1]))
+            ->assertOk()
+            ->assertJsonCount(50, 'data.queues.pending_transfers')
+            ->assertJsonCount(50, 'data.queues.pending_changes')
+            ->assertJsonCount(1, 'data.workspace.pending_transfers')
+            ->assertJsonCount(1, 'data.workspace.pending_changes')
+            ->assertJsonPath('data.workspace.pending_transfers.0.id', $selectedTransfer->id)
+            ->assertJsonPath('data.workspace.pending_changes.0.id', $selectedChange->id);
+
+        $this->getJson(route('admin.cashier.api.state', ['session_id' => $otherSession->id, 'scope' => 'workspace']))
+            ->assertOk()
+            ->assertJsonCount(51, 'data.workspace.pending_transfers')
+            ->assertJsonCount(51, 'data.workspace.pending_changes');
+    }
+
     public function test_cashier_can_audit_and_cancel_a_fired_item_before_invoicing(): void
     {
         [$session] = $this->checkoutSession(issueInvoice: false);
@@ -383,7 +472,7 @@ class CashierVueTest extends TestCase
         $this->assertStringContainsString('signal,', $api);
         $this->assertStringContainsString('await openInitialTask()', $page);
         $this->assertStringContainsString('const first = cashier.sessions[0] ?? cashier.remoteOrders[0]', $page);
-        $this->assertStringContainsString('completedName === "issue"', $page);
+        $this->assertStringContainsString('async function issueInvoice()', $page);
         $this->assertStringContainsString('تسليم العهدة', $page);
         $this->assertStringContainsString('const handoverTasks = computed', $page);
         $this->assertStringContainsString('cashier.counts.pending_transfers', $page);
@@ -1227,9 +1316,9 @@ class CashierVueTest extends TestCase
         $invoice->refresh();
         $this->assertSame('unpaid_writeoff', $invoice->status);
         $this->assertEqualsWithDelta(0, (float) $invoice->balance, 0.001);
-        $writeoff = \App\Models\DebtWriteoff::query()->where('invoice_id', $invoice->id)->sole();
+        $writeoff = DebtWriteoff::query()->where('invoice_id', $invoice->id)->sole();
         $this->assertSame(1, JournalEntry::query()
-            ->where('source_type', \App\Models\DebtWriteoff::class)
+            ->where('source_type', DebtWriteoff::class)
             ->where('source_id', $writeoff->id)
             ->where('event_type', 'debt_writeoff_posted')
             ->count());

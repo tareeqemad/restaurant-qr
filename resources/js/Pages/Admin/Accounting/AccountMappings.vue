@@ -1,6 +1,7 @@
 <script setup>
+import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 import { computed, ref } from 'vue'
-import { Head, useForm } from '@inertiajs/vue3'
+import { Link, Head, useForm } from '@inertiajs/vue3'
 import AdminLayout from '../../../Layouts/AdminLayout.vue'
 import PageHeader from '../../../Components/Ui/PageHeader.vue'
 import AccountingNav from '../../../Components/Accounting/AccountingNav.vue'
@@ -61,24 +62,27 @@ function submit() {
 </script>
 
 <template>
-    <Head title="ربط الحسابات" />
-    <PageHeader
+<Head title="ربط الحسابات" />
+<FinancialWorkspace area="المحاسبة" mode="records">
+<template #heading>
+<PageHeader
         title="ربط الحسابات التلقائية"
         icon="bi-diagram-3-fill"
         subtitle="وجّه العمليات الجديدة إلى الحساب الصحيح، وسجّل بيانات البنك والمحافظ الحقيقية في مكانها"
     />
-    <AccountingNav :urls="urls" active="mappings" />
-
-    <section class="mapping-note">
+</template>
+<template #navigation>
+<AccountingNav :urls="urls" active="mappings" />
+</template>
+<section class="mapping-note">
         <i class="bi bi-shield-check"></i>
         <div>
             <strong>افصل بين كود الحساب ورقم الاستقبال الحقيقي</strong>
             <small>مثل 1010 هو كود دفتر داخلي جاهز في شجرة الحسابات. رقم البنك أو IBAN ورقم المحفظة يُدخل في «بيانات الاستقبال»، ولا يغيّر أكواد الشجرة أو القيود السابقة.</small>
         </div>
-        <a :href="urls.guide">افهم الأثر <i class="bi bi-arrow-left"></i></a>
+        <Link :href="urls.guide">افهم الأثر <i class="bi bi-arrow-left"></i></Link>
     </section>
-
-    <form class="mapping-form" @submit.prevent="submit">
+<form class="mapping-form" @submit.prevent="submit">
         <nav class="mapping-tabs" aria-label="أقسام ربط الحسابات">
             <button
                 v-for="item in tabs"
@@ -180,25 +184,27 @@ function submit() {
 
         <footer class="save-bar">
             <span><i class="bi bi-info-circle"></i> بيانات البنك والمحافظ إعدادات تعريفية؛ ربط الدفتر يطبّق على القيود الجديدة فقط.</span>
-            <a :href="urls.home" class="btn btn-light">إلغاء</a>
+            <Link :href="urls.home" class="btn btn-light">إلغاء</Link>
             <button class="btn btn-primary" :disabled="form.processing">
                 <i class="bi bi-save"></i> حفظ الإعدادات
             </button>
         </footer>
     </form>
+</FinancialWorkspace>
+
 </template>
 
 <style scoped>
-.mapping-note { display: flex; align-items: center; gap: 12px; margin: 16px 0; padding: 14px 16px; border: 1px solid #acd2b7; border-radius: 14px; color: #1f6b50; background: #eff8f2; }
-.mapping-note > i { font-size: 1.05rem; }.mapping-note > div { display: grid; flex: 1; gap: 2px; }.mapping-note strong { font-size: .78rem; }.mapping-note small { font-size: .65rem; line-height: 1.65; }.mapping-note a { color: #1f6b50; font-size: .66rem; font-weight: 850; }
-.mapping-form { display: grid; gap: 14px; }.mapping-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding-bottom: 14px; border-bottom: 1px solid #e2e8e4; }
-.mapping-tabs button { display: flex; min-height: 46px; align-items: center; justify-content: center; gap: 7px; padding: 10px; border: 1px solid #dfe7e2; border-radius: 12px; color: #59685e; background: #fff; font-size: .7rem; font-weight: 850; }.mapping-tabs button b { display: grid; min-width: 21px; height: 21px; place-items: center; border-radius: 999px; background: #eef2ef; font-size: .56rem; }.mapping-tabs button.active { color: #1f6b50; border-color: #99c7a7; background: #f0f8f2; box-shadow: inset 0 -2px #1f6b50; }
-.search { display: flex; align-items: center; gap: 7px; padding: 0 11px; border: 1px solid #dfe7e2; border-radius: 11px; background: #fff; }.search input { width: 100%; padding: 10px 0; border: 0; outline: 0; font-size: .7rem; }
-.groups { display: grid; gap: 10px; }.groups details { overflow: hidden; border: 1px solid #dfe7e2; border-radius: 14px; background: #fff; }.groups summary { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; cursor: pointer; list-style: none; }.groups summary > span { display: flex; align-items: center; gap: 7px; color: #31453a; }.groups summary i { color: #1f6b50; }.groups summary strong { font-size: .74rem; }.groups summary b { display: grid; width: 24px; height: 24px; place-items: center; border-radius: 999px; background: #eff3f0; font-size: .58rem; }.groups details > div { border-top: 1px solid #edf1ee; }.groups article { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, .8fr); align-items: center; gap: 12px; padding: 11px 14px; border-bottom: 1px solid #edf1ee; }.groups article:last-child { border-bottom: 0; }.groups article > div, .groups article label { display: grid; gap: 3px; }.groups article > div strong { font-size: .7rem; }.groups article > div small { color: #7d8a82; font-size: .61rem; }.groups article > div em { color: #a0aaa3; font-size: .53rem; font-style: normal; }.groups article label > span { font-size: .59rem; font-weight: 850; }.groups article label > small { color: #849188; font-size: .54rem; }.groups article label > small.custom { color: #1f6b50; }
-.two-panel { display: grid; grid-template-columns: minmax(0, 1fr) 280px; align-items: start; gap: 14px; }.simple-mappings { display: grid; }.simple-mappings article { display: grid; grid-template-columns: minmax(140px, .6fr) 1fr; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #edf1ee; }.simple-mappings article:last-child { border-bottom: 0; }.simple-mappings article > span { display: grid; }.simple-mappings strong { font-size: .7rem; }.simple-mappings small { color: #89958d; font-size: .56rem; }
-.mapping-help { display: grid; gap: 6px; padding: 16px; border: 1px solid #e4c98d; border-radius: 14px; color: #8d5200; background: #fff7e8; }.mapping-help > i { font-size: 1.1rem; }.mapping-help strong { font-size: .74rem; }.mapping-help p { margin: 0; font-size: .64rem; line-height: 1.75; }.mapping-help.blue { color: #1d6388; border-color: #bdd8e6; background: #f0f8fc; }
-.destination-layout { display: grid; gap: 14px; }.identifier-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }.identifier-grid label { display: grid; gap: 6px; }.identifier-grid label > span { color: #34463b; font-size: .68rem; font-weight: 850; }.identifier-rule { display: flex; align-items: center; gap: 10px; padding: 13px 15px; border: 1px dashed #c9d8cf; border-radius: 13px; color: #4e6357; background: #f8faf8; }.identifier-rule > i { color: #1f6b50; font-size: 1rem; }.identifier-rule > span { display: grid; gap: 2px; }.identifier-rule strong { font-size: .7rem; }.identifier-rule small { color: #7d8a82; font-size: .61rem; line-height: 1.6; }
-.save-bar { position: sticky; z-index: 9; bottom: 8px; display: flex; align-items: center; gap: 8px; padding: 11px 13px; border: 1px solid #ccddd2; border-radius: 13px; background: rgba(255, 255, 255, .97); box-shadow: 0 12px 35px rgba(20, 50, 31, .12); backdrop-filter: blur(10px); }.save-bar > span { display: flex; flex: 1; gap: 6px; color: #75837a; font-size: .62rem; }
+.mapping-note { display: flex; align-items: center; gap: 12px; margin: 16px 0; padding: 14px 16px; border: 1px solid var(--line, #DFD7CB); border-radius: 12px; color: var(--ink, #25343A); background: var(--surface, #FFFDFA); }
+.mapping-note > i { font-size: 1.05rem; }.mapping-note > div { display: grid; flex: 1; gap: 2px; }.mapping-note strong { font-size: .875rem; }.mapping-note small { font-size: .875rem; line-height: 1.65; }.mapping-note a { color: var(--ink, #25343A); font-size: .875rem; font-weight: 850; }
+.mapping-form { display: grid; gap: 14px; }.mapping-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding-bottom: 14px; border-bottom: 1px solid var(--line, #DFD7CB); }
+.mapping-tabs button { display: flex; min-height: 46px; align-items: center; justify-content: center; gap: 7px; padding: 10px; border: 1px solid var(--line, #DFD7CB); border-radius: 8px; color: var(--muted, #626B6D); background: var(--surface, #FFFDFA); font-size: .875rem; font-weight: 850; }.mapping-tabs button b { display: grid; min-width: 21px; height: 21px; place-items: center; border-radius: 8px; background: var(--surface, #FFFDFA); font-size: .875rem; }.mapping-tabs button.active { color: var(--ink, #25343A); border-color: var(--line, #DFD7CB); background: var(--surface, #FFFDFA); box-shadow: inset 0 -2px #A3422B; }
+.search { display: flex; align-items: center; gap: 7px; padding: 0 11px; border: 1px solid var(--line, #DFD7CB); border-radius: 11px; background: var(--surface, #FFFDFA); }.search input { width: 100%; padding: 10px 0; border: 0; outline: 0; font-size: .875rem; }
+.groups { display: grid; gap: 10px; }.groups details { overflow: hidden; border: 1px solid var(--line, #DFD7CB); border-radius: 12px; background: var(--surface, #FFFDFA); }.groups summary { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; cursor: pointer; list-style: none; }.groups summary > span { display: flex; align-items: center; gap: 7px; color: var(--ink, #25343A); }.groups summary i { color: var(--ink, #25343A); }.groups summary strong { font-size: .875rem; }.groups summary b { display: grid; width: 24px; height: 24px; place-items: center; border-radius: 12px; background: var(--surface, #FFFDFA); font-size: .875rem; }.groups details > div { border-top: 1px solid var(--line, #DFD7CB); }.groups article { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, .8fr); align-items: center; gap: 12px; padding: 11px 14px; border-bottom: 1px solid var(--line, #DFD7CB); }.groups article:last-child { border-bottom: 0; }.groups article > div, .groups article label { display: grid; gap: 3px; }.groups article > div strong { font-size: .875rem; }.groups article > div small { color: var(--muted, #626B6D); font-size: .875rem; }.groups article > div em { color: var(--muted, #626B6D); font-size: .875rem; font-style: normal; }.groups article label > span { font-size: .875rem; font-weight: 850; }.groups article label > small { color: var(--muted, #626B6D); font-size: .875rem; }.groups article label > small.custom { color: var(--ink, #25343A); }
+.two-panel { display: grid; grid-template-columns: minmax(0, 1fr) 280px; align-items: start; gap: 14px; }.simple-mappings { display: grid; }.simple-mappings article { display: grid; grid-template-columns: minmax(140px, .6fr) 1fr; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line, #DFD7CB); }.simple-mappings article:last-child { border-bottom: 0; }.simple-mappings article > span { display: grid; }.simple-mappings strong { font-size: .875rem; }.simple-mappings small { color: var(--muted, #626B6D); font-size: .875rem; }
+.mapping-help { display: grid; gap: 6px; padding: 16px; border: 1px solid #e4c98d; border-radius: 12px; color: #8d5200; background: #fff7e8; }.mapping-help > i { font-size: 1.1rem; }.mapping-help strong { font-size: .875rem; }.mapping-help p { margin: 0; font-size: .875rem; line-height: 1.75; }.mapping-help.blue { color: #1d6388; border-color: #bdd8e6; background: #f0f8fc; }
+.destination-layout { display: grid; gap: 14px; }.identifier-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }.identifier-grid label { display: grid; gap: 6px; }.identifier-grid label > span { color: var(--ink, #25343A); font-size: .875rem; font-weight: 850; }.identifier-rule { display: flex; align-items: center; gap: 10px; padding: 13px 15px; border: 1px dashed var(--line, #DFD7CB); border-radius: 12px; color: var(--muted, #626B6D); background: var(--surface, #FFFDFA); }.identifier-rule > i { color: var(--ink, #25343A); font-size: 1rem; }.identifier-rule > span { display: grid; gap: 2px; }.identifier-rule strong { font-size: .875rem; }.identifier-rule small { color: var(--muted, #626B6D); font-size: .875rem; line-height: 1.6; }
+.save-bar { position: sticky; z-index: 9; bottom: 8px; display: flex; align-items: center; gap: 8px; padding: 11px 13px; border: 1px solid var(--line, #DFD7CB); border-radius: 12px; background: rgba(255, 255, 255, .97); box-shadow: none; backdrop-filter: none; }.save-bar > span { display: flex; flex: 1; gap: 6px; color: var(--muted, #626B6D); font-size: .875rem; }
 @media (max-width: 850px) { .groups article { grid-template-columns: 1fr; }.two-panel { grid-template-columns: 1fr; }.mapping-help { order: -1; }.mapping-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 560px) { .mapping-note { align-items: flex-start; flex-wrap: wrap; }.mapping-note a { width: 100%; padding-inline-start: 28px; }.mapping-tabs button span { font-size: .63rem; }.simple-mappings article, .identifier-grid { grid-template-columns: 1fr; }.save-bar > span { display: none; }.save-bar .btn { padding-inline: 10px; } }
+@media (max-width: 560px) { .mapping-note { align-items: flex-start; flex-wrap: wrap; }.mapping-note a { width: 100%; padding-inline-start: 28px; }.mapping-tabs button span { font-size: .875rem; }.simple-mappings article, .identifier-grid { grid-template-columns: 1fr; }.save-bar > span { display: none; }.save-bar .btn { padding-inline: 10px; } }
 </style>

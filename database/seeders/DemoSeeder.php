@@ -2,68 +2,55 @@
 
 namespace Database\Seeders;
 
+use App\Models\Setting;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 
-/**
- * Demo / sample data for development + sales demos.
- *
- * Creates two branches (Khan Yunis as the populated main + Gaza as an empty
- * second branch to exercise the multi-branch flow), a starter staff roster,
- * a 75-item Arabic menu, indoor/outdoor zones, kitchen+bar+grill stations,
- * and 12 tables.
- *
- * NEVER run this on a production database. The wipe-and-reseed flow is
- * destructive and ships demo logins (admin/password, partner/password, …)
- * that would be a security hole in production.
- *
- * Usage:
- *   php artisan db:seed                      # full install (system + demo)
- *   php artisan db:seed --class=DemoSeeder   # demo only (system already there)
- *
- * To wipe demo data while keeping the production install intact, the admin
- * UI exposes "إعادة تعيين البيانات التجريبية" (Super Admin only) — see
- * App\Services\DemoResetService for the destructive-action contract.
- */
+/** Opt-in fictional demonstration, installed atomically without clearing data. */
 class DemoSeeder extends Seeder
 {
     public function run(): void
     {
-        $this->call([
-            // Branches FIRST — every per-branch seeder below needs at least
-            // one branch to attach to.
-            BranchSeeder::class,           // Khan Yunis (main) + Gaza (empty)
+        DemoDataset::assertCanSeed();
+        $firstInstall = ! Setting::query()->where('key', 'demo_dataset')->exists();
+        DB::transaction(function () use ($firstInstall): void {
+            Setting::put('demo_dataset', DemoDataset::ID, 'demo');
+            $this->call(SystemSeeder::class);
+            if ($firstInstall) {
+                $this->seedIdentity();
+            }
+            $this->call([
+                BranchSeeder::class, StationSeeder::class, UserSeeder::class,
+                TableSeeder::class, MenuSeeder::class, RecipesSeeder::class,
+                DemoAccountingSeeder::class,
+            ]);
+        });
+        $this->command?->info('Dar Al Sarw demonstration ready. Existing stock, passwords, prices and table state were preserved.');
+    }
 
-            // Per-branch reference data (stations belong to branches now).
-            StationSeeder::class,          // kitchen, bar, dessert… (Khan Yunis)
-
-            // People — UserSeeder also assigns each non-owner user to the
-            // Khan Yunis branch via branch_user.
-            UserSeeder::class,
-
-            // Tables (Khan Yunis only — Gaza starts empty by design).
-            TableSeeder::class,
-
-            // Menu structure (categories + modifier groups + sample items).
-            MenuSeeder::class,
-
-            // Real restaurant menu — replaces sample items with 7 categories
-            // × 10-12 real dishes + localized Unsplash imagery.
-            // Must run BEFORE InternetCardsSeeder because RealRestaurantMenuSeeder
-            // truncates menu_items + categories — it would wipe the cards.
-            RealRestaurantMenuSeeder::class,
-
-            // RealRestaurantMenuSeeder clears recipe_items but doesn't
-            // create new ones (it only seeds menu_items). RecipesSeeder
-            // pairs every item with a sensible default recipe + tops up
-            // ingredient stock so the demo's inventory-deduction flow
-            // has something to consume. Safe to re-run on its own.
-            RecipesSeeder::class,
-
-            // Internet (Wi-Fi) cards — 1h / 2h / 3h. Seeded for EVERY branch
-            // (Khan Yunis + Gaza) so the second branch has something on its
-            // menu out of the box, even before the owner copies / builds a
-            // full food menu for it.
-            InternetCardsSeeder::class,
-        ]);
+    private function seedIdentity(): void
+    {
+        foreach ([
+            'site_name' => 'مطعم دار السرو',
+            'demo_tagline' => 'لمة فلسطينية بطعم البيت — تجربة عرض',
+            'demo_menu_notice' => 'قائمة تجريبية وأسعار توضيحية — لا تمثل مطعماً حقيقياً أو أسعار السوق الحالية',
+            'receipt_footer' => 'دار السرو — فاتورة تجريبية لعرض النظام',
+            'legal_name' => '', 'tax_number' => '', 'brand_logo' => '', 'brand_favicon' => '',
+        ] as $key => $value) {
+            Setting::put($key, $value, str_starts_with($key, 'demo_') ? 'demo' : 'general');
+        }
+        foreach ([
+            'theme_primary' => '#A3422B', 'theme_dark' => '#25343A', 'theme_header' => '#FFFDFA',
+            'theme_accent' => '#B78338', 'theme_menu' => '#F7F3ED',
+            'theme_header_style' => 'light', 'theme_menu_style' => 'brand',
+        ] as $key => $value) {
+            Setting::put($key, $value, 'theme');
+        }
+        foreach ([
+            'setup_completed' => false, 'sms_enabled' => false, 'service_enabled' => false,
+            'waiter_direct_fire' => true, 'strict_stock' => true,
+        ] as $key => $value) {
+            Setting::put($key, $value, 'general', 'bool');
+        }
     }
 }

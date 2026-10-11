@@ -1,4 +1,5 @@
 <script setup>
+import ManagementPage from '../../../Components/Inventory/ManagementPage.vue';
 /**
  * سجل النشاطات — Wave 0's gate page: the first real screen on the new
  * AdminLayout chrome. Deliberately simple (filters + table + pagination)
@@ -42,6 +43,7 @@ const clear = () => {
 </script>
 
 <template>
+    <ManagementPage mode="records">
     <Head title="سجل النشاطات" />
 
     <PageHeader title="سجل النشاطات" icon="bi-clock-history"
@@ -104,4 +106,5 @@ const clear = () => {
             <Pagination :links="logs.links" />
         </template>
     </DataPanel>
+    </ManagementPage>
 </template>

@@ -24,18 +24,21 @@ function toggle() { if (!props.disabled) emit('update:modelValue', !props.modelV
 </template>
 
 <style scoped>
-.toggle-field { display: flex; width: 100%; min-height: 78px; align-items: center; gap: 12px; padding: 13px 14px; border: 1px solid #dfe7e2; border-radius: 14px; color: #27372e; background: #fff; text-align: start; transition: border-color .18s ease, background .18s ease, transform .18s ease; }
-.toggle-field:hover:not(:disabled) { border-color: #9fc5ac; transform: translateY(-1px); }
-.toggle-field.is-on { border-color: #a5d2b3; background: #f3faf5; }
-.toggle-field__icon { display: grid; flex: 0 0 36px; width: 36px; height: 36px; place-items: center; border-radius: 11px; background: #f0f4f1; }
-.is-on .toggle-field__icon { color: #166534; background: #dff2e5; }
+.toggle-field { display: flex; width: 100%; min-height: 78px; align-items: center; gap: 12px; padding: 13px 14px; border: 1px solid var(--brand-soft, #F3E3D8); border-radius: 12px; color: var(--ink, #25343A); background: var(--surface, #FFFDFA); text-align: start; transition: border-color .18s ease, background .18s ease, transform .18s ease; }
+.toggle-field:hover:not(:disabled) { border-color: var(--muted, #626B6D); transform: translateY(-1px); }
+.toggle-field.is-on { border-color: var(--brand-soft, #F3E3D8); background: var(--canvas, #F7F3ED); }
+.toggle-field__icon { display: grid; flex: 0 0 36px; width: 36px; height: 36px; place-items: center; border-radius: 11px; background: var(--canvas, #F7F3ED); }
+.is-on .toggle-field__icon { color: var(--ink, #25343A); background: var(--canvas, #F7F3ED); }
 .toggle-field__copy { display: grid; flex: 1; gap: 2px; }
 .toggle-field__copy strong { font-size: .91rem; }
-.toggle-field__copy small { color: #7a877f; font-size: .76rem; line-height: 1.5; }
-.toggle-field__copy em { margin-top: 4px; color: #ad5c00; font-size: .72rem; font-style: normal; }
-.toggle-field__switch { display: flex; flex: 0 0 42px; width: 42px; height: 24px; align-items: center; justify-content: flex-start; padding: 3px; border-radius: 999px; background: #c8d0cb; transition: background .18s ease; }
-.toggle-field__switch span { width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .16); transition: transform .18s ease; }
-.is-on .toggle-field__switch { background: #17713c; }
+.toggle-field__copy small { color: var(--muted, #626B6D); font-size: .875rem; line-height: 1.5; }
+.toggle-field__copy em { margin-top: 4px; color: #ad5c00; font-size: .875rem; font-style: normal; }
+.toggle-field__switch { display: flex; flex: 0 0 42px; width: 42px; height: 24px; align-items: center; justify-content: flex-start; padding: 3px; border-radius: 12px; background: var(--line, #DFD7CB); transition: background .18s ease; }
+.toggle-field__switch span { width: 18px; height: 18px; border-radius: 50%; background: var(--surface, #FFFDFA); box-shadow: none; transition: transform .18s ease; }
+.is-on .toggle-field__switch { background: var(--brand, #A3422B); }
 .is-on .toggle-field__switch { justify-content: flex-end; }
 .toggle-field.is-disabled { cursor: not-allowed; opacity: .62; }
+
+/* Dar Al Sarw management layout */
+.toggle-field { min-height: 96px; padding: 18px; border-radius: 10px; align-items: flex-start; } .toggle-field strong { color: var(--ink); font-size: .9375rem; } .toggle-field small { font-size: .875rem; line-height: 1.7; }
 </style>

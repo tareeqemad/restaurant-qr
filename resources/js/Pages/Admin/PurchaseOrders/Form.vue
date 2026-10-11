@@ -1,4 +1,5 @@
 <script setup>
+import ManagementPage from '../../../Components/Inventory/ManagementPage.vue';
 /**
  * أمر شراء — إنشاء/تعديل (Wave 4). ONE page for both: `po.id` decides
  * the title, the submit verb, and the endpoint.
@@ -194,6 +195,7 @@ const matchesFor = (line) => {
 </script>
 
 <template>
+    <ManagementPage mode="form">
     <Head :title="isEdit ? `تعديل ${po.number}` : 'أمر شراء جديد'" />
 
     <PageHeader :title="isEdit ? `تعديل أمر الشراء ${po.number}` : 'أمر شراء جديد'"
@@ -325,6 +327,7 @@ const matchesFor = (line) => {
             </div>
         </template>
     </DataPanel>
+    </ManagementPage>
 </template>
 
 <style scoped>
@@ -335,19 +338,22 @@ const matchesFor = (line) => {
 }
 .po-field { display: flex; flex-direction: column; gap: .35rem; margin: 0; }
 .po-field--wide { grid-column: 1 / -1; }
-.po-field > span { font-size: .84rem; font-weight: 800; color: #334155; }
-.po-field small { font-size: .72rem; color: #94a3b8; }
+.po-field > span { font-size: .875rem; font-weight: 800; color: var(--ink, #25343A); }
+.po-field small { font-size: .875rem; color: var(--muted, #626B6D); }
 
 .po-table th { white-space: nowrap; }
 .po-num { text-align: center; font-weight: 700; min-width: 90px; }
 .po-total { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.po-grand { font-size: 1.1rem; font-weight: 900; color: rgb(var(--primary-rgb)); }
-.po-equiv { display: block; font-size: .7rem; color: #059669; font-weight: 700; margin-top: .2rem; }
-.po-hint { display: block; font-size: .7rem; color: #94a3b8; }
+.po-grand { font-size: 1.1rem; font-weight: 900; color: var(--brand, #A3422B); }
+.po-equiv { display: block; font-size: .875rem; color: var(--brand, #A3422B); font-weight: 700; margin-top: .2rem; }
+.po-hint { display: block; font-size: .875rem; color: var(--muted, #626B6D); }
 
 .po-foot { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; }
-.po-problem { color: #b45309; font-size: .82rem; font-weight: 700; }
+.po-problem { color: #b45309; font-size: .875rem; font-weight: 700; }
 .po-save { margin-inline-start: auto; font-weight: 800; }
 .po-spin { animation: po-rotate 1s linear infinite; display: inline-block; }
 @keyframes po-rotate { to { transform: rotate(360deg); } }
+
+/* Dar Al Sarw management layout */
+.po-head { gap: 20px; grid-template-columns: repeat(2,minmax(0,1fr)); } .po-field>span { font-size: .9375rem; color: var(--ink); } .po-field small { line-height: 1.7; } .po-table td { padding: 16px 12px; } .po-table input,.po-table select { min-height: 46px; border-radius: 8px; } @media(max-width:680px) { .po-head { grid-template-columns: 1fr; } }
 </style>

@@ -1,4 +1,5 @@
 <script setup>
+import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 /**
  * Refund review desk. Pending corrective actions stay prominent; completed
  * history remains compact and every decision happens without leaving the page.
@@ -94,29 +95,31 @@ function reverseRefund() {
 </script>
 
 <template>
-    <Head title="الاستردادات" />
-
-    <PageHeader title="الاستردادات" icon="bi-arrow-counterclockwise"
+<Head title="الاستردادات" />
+<FinancialWorkspace area="الاستردادات" mode="records">
+<template #heading>
+<PageHeader title="الاستردادات" icon="bi-arrow-counterclockwise"
                 subtitle="مراجعة المبالغ المرتجعة وإكمال المعلّق منها دون مغادرة السجل" />
-
-    <CollectionNav :items="collectionNav" active="refunds" />
-
-    <StatRail :stats="[
+</template>
+<template #navigation>
+<CollectionNav :items="collectionNav" active="refunds" />
+</template>
+<template #metrics>
+<StatRail :stats="[
         { label: 'استردادات اليوم', value: stats.todayCount, icon: 'bi-receipt-cutoff', color: 'primary' },
         { label: 'قيمة اليوم', value: stats.todayAmountFormatted, icon: 'bi-cash-stack', color: 'danger' },
         { label: 'تحتاج قراراً', value: stats.pending, icon: 'bi-hourglass-split', color: 'warning' },
         { label: 'قيمة الشهر', value: stats.monthAmountFormatted, icon: 'bi-calendar3', color: 'accent' },
     ]" />
-
-    <div class="refund-lenses">
+</template>
+<div class="refund-lenses">
         <button type="button" :class="{ active: !filter.status }" @click="visit({ status: '' })"><i class="bi bi-list-ul"></i> الكل</button>
         <button type="button" class="pending" :class="{ active: filter.status === 'pending' }" @click="visit({ status: filter.status === 'pending' ? '' : 'pending' })"><i class="bi bi-hourglass-split"></i> تحتاج قراراً <b>{{ stats.pending }}</b></button>
         <button type="button" :class="{ active: filter.status === 'completed' }" @click="visit({ status: filter.status === 'completed' ? '' : 'completed' })"><i class="bi bi-check2-circle"></i> مكتملة</button>
         <button type="button" class="cancelled" :class="{ active: filter.status === 'cancelled' }" @click="visit({ status: filter.status === 'cancelled' ? '' : 'cancelled' })"><i class="bi bi-x-circle"></i> ملغاة</button>
         <button type="button" class="cancelled" :class="{ active: filter.status === 'reversed' }" @click="visit({ status: filter.status === 'reversed' ? '' : 'reversed' })"><i class="bi bi-arrow-counterclockwise"></i> معكوسة</button>
     </div>
-
-    <DataPanel title="سجل الاستردادات" :count="refunds.total" icon="bi-arrow-counterclockwise">
+<DataPanel title="سجل الاستردادات" :count="refunds.total" icon="bi-arrow-counterclockwise">
         <template #filters>
             <form class="refund-filter" @submit.prevent="visit()">
                 <label class="refund-filter__search"><i class="bi bi-search"></i><input v-model="filter.search" placeholder="رقم الاسترداد، الفاتورة، المرجع أو السبب"></label>
@@ -144,16 +147,15 @@ function reverseRefund() {
 
         <template #footer><Pagination :links="refunds.links" /></template>
     </DataPanel>
-
-    <CollectionSheet :open="Boolean(cancelling)" title="إلغاء طلب الاسترداد" :eyebrow="cancelling ? cancelling.number : ''" icon="bi-x-octagon" danger @close="cancelling = null">
+</FinancialWorkspace>
+<CollectionSheet :open="Boolean(cancelling)" title="إلغاء طلب الاسترداد" :eyebrow="cancelling ? cancelling.number : ''" icon="bi-x-octagon" danger @close="cancelling = null">
         <form v-if="cancelling" id="cancelRefundForm" class="cancel-form" @submit.prevent="cancel">
             <div><span>القيمة</span><strong>{{ cancelling.amountFormatted }}</strong><small>{{ cancelling.reason }}</small></div>
             <label><span>سبب الإلغاء *</span><textarea v-model="cancelForm.reason" rows="4" maxlength="500" required placeholder="مثلاً: تراجع الزبون أو رفض البنك العملية"></textarea><small v-if="cancelForm.errors.reason" class="error">{{ cancelForm.errors.reason }}</small></label>
         </form>
         <template #footer><button type="button" class="btn btn-light" @click="cancelling = null">تراجع</button><button type="submit" form="cancelRefundForm" class="btn btn-danger" :disabled="cancelForm.processing || !cancelForm.reason.trim()"><i class="bi bi-x-circle"></i> تأكيد الإلغاء</button></template>
     </CollectionSheet>
-
-    <CollectionSheet :open="Boolean(reversing)" title="عكس استرداد مكتمل" :eyebrow="reversing ? reversing.number : ''" icon="bi-arrow-counterclockwise" danger @close="reversing = null">
+<CollectionSheet :open="Boolean(reversing)" title="عكس استرداد مكتمل" :eyebrow="reversing ? reversing.number : ''" icon="bi-arrow-counterclockwise" danger @close="reversing = null">
         <form v-if="reversing" id="reverseRefundForm" class="cancel-form" @submit.prevent="reverseRefund">
             <div><span>سيعود للفاتورة</span><strong>{{ reversing.amountFormatted }}</strong><small>سيُعكس صرف المال والإشعار الدائن بقيود مقابلة، ولن يُحذف أي سجل.</small></div>
             <label><span>سبب العكس *</span><textarea v-model="reverseForm.reason" rows="4" maxlength="500" required placeholder="مثلاً: سُجل على فاتورة خاطئة"></textarea><small v-if="reverseForm.errors.reason" class="error">{{ reverseForm.errors.reason }}</small></label>
@@ -164,10 +166,10 @@ function reverseRefund() {
 
 <style scoped>
 .refund-lenses { display: flex; gap: .45rem; margin-bottom: .8rem; overflow-x: auto; }
-.refund-lenses button { min-width: 135px; min-height: 44px; flex: 1; border: 1px solid #dfe8e2; border-radius: 11px; background: #fff; color: #53685c; font-size: .7rem; font-weight: 750; white-space: nowrap; }
-.refund-lenses button i { margin-inline-end: .3rem; color: #167343; }
+.refund-lenses button { min-width: 135px; min-height: 44px; flex: 1; border: 1px solid #dfe8e2; border-radius: 11px; background: #fff; color: #A3422B; font-size: .875rem; font-weight: 750; white-space: nowrap; }
+.refund-lenses button i { margin-inline-end: .3rem; color: #A3422B; }
 .refund-lenses button b { margin-inline-start: .3rem; padding: .1rem .35rem; border-radius: 99px; background: #edf5f0; }
-.refund-lenses button.active { border-color: #1a7b49; background: #f0f8f3; color: #0e6b3b; }
+.refund-lenses button.active { border-color: #A3422B; background: #f0f8f3; color: #A3422B; }
 .refund-lenses .pending.active { border-color: #e0b866; background: #fff8e8; color: #8b5f12; }
 .refund-lenses .cancelled.active { border-color: #e2aaaa; background: #fff3f3; color: #aa3333; }
 .refund-filter { display: grid; grid-template-columns: minmax(260px, 1fr) 180px 48px; gap: .5rem; }
@@ -176,53 +178,53 @@ function reverseRefund() {
 .refund-filter__search input { width: 100%; border: 0; outline: 0; background: transparent; }
 .refund-filter select { padding: .5rem .65rem; background: #fff; }
 .refund-dates { display: flex; gap: .5rem; align-items: end; margin-top: .5rem; }
-.refund-dates label { display: grid; gap: .2rem; color: #77867e; font-size: .61rem; }
+.refund-dates label { display: grid; gap: .2rem; color: #A3422B; font-size: .875rem; }
 .refund-dates input { padding: .45rem .6rem; }
-.refund-dates button { min-height: 40px; margin-inline-start: auto; border: 0; background: transparent; color: #7e8c84; font-size: .66rem; }
+.refund-dates button { min-height: 40px; margin-inline-start: auto; border: 0; background: transparent; color: #A3422B; font-size: .875rem; }
 .refund-result { display: grid; grid-template-columns: repeat(4, 1fr); gap: .4rem; margin-bottom: .7rem; }
 .refund-result span { display: flex; justify-content: space-between; padding: .5rem .6rem; border-radius: 9px; background: #f4f7f5; }
-.refund-result small { color: #7f8d85; }
-.refund-result b { color: #1b3b2b; }
+.refund-result small { color: #A3422B; }
+.refund-result b { color: #25343A; }
 .refund-list { display: grid; gap: .5rem; }
 .refund-list article { position: relative; display: grid; grid-template-columns: auto minmax(240px, 1.4fr) minmax(140px, .65fr) minmax(130px, .55fr) minmax(130px, .55fr) auto; gap: .7rem; align-items: center; padding: .7rem .8rem; border: 1px solid #e1e9e4; border-radius: 13px; overflow: hidden; }
 .refund-list article::before { content: ''; position: absolute; inset-block: 0; inset-inline-start: 0; width: 4px; background: #d69a28; }
-.refund-list article.is-completed::before { background: #198149; }
+.refund-list article.is-completed::before { background: #A3422B; }
 .refund-list article.is-cancelled { opacity: .72; }
 .refund-list article.is-cancelled::before { background: #929d97; }
 .refund-list article.is-reversed { opacity: .78; }
 .refund-list article.is-reversed::before { background: #64748b; }
 .refund-state { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 9px; background: #fff4dc; color: #956411; }
-.is-completed .refund-state { background: #e9f7ee; color: #147540; }
-.is-cancelled .refund-state { background: #f0f2f1; color: #68766f; }
+.is-completed .refund-state { background: #e9f7ee; color: #A3422B; }
+.is-cancelled .refund-state { background: #f0f2f1; color: #A3422B; }
 .refund-main > div { display: flex; align-items: center; gap: .35rem; }
-.refund-main code { color: #365346; font-size: .64rem; font-weight: 800; }
-.refund-status { padding: .14rem .35rem; border-radius: 6px; background: #fff4dc; color: #916111; font-size: .57rem; font-weight: 800; }
-.is-completed .refund-status { background: #e9f7ee; color: #13743f; }
-.is-cancelled .refund-status { background: #eff1f0; color: #68756e; }
-.refund-main > strong { display: block; margin-top: .18rem; color: #213d2f; font-size: .72rem; }
-.refund-main p { margin: .18rem 0 0; overflow: hidden; color: #7c8a83; font-size: .59rem; text-overflow: ellipsis; white-space: nowrap; }
+.refund-main code { color: #25343A; font-size: .875rem; font-weight: 800; }
+.refund-status { padding: .14rem .35rem; border-radius: 6px; background: #fff4dc; color: #916111; font-size: .875rem; font-weight: 800; }
+.is-completed .refund-status { background: #e9f7ee; color: #A3422B; }
+.is-cancelled .refund-status { background: #eff1f0; color: #A3422B; }
+.refund-main > strong { display: block; margin-top: .18rem; color: #25343A; font-size: .875rem; }
+.refund-main p { margin: .18rem 0 0; overflow: hidden; color: #7c8a83; font-size: .875rem; text-overflow: ellipsis; white-space: nowrap; }
 .refund-source small, .refund-source code, .refund-source span { display: block; }
-.refund-source small { color: #8a968f; font-size: .55rem; }
-.refund-source code { color: #3e574b; font-size: .63rem; }
-.refund-source span { color: #7b8981; font-size: .59rem; }
+.refund-source small { color: #8a968f; font-size: .875rem; }
+.refund-source code { color: #25343A; font-size: .875rem; }
+.refund-source span { color: #A3422B; font-size: .875rem; }
 .refund-source .branch { display: inline-block; margin-top: .2rem; padding: .12rem .3rem; border-radius: 6px; background: hsl(var(--hue) 55% 95%); color: hsl(var(--hue) 45% 30%); }
 .refund-money { text-align: end; }
 .refund-money > * { display: block; }
-.refund-money strong { color: #b43232; font-family: ui-monospace, monospace; font-size: .83rem; }
-.refund-money span, .refund-money small, .refund-time { color: #7d8a83; font-size: .59rem; }
+.refund-money strong { color: #b43232; font-family: ui-monospace, monospace; font-size: .875rem; }
+.refund-money span, .refund-money small, .refund-time { color: #7d8a83; font-size: .875rem; }
 .refund-time span, .refund-time time, .refund-time small { display: block; }
 .refund-time i { margin-inline-end: .22rem; }
 .refund-actions { display: flex; gap: .3rem; }
-.refund-actions button { min-width: 40px; min-height: 40px; border-radius: 9px; font-size: .63rem; font-weight: 800; }
+.refund-actions button { min-width: 40px; min-height: 40px; border-radius: 9px; font-size: .875rem; font-weight: 800; }
 .refund-actions span { display: none; }
-.refund-actions .complete { border: 1px solid #aad6bc; background: #eef9f2; color: #11733e; }
+.refund-actions .complete { border: 1px solid #F3E3D8; background: #eef9f2; color: #A3422B; }
 .refund-actions .cancel { border: 1px solid #ebc0c0; background: #fff; color: #b53535; }
 .refund-actions .reverse { border: 1px solid #d8c990; background: #fffaf0; color: #7d6418; }
 .cancel-form { display: grid; gap: .75rem; }
 .cancel-form > div { display: grid; grid-template-columns: 1fr auto; padding: .7rem; border-radius: 11px; background: #fff1f1; }
 .cancel-form > div strong { color: #a93232; font-family: ui-monospace, monospace; }
 .cancel-form > div small { grid-column: 1 / -1; color: #8e6262; }
-.cancel-form label { display: grid; gap: .3rem; color: #4e6257; font-size: .72rem; font-weight: 750; }
+.cancel-form label { display: grid; gap: .3rem; color: #A3422B; font-size: .875rem; font-weight: 750; }
 .cancel-form textarea { min-height: 88px; padding: .6rem .7rem; border: 1px solid #dce5e0; border-radius: 10px; resize: vertical; }
 .error { color: #b62f2f; }
 @media (max-width: 1100px) { .refund-list article { grid-template-columns: auto minmax(220px, 1fr) minmax(130px, .5fr) minmax(120px, .5fr) auto; } .refund-time { display: none; } }

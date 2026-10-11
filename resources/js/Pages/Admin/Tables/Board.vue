@@ -327,7 +327,7 @@ const loadChip = computed(() => {
             <span class="tables-quick-icon" aria-hidden="true"><i class="bi bi-grid-3x3-gap-fill"></i></span>
             <div>
                 <h1>لوحة الصالة</h1>
-                <p>ما يحتاج إجراء أولاً، ثم كل الطاولات في نفس الشاشة</p>
+                <p>{{ board.rows.length }} طاولة في الصالة</p>
             </div>
         </div>
         <Link v-if="meta.canCreate" :href="urls.create" class="tables-quick-add">
@@ -390,13 +390,14 @@ const loadChip = computed(() => {
             <span>لم يتم توزيعك على قسم اليوم، لذلك تظهر لك كل الصالة.</span>
         </div>
 
+        <div class="tb-floor-workspace" :class="{ 'has-priority': showPriority }">
         <section v-if="showPriority" class="tb-feed" aria-label="الأهم الآن">
             <header class="tb-feed-head">
                 <div class="tb-feed-title">
                     <span class="tb-feed-icon"><i class="bi" :class="filters.lens === 'stale' ? 'bi-hourglass-bottom' : 'bi-lightning-charge-fill'"></i></span>
                     <div>
                         <h3>{{ filters.lens === 'stale' ? 'جلسات قديمة' : 'يحتاج إجراء الآن' }}</h3>
-                        <span class="tb-feed-sub">مرتبة حسب الأولوية — إجراء واحد واضح لكل طاولة</span>
+
                     </div>
                 </div>
                 <span class="tb-feed-total">{{ priorityRows.length }}</span>
@@ -448,6 +449,7 @@ const loadChip = computed(() => {
                 </div>
             </div>
         </section>
+        </div>
     </div>
 
     <TbQuickEditSheet :row="quickEditRow" :zones="tabs.sections"

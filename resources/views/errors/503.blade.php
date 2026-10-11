@@ -2,9 +2,9 @@
 
 @section('title', 'صيانة مؤقتة')
 @section('code', '503')
-@section('accent', '#8cc8a3')
+@section('accent', '#A3422B')
 @section('headline', 'الخدمة متوقفة مؤقتاً')
-@section('message', 'نجري تحديثاً قصيراً على النظام. بياناتك محفوظة، حدّث الصفحة بعد قليل للمتابعة.')
+@section('message', 'الخدمة غير متاحة الآن. حدّث الصفحة بعد قليل أو اطلب المساعدة من الفريق.')
 
 @section('illustration')
     {{-- Wrench + gear --}}

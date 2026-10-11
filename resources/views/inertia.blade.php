@@ -17,14 +17,12 @@
     <title inertia>{{ \App\Helpers\Brand::name() }}</title>
     <link rel="icon" href="{{ \App\Helpers\Brand::faviconUrl() }}">
     <link href="{{ asset('assets/dashtic/icon-fonts/bootstrap-icons/icons/font/bootstrap-icons.css') }}" rel="stylesheet">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     {{-- Non-blocking font: offline, the page paints instantly in the system font. --}}
     <link href="{{ $market::fontUrl() }}" rel="stylesheet">
         <style>
         @include('partials.theme-vars', ['theme' => $theme])
         @include('partials.market-vars')
-        html, body, #app { min-height: 100%; background: #f8fafc; }
+        html, body, #app { min-height: 100%; background: var(--canvas); }
         body { margin: 0; font-family: var(--market-font-family); }
 
         /* Customer routes use Inertia view transitions: one mounted app,

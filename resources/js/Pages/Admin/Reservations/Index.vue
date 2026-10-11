@@ -110,15 +110,15 @@ onBeforeUnmount(() => clearInterval(timer));
     <Head title="الحجوزات" />
 
     <PageHeader title="الحجوزات" icon="bi-calendar-event-fill"
-                subtitle="مين جاي، ومين تأخّر، ومين لسا بلا طاولة" />
+                 />
 
-    <StatRail :stats="[
+    <details class="ops-summary"><summary><i class="bi bi-bar-chart"></i> ملخص الحجوزات<i class="bi bi-chevron-down"></i></summary><StatRail :stats="[
         { label: 'حجوزات اليوم', value: stats.today, icon: 'bi-calendar-day', color: 'primary' },
         { label: 'بانتظار التأكيد', value: stats.pending, icon: 'bi-hourglass-split', color: 'accent' },
         { label: 'واصلين خلال ساعة ونص', value: stats.arrivingSoon, icon: 'bi-clock-history', color: 'success' },
         { label: 'متأخرين', value: stats.late, icon: 'bi-exclamation-triangle-fill', color: 'danger' },
         { label: 'جالسين الآن', value: stats.seatedNow, icon: 'bi-people-fill', color: 'primary' },
-    ]" />
+    ]" /></details>
 
     <div class="rz-lenses">
         <button type="button" class="rz-lens" @click="showToday"><i class="bi bi-calendar-day"></i> اليوم</button>
@@ -259,12 +259,12 @@ onBeforeUnmount(() => clearInterval(timer));
     gap: .4rem;
     min-height: 42px;
     padding: 0 1rem;
-    border: 1px solid #e2e8f0;
-    border-radius: 999px;
-    background: #fff;
-    color: #334155;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface);
+    color: var(--ink);
     font: inherit;
-    font-size: .84rem;
+    font-size: .875rem;
     font-weight: 700;
     cursor: pointer;
 }
@@ -275,14 +275,14 @@ onBeforeUnmount(() => clearInterval(timer));
     display: flex;
     gap: .9rem;
     align-items: flex-start;
-    border: 1px solid #eef0f3;
-    border-inline-start: 4px solid #cbd5e1;
-    border-radius: 14px;
+    border: 1px solid var(--line);
+    border-inline-start: 4px solid var(--line);
+    border-radius: 12px;
     padding: .8rem .9rem;
-    background: #fff;
+    background: var(--surface);
     flex-wrap: wrap;
 }
-.rz-card.is-soon { border-inline-start-color: #059669; background: #f8fffb; }
+.rz-card.is-soon { border-inline-start-color: var(--brand); background: #f8fffb; }
 .rz-card.is-late { border-inline-start-color: #dc2626; background: #fffafa; }
 
 .rz-when {
@@ -292,25 +292,25 @@ onBeforeUnmount(() => clearInterval(timer));
     min-width: 72px;
     flex-shrink: 0;
 }
-.rz-when strong { font-size: 1.1rem; font-weight: 900; color: #0f172a; font-variant-numeric: tabular-nums; }
-.rz-when small { font-size: .7rem; color: #94a3b8; }
+.rz-when strong { font-size: 1.1rem; font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; }
+.rz-when small { font-size: .875rem; color: var(--muted); }
 .rz-flag {
     margin-top: .25rem;
-    border-radius: 999px;
+    border-radius: 12px;
     padding: .05rem .45rem;
-    font-size: .66rem;
+    font-size: .875rem;
     font-weight: 800;
 }
 .rz-flag--late { background: #fee2e2; color: #b91c1c; }
-.rz-flag--soon { background: #d1fae5; color: #047857; }
+.rz-flag--soon { background: var(--brand-soft); color: var(--brand); }
 
 .rz-main { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: .25rem; }
 .rz-title { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
-.rz-title strong { font-size: .95rem; color: #0f172a; }
-.rz-party { font-size: .78rem; color: #475569; font-weight: 700; }
-.rz-meta { display: flex; gap: .8rem; flex-wrap: wrap; font-size: .76rem; color: #94a3b8; }
+.rz-title strong { font-size: .95rem; color: var(--ink); }
+.rz-party { font-size: .875rem; color: var(--ink); font-weight: 700; }
+.rz-meta { display: flex; gap: .8rem; flex-wrap: wrap; font-size: .875rem; color: var(--muted); }
 .rz-notable { color: #b45309; font-weight: 700; }
-.rz-note { margin: .15rem 0 0; font-size: .78rem; color: #475569; }
+.rz-note { margin: .15rem 0 0; font-size: .875rem; color: var(--ink); }
 .rz-note--internal { color: #7c3aed; }
 .rz-note--cancel { color: #b91c1c; }
 
@@ -328,20 +328,20 @@ onBeforeUnmount(() => clearInterval(timer));
 }
 .rzx-card {
     width: min(440px, 100%);
-    background: #fff;
-    border-radius: 18px;
+    background: var(--surface);
+    border-radius: 12px;
     padding: 1.2rem;
     display: flex;
     flex-direction: column;
     gap: .8rem;
 }
-.rzx-card h3 { margin: 0; font-size: 1.02rem; font-weight: 900; }
-.rzx-card p { margin: 0; font-size: .84rem; color: #64748b; }
+.rzx-card h3 { margin: 0; font-size: 1.02rem; font-weight: 800; }
+.rzx-card p { margin: 0; font-size: .875rem; color: var(--muted); }
 .rzx-card label { display: flex; flex-direction: column; gap: .3rem; margin: 0; }
-.rzx-card label span { font-size: .8rem; font-weight: 800; color: #334155; }
+.rzx-card label span { font-size: .875rem; font-weight: 800; color: var(--ink); }
 .rzx-card input {
-    border: 1.5px solid #e2e8f0;
-    border-radius: 11px;
+    border: 1.5px solid var(--line);
+    border-radius: 8px;
     min-height: 46px;
     padding: 0 .8rem;
     font: inherit;
@@ -352,15 +352,21 @@ onBeforeUnmount(() => clearInterval(timer));
     flex: 1;
     min-height: 46px;
     border: 0;
-    border-radius: 12px;
-    background: #f1f5f9;
-    color: #334155;
+    border-radius: 8px;
+    background: var(--canvas);
+    color: var(--ink);
     font: inherit;
     font-weight: 800;
     cursor: pointer;
 }
-.rzx-btn--danger { background: #dc2626; color: #fff; }
+.rzx-btn--danger { background: #dc2626; color: #FFFDFA; }
 
 .rzx-enter-active, .rzx-leave-active { transition: opacity .15s; }
 .rzx-enter-from, .rzx-leave-to { opacity: 0; }
+
+/* Operational layout and responsive hierarchy. */
+.ops-summary{margin-bottom:16px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}.ops-summary>summary{display:flex;align-items:center;gap:10px;min-height:48px;padding:12px 16px;cursor:pointer;list-style:none;font-size:14px;font-weight:700}.ops-summary>summary>i:last-child{margin-inline-start:auto}.ops-summary[open]>summary{border-bottom:1px solid var(--line)}.ops-summary>:deep(.stat-rail){margin:0;border:0;border-radius:0}.row.g-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin:0;gap:12px}.row.g-2>div{width:auto;max-width:none;padding:0;margin:0}.row.g-2 .form-control,.row.g-2 .form-select{min-height:46px;font-size:14px}.row.g-2 .btn{min-height:46px;width:100%}@media(max-width:560px){.row.g-2{grid-template-columns:1fr 1fr}.row.g-2>div:first-child{grid-column:1/-1}}
+
+/* Operational layout and responsive hierarchy. */
+.rz-lenses{gap:8px;margin-bottom:16px}.rz-lens{border-radius:6px;min-height:44px;font-size:14px}.rz-list{display:grid;gap:0}.rz-card{display:grid;grid-template-columns:100px minmax(0,1fr) 170px;gap:18px;padding:20px 18px;border:0;border-bottom:1px solid var(--line);border-radius:0;align-items:start}.rz-time{padding:0 16px 0 0;background:transparent;border-inline-end:2px solid var(--line);border-radius:0;min-height:80px}.rz-time>strong{font-size:24px}.rz-time small{font-size:14px}.rz-main{min-width:0}.rz-title>strong{font-size:18px}.rz-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:start}.rz-actions .btn{min-height:42px;font-size:14px}.rz-note{font-size:14px;line-height:1.6}.rz-meta{gap:12px;font-size:14px}@media(max-width:750px){.rz-card{grid-template-columns:80px minmax(0,1fr);gap:12px;padding:16px 12px}.rz-actions{grid-column:2;display:flex;flex-wrap:wrap}.rz-time{padding-inline-end:10px}}
 </style>

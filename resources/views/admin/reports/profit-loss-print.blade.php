@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>تفاصيل الصندوق — {{ $brand['name'] }}</title>
+<title>الأرباح والخسائر — {{ $brand['name'] }}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="{{ $market::fontUrl() }}" rel="stylesheet">
@@ -25,384 +25,17 @@
 @endphp
 
 <style>
-    :root {
-        --green-deep: #123f31;
-        --green-mid: #1f6b50;
-        --green-soft: #43816c;
-        --green-tint: #f0fdf4;
-        --gold: #d97706;
-        --gold-soft: #fef9e7;
-        --gold-mid: #d8a13a;
-        --red: #b91c1c;
-        --red-soft: #fef2f2;
-        --slate: #475569;
-        --slate-light: #94a3b8;
-        --line: #e2e8f0;
-        --bg: #f8fafc;
-    }
-    @include('partials.market-vars')
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body {
-        font-family: var(--market-font-family);
-        background: var(--bg);
-        color: #1f2937;
-        line-height: 1.7;
-        font-size: 14px;
-    }
-    body { padding: 0 0 60px 0; }
-
-    /* ─── ACTION BAR (white card sitting above the report — print-hidden) ─ */
-    .action-bar {
-        max-width: 920px;
-        margin: 16px auto 0;
-        background: #fff;
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        padding: 12px 18px;
-        display: flex; align-items: center; gap: 14px;
-        box-shadow: 0 1px 3px rgba(15,45,34,.04), 0 4px 10px rgba(15,45,34,.04);
-    }
-    .action-bar__title {
-        font-weight: 700; font-size: 14px; color: var(--green-deep); flex: 1;
-    }
-    .action-bar__title small {
-        color: var(--slate); display: block; font-weight: 500;
-        font-size: 12px; margin-top: 3px; line-height: 1.6;
-    }
-    .btn {
-        display: inline-flex; align-items: center; gap: 8px;
-        padding: 9px 16px; border-radius: 10px; border: none;
-        font-family: inherit; font-weight: 700; font-size: 13.5px; cursor: pointer;
-        transition: transform .12s, box-shadow .12s, background .12s;
-        text-decoration: none;
-    }
-    .btn:hover { transform: translateY(-1px); }
-    .btn--primary {
-        background: var(--gold); color: #fff;
-        box-shadow: 0 2px 6px rgba(185,120,24,.3);
-    }
-    .btn--primary:hover { background: #a96a14; }
-    .btn--ghost {
-        background: transparent; color: var(--slate);
-        border: 1px solid var(--line);
-    }
-    .btn--ghost:hover { background: #f3f4f6; color: var(--green-deep); border-color: #cbd5e1; }
-    @media print {
-        .action-bar, .no-print { display: none !important; }
-    }
-
-    /* ─── PAGE LAYOUT ─────────────────────────────────────────── */
-    .page {
-        max-width: 920px; margin: 24px auto; background: #fff;
-        border-radius: 14px; overflow: hidden;
-        box-shadow: 0 4px 24px rgba(0,0,0,.08);
-    }
-    @media print {
-        body { background: #fff; padding: 0; }
-        .page { max-width: 100%; margin: 0; box-shadow: none; border-radius: 0; }
-        @page { size: A4; margin: 14mm 12mm; }
-    }
-
-    /* ─── BRAND HEADER (clean — no decorative blob, no dashed strip) ─── */
-    .brand {
-        position: relative;
-        background: linear-gradient(135deg, var(--green-deep) 0%, var(--green-mid) 100%);
-        color: #fff;
-        margin: 16px;
-        border-radius: 18px;
-        padding: 1.6rem 1.7rem 1.4rem;
-        overflow: hidden;
-    }
-    .brand__row { display: flex; align-items: center; gap: 18px; position: relative; z-index: 1; }
-    .brand__logo {
-        width: 52px; height: 52px;
-        background: rgba(255,255,255,.18);
-        border-radius: 14px;
-        display: inline-flex; align-items: center; justify-content: center;
-        font-family: 'Amiri', serif;
-        font-size: 24px;
-        font-weight: 700;
-        color: #fff;
-        flex-shrink: 0;
-    }
-    .brand__head { flex-grow: 1; min-width: 0; }
-    .brand__eyebrow {
-        display: block;
-        font-size: 12px;
-        font-weight: 600;
-        opacity: .82;
-        margin-bottom: .15rem;
-    }
-    .brand h1 {
-        font-size: 24px;
-        font-weight: 800;
-        margin: 0;
-        line-height: 1.2;
-        letter-spacing: -.2px;
-    }
-    .brand__sub { color: rgba(212,241,221,.9); font-size: 13px; margin-top: 6px; }
-    .brand__meta {
-        margin-inline-start: auto;
-        text-align: end;
-        color: rgba(212,241,221,.9);
-        font-size: 12.5px;
-        line-height: 1.85;
-        flex-shrink: 0;
-    }
-    .brand__meta strong { color: #fff; }
-
-    .brand__divider {
-        height: 1px;
-        background: rgba(255,255,255,.18);
-        margin: 1rem 0 .9rem 0;
-        position: relative;
-        z-index: 1;
-    }
-    .brand__period {
-        display: flex;
-        flex-wrap: wrap;
-        gap: .4rem .85rem;
-        font-size: .82rem;
-        opacity: .95;
-        position: relative;
-        z-index: 1;
-    }
-    .brand__period > div { color: #fff; display: inline-flex; align-items: center; gap: .4rem; }
-    .brand__period .lbl { color: rgba(212,241,221,.75); font-weight: 600; }
-    .brand__period .val { color: #fff; font-weight: 700; }
-    .brand__period .pm-dot {
-        width: 4px; height: 4px;
-        background: rgba(255,255,255,.4);
-        border-radius: 50%;
-        align-self: center;
-    }
-
-    /* ─── BODY PADDING ──────────────────────────────────────────── */
-    .body-pad { padding: 24px 36px; }
-
-    /* ─── SECTION TITLE ─────────────────────────────────────────── */
-    .section-title {
-        font-size: 16px; font-weight: 800; color: var(--green-deep);
-        padding: 22px 0 10px 0; margin-top: 4px;
-        border-bottom: 3px solid var(--gold);
-        display: flex; align-items: center; gap: 8px;
-    }
-    .section-title::before {
-        content: ''; display: inline-block; width: 6px; height: 22px;
-        background: var(--gold); border-radius: 2px;
-    }
-
-    /* ─── KPI ROW ──────────────────────────────────────────────── */
-    .kpis {
-        display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
-        margin-top: 20px;
-    }
-    .kpi {
-        background: #fff; border: 1px solid var(--line); border-radius: 12px;
-        padding: 16px 18px; position: relative; overflow: hidden;
-    }
-    .kpi::after {
-        content: ''; position: absolute; top: 0; right: 0; width: 4px; height: 100%;
-        background: var(--gold);
-    }
-    .kpi--rev::after  { background: var(--green-mid); }
-    .kpi--gross::after{ background: var(--green-soft); }
-    .kpi--cost::after { background: #b45309; }
-    .kpi--net::after  { background: var(--gold); }
-    .kpi--loss::after { background: var(--red); }
-    .kpi__lbl { font-size: 12px; color: var(--slate); font-weight: 600; margin-bottom: 6px; }
-    .kpi__val { font-size: 20px; font-weight: 800; color: var(--green-deep); line-height: 1.2; }
-    .kpi--loss .kpi__val { color: var(--red); }
-    .kpi__sub { font-size: 11.5px; color: var(--slate-light); margin-top: 4px; }
-
-    /* ─── INCOME STATEMENT (the heart of the report) ──────────── */
-    .stmt {
-        margin-top: 14px; background: #fff; border: 1px solid var(--line);
-        border-radius: 12px; overflow: hidden;
-    }
-    .stmt__row {
-        display: flex; align-items: center; gap: 12px;
-        padding: 14px 22px; border-bottom: 1px dashed var(--line);
-    }
-    .stmt__row:last-child { border-bottom: none; }
-    .stmt__row .lbl { flex: 1; color: #334155; font-size: 14px; }
-    .stmt__row .amt { font-weight: 700; color: var(--green-deep); min-width: 140px; text-align: end; font-size: 14.5px; }
-    .stmt__row .pct {
-        background: #f1f5f9; padding: 3px 12px; border-radius: 999px;
-        font-size: 12px; font-weight: 700; color: var(--slate); min-width: 76px; text-align: center;
-    }
-    .stmt__row.indent { padding-right: 50px; background: #fafdfa; }
-    .stmt__row.indent .lbl { color: var(--slate); font-size: 13px; }
-    .stmt__row.neg .amt { color: var(--red); }
-    .stmt__row.subtotal {
-        background: #f8fafc; border-top: 2px solid var(--line); border-bottom: 2px solid var(--line);
-        font-weight: 700;
-    }
-    .stmt__row.subtotal .lbl { color: var(--green-deep); font-weight: 700; }
-    .stmt__row.gross { background: var(--green-tint); border-color: #bbf7d0; }
-    .stmt__row.gross .amt { color: var(--green-deep); }
-    .stmt__row.final {
-        background: linear-gradient(135deg, var(--green-tint) 0%, var(--gold-soft) 100%);
-        border: 2px solid var(--gold) !important; border-radius: 10px;
-        margin: 14px 16px 16px 16px; padding: 18px 22px;
-        font-size: 15px;
-    }
-    .stmt__row.final .lbl { color: var(--green-deep); font-weight: 800; font-size: 15.5px; }
-    .stmt__row.final .amt { color: var(--gold); font-size: 22px; font-weight: 800; }
-    .stmt__row.final.is-loss { background: linear-gradient(135deg, var(--red-soft) 0%, var(--gold-soft) 100%); border-color: var(--red) !important; }
-    .stmt__row.final.is-loss .amt { color: var(--red); }
-
-    /* ─── NOTES BOX (side-collected funds) ───────────────────── */
-    .notes {
-        margin-top: 14px; background: var(--gold-soft); border: 1px solid #fde68a;
-        border-radius: 12px; overflow: hidden;
-    }
-    .notes__head {
-        background: #fde68a; padding: 10px 18px; font-weight: 700; color: var(--gold);
-        font-size: 13px;
-    }
-    .notes__row {
-        display: flex; align-items: center; gap: 12px;
-        padding: 10px 18px; border-bottom: 1px dashed #fde68a;
-        font-size: 13px; color: var(--slate);
-    }
-    .notes__row:last-child { border-bottom: none; }
-    .notes__row .lbl { flex: 1; }
-    .notes__row .amt { font-weight: 700; color: var(--green-deep); }
-
-    /* ─── BREAKDOWN GRID ──────────────────────────────────────── */
-    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
-    .card {
-        background: #fff; border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
-    }
-    .card__head {
-        background: linear-gradient(180deg, #fafdfa, #f5f9f5);
-        padding: 12px 18px; border-bottom: 1px solid #e6efe9;
-    }
-    .card__head h3 { font-size: 14px; font-weight: 700; color: var(--green-deep); margin: 0; }
-    .card__head small { color: var(--slate); font-size: 12px; }
-
-    .table { width: 100%; border-collapse: collapse; }
-    .table th, .table td {
-        padding: 10px 14px; font-size: 12.5px; border-bottom: 1px dashed var(--line);
-        text-align: start;
-    }
-    .table th {
-        background: #f8fafc; color: var(--slate); font-weight: 700;
-        font-size: 11.5px; letter-spacing: .3px;
-    }
-    .table tr:last-child td { border-bottom: none; }
-    .table td.num { text-align: end; font-weight: 700; color: var(--green-deep); }
-    .table td.muted { color: var(--slate-light); font-size: 11.5px; }
-    .dot {
-        display: inline-block; width: 8px; height: 8px; border-radius: 50%;
-        margin-left: 8px; vertical-align: middle;
-    }
-    .empty {
-        padding: 20px; text-align: center; color: var(--slate-light); font-size: 13px;
-    }
-
-    /* ─── TOP ITEMS ────────────────────────────────────────────── */
-    .items-table th {
-        background: var(--green-mid); color: #fff;
-    }
-    .rank {
-        display: inline-block; width: 22px; height: 22px; line-height: 22px; text-align: center;
-        background: var(--gold-soft); color: var(--gold); font-weight: 800; border-radius: 50%;
-        font-size: 11px; margin-left: 6px;
-    }
-    .pill {
-        display: inline-block; padding: 3px 10px; border-radius: 999px;
-        font-size: 11px; font-weight: 700;
-    }
-    .pill--good { background: var(--green-tint); color: var(--green-deep); }
-    .pill--warn { background: var(--gold-soft); color: var(--gold); }
-    .pill--bad  { background: var(--red-soft); color: var(--red); }
-
-    /* ─── GLOSSARY ─────────────────────────────────────────────── */
-    .glossary {
-        margin-top: 16px; background: #fff; border: 1px solid var(--line);
-        border-radius: 12px; overflow: hidden;
-    }
-    .glossary__head {
-        background: linear-gradient(180deg, #fafdfa, #f5f9f5);
-        padding: 12px 18px; border-bottom: 1px solid #e6efe9; font-weight: 700; color: var(--green-deep);
-    }
-    .glossary dl { padding: 18px; margin: 0; }
-    .glossary dt {
-        color: var(--gold); font-weight: 700; font-size: 13.5px; margin-top: 14px;
-    }
-    .glossary dt:first-child { margin-top: 0; }
-    .glossary dd {
-        color: var(--slate); font-size: 12.5px; margin: 4px 0 0 0; line-height: 1.9;
-    }
-    .glossary code {
-        background: #f1f5f9; padding: 2px 8px; border-radius: 4px;
-        font-family: var(--market-font-family); color: var(--green-deep); font-size: 12px;
-    }
-
-    /* ─── FOOTER (signature line) ──────────────────────────────── */
-    .signature {
-        display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px;
-        margin-top: 30px; padding: 24px; border-top: 2px dashed var(--line);
-    }
-    .signature .box {
-        text-align: center; padding-top: 36px; border-top: 1px solid var(--green-deep);
-        font-size: 12px; color: var(--slate);
-    }
-    .signature .box strong { display: block; color: var(--green-deep); font-size: 13px; }
-
-    .footer-note {
-        text-align: center; font-size: 11.5px; color: var(--slate-light);
-        padding: 18px; border-top: 1px solid var(--line); background: #fafafa;
-    }
-
-    /* ─── PRINT TWEAKS ─────────────────────────────────────────── */
-    /* Force the browser to honour our backgrounds and gradients on print
-     * AND on save-as-PDF. Without these the green hero and the card fills
-     * disappear because Chrome skips backgrounds by default to save ink.
-     * `print-color-adjust: exact` is the standard property; the WebKit
-     * prefix covers older Chrome/Safari versions.
-     */
-    * {
-        -webkit-print-color-adjust: exact !important;
-        print-color-adjust: exact !important;
-        color-adjust: exact !important;
-    }
-
-    @media print {
-        /* Strip shadows everywhere — they don't print well anyway. */
-        .stmt, .card, .glossary, .kpi, .brand, .notes { box-shadow: none !important; }
-
-        /* Avoid breaks ONLY on small atomic units. The income statement
-           (`.stmt`) is tall — forbidding breaks inside it pushes the whole
-           block to the next page and leaves a giant gap under the KPIs.
-           Allow the rows to flow naturally; just keep individual rows
-           together so a single subtotal line never splits across pages. */
-        .brand, .kpi, .notes,
-        .stmt__row, .stmt__row.subtotal, .stmt__row.final, .stmt__row.gross {
-            page-break-inside: avoid;
-        }
-        .section-title { page-break-after: avoid; }
-
-        /* Brand has no margin on print (margin would create a gap on the
-           paper edge — the @page already gives us proper margins). */
-        .brand { margin: 0 0 14px 0; border-radius: 0; }
-        .body-pad { padding: 0 16px 16px; }
-
-        body { font-size: 12px; }
-        .kpis { gap: 8px; }
-        .kpi { padding: 12px; }
-        .kpi__val { font-size: 17px; }
-
-        /* Hero gradient + colored card stripes need exact rendering */
-        .brand, .kpi, .stmt__row.subtotal, .stmt__row.gross,
-        .stmt__row.final, .notes, .notes__head, .card__head,
-        .items-table th, .pill, .rank, .stmt__row .pct {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-        }
-    }
+:root{--ink:#25343A;--muted:#626B6D;--brand:#A3422B;--line:#DFD7CB;--canvas:#F7F3ED;--surface:#FFFDFA;--red:#B83232;--gold:#B78338;--slate:#626B6D}
+@include('partials.market-vars')
+*{box-sizing:border-box}html,body{margin:0;font-family:var(--market-font-family);font-size:14px;line-height:1.7;color:var(--ink);background:var(--canvas)}
+.action-bar{display:flex;align-items:center;gap:14px;max-width:1040px;margin:20px auto;padding:16px 22px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}.action-bar__title{flex:1;font-weight:800}.action-bar__title small{display:block;color:var(--muted);font-size:13px;font-weight:400}.btn{min-height:44px;padding:10px 18px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink);font:700 14px var(--market-font-family);cursor:pointer}.btn--primary{background:var(--brand);border-color:var(--brand);color:#fff}
+.page{max-width:1040px;margin:0 auto 40px;background:var(--surface);border:1px solid var(--line)}.brand{padding:32px 36px 0;background:var(--surface);color:var(--ink)}.brand__row{display:flex;align-items:center;gap:18px}.brand__logo{display:grid;flex:0 0 54px;width:54px;height:54px;place-items:center;border:1px solid var(--line);border-radius:12px;color:var(--brand);font-size:30px;font-weight:800;background:var(--canvas)}.brand__head{flex:1}.brand h1{margin:3px 0;font-size:30px;line-height:1.35}.brand__eyebrow{font-size:13px;font-weight:800;color:var(--brand)}.brand__sub,.brand__meta{font-size:12px;color:var(--muted)}.brand__meta{line-height:1.85;text-align:end}.brand__meta strong{font-size:14px;color:var(--ink)}.brand__divider{height:2px;margin:24px 0 0;background:var(--ink)}.brand__period{display:grid;grid-template-columns:repeat(3,1fr);gap:14px 24px;padding:18px 0;border-bottom:1px solid var(--line)}.brand__period>div{display:flex;gap:8px;justify-content:space-between;font-size:12px}.brand__period .lbl{color:var(--muted)}.brand__period .val{font-weight:700}.pm-dot{display:none}.body-pad{padding:28px 36px 36px}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;border:1px solid var(--line);background:var(--line);margin-bottom:32px}.kpi{padding:20px 16px;background:var(--surface)}.kpi__lbl{color:var(--muted);font-size:13px}.kpi__val{font-size:21px;font-weight:800;line-height:1.8;white-space:nowrap;font-variant-numeric:tabular-nums}.kpi__sub{font-size:11px;color:var(--muted)}.kpi--net{background:var(--canvas)}.kpi--net .kpi__val{color:var(--brand)}.kpi--loss .kpi__val{color:var(--red)}
+.section-title{margin:28px 0 14px;font-size:19px;font-weight:800}.stmt{border-top:2px solid var(--ink);border-bottom:1px solid var(--line)}.stmt__row{display:grid;grid-template-columns:minmax(0,1fr) 180px 75px;gap:18px;padding:13px 12px;border-bottom:1px solid var(--line)}.stmt__row .amt,.stmt__row .pct{text-align:end;font-variant-numeric:tabular-nums}.stmt__row .amt{font-weight:700}.stmt__row .pct{font-size:12px;color:var(--muted)}.stmt__row.indent .lbl{padding-inline-start:20px;color:var(--muted)}.stmt__row.neg .amt{color:var(--red)}.stmt__row.subtotal{background:var(--canvas);font-weight:800}.stmt__row.final{padding:19px 12px;border-top:2px solid var(--ink);border-bottom:0;background:var(--ink);color:#fff;font-size:18px;font-weight:800}.stmt__row.final .pct{color:#fff}.stmt__row.final.is-loss{background:#8E302D}
+.notes{margin-top:22px;padding:18px;border-inline-start:3px solid var(--gold);background:var(--canvas)}.notes__head{font-weight:800;margin-bottom:8px}.notes__row{display:flex;justify-content:space-between;gap:24px;padding:6px 0;font-size:13px}.notes__row .amt{font-weight:700;white-space:nowrap}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:22px}.card{border:1px solid var(--line);margin-bottom:22px;min-width:0}.card__head{padding:16px 18px;border-bottom:1px solid var(--line)}.card__head h3{margin:0;font-size:16px}.card__head small{font-size:12px;color:var(--muted)}.table{width:100%;border-collapse:collapse;font-size:12px}.table th{padding:11px 12px;background:var(--canvas);color:var(--muted);font-weight:700;text-align:start}.table td{padding:12px;border-bottom:1px solid var(--line)}.table tr:last-child td{border-bottom:0}.table .num{font-weight:700;font-variant-numeric:tabular-nums}.empty{padding:24px;text-align:center;font-size:13px;color:var(--muted)}.dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-inline-end:6px;background:var(--brand)}.rank{color:var(--muted)}.pill{display:inline-block;padding:2px 7px;border:1px solid var(--line);border-radius:5px;font-size:11px}.muted{color:var(--muted)}.glossary{margin-top:24px;padding:16px 18px;border:1px solid var(--line);font-size:12px;color:var(--muted)}.glossary strong{color:var(--ink)}.signature{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:36px}.signature .box{padding:24px 0 8px;border-bottom:1px solid var(--ink);font-size:13px;color:var(--muted)}.footer-note{margin-top:24px;padding-top:14px;border-top:1px solid var(--line);text-align:center;color:var(--muted);font-size:11px}
+@media(max-width:720px){.action-bar{margin:12px;flex-wrap:wrap}.action-bar__title{flex-basis:100%}.page{margin:12px}.brand{padding:22px 20px 0}.brand__row{flex-wrap:wrap}.brand__meta{width:100%;text-align:start}.body-pad{padding:20px}.brand__period,.kpis,.grid-2{grid-template-columns:1fr 1fr}.stmt__row{grid-template-columns:minmax(0,1fr) 120px 48px;gap:8px;font-size:12px}.kpi__val{font-size:18px}}
+@media print{@page{size:A4;margin:12mm}html,body{background:#fff;font-size:11px}.action-bar,.no-print{display:none!important}.page{max-width:100%;margin:0;border:0}.brand{padding:0}.brand h1{font-size:24px}.body-pad{padding:18px 0 0}.brand__period{font-size:10px;gap:8px 18px}.brand__row{flex-wrap:nowrap}.brand__meta{width:auto;text-align:end}.kpi{padding:12px}.kpi__val{font-size:17px}.kpi__lbl{font-size:11px}.kpi__sub{font-size:10px}.section-title{font-size:16px;margin:20px 0 12px}.stmt__row{padding:9px 8px;grid-template-columns:minmax(0,1fr) 130px 50px;font-size:11px}.stmt__row.final{font-size:15px}.table{font-size:10px}.table td,.table th{padding:8px}.brand__period{grid-template-columns:repeat(3,1fr)}.kpis{grid-template-columns:repeat(4,1fr)}.grid-2{grid-template-columns:1fr 1fr}.brand,.kpis,.stmt__row,.card,.notes,.signature,tr{break-inside:avoid}.table thead{display:table-header-group}}
 </style>
 </head>
 <body>
@@ -410,8 +43,8 @@
 {{-- ═══════════════ ACTION BAR (hidden on print) ═══════════════ --}}
 <div class="action-bar">
     <div class="action-bar__title">
-        تفاصيل الصندوق · {{ $brand['name'] }}
-        <small>اضغط زر "اطبع" أدناه أو استخدم Ctrl/⌘ + P · لحفظه PDF اختر "حفظ بصيغة PDF" من نافذة الطباعة</small>
+        الأرباح والخسائر · {{ $brand['name'] }}
+        <small>تقرير الفترة · جاهز للطباعة أو الحفظ PDF</small>
     </div>
     <button type="button" class="btn btn--primary" data-print-document>
         <span>🖨</span>
@@ -430,7 +63,7 @@
     <div class="brand__row">
         <div class="brand__logo">{{ mb_substr($brand['name'], 0, 1) }}</div>
         <div class="brand__head">
-            <span class="brand__eyebrow">تفاصيل الصندوق</span>
+            <span class="brand__eyebrow">الأرباح والخسائر</span>
             <h1>{{ $brand['name'] }}</h1>
             <div class="brand__sub">
                 @if($brand['legal']){{ $brand['legal'] }}@endif

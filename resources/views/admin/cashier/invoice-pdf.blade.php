@@ -10,7 +10,7 @@
     <style>
         @page { margin: 20mm 17mm 18mm; }
         * { box-sizing: border-box; }
-        body { margin: 0; color: #243129; text-align: right; font-family: tajawal, sans-serif; font-size: 10px; line-height: 1.55; }
+        body { margin: 0; color: #243129; text-align: right; font-family: cairo, sans-serif; font-size: 10px; line-height: 1.55; }
         .invoice-a4 { width: 100%; }
         .a4-head { width: 100%; margin-bottom: 18px; border-collapse: collapse; }
         .a4-head td { vertical-align: middle; }
@@ -31,7 +31,7 @@
         .brand-copy p { margin: 2px 0 0; color: #68756e; font-size: 8.5px; }
         .document-copy { width: 235px; text-align: start; }
         .document-copy h2 { margin: 0; color: {!! $theme['primary'] !!}; font-size: 19px; }
-        .document-number { margin-top: 3px; color: #28352e; unicode-bidi: plaintext; font-family: tajawal, sans-serif; font-size: 9px; }
+        .document-number { margin-top: 3px; color: #28352e; unicode-bidi: plaintext; font-family: cairo, sans-serif; font-size: 9px; }
         .status-badge {
             display: inline-block;
             margin-top: 6px;
@@ -84,6 +84,8 @@
         .invoice-footer strong { display: block; margin-bottom: 2px; color: {!! $theme['dark'] !!}; font-size: 10px; }
         bdi, .code-value { unicode-bidi: plaintext; }
         bdi { font-family: dejavusans, sans-serif; }
+
+        body{color:#25343A;font-size:11px;line-height:1.65}.a4-head{margin-bottom:22px}.brand-mark-cell{width:58px}.brand-mark{width:46px;height:46px;line-height:46px;border:1px solid #DFD7CB;background:#F7F3ED;color:#A3422B;border-radius:0}.brand-copy h1{font-size:24px}.brand-copy p{font-size:10px;color:#626B6D}.document-copy{width:220px}.document-copy h2{font-size:20px;color:#25343A}.document-number{font-size:12px;font-weight:700}.accent-line{height:2px;background:#25343A;margin-bottom:18px}.meta-table{border-collapse:collapse;margin-bottom:22px}.meta-table td{padding:12px;border:1px solid #DFD7CB;border-radius:0;background:#F7F3ED}.meta-table span{font-size:9px;color:#626B6D}.meta-table strong{font-size:11px;color:#25343A}.section-title{font-size:13px;margin-bottom:10px}.items-table th{padding:11px 8px;font-size:10px;border-color:#25343A;background:#F7F3ED;color:#626B6D}.items-table td{padding:12px 8px;border-color:#DFD7CB}.item-detail{font-size:9px}.summary-side{width:48%;padding-left:22px}.summary-total{width:52%;padding-top:10px}.customer-card,.payment-card,.notice-card{padding:13px;border-color:#DFD7CB;background:#FFFDFA;border-radius:0}.customer-card strong,.payment-card strong,.notice-card strong{font-size:11px}.customer-card span,.notice-card span{font-size:10px}.totals-table td{padding:7px 0}.totals-table .grand td{font-size:17px;padding:13px 0;border-color:#25343A}.payments-table td{font-size:10px;padding:6px 0}.status-badge{border-color:#DFD7CB;border-radius:0;background:#F7F3ED;font-size:9px;color:#25343A}.status-badge.is-paid{background:#F7F3ED;color:#25343A;border-color:#DFD7CB}.invoice-footer{margin-top:28px;padding-top:14px;font-size:10px;border-color:#DFD7CB;color:#626B6D}.invoice-footer strong{font-size:12px}
     </style>
 </head>
 <body>

@@ -1,4 +1,5 @@
 <script setup>
+import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 import { reactive } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import AdminLayout from '../../../Layouts/AdminLayout.vue';
@@ -38,23 +39,27 @@ async function reopen(transfer) {
 </script>
 
 <template>
-    <Head :title="`مطابقة تحويلات ${date}`" />
-
-    <PageHeader title="مطابقة التحويلات البنكية" icon="bi-clipboard-data"
+<Head :title="`مطابقة تحويلات ${date}`" />
+<FinancialWorkspace area="التحويلات المالية" mode="records">
+<template #heading>
+<PageHeader title="مطابقة التحويلات البنكية" icon="bi-clipboard-data"
                 subtitle="المبلغ المؤكد هو ما دخل البنك فعلياً، وليس المبلغ الذي أبلغه الزبون"
                 :crumbs="[{ label: 'تأكيد التحويلات', url: urls.queue }]" />
-
-    <CollectionNav :items="collectionNav" active="transfer-report" />
-
-    <div class="report-date"><form @submit.prevent="visit"><label><span>يوم المطابقة</span><input v-model="filter.date" type="date" required></label><button class="btn btn-primary"><i class="bi bi-arrow-repeat"></i> عرض اليوم</button></form><div><span>إجمالي الادعاءات</span><strong>{{ totals.claimsFormatted }}</strong><small>دخل البنك المؤكد: {{ totals.verifiedActualFormatted }}</small></div></div>
-
-    <StatRail :stats="[
+</template>
+<template #navigation>
+<CollectionNav :items="collectionNav" active="transfer-report" />
+</template>
+<template #filters>
+<div class="report-date"><form @submit.prevent="visit"><label><span>يوم المطابقة</span><input v-model="filter.date" type="date" required></label><button class="btn btn-primary"><i class="bi bi-arrow-repeat"></i> عرض اليوم</button></form><div><span>إجمالي الادعاءات</span><strong>{{ totals.claimsFormatted }}</strong><small>دخل البنك المؤكد: {{ totals.verifiedActualFormatted }}</small></div></div>
+</template>
+<template #metrics>
+<StatRail :stats="[
         { label: `مؤكد · ${summary.verified.count}`, value: summary.verified.amountFormatted, icon: 'bi-check2-circle', color: 'success' },
         { label: `بانتظار · ${summary.pending.count}`, value: summary.pending.amountFormatted, icon: 'bi-hourglass-split', color: 'warning' },
         { label: `مرفوض · ${summary.rejected.count}`, value: summary.rejected.amountFormatted, icon: 'bi-x-octagon', color: 'danger' },
     ]" />
-
-    <DataPanel title="حركة اليوم" :count="rows.length" icon="bi-list-check">
+</template>
+<DataPanel title="حركة اليوم" :count="rows.length" icon="bi-list-check">
         <div v-if="rows.length" class="report-list">
             <article v-for="transfer in rows" :key="transfer.id" :class="`is-${transfer.status}`">
                 <span class="state-icon"><i class="bi" :class="transfer.status === 'verified' ? 'bi-check2' : (transfer.status === 'rejected' ? 'bi-x-lg' : 'bi-hourglass-split')"></i></span>
@@ -67,40 +72,42 @@ async function reopen(transfer) {
         </div>
         <EmptyState v-else icon="bi-inbox" title="لا تحويلات في هذا اليوم" message="اختر يوماً آخر أو ارجع إلى طابور التأكيد." />
     </DataPanel>
+</FinancialWorkspace>
+
 </template>
 
 <style scoped>
 .report-date { display: grid; grid-template-columns: minmax(330px, .8fr) minmax(260px, 1fr); gap: .7rem; margin-bottom: .8rem; }
 .report-date > form, .report-date > div { min-height: 70px; display: flex; align-items: end; gap: .55rem; padding: .65rem .75rem; border: 1px solid #e0e8e3; border-radius: 13px; background: #fff; }
-.report-date label { flex: 1; display: grid; gap: .2rem; color: #78877f; font-size: .62rem; }
+.report-date label { flex: 1; display: grid; gap: .2rem; color: #A3422B; font-size: .875rem; }
 .report-date input { min-height: 42px; padding: .5rem .65rem; border: 1px solid #dce5e0; border-radius: 9px; }
 .report-date > div { display: grid; grid-template-columns: 1fr auto; align-content: center; align-items: center; background: #f2f8f4; }
-.report-date > div span, .report-date > div small { color: #77867e; font-size: .64rem; }
-.report-date > div strong { color: #173d2a; font-family: ui-monospace, monospace; font-size: 1rem; }
+.report-date > div span, .report-date > div small { color: #A3422B; font-size: .875rem; }
+.report-date > div strong { color: #25343A; font-family: ui-monospace, monospace; font-size: 1rem; }
 .report-date > div small { grid-column: 1 / -1; }
 .report-list { display: grid; gap: .45rem; }
 .report-list article { position: relative; display: grid; grid-template-columns: auto minmax(145px, .8fr) minmax(130px, .7fr) minmax(150px, .7fr) minmax(180px, 1fr) auto; gap: .65rem; align-items: center; padding: .65rem .7rem; border: 1px solid #e2e9e5; border-radius: 12px; overflow: hidden; }
 .report-list article::before { content: ''; position: absolute; inset-block: 0; inset-inline-start: 0; width: 4px; background: #d59b2b; }
-.report-list article.is-verified::before { background: #19824a; }
+.report-list article.is-verified::before { background: #A3422B; }
 .report-list article.is-rejected::before { background: #c63c3c; }
 .state-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; background: #fff5df; color: #956412; }
-.is-verified .state-icon { background: #e9f7ee; color: #147540; }
+.is-verified .state-icon { background: #e9f7ee; color: #A3422B; }
 .is-rejected .state-icon { background: #fff0f0; color: #b43232; }
 .report-id time, .report-id strong, .report-id small, .report-person span, .report-person small { display: block; }
-.report-id time { color: #8b9790; font-size: .58rem; }
-.report-id strong { color: #203b2e; font-size: .76rem; }
-.report-id small, .report-person { color: #7b8982; font-size: .61rem; }
+.report-id time { color: #8b9790; font-size: .875rem; }
+.report-id strong { color: #25343A; font-size: .875rem; }
+.report-id small, .report-person { color: #7b8982; font-size: .875rem; }
 .report-person i { margin-inline-end: .25rem; }
 .report-money { display: grid; grid-template-columns: auto 1fr; gap: .1rem .35rem; align-items: center; }
-.report-money small { color: #8a968f; font-size: .57rem; }
-.report-money span, .report-money strong { color: #284737; font-family: ui-monospace, monospace; font-size: .68rem; }
+.report-money small { color: #8a968f; font-size: .875rem; }
+.report-money span, .report-money strong { color: #25343A; font-family: ui-monospace, monospace; font-size: .875rem; }
 .report-money strong.changed { color: #a66b10; }
-.report-decision span { display: inline-block; padding: .18rem .4rem; border-radius: 7px; background: #fff4dc; color: #916111; font-size: .59rem; font-weight: 800; }
-.is-verified .report-decision span { background: #e9f7ee; color: #13743f; }
+.report-decision span { display: inline-block; padding: .18rem .4rem; border-radius: 7px; background: #fff4dc; color: #916111; font-size: .875rem; font-weight: 800; }
+.is-verified .report-decision span { background: #e9f7ee; color: #A3422B; }
 .is-rejected .report-decision span { background: #fff0f0; color: #b43232; }
-.report-decision p { margin: .2rem 0 0; overflow: hidden; color: #7d8a83; font-size: .59rem; text-overflow: ellipsis; white-space: nowrap; }
+.report-decision p { margin: .2rem 0 0; overflow: hidden; color: #7d8a83; font-size: .875rem; text-overflow: ellipsis; white-space: nowrap; }
 .report-actions { display: flex; gap: .3rem; }
-.report-actions a, .report-actions button { width: 40px; height: 40px; display: grid; place-items: center; border: 1px solid #dce5e0; border-radius: 9px; background: #fff; color: #176f41; text-decoration: none; }
+.report-actions a, .report-actions button { width: 40px; height: 40px; display: grid; place-items: center; border: 1px solid #dce5e0; border-radius: 9px; background: #fff; color: #A3422B; text-decoration: none; }
 .report-actions button { color: #936414; border-color: #e3c47f; }
 @media (max-width: 1000px) { .report-list article { grid-template-columns: auto 1fr 1fr auto; } .report-person, .report-money { grid-row: 2; } .report-decision { grid-column: 2 / 4; } }
 @media (max-width: 650px) {

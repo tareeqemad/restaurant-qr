@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
-import { fetchCashierState } from '../Api/cashierApi';
+import { fetchCashierState } from '../Api/cashierApi.js';
 
 export const useCashierStore = defineStore('cashier-workspace', () => {
     const snapshot = ref(null);
@@ -62,6 +62,7 @@ export const useCashierStore = defineStore('cashier-workspace', () => {
     }
 
     function start(initialState, endpoint) {
+        stop();
         snapshot.value = initialState;
         stateEndpoint.value = endpoint;
         search.value = initialState.filters?.search ?? '';
@@ -76,11 +77,26 @@ export const useCashierStore = defineStore('cashier-workspace', () => {
         }
 
         lastSuccessfulRefresh.value = initialState.generated_at ?? null;
+        lastError.value = '';
         financialUpdate.value = null;
     }
 
-    async function refresh({ force = false, source = 'manual' } = {}) {
+    function stop() {
+        requestSequence++;
+        activeRequest?.abort();
+        activeRequest = null;
+        refreshing.value = false;
+    }
+
+    async function refresh({ force = false, source = 'manual', scope = 'all' } = {}) {
         if (!stateEndpoint.value) return { changed: false, skipped: true };
+        // A background pulse must never cancel a bill the cashier is opening.
+        if (source === 'poll' && activeRequest) return { changed: false, skipped: true };
+
+        const filtersChanged = snapshot.value?.filters?.mode !== mode.value
+            || snapshot.value?.filters?.filter !== filter.value
+            || snapshot.value?.filters?.search !== search.value;
+        const needsFullRead = force || filtersChanged || (selection.value && !workspace.value);
 
         const sequence = ++requestSequence;
         activeRequest?.abort();
@@ -96,8 +112,9 @@ export const useCashierStore = defineStore('cashier-workspace', () => {
                 search: search.value,
                 session_id: selection.value?.kind === 'session' ? selection.value.id : null,
                 order_id: selection.value?.kind === 'order' ? selection.value.id : null,
-                since: force ? null : snapshot.value?.version,
-                full: force ? 1 : null,
+                since: needsFullRead ? null : snapshot.value?.version,
+                full: needsFullRead ? 1 : null,
+                scope: scope === 'workspace' ? 'workspace' : null,
             }, { signal: activeRequest.signal });
 
             if (sequence !== requestSequence) return { changed: false, stale: true };
@@ -106,13 +123,23 @@ export const useCashierStore = defineStore('cashier-workspace', () => {
                 throw new Error(safeRefreshMessage(result.data.message));
             }
 
-            if (result.data.data?.changed) {
+            const data = result.data.data;
+            if (!data || typeof data.changed !== 'boolean'
+                || (data.changed && !Object.hasOwn(data, 'workspace'))) {
+                throw new Error('تعذّر قراءة بيانات الكاشير. أعد التحديث.');
+            }
+
+            if (data.changed) {
                 const previousMoney = workspaceMoneyState(workspace.value);
-                snapshot.value = result.data.data;
+                // A bill-only response leaves queue data AND its version alone.
+                // Advancing that version would hide changes from the next poll.
+                snapshot.value = data.scope === 'workspace'
+                    ? { ...snapshot.value, workspace: data.workspace }
+                    : data;
 
                 // A payment can close a session while it is open. Returning to
                 // the queue is clearer than leaving a stale receipt on screen.
-                if (selection.value && !result.data.data.workspace) selection.value = null;
+                if (selection.value && !data.workspace) selection.value = null;
 
                 const currentMoney = workspaceMoneyState(workspace.value);
                 if (source === 'poll'
@@ -128,8 +155,8 @@ export const useCashierStore = defineStore('cashier-workspace', () => {
                 }
             }
 
-            lastSuccessfulRefresh.value = result.data.data?.generated_at ?? lastSuccessfulRefresh.value;
-            return { changed: Boolean(result.data.data?.changed), skipped: false };
+            lastSuccessfulRefresh.value = data.generated_at ?? lastSuccessfulRefresh.value;
+            return { changed: data.changed, skipped: false };
         } catch (error) {
             if (error?.name === 'AbortError' || sequence !== requestSequence) {
                 return { changed: false, stale: true };
@@ -150,12 +177,13 @@ export const useCashierStore = defineStore('cashier-workspace', () => {
         if (!numericId || !['session', 'order'].includes(kind)) return;
 
         selection.value = { kind, id: numericId };
-        await refresh({ force: true });
+        await refresh({ force: true, scope: 'workspace' });
     }
 
     async function clearSelection() {
+        stop();
         selection.value = null;
-        await refresh({ force: true });
+        if (snapshot.value) snapshot.value = { ...snapshot.value, workspace: null };
     }
 
     return {
@@ -176,6 +204,7 @@ export const useCashierStore = defineStore('cashier-workspace', () => {
         today,
         abilities,
         start,
+        stop,
         refresh,
         select,
         clearSelection,

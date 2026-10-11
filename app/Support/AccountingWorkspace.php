@@ -21,7 +21,7 @@ class AccountingWorkspace
     {
         $user = auth()->user();
 
-        return [
+        $urls = [
             'home' => route('admin.accounting.index'),
             'guide' => route('admin.accounting.guide'),
             'journal' => route('admin.accounting.journal'),
@@ -48,5 +48,31 @@ class AccountingWorkspace
                 ? route('admin.accounting.settlements') : null,
             'fixedAssets' => route('admin.accounting.fixed-assets.index'),
         ];
+
+        // Carry the chosen review period through the workspace, including a
+        // visit via setup/home, instead of silently comparing different months.
+        $period = array_filter(request()->only(['from', 'to']), static fn ($value) => is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $value));
+        $asOf = request()->input('as_of', request()->input('statement_date'));
+        if (is_string($asOf) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $asOf)) {
+            $period['to'] = $asOf;
+            $period['from'] ??= substr($asOf, 0, 7).'-01';
+        }
+        if ($period !== []) {
+            foreach ($urls as $key => &$url) {
+                if ($url) {
+                    $parameters = $period;
+                    if (isset($period['to'])) {
+                        if (in_array($key, ['balanceSheet', 'aging', 'settlements'], true)) {
+                            $parameters['as_of'] = $period['to'];
+                        } elseif ($key === 'reconciliations') {
+                            $parameters['statement_date'] = $period['to'];
+                        }
+                    }
+                    $url .= (str_contains($url, '?') ? '&' : '?').http_build_query($parameters);
+                }
+            }
+        }
+
+        return $urls;
     }
 }

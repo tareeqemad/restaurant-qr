@@ -222,6 +222,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+    cashier.stop();
     if (searchTimer) window.clearTimeout(searchTimer);
     window.removeEventListener("keydown", handleEscape);
     if (typeof document !== "undefined")
@@ -514,14 +515,7 @@ function runCommand(name, payload = {}) {
     }
 
     if (name === "issue" && cashier.workspace) {
-        commandError.value = "";
-        confirmation.value = {
-            name: "issue",
-            title: "إصدار الفاتورة",
-            message:
-                "سيتم تثبيت قيمة الطلبات وترحيل قيد الفاتورة. تأكد أن طلبات التعديل أو الإلغاء عولجت أولاً.",
-            confirmLabel: "إصدار الآن",
-        };
+        issueInvoice();
         return;
     }
 
@@ -533,6 +527,41 @@ function runCommand(name, payload = {}) {
     commandError.value = "";
     commandErrors.value = {};
     paymentOpen.value = true;
+}
+
+async function issueInvoice() {
+    const selected = cashier.workspace;
+    if (commandBusy.value || !selected) return;
+
+    commandBusy.value = true;
+    let issued = false;
+    try {
+        const endpoint = selected.kind === "session"
+            ? commands.value.issue_session.replace(":session", selected.id)
+            : commands.value.issue_order.replace(":order", selected.id);
+        const result = await sendCashierCommand(endpoint, {});
+        if (!result.ok) {
+            showNotice("error", result.data.message || "تعذّر إصدار الفاتورة.");
+            return;
+        }
+        issued = true;
+
+        // The cashier may select another table while the write is pending.
+        // Never open its payment form as a side effect of the previous bill.
+        if (cashier.selection?.kind !== selected.kind || cashier.selection?.id !== selected.id) return;
+        await cashier.refresh({ force: true, scope: "workspace" });
+        if (cashier.workspace?.kind === selected.kind
+            && cashier.workspace?.id === selected.id
+            && cashier.workspace?.invoice?.balance > 0) {
+            runCommand("payment", { workspace: cashier.workspace });
+        }
+    } catch {
+        showNotice("error", issued
+            ? "تم إصدار الفاتورة؛ تعذّر تحميل الحساب. حدّث الشاشة."
+            : "لم يصل تأكيد الفاتورة. حدّث الحساب قبل إعادة المحاولة.");
+    } finally {
+        commandBusy.value = false;
+    }
 }
 
 function openRefund() {
@@ -552,18 +581,7 @@ async function confirmCommand() {
         let endpoint;
         let payload = {};
 
-        if (confirmation.value.name === "issue") {
-            endpoint =
-                cashier.workspace.kind === "session"
-                    ? commands.value.issue_session.replace(
-                          ":session",
-                          cashier.workspace.id,
-                      )
-                    : commands.value.issue_order.replace(
-                          ":order",
-                          cashier.workspace.id,
-                      );
-        } else if (confirmation.value.name === "remove-discount") {
+        if (confirmation.value.name === "remove-discount") {
             endpoint = commands.value.remove_discount.replace(
                 ":discount",
                 confirmation.value.discountId,
@@ -609,15 +627,10 @@ async function confirmCommand() {
         showNotice("success", result.data.message);
         if (completedName === "close-empty-session") {
             await clearWorkspace();
+            await refreshState(true);
             return;
         }
         await refreshState(true);
-        if (
-            completedName === "issue" &&
-            cashier.workspace?.invoice?.balance > 0
-        ) {
-            runCommand("payment", { workspace: cashier.workspace });
-        }
     } catch {
         commandError.value =
             "انقطع الاتصال. أعد المحاولة من نفس النافذة؛ رمز العملية يمنع التنفيذ المكرر.";
@@ -1295,7 +1308,7 @@ async function submitCustomerCreate(payload) {
                 </div>
             </div>
 
-            <div class="today-kpis" aria-label="ملخص تحصيلي اليوم">
+            <details class="shift-summary"><summary><i class="bi bi-wallet2"></i> تحصيل الوردية <strong>{{ formatMoney(cashier.today.net, currency) }}</strong><i class="bi bi-chevron-down"></i></summary><div class="today-kpis" aria-label="ملخص تحصيلي اليوم">
                 <span class="is-primary">
                     <small>صافي تحصيلي</small>
                     <strong :class="{ 'is-negative': cashier.today.net < 0 }">{{
@@ -1329,6 +1342,8 @@ async function submitCustomerCreate(payload) {
                     ></span
                 >
             </div>
+
+            </details>
 
             <div class="header-actions">
                 <span class="connection" :class="{ offline: !online }">
@@ -1640,11 +1655,11 @@ async function submitCustomerCreate(payload) {
 
 <style scoped>
 .cashier-page {
-    --cx-primary: rgb(var(--primary-rgb, 22 101 52));
+    --cx-primary: var(--brand, #A3422B);
     min-height: calc(100dvh - 170px);
     box-sizing: border-box;
-    padding: 0.55rem 0 1rem;
-    color: #25332a;
+    padding: .75rem 0 1rem;
+    color: var(--ink, var(--ink));
     background: transparent;
     font-family: inherit;
 }
@@ -1655,6 +1670,9 @@ async function submitCustomerCreate(payload) {
     align-items: center;
     max-width: 1680px;
     margin: 0 auto 0.6rem;
+    padding: 0 0 1rem;
+    border-bottom: 1px solid var(--line, var(--line));
+    margin-bottom: 1rem;
 }
 .page-title {
     display: flex;
@@ -1663,13 +1681,13 @@ async function submitCustomerCreate(payload) {
 }
 .page-mark {
     display: grid;
-    width: 42px;
-    height: 42px;
+    width: 48px;
+    height: 48px;
     place-items: center;
     border-radius: 12px;
-    color: #fff;
-    background: var(--cx-primary);
-    box-shadow: 0 7px 16px -10px rgba(12, 59, 29, 0.9);
+    color: #FFFDFA;
+    background: var(--brand, #A3422B);
+    box-shadow: none;
     font-size: 0.95rem;
 }
 .page-title > div {
@@ -1677,44 +1695,46 @@ async function submitCustomerCreate(payload) {
     flex-direction: column;
 }
 .page-title small {
-    color: #7a877e;
-    font-size: 0.62rem;
+    color: var(--muted, var(--muted));
+    font-size: .875rem;
     font-weight: 700;
 }
 .page-title h1 {
     margin: 0.05rem 0 0;
-    color: #17291e;
-    font-size: 1.12rem;
+    color: var(--ink, var(--ink));
+    font-size: 1.5rem;
+    font-weight: 800;
 }
 .today-kpis {
     display: flex;
     justify-content: center;
-    gap: 0.35rem;
+    gap: .6rem;
 }
 .today-kpis > span {
     display: flex;
     min-width: 105px;
-    min-height: 42px;
+    min-height: 56px;
     box-sizing: border-box;
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
-    padding: 0.38rem 0.55rem;
-    border: 1px solid #e0e7e2;
-    border-radius: 10px;
-    background: #fff;
+    padding: .55rem .75rem;
+    border: 1px solid var(--line, var(--line));
+    border-radius: 8px;
+    background: var(--surface, #FFFDFA);
 }
 .today-kpis small {
-    color: #78857d;
-    font-size: 0.61rem;
+    color: var(--muted, var(--muted));
+    font-size: .875rem;
 }
 .today-kpis strong {
-    color: #294331;
-    font-size: 0.7rem;
+    color: var(--ink, var(--ink));
+    font-size: 1.05rem;
+    font-variant-numeric: tabular-nums;
 }
 .today-kpis .is-primary {
-    border-color: rgba(var(--primary-rgb, 22 101 52), 0.28);
-    background: rgba(var(--primary-rgb, 22 101 52), 0.055);
+    border-color: var(--line, var(--line));
+    background: var(--brand-soft, #F3E3D8);
 }
 .today-kpis .is-primary strong {
     color: var(--cx-primary);
@@ -1739,9 +1759,9 @@ async function submitCustomerCreate(payload) {
     gap: 0.3rem;
     padding-inline: 0.55rem;
     border-radius: 9px;
-    color: #237341;
-    background: #eaf8ee;
-    font-size: 0.65rem;
+    color: var(--brand);
+    background: var(--brand-soft);
+    font-size: .875rem;
     font-weight: 750;
 }
 .connection.offline {
@@ -1756,13 +1776,13 @@ async function submitCustomerCreate(payload) {
     align-items: center;
     gap: 0.35rem;
     padding-inline: 0.7rem;
-    border: 1px solid #dce5df;
-    border-radius: 10px;
-    color: #415348;
-    background: #fff;
+    border: 1px solid var(--line, var(--line));
+    border-radius: 8px;
+    color: var(--muted, var(--muted));
+    background: var(--surface, #FFFDFA);
     text-decoration: none;
     font: inherit;
-    font-size: 0.68rem;
+    font-size: .875rem;
     font-weight: 750;
 }
 .header-actions button:disabled {
@@ -1774,8 +1794,8 @@ async function submitCustomerCreate(payload) {
     background: #fff9ed;
 }
 .header-actions .handover-trigger.ready {
-    border-color: #b9ddc4;
-    color: #217241;
+    border-color: var(--brand);
+    color: var(--brand);
     background: #eff9f2;
 }
 .handover-trigger b {
@@ -1783,26 +1803,26 @@ async function submitCustomerCreate(payload) {
     min-width: 19px;
     height: 19px;
     place-items: center;
-    border-radius: 999px;
-    color: #fff;
+    border-radius: 8px;
+    color: #FFFDFA;
     background: #b26a12;
-    font-size: 0.58rem;
+    font-size: .875rem;
 }
 .handover-panel {
     max-width: 1680px;
     margin: 0 auto 0.55rem;
     overflow: hidden;
     border: 1px solid #e4c88f;
-    border-radius: 14px;
-    background: #fff;
-    box-shadow: 0 12px 28px -26px rgba(62, 46, 16, 0.8);
+    border-radius: 12px;
+    background: var(--surface, #FFFDFA);
+    box-shadow: none;
 }
 .handover-panel > header {
     display: flex;
     align-items: center;
     gap: 0.65rem;
     padding: 0.7rem 0.8rem;
-    background: linear-gradient(115deg, #fff8e9, #fff 72%);
+    background: var(--surface, #FFFDFA);
 }
 .handover-panel > header > span {
     display: grid;
@@ -1812,7 +1832,7 @@ async function submitCustomerCreate(payload) {
     place-items: center;
     border-radius: 11px;
     color: #9d620d;
-    background: #fff;
+    background: var(--surface, #FFFDFA);
 }
 .handover-panel > header > div {
     display: grid;
@@ -1820,17 +1840,17 @@ async function submitCustomerCreate(payload) {
 }
 .handover-panel > header small {
     color: #936c30;
-    font-size: 0.59rem;
+    font-size: .875rem;
     font-weight: 800;
 }
 .handover-panel > header strong {
     color: #4b3718;
-    font-size: 0.82rem;
+    font-size: .875rem;
 }
 .handover-panel > header p {
     margin: 0.1rem 0 0;
-    color: #7d7464;
-    font-size: 0.63rem;
+    color: var(--muted, var(--muted));
+    font-size: .875rem;
 }
 .handover-panel > header > button {
     display: grid;
@@ -1838,29 +1858,29 @@ async function submitCustomerCreate(payload) {
     height: 34px;
     place-items: center;
     border: 0;
-    border-radius: 9px;
-    color: #7e725f;
+    border-radius: 8px;
+    color: var(--muted, var(--muted));
     background: rgba(255, 255, 255, 0.82);
 }
 .handover-panel.ready {
-    border-color: #b8dcc3;
+    border-color: var(--brand);
 }
 .handover-panel.ready > header {
-    background: linear-gradient(115deg, #edf8f1, #fff 72%);
+    background: #edf8f1;
 }
 .handover-panel.ready > header > span,
 .handover-panel.ready > header small {
-    color: #237443;
+    color: var(--brand);
 }
 .handover-panel.ready > header strong {
-    color: #21442d;
+    color: var(--brand);
 }
 .handover-tasks {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 0.45rem;
     padding: 0.55rem;
-    border-top: 1px solid #f0e7d7;
+    border-top: 1px solid var(--line);
 }
 .handover-tasks > button {
     display: grid;
@@ -1869,10 +1889,10 @@ async function submitCustomerCreate(payload) {
     gap: 0.45rem;
     min-height: 58px;
     padding: 0.45rem;
-    border: 1px solid #e7e4dd;
-    border-radius: 10px;
-    color: #35423a;
-    background: #fff;
+    border: 1px solid var(--line, var(--line));
+    border-radius: 8px;
+    color: var(--ink, var(--ink));
+    background: var(--surface, #FFFDFA);
     text-align: start;
 }
 .handover-tasks > button:hover {
@@ -1884,7 +1904,7 @@ async function submitCustomerCreate(payload) {
     width: 31px;
     height: 31px;
     place-items: center;
-    border-radius: 9px;
+    border-radius: 8px;
     color: #9b620e;
     background: #fff4df;
 }
@@ -1894,24 +1914,24 @@ async function submitCustomerCreate(payload) {
 }
 .handover-tasks strong {
     overflow: hidden;
-    font-size: 0.67rem;
+    font-size: .875rem;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 .handover-tasks small {
     overflow: hidden;
-    color: #7d8981;
-    font-size: 0.56rem;
+    color: var(--muted, var(--muted));
+    font-size: .875rem;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 .handover-tasks b {
     color: #9d5700;
-    font-size: 0.76rem;
+    font-size: .875rem;
 }
 .handover-tasks > button > i {
-    color: #a9aaa4;
-    font-size: 0.6rem;
+    color: var(--muted, var(--muted));
+    font-size: .875rem;
 }
 .handover-ready {
     display: flex;
@@ -1919,9 +1939,9 @@ async function submitCustomerCreate(payload) {
     gap: 0.4rem;
     margin: 0;
     padding: 0.7rem 0.85rem;
-    border-top: 1px solid #e4eee7;
-    color: #277344;
-    font-size: 0.68rem;
+    border-top: 1px solid var(--line);
+    color: var(--brand);
+    font-size: .875rem;
     font-weight: 800;
 }
 .handover-panel > footer {
@@ -1929,10 +1949,10 @@ async function submitCustomerCreate(payload) {
     align-items: center;
     gap: 0.35rem;
     padding: 0.45rem 0.75rem;
-    border-top: 1px solid #edf0ee;
-    color: #78857d;
-    background: #fafbfa;
-    font-size: 0.57rem;
+    border-top: 1px solid var(--line, var(--line));
+    color: var(--muted, var(--muted));
+    background: var(--surface, #FFFDFA);
+    font-size: .875rem;
 }
 .cashier-notice {
     display: flex;
@@ -1947,7 +1967,7 @@ async function submitCustomerCreate(payload) {
     border-radius: 11px;
     color: #76520a;
     background: #fff9e9;
-    font-size: 0.68rem;
+    font-size: .875rem;
 }
 .cashier-notice.is-error {
     border-color: #efbcc1;
@@ -1955,7 +1975,7 @@ async function submitCustomerCreate(payload) {
     background: #fff3f4;
 }
 .cashier-notice.is-success {
-    border-color: #b9dfc5;
+    border-color: var(--line);
     color: #196f38;
     background: #effaf2;
 }
@@ -1980,9 +2000,10 @@ async function submitCustomerCreate(payload) {
     max-width: 1680px;
     height: calc(100dvh - 315px);
     min-height: 520px;
-    grid-template-columns: minmax(275px, 330px) minmax(0, 1fr);
-    gap: 0.65rem;
+    grid-template-columns: minmax(310px, 360px) minmax(0, 1fr);
+    gap: 1rem;
     margin: 0.65rem auto 0;
+    margin-top: 1rem;
 }
 .spinning {
     animation: spin 0.75s linear infinite;
@@ -2077,4 +2098,7 @@ async function submitCustomerCreate(payload) {
         animation: none;
     }
 }
+
+/* Task-focused workspace layout. */
+.cashier-page{gap:14px;min-width:0}.cashier-header{display:grid;grid-template-columns:1fr auto;gap:14px;padding:0 0 14px;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;align-items:center}.page-mark{display:none}.page-title h1{font-size:26px}.page-title small{font-size:14px;color:var(--muted)}.header-actions{grid-column:1/-1;display:flex;justify-content:flex-start;flex-wrap:wrap;gap:8px}.header-actions button,.header-actions a{min-height:42px;border-radius:8px}.shift-summary{position:relative;align-self:center}.shift-summary summary{display:flex;gap:10px;align-items:center;cursor:pointer;list-style:none;font-size:14px;padding:12px;background:var(--surface);border:1px solid var(--line);border-radius:8px}.shift-summary summary strong{font-size:18px}.today-kpis{position:absolute;inset-inline-end:0;top:calc(100% + 6px);z-index:55;min-width:min(360px,90vw);display:grid;grid-template-columns:1fr 1fr;padding:14px;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 12px 32px #25343A18}.today-kpis>span{padding:8px}.cashier-layout{display:grid;grid-template-columns:minmax(270px,31%) minmax(0,1fr);align-items:start;gap:14px;min-height:550px}.cashier-layout>:deep(.queue-pane){position:sticky;top:16px;max-height:calc(100dvh - 140px)}.cashier-layout>:deep(.checkout-workspace){min-width:0}.handover-panel{border-radius:8px}@media(max-width:760px){.cashier-header{grid-template-columns:1fr}.shift-summary{justify-self:stretch}.shift-summary summary strong{margin-inline-start:auto}.cashier-layout{grid-template-columns:1fr;min-height:0}.cashier-layout>:deep(.queue-pane){position:static;max-height:none}.has-selection :deep(.queue-pane){display:none}.cashier-layout>:deep(.checkout-empty){display:none}.today-kpis{inset-inline:0;min-width:0}}
 </style>

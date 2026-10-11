@@ -1,4 +1,5 @@
 <script setup>
+import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 import { Head, Link, useForm } from '@inertiajs/vue3'
 import AdminLayout from '../../../Layouts/AdminLayout.vue'
 import PageHeader from '../../../Components/Ui/PageHeader.vue'
@@ -34,16 +35,20 @@ function submit() {
 </script>
 
 <template>
-    <Head :title="`تعديل ${account.name}`" />
-    <PageHeader
+<Head :title="`تعديل ${account.name}`" />
+<FinancialWorkspace area="دليل الحسابات" mode="form">
+<template #heading>
+<PageHeader
         :title="`تعديل ${account.code} — ${account.name}`"
         icon="bi-pencil-square"
         subtitle="غيّر الوصف والتنظيم بأمان؛ الحقول المؤثرة في التاريخ تُقفل تلقائياً"
         :crumbs="[{ label: 'شجرة الحسابات', url: urls.index }]"
     />
-    <AccountingNav :urls="urls.workspace" active="accounts" />
-
-    <form class="account-page-form" @submit.prevent="submit">
+</template>
+<template #navigation>
+<AccountingNav :urls="urls.workspace" active="accounts" />
+</template>
+<form class="account-page-form" @submit.prevent="submit">
         <section v-if="account.parentLabel" class="parent-line">
             <i class="bi bi-diagram-3-fill"></i>
             <span><small>تابع للحساب</small><strong>{{ account.parentLabel }}</strong></span>
@@ -66,6 +71,8 @@ function submit() {
             </button>
         </footer>
     </form>
+</FinancialWorkspace>
+
 </template>
 
 <style scoped>
@@ -81,9 +88,9 @@ function submit() {
     align-items: center;
     gap: 9px;
     padding: 10px 12px;
-    border: 1px solid #bdd9c6;
+    border: 1px solid #F7F3ED;
     border-radius: 12px;
-    color: #28543a;
+    color: #25343A;
     background: #f0f8f3;
 }
 
@@ -92,12 +99,12 @@ function submit() {
 }
 
 .parent-line small {
-    color: #7b8981;
-    font-size: .56rem;
+    color: #A3422B;
+    font-size: .875rem;
 }
 
 .parent-line strong {
-    font-size: .68rem;
+    font-size: .875rem;
 }
 
 .account-page-form > footer {
@@ -111,7 +118,7 @@ function submit() {
     border: 1px solid #dce6df;
     border-radius: 13px;
     background: rgba(255, 255, 255, .96);
-    box-shadow: 0 10px 28px rgba(21, 52, 31, .08);
+    box-shadow: 0 10px 28px rgba(37,52,58, .08);
     backdrop-filter: blur(10px);
 }
 

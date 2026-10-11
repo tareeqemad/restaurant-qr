@@ -127,6 +127,10 @@
             .no-print { display: none !important; }
             .invoice-paper { width: 100%; min-height: 0; margin: 0; padding: 0; border-top: 0; box-shadow: none; }
         }
+
+        /* Receipt layout uses monochrome rules so thermal prints stay legible. */
+        body{background:#F7F3ED;color:#25343A}.print-toolbar{width:min(360px,calc(100% - 24px));margin:24px auto 14px}.print-toolbar button{border-color:#DFD7CB;border-radius:8px;font-size:14px}.invoice-paper{width:min(360px,calc(100% - 24px));padding:24px 20px;border:1px solid #DFD7CB;border-top:3px solid #25343A;box-shadow:none}.receipt-head{padding-bottom:14px}.receipt-mark{background:transparent;border:0;color:#A3422B;font-size:26px}.receipt-head h1{font-size:23px}.receipt-head p{font-size:11px;color:#626B6D}.receipt-reference{margin-top:14px;padding:10px 0;border-block:1px solid #DFD7CB}.receipt-title{margin:0;font-size:14px}.receipt-number{margin-top:5px;font-size:14px}.receipt-rule{border-top-style:solid;border-color:#DFD7CB;margin:14px 0}.receipt-meta td{padding:4px 0}.items-table th{font-size:11px;padding:9px 2px;background:#F7F3ED}.items-table td{padding:10px 2px}.item-detail{font-size:10px}.totals-table td{padding:5px 0}.totals-table .grand td{padding:12px 0;font-size:18px;border-color:#25343A}.receipt-footer{font-size:10px;padding-top:12px}.status-badge{font-size:10px;border-radius:4px}.status-badge.is-paid{color:#25343A;border-color:#DFD7CB}
+        @media print{@page{size:80mm 297mm;margin:3mm}.invoice-paper{width:100%;padding:0;border:0}.receipt-head h1{font-size:18px}.receipt-head p{font-size:10px}.items-table th{font-size:9px}.items-table td{padding:7px 1px}.totals-table .grand td{font-size:16px}.receipt-reference{margin-top:10px}.receipt-rule{margin:9px 0}}
     </style>
 </head>
 <body>

@@ -2,59 +2,37 @@
 
 namespace Tests\Feature;
 
+use App\Models\Branch;
+use App\Models\Category;
+use App\Models\MenuItem;
 use Database\Seeders\ProductionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class ProductionSeederTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_it_restores_the_approved_catalogue_without_operational_data(): void
+    public function test_production_seeding_creates_only_reference_data(): void
     {
         $this->seed(ProductionSeeder::class);
-
-        $this->assertDatabaseCount('branches', 2);
-        $this->assertDatabaseCount('categories', 9);
-        $this->assertDatabaseCount('menu_items', 81);
-        $this->assertDatabaseCount('ingredients', 15);
-        $this->assertDatabaseCount('recipe_items', 222);
-        $this->assertDatabaseCount('modifier_groups', 2);
-        $this->assertDatabaseCount('modifiers', 6);
-        $this->assertDatabaseCount('users', 0);
-        $this->assertDatabaseCount('orders', 0);
-        $this->assertDatabaseCount('payments', 0);
-
-        $this->assertDatabaseHas('menu_items', [
-            'sku' => 'APP-01',
-            'price' => 2.50,
-            'deleted_at' => null,
-        ]);
-
-        $this->assertSame(3, DB::table('menu_items')
-            ->join('branches', 'branches.id', '=', 'menu_items.branch_id')
-            ->where('branches.code', 'gaza')
-            ->where('menu_items.sku', 'like', 'NET-%')
-            ->count());
-
+        foreach (['branches', 'categories', 'menu_items', 'ingredients', 'recipe_items', 'modifier_groups', 'modifiers', 'users', 'tables', 'orders', 'payments', 'ingredient_stock', 'journal_entries'] as $table) {
+            $this->assertDatabaseCount($table, 0);
+        }
         $this->assertDatabaseHas('accounts', ['code' => '1160', 'is_active' => true]);
-        $this->assertDatabaseHas('account_mappings', [
-            'context' => 'payment_method',
-            'key' => 'bank_transfer',
-        ]);
+        $this->assertDatabaseHas('account_mappings', ['context' => 'payment_method', 'key' => 'bank_transfer']);
     }
 
-    public function test_reseeding_the_fresh_catalogue_is_idempotent(): void
+    public function test_production_reseeding_preserves_an_owner_catalogue(): void
     {
         $this->seed(ProductionSeeder::class);
+        $branch = Branch::create(['name' => 'Owner branch', 'code' => 'owner', 'is_active' => true]);
+        $category = Category::create(['branch_id' => $branch->id, 'slug' => 'owner-meals', 'name' => 'Owner meals', 'active' => true]);
+        $item = MenuItem::create(['branch_id' => $branch->id, 'category_id' => $category->id, 'slug' => 'owner-item', 'name' => 'Owner item', 'price' => 23.50, 'is_available' => true]);
         $this->seed(ProductionSeeder::class);
-
-        $this->assertDatabaseCount('categories', 9);
-        $this->assertDatabaseCount('menu_items', 81);
-        $this->assertDatabaseCount('recipe_items', 222);
-        $this->assertDatabaseCount('modifier_groups', 2);
-        $this->assertDatabaseCount('modifiers', 6);
+        $this->assertDatabaseCount('branches', 1);
+        $this->assertDatabaseCount('menu_items', 1);
+        $this->assertSame('23.50', $item->fresh()->price);
+        $this->assertDatabaseHas('categories', ['id' => $category->id, 'name' => 'Owner meals']);
     }
 }
-

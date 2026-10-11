@@ -15,12 +15,17 @@ class RecipeItem extends Model
         'menu_item_id', 'parent_ingredient_id',
         'ingredient_id', 'quantity', 'unit_id',
         'ingredient_unit_id',
-        'is_optional', 'notes',
+        'is_optional', 'is_removable', 'notes',
+    ];
+
+    protected $attributes = [
+        'is_removable' => true,
     ];
 
     protected $casts = [
         'quantity' => 'decimal:4',
         'is_optional' => 'boolean',
+        'is_removable' => 'boolean',
     ];
 
     public function menuItem(): BelongsTo

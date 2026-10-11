@@ -49,6 +49,10 @@ class Category extends Model
         if (! $this->image) {
             return static::placeholderImageUrl();
         }
+        if (preg_match('~^demo/menu/(mezze|mains|sandwiches|hot-drinks|cold-drinks|desserts)\.svg$~D', $this->image)
+            && is_file(public_path($this->image))) {
+            return asset($this->image);
+        }
         if (str_starts_with($this->image, 'http')) {
             // Remote URLs are returned as-is — liveness is handled by the
             // client-side onerror fallback + `menu:repair-dead-images`.

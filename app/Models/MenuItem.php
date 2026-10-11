@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 class MenuItem extends Model
@@ -152,6 +153,17 @@ class MenuItem extends Model
         return $this->hasMany(RecipeItem::class);
     }
 
+    /** Recipe rows customers and staff may omit; independent of base-cost optionality. */
+    public function removableRecipeItems(): Collection
+    {
+        $this->loadMissing('recipeItems.ingredient');
+
+        return $this->recipeItems
+            ->filter(fn (RecipeItem $recipe) => $recipe->is_removable && $recipe->ingredient !== null)
+            ->unique(fn (RecipeItem $recipe) => (int) $recipe->ingredient_id)
+            ->values();
+    }
+
     public function modifierGroups(): BelongsToMany
     {
         return $this->belongsToMany(ModifierGroup::class, 'menu_item_modifier_group')
@@ -235,6 +247,10 @@ class MenuItem extends Model
     {
         if (! $this->image) {
             return static::placeholderImageUrl();
+        }
+        if (preg_match('~^demo/menu/(mezze|mains|sandwiches|hot-drinks|cold-drinks|desserts)\.svg$~D', $this->image)
+            && is_file(public_path($this->image))) {
+            return asset($this->image);
         }
         if (str_starts_with($this->image, 'http')) {
             // Remote URLs are returned as-is — liveness is handled by the

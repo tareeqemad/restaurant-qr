@@ -37,7 +37,7 @@ function isVisible(node) {
     <li v-if="isVisible(node)"
         :class="{ parent_li: node.hasChildren, 'acc-inactive': !node.isActive }">
         <span :class="{ selected: selectedId === node.id }"
-              :title="node.title"
+              :title="node.title" role="button" tabindex="0" :aria-pressed="selectedId === node.id" @keydown.enter="$emit('select', node.id)" @keydown.space.prevent="$emit('select', node.id)"
               @click="$emit('select', node.id)">
             <i v-if="node.hasChildren"
                class="bi acc-toggle"
@@ -69,3 +69,5 @@ function isVisible(node) {
         </ul>
     </li>
 </template>
+
+<style scoped>li>span{display:flex;align-items:center;gap:12px;min-height:54px;padding:12px;border-bottom:1px solid #DFD7CB;border-radius:8px;color:#25343A;font-size:14px;cursor:pointer}li>span.selected{background:#F3E3D8}li>span:hover{background:#F7F3ED}.acc-code-chip{padding:5px 8px;border-radius:5px;background:#F7F3ED;font-variant-numeric:tabular-nums}.acc-name-text{font-weight:700}.acc-meta-text{color:#626B6D}.acc-inactive{opacity:.65}</style>

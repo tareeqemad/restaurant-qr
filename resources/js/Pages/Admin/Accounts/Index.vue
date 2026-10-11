@@ -1,4 +1,5 @@
 <script setup>
+import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { Head, Link, router, useForm } from '@inertiajs/vue3'
 import AdminLayout from '../../../Layouts/AdminLayout.vue'
@@ -287,9 +288,10 @@ function submitModal() {
 </script>
 
 <template>
-    <Head title="شجرة الحسابات" />
-
-    <PageHeader
+<Head title="شجرة الحسابات" />
+<FinancialWorkspace area="دليل الحسابات" mode="records">
+<template #heading>
+<PageHeader
         title="شجرة الحسابات"
         icon="bi-diagram-3-fill"
         subtitle="هيكل بسيط للمطعم؛ اختر الحساب لتظهر إجراءاته وتاريخه"
@@ -301,10 +303,11 @@ function submitModal() {
             </button>
         </template>
     </PageHeader>
-
-    <AccountingNav :urls="urls.workspace" active="accounts" />
-
-    <section class="chart-overview">
+</template>
+<template #navigation>
+<AccountingNav :urls="urls.workspace" active="accounts" />
+</template>
+<section class="chart-overview">
         <div class="chart-overview__copy">
             <span><i class="bi bi-shield-check"></i></span>
             <div>
@@ -321,8 +324,7 @@ function submitModal() {
             <i class="bi bi-link-45deg"></i> ربط العمليات
         </Link>
     </section>
-
-    <section class="chart-tools">
+<section class="chart-tools">
         <label class="chart-search">
             <i class="bi bi-search"></i>
             <input v-model="search" type="search" placeholder="ابحث بكود الحساب أو اسمه…">
@@ -353,8 +355,7 @@ function submitModal() {
             <button type="button" title="طي الشجرة" @click="collapseAll"><i class="bi bi-arrows-collapse"></i></button>
         </div>
     </section>
-
-    <div class="chart-layout">
+<div class="chart-layout">
         <AccountingPanel
             title="الحسابات"
             :description="`${activeSectionCount} حساباً أو مجموعة ضمن الاختيار`"
@@ -435,8 +436,8 @@ function submitModal() {
             </template>
         </aside>
     </div>
-
-    <Teleport to="body">
+</FinancialWorkspace>
+<Teleport to="body">
         <Transition name="account-modal">
             <div v-if="modalOpen" class="account-modal__backdrop" @click.self="closeModal">
                 <form class="account-modal" role="dialog" aria-modal="true" @submit.prevent="submitModal">
@@ -481,9 +482,9 @@ function submitModal() {
     gap: 14px;
     margin-bottom: 10px;
     padding: 13px 15px;
-    border: 1px solid #b7d7c2;
+    border: 1px solid #F3E3D8;
     border-radius: 15px;
-    background: linear-gradient(130deg, #eff8f2, #fff 72%);
+    background: #eff8f2;
 }
 
 .chart-overview__copy {
@@ -508,13 +509,13 @@ function submitModal() {
 }
 
 .chart-overview__copy strong {
-    color: #264435;
-    font-size: .78rem;
+    color: #25343A;
+    font-size: .875rem;
 }
 
 .chart-overview__copy small {
-    color: #7a8980;
-    font-size: .62rem;
+    color: #A3422B;
+    font-size: .875rem;
     line-height: 1.55;
 }
 
@@ -534,12 +535,12 @@ function submitModal() {
 
 .chart-overview__stats small {
     color: #839087;
-    font-size: .54rem;
+    font-size: .875rem;
 }
 
 .chart-overview__stats strong {
-    color: #284637;
-    font-size: .76rem;
+    color: #25343A;
+    font-size: .875rem;
 }
 
 .chart-overview > a {
@@ -548,11 +549,11 @@ function submitModal() {
     align-items: center;
     gap: 6px;
     padding: 8px 11px;
-    border: 1px solid #a8ccb4;
+    border: 1px solid #F3E3D8;
     border-radius: 10px;
     color: rgb(var(--primary-rgb, 31, 107, 80));
     background: #fff;
-    font-size: .65rem;
+    font-size: .875rem;
     font-weight: 850;
 }
 
@@ -589,7 +590,7 @@ function submitModal() {
     border: 0;
     outline: 0;
     background: transparent;
-    font-size: .7rem;
+    font-size: .875rem;
 }
 
 .chart-search button {
@@ -599,7 +600,7 @@ function submitModal() {
     place-items: center;
     border: 0;
     border-radius: 8px;
-    color: #68776e;
+    color: #A3422B;
     background: #eef2ef;
 }
 
@@ -620,9 +621,9 @@ function submitModal() {
     padding: 7px 10px;
     border: 1px solid #e0e7e2;
     border-radius: 10px;
-    color: #68766d;
+    color: #A3422B;
     background: #fff;
-    font-size: .62rem;
+    font-size: .875rem;
     font-weight: 850;
 }
 
@@ -640,7 +641,7 @@ function submitModal() {
     border-radius: 999px;
     color: inherit;
     background: rgba(128, 143, 134, .12);
-    font-size: .54rem;
+    font-size: .875rem;
 }
 
 .type-chips button.active small {
@@ -660,7 +661,7 @@ function submitModal() {
     place-items: center;
     border: 1px solid #dce5df;
     border-radius: 10px;
-    color: #617067;
+    color: #A3422B;
     background: #fff;
 }
 
@@ -671,9 +672,9 @@ function submitModal() {
     gap: 6px;
     padding: 6px 9px;
     border-radius: 10px;
-    color: #6b796f;
+    color: #A3422B;
     background: #f7f9f8;
-    font-size: .6rem;
+    font-size: .875rem;
     font-weight: 800;
     white-space: nowrap;
 }
@@ -711,7 +712,7 @@ function submitModal() {
     gap: 9px;
     padding: 9px 12px;
     border: 0;
-    color: #304238;
+    color: #25343A;
     background: #fafcfb;
     text-align: start;
 }
@@ -732,17 +733,17 @@ function submitModal() {
 }
 
 .chart-section__head strong {
-    font-size: .76rem;
+    font-size: .875rem;
 }
 
 .chart-section__head small {
     color: #86928a;
-    font-size: .57rem;
+    font-size: .875rem;
 }
 
 .chart-section__head > i {
     color: #89958d;
-    font-size: .7rem;
+    font-size: .875rem;
 }
 
 .chart-tree {
@@ -766,23 +767,23 @@ function submitModal() {
 }
 
 .chart-empty strong {
-    color: #4d5d53;
-    font-size: .8rem;
+    color: #25343A;
+    font-size: .875rem;
 }
 
 .chart-empty small {
-    font-size: .63rem;
+    font-size: .875rem;
 }
 
 .chart-empty button {
     min-height: 40px;
     margin-top: 5px;
     padding: 7px 12px;
-    border: 1px solid #b9d5c2;
+    border: 1px solid #F7F3ED;
     border-radius: 9px;
     color: rgb(var(--primary-rgb, 31, 107, 80));
     background: #fff;
-    font-size: .64rem;
+    font-size: .875rem;
     font-weight: 850;
 }
 
@@ -794,7 +795,7 @@ function submitModal() {
     border: 1px solid #dce6df;
     border-radius: 16px;
     background: #fff;
-    box-shadow: 0 10px 30px rgba(24, 52, 35, .055);
+    box-shadow: 0 10px 30px rgba(37,52,58, .055);
 }
 
 .account-inspector > header {
@@ -825,13 +826,13 @@ function submitModal() {
 .account-inspector > header bdi {
     color: rgb(var(--primary-rgb, 31, 107, 80));
     font-family: Consolas, monospace;
-    font-size: .64rem;
+    font-size: .875rem;
     font-weight: 900;
 }
 
 .account-inspector > header strong {
     overflow: hidden;
-    font-size: .76rem;
+    font-size: .875rem;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -843,7 +844,7 @@ function submitModal() {
     place-items: center;
     border: 0;
     border-radius: 9px;
-    color: #6f7d74;
+    color: #A3422B;
     background: #eef2ef;
 }
 
@@ -851,8 +852,8 @@ function submitModal() {
     margin: 0;
     padding: 11px 13px;
     border-bottom: 1px solid #edf1ee;
-    color: #748178;
-    font-size: .63rem;
+    color: #A3422B;
+    font-size: .875rem;
     line-height: 1.6;
 }
 
@@ -874,18 +875,18 @@ function submitModal() {
 
 .account-inspector dt {
     color: #89958d;
-    font-size: .55rem;
+    font-size: .875rem;
 }
 
 .account-inspector dd {
     margin: 0;
-    color: #3f5146;
-    font-size: .65rem;
+    color: #25343A;
+    font-size: .875rem;
     font-weight: 850;
 }
 
 .account-inspector dd.good {
-    color: #187440;
+    color: #A3422B;
 }
 
 .account-inspector dd.warn {
@@ -898,17 +899,17 @@ function submitModal() {
     margin: 0 12px 11px;
     padding: 9px;
     border-radius: 9px;
-    color: #52655a;
+    color: #A3422B;
     background: #eef6f1;
 }
 
 .account-inspector__parent small {
-    color: #829087;
-    font-size: .54rem;
+    color: #A3422B;
+    font-size: .875rem;
 }
 
 .account-inspector__parent strong {
-    font-size: .62rem;
+    font-size: .875rem;
 }
 
 .account-inspector__actions {
@@ -928,9 +929,9 @@ function submitModal() {
     padding: 7px;
     border: 1px solid #dbe4de;
     border-radius: 10px;
-    color: #53635a;
+    color: #A3422B;
     background: #fff;
-    font-size: .61rem;
+    font-size: .875rem;
     font-weight: 850;
 }
 
@@ -954,7 +955,7 @@ function submitModal() {
     border-radius: 9px;
     color: #7d8982;
     background: #f6f8f7;
-    font-size: .55rem;
+    font-size: .875rem;
     line-height: 1.5;
 }
 
@@ -981,12 +982,12 @@ function submitModal() {
 }
 
 .account-inspector__empty strong {
-    color: #536159;
-    font-size: .78rem;
+    color: #A3422B;
+    font-size: .875rem;
 }
 
 .account-inspector__empty small {
-    font-size: .61rem;
+    font-size: .875rem;
     line-height: 1.55;
 }
 
@@ -995,7 +996,7 @@ function submitModal() {
     margin-top: 5px;
     padding: 8px 11px;
     color: rgb(var(--primary-rgb, 31, 107, 80));
-    font-size: .62rem;
+    font-size: .875rem;
     font-weight: 850;
 }
 
@@ -1007,7 +1008,7 @@ function submitModal() {
     overflow-y: auto;
     place-items: center;
     padding: 16px;
-    background: rgba(15, 28, 20, .58);
+    background: rgba(37,52,58, .58);
     backdrop-filter: blur(4px);
 }
 
@@ -1019,7 +1020,7 @@ function submitModal() {
     flex-direction: column;
     border-radius: 19px;
     background: #fff;
-    box-shadow: 0 28px 80px rgba(8, 26, 15, .25);
+    box-shadow: 0 28px 80px rgba(37,52,58, .25);
 }
 
 .account-modal > header {
@@ -1048,7 +1049,7 @@ function submitModal() {
 }
 
 .account-modal > header > button {
-    color: #68766d;
+    color: #A3422B;
     background: #eaf0ec;
 }
 
@@ -1060,12 +1061,12 @@ function submitModal() {
 
 .account-modal > header small {
     color: #849188;
-    font-size: .57rem;
+    font-size: .875rem;
 }
 
 .account-modal > header strong {
     overflow: hidden;
-    font-size: .82rem;
+    font-size: .875rem;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -1186,4 +1187,6 @@ function submitModal() {
         transition: none;
     }
 }
+
+.chart-overview{padding:18px 22px;border:0;border-radius:0;background:transparent;border-bottom:1px solid #DFD7CB}.chart-overview__copy>span{display:none}.chart-overview__copy strong{font-size:16px}.chart-overview__copy small{display:none}.chart-overview__stats{gap:24px}.chart-overview__stats strong{font-size:24px}.chart-tools{padding:20px;border-radius:16px;background:#FFFDFA}.chart-search{min-height:46px}.type-chips{gap:8px}.type-chips button{min-height:40px;padding:8px 14px;border-radius:8px;font-size:14px}.chart-section{border-radius:14px}.chart-section>header{padding:18px}.account-detail{padding:22px;background:#FFFDFA}.account-modal{border-radius:18px}.account-modal>header,.account-modal>footer{padding:20px 24px}
 </style>

@@ -1,7 +1,9 @@
+<script>
+let openSurfaceCount = 0;
+</script>
+
 <script setup>
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
-
-let openSurfaceCount = 0;
 
 const props = defineProps({
     open: { type: Boolean, default: false },
@@ -184,18 +186,17 @@ body.ux-surface-open {
     align-items: center;
     justify-content: center;
     padding: 1rem;
-    background: rgba(9, 28, 18, .52);
-    backdrop-filter: blur(2px);
+    background: rgba(37, 52, 58, .58);
 }
 
 .ux-surface__panel {
     width: min(100%, var(--ux-surface-width));
     max-height: calc(100dvh - 2rem);
     overflow: auto;
-    border: 1px solid rgba(15, 71, 49, .08);
-    border-radius: 18px;
-    background: #fff;
-    box-shadow: 0 28px 80px -28px rgba(7, 31, 20, .52);
+    border: 1px solid var(--line, #dfd7cb);
+    border-radius: 12px;
+    background: var(--surface, #fffdfa);
+    box-shadow: 0 20px 60px -20px rgba(37, 52, 58, .4);
     outline: none;
 }
 

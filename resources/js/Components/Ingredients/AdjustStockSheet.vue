@@ -180,9 +180,9 @@ const submit = () => {
 .adj-card {
     width: 100%;
     max-width: 480px;
-    background: #fff;
-    border-radius: 16px;
-    box-shadow: 0 24px 60px -18px rgba(15, 23, 42, .4);
+    background: var(--surface, #FFFDFA);
+    border-radius: 12px;
+    box-shadow: none;
     max-height: 92vh;
     display: flex;
     flex-direction: column;
@@ -192,7 +192,7 @@ const submit = () => {
     align-items: center;
     gap: .6rem;
     padding: 1rem 1.1rem .6rem;
-    border-block-end: 1px solid #eef0f3;
+    border-block-end: 1px solid var(--line, #DFD7CB);
 }
 .adj-head h5 { margin: 0; font-size: 1rem; font-weight: 800; color: #0f172a; flex: 1; }
 .adj-x {
@@ -200,21 +200,24 @@ const submit = () => {
     height: 44px;
     border: 0;
     border-radius: 10px;
-    background: #f3f4f6;
-    color: #475569;
+    background: var(--canvas, #F7F3ED);
+    color: var(--muted, #626B6D);
     cursor: pointer;
 }
 .adj-body { padding: 1rem 1.1rem 1.1rem; overflow-y: auto; }
-.adj-current { font-size: .86rem; color: #475569; margin-bottom: .8rem; }
+.adj-current { font-size: .875rem; color: var(--muted, #626B6D); margin-bottom: .8rem; }
 .adj-field { display: flex; flex-direction: column; margin-bottom: .7rem; }
-.adj-field .form-label { font-size: .82rem; font-weight: 700; color: #334155; margin-bottom: .25rem; }
+.adj-field .form-label { font-size: .875rem; font-weight: 700; color: var(--ink, #25343A); margin-bottom: .25rem; }
 .adj-field .form-control,
 .adj-field .form-select { min-height: 44px; }
 .adj-row { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
-.adj-err { color: #dc2626; font-size: .76rem; font-weight: 700; margin-top: .2rem; }
+.adj-err { color: #dc2626; font-size: .875rem; font-weight: 700; margin-top: .2rem; }
 .adj-foot { display: flex; gap: .5rem; justify-content: flex-end; margin-top: 1rem; }
 .adj-foot .btn { min-height: 44px; min-width: 96px; }
 
 .adj-enter-active, .adj-leave-active { transition: opacity .15s; }
 .adj-enter-from, .adj-leave-to { opacity: 0; }
+
+/* Dar Al Sarw management layout */
+.adj-card { max-width: 560px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); } .adj-head { padding: 20px 22px; background: var(--canvas); border-bottom: 1px solid var(--line); } .adj-head h5 { color: var(--ink); font-size: 1.15rem; } .adj-body { padding: 22px; } .adj-body label { font-size: .9375rem; }
 </style>

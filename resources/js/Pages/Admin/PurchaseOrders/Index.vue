@@ -1,4 +1,5 @@
 <script setup>
+import ManagementPage from '../../../Components/Inventory/ManagementPage.vue';
 /**
  * أوامر الشراء — القائمة. The row answers the one question a purchasing
  * manager opens this for: how much of what I ordered actually arrived, and
@@ -86,6 +87,7 @@ const visibleSuppliers = computed(() => {
 </script>
 
 <template>
+    <ManagementPage mode="records">
     <Head title="أوامر الشراء" />
 
     <PageHeader title="أوامر الشراء" icon="bi-truck"
@@ -210,6 +212,7 @@ const visibleSuppliers = computed(() => {
             <Pagination :links="pos.links" />
         </template>
     </DataPanel>
+    </ManagementPage>
 </template>
 
 <style scoped>
@@ -223,7 +226,7 @@ const visibleSuppliers = computed(() => {
 .table-responsive { overscroll-behavior-inline: contain; scrollbar-width: thin; }
 .table { min-width: 1020px; }
 .table-responsive.is-loading { opacity: .52; pointer-events: none; }
-.po-loading { display: flex; align-items: center; justify-content: center; gap: .45rem; min-height: 42px; color: var(--primary); background: rgba(var(--primary-rgb),.055); font-size: .72rem; font-weight: 800; }
+.po-loading { display: flex; align-items: center; justify-content: center; gap: .45rem; min-height: 42px; color: var(--primary); background: color-mix(in srgb, var(--brand, #A3422B) 5.5%, transparent); font-size: .875rem; font-weight: 800; }
 .po-spin { display: inline-block; animation: po-rotate 1s linear infinite; }
 @keyframes po-rotate { to { transform: rotate(360deg); } }
 
@@ -244,4 +247,7 @@ const visibleSuppliers = computed(() => {
     .po-filters { grid-template-columns: 1fr; }
     .po-filter--supplier { grid-row: auto; }
 }
+
+/* Dar Al Sarw management layout */
+.po-filters { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; } .po-filter--supplier { grid-row: auto; } .po-filter--submit .btn { width: 100%; min-height: 46px; } .po-num { font-family: Inter, sans-serif; font-variant-numeric: tabular-nums; font-size: .9375rem; color: var(--brand); } .po-loading { border-radius: 8px; margin-bottom: 12px; padding: 12px; } @media(max-width:1050px) { .po-filters { grid-template-columns: repeat(2,minmax(0,1fr)); } } @media(max-width:600px) { .po-filters { grid-template-columns: 1fr; } }
 </style>

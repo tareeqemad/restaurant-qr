@@ -25,6 +25,7 @@ use App\Models\SupplierInvoice;
 use App\Services\InventoryService;
 use App\Services\PurchaseOrderService;
 use App\Services\Reports\ProfitLossReport;
+use App\Support\AccountingWorkspace;
 use App\Support\AdminShell;
 use App\Support\BranchContext;
 use App\Support\MarketProfile;
@@ -1281,9 +1282,6 @@ class ReportController extends Controller
     public function profitLoss(Request $request)
     {
         $report = $this->buildProfitLossReport($request)->compute();
-        $user = auth()->user();
-        $canCreate = (bool) $user?->hasPermission('chart_of_accounts.create');
-        $canUpdate = (bool) $user?->hasPermission('chart_of_accounts.update');
         $query = array_filter([
             'from' => $report['period']['from'],
             'to' => $report['period']['to'],
@@ -1297,27 +1295,7 @@ class ReportController extends Controller
                 'xlsx' => route('admin.reports.profit-loss.export.xlsx', $query),
                 'pdf' => route('admin.reports.profit-loss.export.pdf', $query),
             ],
-            'urls' => [
-                'home' => route('admin.accounting.index'),
-                'guide' => route('admin.accounting.guide'),
-                'journal' => route('admin.accounting.journal'),
-                'ledger' => route('admin.accounting.ledger'),
-                'trialBalance' => route('admin.accounting.trial-balance'),
-                'profitLoss' => route('admin.reports.profit-loss'),
-                'balanceSheet' => route('admin.accounting.balance-sheet'),
-                'aging' => route('admin.accounting.aging'),
-                'taxReport' => route('admin.accounting.tax-report'),
-                'accounts' => route('admin.accounts.index'),
-                'openingBalances' => $canCreate ? route('admin.accounting.opening-balances') : null,
-                'manualEntry' => $canCreate ? route('admin.accounting.manual-entry.create') : null,
-                'fiscalYears' => $canUpdate ? route('admin.accounting.fiscal-years') : null,
-                'periods' => $canUpdate ? route('admin.accounting.periods') : null,
-                'mappings' => $canUpdate ? route('admin.accounting.mappings') : null,
-                'reconciliations' => $canUpdate ? route('admin.accounting.reconciliations') : null,
-                'settlements' => $canUpdate ? route('admin.accounting.settlements') : null,
-                'fixedAssets' => route('admin.accounting.fixed-assets.index'),
-                'index' => route('admin.reports.profit-loss'),
-            ],
+            'urls' => AccountingWorkspace::urls() + ['index' => route('admin.reports.profit-loss')],
         ]);
     }
 
@@ -1602,7 +1580,7 @@ class ReportController extends Controller
 
         $book = new Spreadsheet;
         $book->getProperties()
-            ->setCreator(config('restaurant.name', 'Relax'))
+            ->setCreator(Brand::name())
             ->setTitle('Stock Valuation')
             ->setSubject('تقرير تقييم المخزون');
 

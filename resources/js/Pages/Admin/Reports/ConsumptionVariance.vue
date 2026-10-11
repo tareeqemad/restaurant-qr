@@ -1,4 +1,5 @@
 <script setup>
+import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 /**
  * مقارنة الاستهلاك النظري والفعلي — the theft/waste detector. It compares
  * what the recipes SHOULD have consumed against what was actually deducted
@@ -50,13 +51,14 @@ const submit = () => {
 </script>
 
 <template>
-    <Head title="مقارنة الاستهلاك النظري والفعلي" />
-
-    <PageHeader title="مقارنة الاستهلاك النظري والفعلي" icon="bi-bar-chart-line"
+<Head title="مقارنة الاستهلاك النظري والفعلي" />
+<FinancialWorkspace area="التقارير والتحليل" mode="report">
+<template #heading>
+<PageHeader title="مقارنة الاستهلاك النظري والفعلي" icon="bi-bar-chart-line"
                 subtitle="يكشف الفروقات بين ما تستهلكه الوصفات نظرياً وما تم خصمه فعلياً من المخزن — أداة كشف الهدر أو السرقة"
                 :crumbs="[{ label: 'التقارير', url: urls.reportsIndex }]" />
-
-    <div class="alert alert-info d-flex align-items-start gap-3 mb-3">
+</template>
+<div class="alert alert-info d-flex align-items-start gap-3 mb-3">
         <i class="bi bi-info-circle-fill fs-4 mt-1"></i>
         <div>
             <strong class="d-block mb-1">كيف نقرأ هذا التقرير؟</strong>
@@ -70,8 +72,7 @@ const submit = () => {
             </div>
         </div>
     </div>
-
-    <form class="row g-2 align-items-end mb-3" @submit.prevent="submit">
+<form class="row g-2 align-items-end mb-3" @submit.prevent="submit">
         <div class="col-md-3">
             <label class="form-label small text-muted fw-bold">من تاريخ</label>
             <input v-model="form.from" type="date" class="form-control cv-input">
@@ -84,10 +85,7 @@ const submit = () => {
             <button type="submit" class="btn btn-primary w-100 cv-btn"><i class="bi bi-search"></i> استعلام</button>
         </div>
     </form>
-
-    <!-- Four hand-rolled KPI cards: the third changes its BORDER colour as
-         well as its text, which StatRail has no concept of. -->
-    <div class="row g-3 mb-3">
+<div class="row g-3 mb-3">
         <div class="col-md-3">
             <div class="card text-center">
                 <div class="card-body">
@@ -123,8 +121,7 @@ const submit = () => {
             </div>
         </div>
     </div>
-
-    <DataPanel title="التفاصيل لكل مكوّن" icon="bi-list-columns" :count="rowCount">
+<DataPanel title="التفاصيل لكل مكوّن" icon="bi-list-columns" :count="rowCount">
         <template v-if="rows.length">
             <div class="alert alert-light border mb-2 small">
                 <i class="bi bi-info-circle"></i>
@@ -174,6 +171,8 @@ const submit = () => {
         </template>
         <EmptyState v-else icon="bi-inbox" message="لا حركات استهلاك أو مبيعات في هذه الفترة." />
     </DataPanel>
+</FinancialWorkspace>
+
 </template>
 
 <style scoped>

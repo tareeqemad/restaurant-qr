@@ -295,6 +295,7 @@ class MenuDuplicationService
                     'quantity'      => $r->quantity,
                     'unit_id'       => $r->unit_id,        // global
                     'is_optional'   => $r->is_optional,
+                    'is_removable'  => $r->is_removable,
                     'notes'         => $r->notes,
                 ]);
                 $count++;

@@ -4,75 +4,54 @@ namespace Database\Seeders;
 
 use App\Enums\UserRole;
 use App\Models\Branch;
+use App\Models\Employee;
 use App\Models\Station;
 use App\Models\User;
+use App\Support\BranchContext;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
-/**
- * Seeds the full staff roster + assigns each non-owner user to the Khan Yunis
- * branch via the `branch_user` pivot. The assignment step used to live in
- * BranchSeeder; it moved here once stations became per-branch (BranchSeeder
- * had to run before StationSeeder, which runs before UserSeeder, so the
- * "users exist" prerequisite stopped holding from BranchSeeder's vantage).
- *
- * Owner-level users (SuperAdmin + Partner) are NOT attached to any branch —
- * their company-wide access is granted by role, not membership, so seeding
- * them into branch_user would muddle the "what does this person belong to"
- * intent of that pivot.
- */
 class UserSeeder extends Seeder
 {
+    public const STAFF = [
+        ['admin', 'رامي السرو', 'super_admin', null],
+        ['partner', 'ليان السرو', 'partner', null],
+        ['manager', 'سامر الزيتون', 'manager', null],
+        ['waiter1', 'آدم الريحان', 'waiter', null],
+        ['waiter2', 'نور الياسمين', 'waiter', null],
+        ['chef1', 'مروان الزعتر', 'chef', 'kitchen'],
+        ['bar1', 'هالة النعناع', 'bartender', 'bar'],
+        ['cashier1', 'سلمى الورد', 'cashier', null],
+        ['accountant1', 'ياسر الميزان', 'accountant', null],
+    ];
+
     public function run(): void
     {
-        $kitchen = Station::where('code', 'kitchen')->first();
-        $bar = Station::where('code', 'bar')->first();
-
-        $users = [
-            ['name' => 'مدير النظام', 'username' => 'admin', 'email' => 'admin@restaurant.test', 'role' => UserRole::SuperAdmin->value, 'phone' => '0790000000'],
-            // The owner persona — sees every branch, no assignment to branch_user needed.
-            ['name' => 'الشريك',     'username' => 'partner',  'email' => 'partner@restaurant.test', 'role' => UserRole::Partner->value, 'phone' => '0791111111'],
-            ['name' => 'المدير العام', 'username' => 'manager', 'email' => 'manager@restaurant.test', 'role' => UserRole::Manager->value, 'phone' => '0790000001'],
-            ['name' => 'أحمد الجرسون', 'username' => 'waiter1', 'role' => UserRole::Waiter->value, 'phone' => '0790000002'],
-            ['name' => 'محمد الجرسون', 'username' => 'waiter2', 'role' => UserRole::Waiter->value, 'phone' => '0790000003'],
-            ['name' => 'يوسف الشيف', 'username' => 'chef1', 'role' => UserRole::Chef->value, 'station_id' => $kitchen?->id, 'phone' => '0790000004'],
-            ['name' => 'خالد البارمان', 'username' => 'bar1', 'role' => UserRole::Bartender->value, 'station_id' => $bar?->id, 'phone' => '0790000005'],
-            ['name' => 'سارة الكاشير', 'username' => 'cashier1', 'role' => UserRole::Cashier->value, 'phone' => '0790000006'],
-        ];
-
-        foreach ($users as $u) {
-            $u['password'] = Hash::make('password');
-            $u['status'] = 'active';
-            User::updateOrCreate(['username' => $u['username']], $u);
-        }
-
-        $this->attachStaffToMainBranch();
-    }
-
-    /**
-     * Attach every non-owner user to Khan Yunis with their role pivot, marking
-     * it as their primary branch. Idempotent — re-running this seeder won't
-     * create duplicate pivot rows.
-     */
-    protected function attachStaffToMainBranch(): void
-    {
-        $main = Branch::where('code', 'main-khan-yunis')->first();
-        if (! $main) {
-            return;
-        }
-
-        User::query()->each(function (User $user) use ($main) {
-            if ($user->isOwnerLevel()) {
-                return;
+        DemoDataset::assertCanSeed();
+        DemoDataset::assertDemo();
+        $branch = Branch::where('code', DemoDataset::BRANCH)->firstOrFail();
+        BranchContext::forBranch($branch->id, function () use ($branch): void {
+            $stations = Station::all()->keyBy('code');
+            $password = Hash::make(config('restaurant.demo_password'));
+            foreach (self::STAFF as [$username, $name, $role, $station]) {
+                $user = User::firstOrCreate(['username' => $username], [
+                    'name' => $name, 'email' => $username.'@example.test', 'phone' => null,
+                    'role' => $role, 'station_id' => $station ? $stations[$station]->id : null,
+                    'password' => $password, 'status' => 'active',
+                ]);
+                if ($user->isOwnerLevel()) {
+                    continue;
+                }
+                $membership = [$branch->id => ['is_primary' => true, 'joined_at' => $user->created_at]];
+                $user->branches()->syncWithoutDetaching($membership);
+                $employee = Employee::firstOrCreate(['user_id' => $user->id], [
+                    'code' => 'DS-EMP-'.strtoupper($username), 'name' => $name, 'phone' => null,
+                    'job_title' => UserRole::from($role)->label(), 'status' => 'active',
+                    'monthly_meal_allowance' => 180, 'meal_debt_ceiling' => 360,
+                    'notes' => 'شخصية افتراضية لعرض النظام؛ لا تمثل موظفاً حقيقياً.',
+                ]);
+                $employee->branches()->syncWithoutDetaching($membership);
             }
-            if ($main->users()->where('users.id', $user->id)->exists()) {
-                return;
-            }
-
-            $main->users()->attach($user->id, [
-                'is_primary' => true,
-                'joined_at'  => $user->created_at ?? now(),
-            ]);
         });
     }
 }

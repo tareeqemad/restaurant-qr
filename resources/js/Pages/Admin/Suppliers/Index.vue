@@ -1,4 +1,5 @@
 <script setup>
+import ManagementPage from '../../../Components/Inventory/ManagementPage.vue';
 import { computed, reactive } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import AdminLayout from '../../../Layouts/AdminLayout.vue';
@@ -26,6 +27,7 @@ async function remove(supplier) {
 </script>
 
 <template>
+    <ManagementPage mode="records">
     <Head title="الموردون" />
     <PageHeader title="الموردون" icon="bi-truck" subtitle="ملف واحد لكل مورّد: تواصل، شروط توريد، مكونات وفواتير">
         <template #actions><a v-if="can.create" :href="urls.create" class="btn btn-primary"><i class="bi bi-plus-lg"></i> مورد جديد</a></template>
@@ -73,11 +75,15 @@ async function remove(supplier) {
         </EmptyState>
         <template #footer><Pagination :links="suppliers.links" /></template>
     </DataPanel>
+    </ManagementPage>
 </template>
 
 <style scoped>
-.sup-filter{display:flex;flex-wrap:wrap;gap:8px}.sup-filter label{display:flex;flex:1 1 280px;align-items:center;gap:8px;padding:0 12px;border:1px solid #dfe7e2;border-radius:11px;background:#fff}.sup-filter label input{width:100%;padding:10px 0;border:0;outline:0}.sup-filter>button:not(.btn){min-height:42px;padding:0 13px;border:1px solid #dfe7e2;border-radius:11px;color:#67766d;background:#fff;font-weight:750}.sup-filter>button.active{color:#176b39;border-color:#9bc8a8;background:#eef8f1}
-.sup-list{display:grid;gap:8px;padding:4px}.sup-card{display:grid;grid-template-columns:46px minmax(0,1fr) 110px auto;align-items:center;gap:12px;padding:13px;border:1px solid #e1e8e3;border-radius:15px;background:#fff}.sup-card.muted{background:#fafbfa;opacity:.82}.sup-avatar{display:grid;width:46px;height:46px;place-items:center;border-radius:13px;color:#176b39;background:#eaf5ed;font-size:1.15rem}.sup-main{display:grid;gap:5px;min-width:0}.sup-title{display:flex;align-items:center;gap:8px}.sup-title a{color:#24382d;font-size:.9rem;font-weight:900}.sup-title span{padding:3px 7px;border-radius:99px;font-size:.57rem;font-weight:850}.sup-title .on{color:#14723c;background:#e8f6ec}.sup-title .off{color:#6e7a73;background:#edf0ee}.sup-contact{display:flex;flex-wrap:wrap;gap:10px;color:#687970;font-size:.67rem}.sup-contact span,.sup-contact a{display:flex;align-items:center;gap:4px;color:inherit}.sup-main>small{overflow:hidden;color:#849188;font-size:.62rem;text-overflow:ellipsis;white-space:nowrap}.sup-branches{display:flex;flex-wrap:wrap;gap:4px}.sup-branches span{padding:2px 6px;border-radius:7px;color:#617068;background:#f0f3f1;font-size:.55rem}.sup-stock{display:grid;text-align:center}.sup-stock small{color:#849087;font-size:.59rem}.sup-stock strong{color:#176b39;font-size:1rem}.sup-actions{display:flex;gap:5px}
+.sup-filter{display:flex;flex-wrap:wrap;gap:8px}.sup-filter label{display:flex;flex:1 1 280px;align-items:center;gap:8px;padding:0 12px;border:1px solid var(--brand-soft, #F3E3D8);border-radius:11px;background:var(--surface, #FFFDFA)}.sup-filter label input{width:100%;padding:10px 0;border:0;outline:0}.sup-filter>button:not(.btn){min-height:42px;padding:0 13px;border:1px solid var(--brand-soft, #F3E3D8);border-radius:11px;color:var(--muted, #626B6D);background:var(--surface, #FFFDFA);font-weight:750}.sup-filter>button.active{color:var(--ink, #25343A);border-color:var(--brand, #A3422B);background:var(--canvas, #F7F3ED)}
+.sup-list{display:grid;gap:8px;padding:4px}.sup-card{display:grid;grid-template-columns:46px minmax(0,1fr) 110px auto;align-items:center;gap:12px;padding:13px;border:1px solid var(--brand-soft, #F3E3D8);border-radius:12px;background:var(--surface, #FFFDFA)}.sup-card.muted{background:var(--canvas, #F7F3ED);opacity:.82}.sup-avatar{display:grid;width:46px;height:46px;place-items:center;border-radius:12px;color:var(--ink, #25343A);background:var(--canvas, #F7F3ED);font-size:1.15rem}.sup-main{display:grid;gap:5px;min-width:0}.sup-title{display:flex;align-items:center;gap:8px}.sup-title a{color:var(--ink, #25343A);font-size:.9rem;font-weight:900}.sup-title span{padding:3px 7px;border-radius:12px;font-size:.875rem;font-weight:850}.sup-title .on{color:var(--brand, #A3422B);background:var(--canvas, #F7F3ED)}.sup-title .off{color:var(--muted, #626B6D);background:var(--canvas, #F7F3ED)}.sup-contact{display:flex;flex-wrap:wrap;gap:10px;color:var(--muted, #626B6D);font-size:.875rem}.sup-contact span,.sup-contact a{display:flex;align-items:center;gap:4px;color:inherit}.sup-main>small{overflow:hidden;color:var(--muted, #626B6D);font-size:.875rem;text-overflow:ellipsis;white-space:nowrap}.sup-branches{display:flex;flex-wrap:wrap;gap:4px}.sup-branches span{padding:2px 6px;border-radius:7px;color:var(--muted, #626B6D);background:var(--canvas, #F7F3ED);font-size:.875rem}.sup-stock{display:grid;text-align:center}.sup-stock small{color:var(--muted, #626B6D);font-size:.875rem}.sup-stock strong{color:var(--ink, #25343A);font-size:1rem}.sup-actions{display:flex;gap:5px}
 @media(max-width:800px){.sup-card{grid-template-columns:42px minmax(0,1fr) auto}.sup-stock{grid-column:2;text-align:start;display:flex;gap:7px;align-items:center}.sup-actions{grid-column:3;grid-row:1/3;flex-direction:column}.sup-avatar{width:42px;height:42px}}
 @media(max-width:520px){.sup-card{grid-template-columns:40px minmax(0,1fr)}.sup-actions{grid-column:1/-1;grid-row:auto;flex-direction:row}.sup-actions .btn-primary{flex:1}.sup-contact{display:grid;gap:4px}.sup-stock{grid-column:2}}
+
+/* Dar Al Sarw management layout */
+.sup-filter { gap: 12px; } .sup-filter label { min-height: 48px; border-radius: 8px; background: var(--surface); } .sup-list { grid-template-columns: repeat(auto-fill,minmax(min(340px,100%),1fr)); gap: 18px; } .sup-card { padding: 20px; border-radius: 12px; }
 </style>

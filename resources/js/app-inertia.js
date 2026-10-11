@@ -11,7 +11,7 @@ const pages = import.meta.glob('./Pages/**/*.vue');
 
 createInertiaApp({
     progress: {
-        color: '#176b45',
+        color: '#a3422b',
         delay: 120,
         showSpinner: false,
     },

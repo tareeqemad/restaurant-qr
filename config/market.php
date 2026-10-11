@@ -8,6 +8,6 @@ return [
     'tax_number_label' => 'الرقم الضريبي',
     'service_label' => 'الخدمة',
     'phone_country' => 'PS',
-    'font_url' => '/assets/fonts/fonts.css',
-    'font_family' => "'Tajawal', system-ui, -apple-system, 'Segoe UI', sans-serif",
+    'font_url' => '/brand/fonts.css',
+    'font_family' => "'Cairo', system-ui, -apple-system, 'Segoe UI', sans-serif",
 ];

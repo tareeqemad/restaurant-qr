@@ -209,13 +209,13 @@ const err = (field) => errors.value?.[field]?.[0] ?? null;
     width: min(560px, 100%);
     max-height: 92dvh;
     overflow-y: auto;
-    background: #fff;
-    border-radius: 18px 18px 0 0;
-    box-shadow: 0 -18px 50px -20px rgba(15, 23, 42, .45);
+    background: var(--surface);
+    border-radius: 12px 12px 0 0;
+    box-shadow: none;
 }
 @media (min-width: 768px) {
     .qe-backdrop { align-items: center; padding: 1rem; }
-    .qe-sheet { border-radius: 18px; }
+    .qe-sheet { border-radius: 12px; }
 }
 
 .qe-head {
@@ -225,14 +225,14 @@ const err = (field) => errors.value?.[field]?.[0] ?? null;
     align-items: center;
     justify-content: space-between;
     padding: 1rem 1.15rem .8rem;
-    background: #fff;
-    border-bottom: 1px solid #eef2f6;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
 }
 .qe-head h3 {
     margin: 0;
     font-size: 1.02rem;
     font-weight: 800;
-    color: #0f172a;
+    color: var(--ink);
     display: flex;
     align-items: center;
     gap: .5rem;
@@ -243,8 +243,8 @@ const err = (field) => errors.value?.[field]?.[0] ?? null;
     height: 44px;
     border: 0;
     border-radius: 10px;
-    background: #f1f5f9;
-    color: #475569;
+    background: var(--canvas);
+    color: var(--ink);
     cursor: pointer;
 }
 
@@ -252,28 +252,28 @@ const err = (field) => errors.value?.[field]?.[0] ?? null;
 .qe-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .85rem; }
 
 .qe-field { display: flex; flex-direction: column; gap: .35rem; margin: 0; }
-.qe-field > span { font-size: .8rem; font-weight: 700; color: #334155; }
+.qe-field > span { font-size: .875rem; font-weight: 700; color: var(--ink); }
 .qe-field .form-control, .qe-field .form-select { min-height: 46px; }
 .qe-err { color: #b91c1c; font-weight: 600; }
-.qe-help { color: #64748b; font-size: .72rem; line-height: 1.5; }
+.qe-help { color: var(--muted); font-size: .875rem; line-height: 1.5; }
 .qe-release, .qe-session-note {
     display: flex;
     align-items: flex-start;
     gap: .7rem;
     padding: .8rem .9rem;
-    border: 1px solid #b9e4cf;
+    border: 1px solid var(--brand);
     border-radius: 12px;
     background: #effaf4;
-    color: #145a3b;
+    color: var(--brand);
 }
 .qe-release { cursor: pointer; }
 .qe-release input { width: 20px; height: 20px; margin-top: .15rem; accent-color: rgb(var(--primary-rgb)); }
 .qe-release span, .qe-session-note span { display: grid; gap: .2rem; }
-.qe-release strong, .qe-session-note strong { font-size: .85rem; }
-.qe-release small, .qe-session-note small { color: #4b6f5e; font-size: .73rem; line-height: 1.55; }
-.qe-session-note { border-color: #dbe3ec; background: #f8fafc; color: #334155; }
-.qe-session-note > i { margin-top: .1rem; color: #64748b; }
-.qe-session-note small { color: #64748b; }
+.qe-release strong, .qe-session-note strong { font-size: .875rem; }
+.qe-release small, .qe-session-note small { color: var(--brand); font-size: .875rem; line-height: 1.55; }
+.qe-session-note { border-color: var(--line); background: var(--canvas); color: var(--ink); }
+.qe-session-note > i { margin-top: .1rem; color: var(--muted); }
+.qe-session-note small { color: var(--muted); }
 .qe-release-err { margin-top: -.45rem; }
 
 .qe-toggle {
@@ -282,9 +282,9 @@ const err = (field) => errors.value?.[field]?.[0] ?? null;
     gap: .6rem;
     min-height: 44px;
     margin: 0;
-    font-size: .86rem;
+    font-size: .875rem;
     font-weight: 600;
-    color: #334155;
+    color: var(--ink);
     cursor: pointer;
 }
 .qe-toggle input { width: 19px; height: 19px; accent-color: rgb(var(--primary-rgb)); }
@@ -294,7 +294,7 @@ const err = (field) => errors.value?.[field]?.[0] ?? null;
     flex: 1;
     min-height: 48px;
     border: 0;
-    border-radius: 12px;
+    border-radius: 8px;
     font: inherit;
     font-size: .95rem;
     font-weight: 800;
@@ -304,8 +304,8 @@ const err = (field) => errors.value?.[field]?.[0] ?? null;
     justify-content: center;
     gap: .45rem;
 }
-.qe-btn--ghost { background: #f1f5f9; color: #334155; }
-.qe-btn--save { background: rgb(var(--primary-rgb)); color: #fff; }
+.qe-btn--ghost { background: var(--canvas); color: var(--ink); }
+.qe-btn--save { background: rgb(var(--primary-rgb)); color: #FFFDFA; }
 .qe-btn--save:disabled { opacity: .65; }
 .qe-spin { animation: qe-rotate 1s linear infinite; }
 @keyframes qe-rotate { to { transform: rotate(360deg); } }
@@ -315,4 +315,7 @@ const err = (field) => errors.value?.[field]?.[0] ?? null;
 @media (prefers-reduced-motion: reduce) {
     .qe-enter-active, .qe-leave-active { transition: none; }
 }
+
+/* Task-specific component layout. */
+.qe-sheet{width:min(560px,100%);height:100dvh;max-height:100dvh;border-radius:0;background:var(--surface);padding:0;overflow-y:auto}.qe-backdrop{padding:0;align-items:stretch;justify-content:flex-end}.qe-head{position:sticky;top:0;z-index:2;padding:22px 24px;border-bottom:1px solid var(--line);background:var(--surface)}.qe-head h2{font-size:23px}.qe-close{width:44px;height:44px;border-radius:8px;background:var(--canvas)}.qe-body{padding:24px}.qe-grid{gap:20px}.qe-field>span{font-size:14px}.qe-field .form-control,.qe-field .form-select{min-height:48px;font-size:16px;border-radius:6px}.qe-help,.qe-session-note,.qe-release{font-size:14px;line-height:1.7;border-radius:6px;padding:14px}.qe-actions{position:sticky;bottom:0;z-index:2;background:var(--surface);border-top:1px solid var(--line);padding:16px 24px;gap:12px}.qe-btn{min-height:48px;border-radius:8px;font-size:15px}
 </style>

@@ -2,6 +2,7 @@
 
 namespace App\Exports;
 
+use App\Helpers\Brand;
 use App\Helpers\Money;
 use App\Models\Branch;
 use Carbon\Carbon;
@@ -38,7 +39,7 @@ class ProfitLossXlsx
 
         $book = new Spreadsheet;
         $book->getProperties()
-            ->setCreator(config('restaurant.name', 'Relax'))
+            ->setCreator(Brand::name())
             ->setTitle('Profit & Loss')
             ->setSubject('تفاصيل الصندوق');
 

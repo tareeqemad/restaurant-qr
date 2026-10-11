@@ -185,40 +185,40 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.editor-backdrop { position:fixed; inset:0; z-index:18000; display:grid; place-items:center; padding:1rem; background:rgba(13,29,20,.5); backdrop-filter:blur(3px); }
-.attendance-editor { width:min(680px,100%); max-height:calc(100dvh - 2rem); overflow:auto; border:1px solid rgba(255,255,255,.7); border-radius:20px; background:#fff; box-shadow:0 28px 80px rgba(12,35,21,.25); }
-.attendance-editor header { display:flex; align-items:center; gap:.7rem; padding:1rem 1rem .85rem; border-bottom:1px solid #e6ece8; }
-.editor-icon { display:grid; flex:0 0 44px; height:44px; place-items:center; border-radius:13px; background:#eaf5ee; color:rgb(var(--primary-rgb, 22 115 67)); font-size:1.05rem; }
+.editor-backdrop { position:fixed; inset:0; z-index:18000; display:grid; place-items:center; padding:1rem; background:rgba(13,29,20,.5); backdrop-filter:none; }
+.attendance-editor { width:min(680px,100%); max-height:calc(100dvh - 2rem); overflow:auto; border:1px solid rgba(255,255,255,.7); border-radius:12px; background:var(--surface, #FFFDFA); box-shadow:none; }
+.attendance-editor header { display:flex; align-items:center; gap:.7rem; padding:1rem 1rem .85rem; border-bottom:1px solid var(--canvas, #F7F3ED); }
+.editor-icon { display:grid; flex:0 0 44px; height:44px; place-items:center; border-radius:12px; background:var(--canvas, #F7F3ED); color:var(--brand, #A3422B); font-size:1.05rem; }
 .attendance-editor header > div { display:grid; flex:1; }
-.attendance-editor header small { color:#7c8b83; font-size:.6rem; }
-.attendance-editor h2 { margin:.12rem 0 0; color:#1c3428; font-size:1rem; font-weight:900; }
-.close-button { display:grid; flex:0 0 44px; height:44px; place-items:center; border:0; border-radius:12px; background:#f1f5f2; color:#627269; }
+.attendance-editor header small { color:var(--muted, #626B6D); font-size:.875rem; }
+.attendance-editor h2 { margin:.12rem 0 0; color:var(--ink, #25343A); font-size:1rem; font-weight:900; }
+.close-button { display:grid; flex:0 0 44px; height:44px; place-items:center; border:0; border-radius:12px; background:var(--canvas, #F7F3ED); color:var(--muted, #626B6D); }
 .review-banner,.form-error { display:flex; align-items:flex-start; gap:.55rem; margin:.75rem 1rem 0; padding:.68rem .75rem; border-radius:11px; }
 .review-banner { background:#fff3d9; color:#905600; }
 .review-banner span { display:grid; }
-.review-banner strong { font-size:.69rem; }
-.review-banner small { color:#a77a39; font-size:.59rem; }
-.form-error { background:#fff0ef; color:#ae342e; font-size:.67rem; }
+.review-banner strong { font-size:.875rem; }
+.review-banner small { color:#a77a39; font-size:.875rem; }
+.form-error { background:#fff0ef; color:#ae342e; font-size:.875rem; }
 .editor-body { display:grid; grid-template-columns:1fr 1fr; gap:.7rem; padding:1rem; }
-.editor-body label { display:flex; flex-direction:column; gap:.34rem; min-width:0; color:#53675c; font-size:.66rem; font-weight:800; }
+.editor-body label { display:flex; flex-direction:column; gap:.34rem; min-width:0; color:var(--muted, #626B6D); font-size:.875rem; font-weight:800; }
 .editor-body label > span b { color:#b64a3e; }
-.editor-body label > small { color:#8a9690; font-size:.56rem; font-weight:600; }
+.editor-body label > small { color:var(--muted, #626B6D); font-size:.875rem; font-weight:600; }
 .editor-body .wide { grid-column:1/-1; }
-.editor-body input,.editor-body select,.editor-body textarea,.exclude-form input { width:100%; min-height:46px; padding:.58rem .72rem; border:1px solid #dce6df; border-radius:11px; background:#fff; color:#263c30; font:inherit; outline:0; }
-.editor-body input:focus,.editor-body select:focus,.editor-body textarea:focus,.exclude-form input:focus { border-color:#83b796; box-shadow:0 0 0 3px rgba(22,115,67,.09); }
-.editor-body select:disabled { background:#f2f5f3; color:#728078; }
+.editor-body input,.editor-body select,.editor-body textarea,.exclude-form input { width:100%; min-height:46px; padding:.58rem .72rem; border:1px solid var(--brand-soft, #F3E3D8); border-radius:11px; background:var(--surface, #FFFDFA); color:var(--ink, #25343A); font:inherit; outline:0; }
+.editor-body input:focus,.editor-body select:focus,.editor-body textarea:focus,.exclude-form input:focus { border-color:var(--muted, #626B6D); box-shadow:none; }
+.editor-body select:disabled { background:var(--canvas, #F7F3ED); color:var(--muted, #626B6D); }
 .editor-body textarea { resize:vertical; }
-.exclude-zone { margin:0 1rem 1rem; padding-top:.8rem; border-top:1px solid #edf1ee; }
-.exclude-trigger { min-height:44px; padding:0 .75rem; border:1px solid #efc9c6; border-radius:11px; background:#fff9f8; color:#a63a32; font-size:.63rem; font-weight:800; }
+.exclude-zone { margin:0 1rem 1rem; padding-top:.8rem; border-top:1px solid var(--canvas, #F7F3ED); }
+.exclude-trigger { min-height:44px; padding:0 .75rem; border:1px solid #efc9c6; border-radius:11px; background:var(--surface, #FFFDFA); color:#a63a32; font-size:.875rem; font-weight:800; }
 .exclude-form { display:grid; grid-template-columns:1fr auto; gap:.55rem; padding:.7rem; border-radius:12px; background:#fff4f2; }
 .exclude-form p { grid-column:1/-1; display:grid; margin:0; color:#963a33; }
-.exclude-form p strong { font-size:.65rem; }
-.exclude-form p span { color:#ae6d68; font-size:.56rem; }
-.exclude-form button { min-height:46px; padding:0 .8rem; border:0; border-radius:10px; background:#b43d34; color:#fff; font-size:.62rem; font-weight:850; }
-.attendance-editor footer { position:sticky; z-index:2; bottom:0; display:flex; gap:.55rem; justify-content:flex-end; padding:.8rem 1rem; border-top:1px solid #e6ece8; background:rgba(255,255,255,.96); backdrop-filter:blur(8px); }
-.attendance-editor footer button { min-width:130px; min-height:46px; border:0; border-radius:11px; font-size:.67rem; font-weight:850; }
-.attendance-editor footer .secondary { background:#f1f4f2; color:#58685f; }
-.attendance-editor footer .primary { background:rgb(var(--primary-rgb, 22 115 67)); color:#fff; box-shadow:0 7px 18px rgba(22,115,67,.18); }
+.exclude-form p strong { font-size:.875rem; }
+.exclude-form p span { color:var(--muted, #626B6D); font-size:.875rem; }
+.exclude-form button { min-height:46px; padding:0 .8rem; border:0; border-radius:10px; background:#b43d34; color:#fff; font-size:.875rem; font-weight:850; }
+.attendance-editor footer { position:sticky; z-index:2; bottom:0; display:flex; gap:.55rem; justify-content:flex-end; padding:.8rem 1rem; border-top:1px solid var(--canvas, #F7F3ED); background:rgba(255,255,255,.96); backdrop-filter:none; }
+.attendance-editor footer button { min-width:130px; min-height:46px; border:0; border-radius:11px; font-size:.875rem; font-weight:850; }
+.attendance-editor footer .secondary { background:var(--canvas, #F7F3ED); color:var(--muted, #626B6D); }
+.attendance-editor footer .primary { background:var(--brand, #A3422B); color:#fff; box-shadow:none; }
 .attendance-editor footer button:disabled { opacity:.55; cursor:wait; }
 .attendance-sheet-enter-active,.attendance-sheet-leave-active { transition:opacity .17s ease; }
 .attendance-sheet-enter-active .attendance-editor,.attendance-sheet-leave-active .attendance-editor { transition:transform .17s ease; }
@@ -226,7 +226,7 @@ onBeforeUnmount(() => {
 .attendance-sheet-enter-from .attendance-editor,.attendance-sheet-leave-to .attendance-editor { transform:translateY(12px) scale(.985); }
 @media (max-width:640px) {
     .editor-backdrop { align-items:end; padding:0; }
-    .attendance-editor { width:100%; max-height:94dvh; border-radius:20px 20px 0 0; }
+    .attendance-editor { width:100%; max-height:94dvh; border-radius:12px 12px 0 0; }
     .editor-body { grid-template-columns:1fr; padding:.85rem; }
     .editor-body .wide { grid-column:auto; }
     .exclude-zone { margin-inline:.85rem; }
@@ -237,4 +237,7 @@ onBeforeUnmount(() => {
 @media (prefers-reduced-motion:reduce) {
     .attendance-sheet-enter-active,.attendance-sheet-leave-active,.attendance-sheet-enter-active .attendance-editor,.attendance-sheet-leave-active .attendance-editor { transition:none; }
 }
+
+/* Dar Al Sarw management layout */
+.attendance-editor { width: min(720px,100%); padding: 24px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); } .attendance-editor>header { padding-bottom: 18px; border-bottom: 1px solid var(--line); } .attendance-editor h2 { color: var(--ink); font-size: 1.25rem; } .attendance-editor input,.attendance-editor select { min-height: 46px; border-radius: 8px; }
 </style>

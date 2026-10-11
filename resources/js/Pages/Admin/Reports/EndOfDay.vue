@@ -1,4 +1,5 @@
 <script setup>
+import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 /**
  * تقرير نهاية اليوم — the sheet a manager reads before locking up: what was
  * billed, what was actually collected and by whom, the invoice states, the
@@ -68,9 +69,10 @@ onBeforeUnmount(() => document.body.classList.remove('printing-end-of-day'));
 </script>
 
 <template>
-    <Head title="تقرير نهاية اليوم" />
-
-    <PageHeader :title="`تقرير نهاية اليوم — ${date}`" icon="bi-calendar-check"
+<Head title="تقرير نهاية اليوم" />
+<FinancialWorkspace area="التقارير والتحليل" mode="report">
+<template #heading>
+<PageHeader :title="`تقرير نهاية اليوم — ${date}`" icon="bi-calendar-check"
                 subtitle="ملخص شامل للمبيعات والنقدية والخصومات"
                 :crumbs="[{ label: 'التقارير', url: urls.reportsIndex }]">
         <template #actions>
@@ -79,17 +81,9 @@ onBeforeUnmount(() => document.body.classList.remove('printing-end-of-day'));
             </button>
         </template>
     </PageHeader>
-
-    <!-- Print-only header — replaces the page header on paper, since the
-         chrome around it is hidden. -->
-    <div class="eod-print-header d-none">
-        <div class="eod-print-brand"><strong>{{ brandName }}</strong></div>
-        <div class="eod-print-title">تقرير نهاية اليوم</div>
-        <div class="eod-print-date">التاريخ: {{ date }}</div>
-        <hr>
-    </div>
-
-    <div class="data-panel-filters mb-3 eod-filters">
+</template>
+<template #filters>
+<div class="data-panel-filters mb-3 eod-filters">
         <form class="row g-2 align-items-end" @submit.prevent="submit">
             <div class="col-md-4 mx-auto">
                 <label class="form-label small text-muted fw-bold">تاريخ الإقفال</label>
@@ -100,8 +94,9 @@ onBeforeUnmount(() => document.body.classList.remove('printing-end-of-day'));
             </div>
         </form>
     </div>
-
-    <StatRail :stats="[
+</template>
+<template #metrics>
+<StatRail :stats="[
         { label: 'إجمالي المقبوض', value: money(summary.total_collected), icon: 'bi-wallet2', color: 'success' },
         { label: 'إجمالي الفواتير', value: money(summary.total_billed), icon: 'bi-receipt', color: 'primary' },
         { label: 'المبيعات بدون ضريبة', value: money(summary.gross_sales), icon: 'bi-cash-stack', color: 'accent' },
@@ -109,8 +104,14 @@ onBeforeUnmount(() => document.body.classList.remove('printing-end-of-day'));
         { label: 'الفواتير المدفوعة', value: invoicesPaidLabel, icon: 'bi-check-circle', color: 'success' },
         { label: 'الخصومات', value: money(summary.discount_total), icon: 'bi-tag', color: statTones.discount },
     ]" />
-
-    <div class="row g-3 eod-grid">
+</template>
+<div class="eod-print-header d-none">
+        <div class="eod-print-brand"><strong>{{ brandName }}</strong></div>
+        <div class="eod-print-title">تقرير نهاية اليوم</div>
+        <div class="eod-print-date">التاريخ: {{ date }}</div>
+        <hr>
+    </div>
+<div class="row g-3 eod-grid">
         <div class="col-lg-5">
             <div class="card mb-3">
                 <div class="card-header"><strong><i class="bi bi-cash"></i> الدفعات حسب الطريقة</strong></div>
@@ -247,6 +248,8 @@ onBeforeUnmount(() => document.body.classList.remove('printing-end-of-day'));
             </div>
         </div>
     </div>
+</FinancialWorkspace>
+
 </template>
 
 <style scoped>
@@ -260,8 +263,8 @@ onBeforeUnmount(() => document.body.classList.remove('printing-end-of-day'));
 .eod-filters .btn { min-height: 44px; }
 .eod-usage-note {
     line-height: 1.55;
-    background: rgba(15, 71, 49, .03);
-    border-bottom: 1px solid rgba(15, 71, 49, .06);
+    background: rgba(37,52,58, .03);
+    border-bottom: 1px solid rgba(37,52,58, .06);
 }
 .eod-table-scroll { width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: thin; }
 .eod-table-scroll--wide .table { min-width: 590px; }
@@ -270,7 +273,7 @@ onBeforeUnmount(() => document.body.classList.remove('printing-end-of-day'));
     .eod-grid > [class*="col-"]:last-child { flex-basis: 100%; width: 100%; max-width: 100%; }
     .eod-grid .card-header { padding: .75rem .85rem; }
     .eod-grid .table th,
-    .eod-grid .table td { padding: .6rem .7rem; font-size: .74rem; }
+    .eod-grid .table td { padding: .6rem .7rem; font-size: .875rem; }
 }
 @media (max-width: 768px) {
     .eod-grid > [class*="col-"] { flex: 0 0 100%; width: 100%; max-width: 100%; }
@@ -395,7 +398,7 @@ onBeforeUnmount(() => document.body.classList.remove('printing-end-of-day'));
 
     /* Hint colors: convert to print-safe equivalents so important rows still
        stand out (variance, danger…). */
-    body.printing-end-of-day .text-success { color: #1a6b34 !important; }
+    body.printing-end-of-day .text-success { color: #A3422B !important; }
     body.printing-end-of-day .text-danger  { color: #8b1a1a !important; }
     body.printing-end-of-day .text-warning { color: #7a5800 !important; }
     body.printing-end-of-day .text-primary { color: #1a2a6b !important; }

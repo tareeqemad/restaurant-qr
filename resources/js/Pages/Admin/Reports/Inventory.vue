@@ -1,4 +1,5 @@
 <script setup>
+import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 /**
  * استهلاك المخزن — per ingredient over a date range: what came in, what
  * was consumed, what was wasted, and what the consumption and waste cost.
@@ -60,21 +61,23 @@ const applyShortcut = (key) => {
 </script>
 
 <template>
-    <Head title="استهلاك المخزن" />
-
-    <PageHeader title="استهلاك المخزن" icon="bi-boxes"
+<Head title="استهلاك المخزن" />
+<FinancialWorkspace area="التقارير والتحليل" mode="report">
+<template #heading>
+<PageHeader title="استهلاك المخزن" icon="bi-boxes"
                 subtitle="حركة المكونات المستهلكة في فترة محددة"
                 :crumbs="[{ label: 'التقارير', url: urls.reportsIndex }]" />
-
-    <StatRail :stats="[
+</template>
+<template #metrics>
+<StatRail :stats="[
         { label: 'إضافات', value: qty2(totals.in), icon: 'bi-plus-circle', color: 'success' },
         { label: 'استهلاك', value: qty2(totals.out), icon: 'bi-arrow-up-right-circle', color: 'accent' },
         { label: 'هدر', value: qty2(totals.waste), icon: 'bi-trash3', color: totals.waste > 0 ? 'danger' : 'muted' },
         { label: 'تكلفة الاستهلاك', value: money(totals.outCost), icon: 'bi-cash-stack', color: 'primary' },
         { label: 'تكلفة الهدر', value: money(totals.wasteCost), icon: 'bi-exclamation-triangle', color: totals.wasteCost > 0 ? 'warning' : 'muted' },
     ]" />
-
-    <DataPanel title="حركة المكونات" icon="bi-boxes" :count="rowCount">
+</template>
+<DataPanel title="حركة المكونات" icon="bi-boxes" :count="rowCount">
         <template #filters>
             <form class="row g-2 align-items-end" @submit.prevent="submit">
                 <div class="col-md-3">
@@ -133,6 +136,8 @@ const applyShortcut = (key) => {
             </table>
         </div>
     </DataPanel>
+</FinancialWorkspace>
+
 </template>
 
 <style scoped>

@@ -18,6 +18,15 @@ class StaffSetupService
      * fresh installation and must never be removed by the cleanup shortcut.
      */
     private const DEMO_ACCOUNTS = [
+        ['username' => 'partner', 'name' => 'ليان السرو', 'phone' => null, 'email' => 'partner@example.test'],
+        ['username' => 'manager', 'name' => 'سامر الزيتون', 'phone' => null, 'email' => 'manager@example.test'],
+        ['username' => 'waiter1', 'name' => 'آدم الريحان', 'phone' => null, 'email' => 'waiter1@example.test'],
+        ['username' => 'waiter2', 'name' => 'نور الياسمين', 'phone' => null, 'email' => 'waiter2@example.test'],
+        ['username' => 'chef1', 'name' => 'مروان الزعتر', 'phone' => null, 'email' => 'chef1@example.test'],
+        ['username' => 'bar1', 'name' => 'هالة النعناع', 'phone' => null, 'email' => 'bar1@example.test'],
+        ['username' => 'cashier1', 'name' => 'سلمى الورد', 'phone' => null, 'email' => 'cashier1@example.test'],
+        ['username' => 'accountant1', 'name' => 'ياسر الميزان', 'phone' => null, 'email' => 'accountant1@example.test'],
+        // Older trial installations still need the same conservative cleanup.
         ['username' => 'partner', 'name' => 'الشريك', 'phone' => '0791111111'],
         ['username' => 'manager', 'name' => 'المدير العام', 'phone' => '0790000001'],
         ['username' => 'waiter1', 'name' => 'أحمد الجرسون', 'phone' => '0790000002'],
@@ -94,6 +103,9 @@ class StaffSetupService
                             ->where('username', $account['username'])
                             ->where('name', $account['name'])
                             ->where('phone', $account['phone']);
+                        if (isset($account['email'])) {
+                            $candidate->where('email', $account['email']);
+                        }
                     });
                 }
             })

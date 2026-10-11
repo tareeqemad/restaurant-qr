@@ -80,11 +80,6 @@ function dateTime(value) {
             </div>
         </header>
 
-        <p v-if="workspace.kind === 'session'" class="session-note">
-            <i class="bi bi-receipt-check"></i> كل جولات الجلسة مجمّعة هنا وعلى
-            فاتورة واحدة.
-        </p>
-
         <div
             v-if="workspace.customer?.name || workspace.customer?.phone"
             class="customer-strip"
@@ -123,8 +118,7 @@ function dateTime(value) {
                     التأكيد</strong
                 >
                 <span
-                    >افتح التحويل من هنا وطابقه مع حساب البنك قبل تسجيل
-                    الدفع.</span
+                    >طابق الحوالة مع البنك قبل تأكيدها.</span
                 >
             </div>
             <button
@@ -168,10 +162,7 @@ function dateTime(value) {
                     الطلب ما زال عند {{ fulfillmentStations || "المطبخ أو البار" }}
                 </strong>
                 <span>
-                    جاهز {{ quantity(workspace.fulfillment.ready) }} · قيد التحضير
-                    {{ quantity(workspace.fulfillment.preparing) }} · بالانتظار
-                    {{ quantity(workspace.fulfillment.waiting) }}. الدفع لا يحرر الطاولة؛
-                    تتحرر بعد تأكيد الجرسون تسليم كل الأصناف.
+                    تبقى الطاولة مشغولة حتى تسليم كل الأصناف.
                 </span>
             </div>
         </div>
@@ -361,7 +352,6 @@ function dateTime(value) {
                     <i class="bi bi-receipt"></i>
                     <strong>جاهزة لإصدار الفاتورة</strong>
                     <b class="invoice-missing-total">{{ formatMoney(billableTotal, currency) }}</b>
-                    <span>راجع البنود ثم أصدر الفاتورة؛ سنفتح التحصيل مباشرة بعدها.</span>
                     <button
                         v-if="
                             (workspace.kind === 'session'
@@ -373,7 +363,7 @@ function dateTime(value) {
                         :disabled="busy || workspace.pending_changes.length > 0"
                         @click="emit('command', 'issue', { workspace })"
                     >
-                        إصدار ومتابعة للتحصيل
+                        إصدار الفاتورة والتحصيل
                     </button>
                     <small v-if="workspace.pending_changes.length" class="invoice-blocked-note">
                         عالج طلبات التعديل المعلّقة أولاً.
@@ -595,12 +585,6 @@ function dateTime(value) {
                     </summary>
                     <div>
                         <a
-                            :href="workspace.invoice.print_url"
-                            target="_blank"
-                            rel="noopener"
-                            ><i class="bi bi-printer"></i> طباعة الفاتورة</a
-                        >
-                        <a
                             :href="workspace.invoice.pdf_url"
                             target="_blank"
                             rel="noopener"
@@ -682,6 +666,9 @@ function dateTime(value) {
             <span v-if="workspace.invoice.balance <= 0" class="paid-mark"
                 ><i class="bi bi-check2-circle"></i> مكتملة</span
             >
+            <a :href="workspace.invoice.print_url" target="_blank" rel="noopener" class="print-invoice">
+                <i class="bi bi-printer"></i> طباعة
+            </a>
         </footer>
     </section>
 
@@ -695,14 +682,7 @@ function dateTime(value) {
                 "
             ></i
         ></span>
-        <h2>{{ loading ? "جاري فتح المهمة…" : "اختر مهمة وابدأ التحصيل" }}</h2>
-        <p>
-            {{
-                loading
-                    ? "نبقيك في نفس الشاشة ونحمّل أحدث بيانات الفاتورة."
-                    : "التحويلات والطلبات المتأخرة تظهر أولاً، وباقي الطاولات تبقى في القائمة الجانبية."
-            }}
-        </p>
+        <h2>{{ loading ? "جاري فتح الحساب…" : "اختر طاولة أو طلباً" }}</h2>
     </section>
 </template>
 
@@ -710,10 +690,10 @@ function dateTime(value) {
 .checkout-workspace,
 .workspace-empty {
     min-width: 0;
-    border: 1px solid #e1e8e4;
-    border-radius: 15px;
-    background: #fff;
-    box-shadow: 0 12px 34px -30px rgba(15, 49, 31, 0.8);
+    border: 1px solid var(--line, var(--line));
+    border-radius: 12px;
+    background: var(--surface, #FFFDFA);
+    box-shadow: none;
 }
 .checkout-workspace {
     position: relative;
@@ -726,18 +706,19 @@ function dateTime(value) {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.8rem 1rem;
-    border-bottom: 1px solid #e9efeb;
+    padding: 1rem 1.1rem;
+    border-bottom: 1px solid var(--line, var(--line));
+    background: var(--canvas, #F7F3ED);
 }
 .origin-title span {
-    color: #79867d;
-    font-size: 0.64rem;
+    color: var(--muted, var(--muted));
+    font-size: .875rem;
     font-weight: 700;
 }
 .origin-title h2 {
     margin: 0.12rem 0 0;
-    color: #1b3022;
-    font-size: 1.05rem;
+    color: var(--ink, var(--ink));
+    font-size: 1.3rem;
 }
 .workspace-meta {
     display: flex;
@@ -751,9 +732,9 @@ function dateTime(value) {
     gap: 0.25rem;
     padding-inline: 0.5rem;
     border-radius: 8px;
-    color: #627067;
-    background: #f1f5f2;
-    font-size: 0.67rem;
+    color: var(--muted, var(--muted));
+    background: var(--surface, #FFFDFA);
+    font-size: .875rem;
     font-weight: 750;
 }
 .workspace-meta button {
@@ -761,10 +742,10 @@ function dateTime(value) {
     width: 44px;
     height: 44px;
     place-items: center;
-    border: 1px solid #e1e7e3;
-    border-radius: 10px;
-    color: #67746c;
-    background: #fff;
+    border: 1px solid var(--line, var(--line));
+    border-radius: 8px;
+    color: var(--muted, var(--muted));
+    background: var(--surface, #FFFDFA);
 }
 .workspace-meta .back-to-queue {
     display: inline-flex;
@@ -774,28 +755,16 @@ function dateTime(value) {
     justify-content: center;
     gap: 0.35rem;
     font: inherit;
-    font-size: 0.66rem;
+    font-size: .875rem;
     font-weight: 800;
-}
-.session-note {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    margin: 0;
-    padding: 0.45rem 1rem;
-    border-bottom: 1px solid #e4ece7;
-    color: #146f42;
-    background: #f2f8f4;
-    font-size: 0.67rem;
-    font-weight: 750;
 }
 .customer-strip {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.55rem 1rem;
-    border-bottom: 1px solid #edf1ee;
-    background: #fafcfb;
+    padding: .75rem 1.1rem;
+    border-bottom: 1px solid var(--line, var(--line));
+    background: var(--surface, #FFFDFA);
 }
 .customer-avatar {
     display: grid;
@@ -803,10 +772,10 @@ function dateTime(value) {
     height: 32px;
     place-items: center;
     border-radius: 9px;
-    color: #fff;
+    color: #FFFDFA;
     background: var(--cx-primary);
-    font-size: 0.77rem;
-    font-weight: 850;
+    font-size: .875rem;
+    font-weight: 800;
 }
 .customer-strip > div {
     display: flex;
@@ -815,19 +784,19 @@ function dateTime(value) {
     flex-direction: column;
 }
 .customer-strip strong {
-    font-size: 0.74rem;
+    font-size: .875rem;
 }
 .customer-strip small {
     margin-top: 0.1rem;
-    color: #7b887f;
-    font-size: 0.62rem;
+    color: var(--muted, var(--muted));
+    font-size: .875rem;
 }
 .loyalty,
 .debt,
 .advance {
     padding: 0.24rem 0.45rem;
-    border-radius: 999px;
-    font-size: 0.62rem;
+    border-radius: 12px;
+    font-size: .875rem;
     font-weight: 750;
 }
 .loyalty {
@@ -839,8 +808,8 @@ function dateTime(value) {
     background: #fff0f1;
 }
 .advance {
-    color: #17623d;
-    background: #e9f7ee;
+    color: var(--brand);
+    background: var(--brand-soft);
 }
 .workspace-alert {
     display: flex;
@@ -859,11 +828,11 @@ function dateTime(value) {
     flex-direction: column;
 }
 .workspace-alert strong {
-    font-size: 0.72rem;
+    font-size: .875rem;
 }
 .workspace-alert span {
     margin-top: 0.08rem;
-    font-size: 0.62rem;
+    font-size: .875rem;
 }
 .transfer-alert {
     border-color: #f1d894;
@@ -878,10 +847,10 @@ function dateTime(value) {
     padding-inline: 0.65rem;
     border: 1px solid #b58a17;
     border-radius: 8px;
-    color: #fff;
+    color: #FFFDFA;
     background: #8b6a0f;
     font: inherit;
-    font-size: 0.64rem;
+    font-size: .875rem;
     font-weight: 800;
 }
 .change-alert {
@@ -910,15 +879,15 @@ function dateTime(value) {
     padding-inline: 0.65rem;
     border: 1px solid #397b9e;
     border-radius: 8px;
-    color: #fff;
+    color: #FFFDFA;
     background: #2e6e91;
     font: inherit;
-    font-size: 0.64rem;
+    font-size: .875rem;
     font-weight: 800;
 }
 .approval-alert {
-    border-color: #b8d8c2;
-    color: #225e37;
+    border-color: var(--brand);
+    color: var(--brand);
     background: #eff9f2;
 }
 .approval-alert > div {
@@ -927,21 +896,21 @@ function dateTime(value) {
 .approval-alert > button {
     min-height: 38px;
     padding-inline: 0.65rem;
-    border: 1px solid #2d7948;
+    border: 1px solid var(--brand);
     border-radius: 8px;
-    color: #fff;
-    background: #287043;
+    color: #FFFDFA;
+    background: var(--brand);
     font: inherit;
-    font-size: 0.64rem;
+    font-size: .875rem;
     font-weight: 800;
 }
 .workspace-grid {
     display: grid;
     min-height: 0;
     flex: 1;
-    grid-template-columns: minmax(0, 1fr) minmax(250px, 32%);
-    gap: 0.7rem;
-    padding: 0.7rem 1rem 5.3rem;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 34%);
+    gap: 1rem;
+    padding: 1rem 1.1rem 6.3rem;
     overflow-y: auto;
 }
 .orders-column,
@@ -953,14 +922,14 @@ function dateTime(value) {
 }
 .discount-action {
     display: flex;
-    min-height: 48px;
+    min-height: 58px;
     align-items: center;
     gap: 0.45rem;
     padding: 0.45rem 0.6rem;
-    border: 1px solid #dce7df;
-    border-radius: 11px;
-    color: #315640;
-    background: #f7fbf8;
+    border: 1px solid var(--line, var(--line));
+    border-radius: 8px;
+    color: var(--ink, var(--ink));
+    background: var(--surface, #FFFDFA);
     text-align: start;
     font: inherit;
 }
@@ -970,7 +939,7 @@ function dateTime(value) {
     height: 30px;
     place-items: center;
     border-radius: 8px;
-    color: #fff;
+    color: #FFFDFA;
     background: var(--cx-primary);
 }
 .discount-action span {
@@ -980,16 +949,16 @@ function dateTime(value) {
     flex-direction: column;
 }
 .discount-action strong {
-    font-size: 0.69rem;
+    font-size: .875rem;
 }
 .discount-action small {
     margin-top: 0.08rem;
-    color: #7a887f;
-    font-size: 0.58rem;
+    color: var(--muted, var(--muted));
+    font-size: .875rem;
 }
 .discount-action > i:last-child {
-    color: #829087;
-    font-size: 0.65rem;
+    color: var(--muted, var(--muted));
+    font-size: .875rem;
 }
 .discount-action:disabled {
     opacity: 0.45;
@@ -1004,7 +973,7 @@ function dateTime(value) {
     background: #806515;
 }
 .order-card {
-    border: 1px solid #e2e9e4;
+    border: 1px solid var(--line, var(--line));
     border-radius: 12px;
     overflow: hidden;
 }
@@ -1012,24 +981,24 @@ function dateTime(value) {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.55rem 0.65rem;
-    background: #f8faf9;
+    padding: .8rem;
+    background: var(--surface, #FFFDFA);
 }
 .order-card > header div {
     display: flex;
     flex-direction: column;
 }
 .order-card > header strong {
-    color: #27382d;
-    font-size: 0.72rem;
+    color: var(--ink, var(--ink));
+    font-size: .875rem;
 }
 .order-card > header small {
-    color: #7a867e;
-    font-size: 0.61rem;
+    color: var(--muted, var(--muted));
+    font-size: .875rem;
 }
 .order-card > header > b {
-    color: #294632;
-    font-size: 0.73rem;
+    color: var(--ink, var(--ink));
+    font-size: .875rem;
 }
 .order-lines {
     display: flex;
@@ -1040,15 +1009,15 @@ function dateTime(value) {
     grid-template-columns: 34px minmax(0, 1fr) auto auto auto;
     gap: 0.45rem;
     align-items: center;
-    min-height: 54px;
-    padding: 0.42rem 0.6rem;
-    border-top: 1px solid #edf1ee;
+    min-height: 66px;
+    padding: .6rem .75rem;
+    border-top: 1px solid var(--line, var(--line));
 }
 .order-line:first-child {
     border-top: 0;
 }
 .order-line.cancelled {
-    border-color: #f0dcdf;
+    border-color: var(--line);
     background: #fffafb;
 }
 .order-line.cancelled .line-qty,
@@ -1061,10 +1030,10 @@ function dateTime(value) {
     min-height: 30px;
     place-items: center;
     border-radius: 8px;
-    color: var(--cx-primary);
-    background: #edf7ef;
-    font-size: 0.67rem;
-    font-weight: 850;
+    color: var(--brand, #A3422B);
+    background: var(--brand-soft, #F3E3D8);
+    font-size: .875rem;
+    font-weight: 800;
 }
 .line-copy {
     display: flex;
@@ -1073,16 +1042,16 @@ function dateTime(value) {
 }
 .line-copy strong {
     overflow: hidden;
-    color: #28372e;
-    font-size: 0.72rem;
+    color: var(--ink, var(--ink));
+    font-size: 1rem;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 .line-copy small {
     margin-top: 0.08rem;
     overflow: hidden;
-    color: #7a867e;
-    font-size: 0.59rem;
+    color: var(--muted, var(--muted));
+    font-size: .875rem;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -1098,13 +1067,13 @@ function dateTime(value) {
 .line-status {
     padding: 0.16rem 0.35rem;
     border-radius: 6px;
-    color: #56645b;
-    background: #f0f3f1;
-    font-size: 0.58rem;
+    color: var(--muted, var(--muted));
+    background: var(--surface, #FFFDFA);
+    font-size: .875rem;
 }
 .line-not-charged {
     color: #a33641;
-    font-size: 0.62rem;
+    font-size: .875rem;
     white-space: nowrap;
 }
 .line-cancel-action {
@@ -1112,8 +1081,8 @@ function dateTime(value) {
     width: 34px;
     height: 34px;
     place-items: center;
-    border: 1px solid #efcdd1;
-    border-radius: 9px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
     color: #a43540;
     background: #fff5f6;
 }
@@ -1125,15 +1094,15 @@ function dateTime(value) {
     opacity: 0.45;
 }
 .order-line > b {
-    color: #34473a;
-    font-size: 0.68rem;
+    color: var(--ink, var(--ink));
+    font-size: .875rem;
     white-space: nowrap;
 }
 .order-discounts {
     display: flex;
     gap: 0.3rem;
     padding: 0.45rem 0.6rem;
-    border-top: 1px solid #edf1ee;
+    border-top: 1px solid var(--line, var(--line));
     flex-wrap: wrap;
 }
 .order-discounts span {
@@ -1141,7 +1110,7 @@ function dateTime(value) {
     border-radius: 6px;
     color: #9b2832;
     background: #fff1f2;
-    font-size: 0.59rem;
+    font-size: .875rem;
     font-weight: 700;
 }
 .order-discounts .discount-chip {
@@ -1170,45 +1139,45 @@ function dateTime(value) {
     align-content: center;
     gap: 0.35rem;
     padding: 1rem;
-    border: 1px dashed #ccd8d0;
-    border-radius: 14px;
-    color: #75837a;
+    border: 1px dashed var(--line, var(--line));
+    border-radius: 12px;
+    color: var(--muted, var(--muted));
     text-align: center;
 }
 .invoice-missing > i {
-    color: #8caf98;
+    color: var(--muted, var(--muted));
     font-size: 1.4rem;
 }
 .invoice-missing strong {
-    color: #435248;
-    font-size: 0.78rem;
+    color: var(--muted, var(--muted));
+    font-size: .875rem;
 }
 .invoice-missing-total {
     color: var(--cx-primary);
     font-size: 1.15rem;
 }
 .invoice-missing span {
-    font-size: 0.66rem;
+    font-size: .875rem;
 }
 .invoice-missing button {
     min-height: 44px;
     margin-top: 0.35rem;
     padding-inline: 1rem;
     border: 0;
-    border-radius: 10px;
-    color: #fff;
+    border-radius: 8px;
+    color: #FFFDFA;
     background: var(--cx-primary);
     font: inherit;
-    font-size: 0.72rem;
+    font-size: .875rem;
     font-weight: 800;
 }
 .invoice-blocked-note {
     color: #9b3038;
-    font-size: 0.62rem;
+    font-size: .875rem;
     font-weight: 750;
 }
 .history-card {
-    border: 1px solid #e1e8e3;
+    border: 1px solid var(--line, var(--line));
     border-radius: 12px;
     overflow: hidden;
 }
@@ -1225,8 +1194,8 @@ function dateTime(value) {
     display: flex;
     align-items: center;
     gap: 0.35rem;
-    color: #435248;
-    font-size: 0.68rem;
+    color: var(--muted, var(--muted));
+    font-size: .875rem;
     font-weight: 750;
 }
 .history-card summary b {
@@ -1234,10 +1203,10 @@ function dateTime(value) {
     min-width: 20px;
     height: 20px;
     place-items: center;
-    border-radius: 999px;
-    color: #54705e;
-    background: #edf3ef;
-    font-size: 0.6rem;
+    border-radius: 12px;
+    color: var(--muted, var(--muted));
+    background: var(--surface, #FFFDFA);
+    font-size: .875rem;
 }
 .history-list {
     padding: 0 0.6rem 0.55rem;
@@ -1250,10 +1219,10 @@ function dateTime(value) {
     margin: 0.35rem 0 0;
     padding: 0.4rem;
     border-radius: 8px;
-    background: #f7faf8;
+    background: var(--surface, #FFFDFA);
 }
 .history-list p > i {
-    color: #1d7a40;
+    color: var(--brand, #A3422B);
 }
 .history-list p > span {
     display: flex;
@@ -1261,11 +1230,11 @@ function dateTime(value) {
 }
 .history-list p strong,
 .history-list p b {
-    font-size: 0.63rem;
+    font-size: .875rem;
 }
 .history-list p small {
-    color: #7b887f;
-    font-size: 0.57rem;
+    color: var(--muted, var(--muted));
+    font-size: .875rem;
 }
 .history-list .refund-row i,
 .history-list .refund-row b {
@@ -1287,25 +1256,25 @@ function dateTime(value) {
 .no-history {
     display: block;
     padding: 0.7rem;
-    color: #7b887f;
+    color: var(--muted, var(--muted));
     text-align: center;
-    font-size: 0.65rem;
+    font-size: .875rem;
 }
 .refund-action {
     width: 100%;
     min-height: 42px;
     margin-top: 0.45rem;
     border: 1px solid #e8b6bb;
-    border-radius: 9px;
+    border-radius: 8px;
     color: #a32b36;
     background: #fff4f5;
     font: inherit;
-    font-size: 0.68rem;
+    font-size: .875rem;
     font-weight: 800;
 }
 .advanced-actions {
-    border: 1px solid #e2e8e4;
-    border-radius: 11px;
+    border: 1px solid var(--line, var(--line));
+    border-radius: 8px;
     overflow: hidden;
 }
 .advanced-actions summary {
@@ -1314,10 +1283,10 @@ function dateTime(value) {
     align-items: center;
     justify-content: space-between;
     padding-inline: 0.6rem;
-    color: #5d6b62;
+    color: var(--muted, var(--muted));
     cursor: pointer;
     list-style: none;
-    font-size: 0.66rem;
+    font-size: .875rem;
     font-weight: 750;
 }
 .advanced-actions summary span {
@@ -1338,13 +1307,13 @@ function dateTime(value) {
     align-items: center;
     justify-content: center;
     gap: 0.3rem;
-    border: 1px solid #dce4df;
+    border: 1px solid var(--line, var(--line));
     border-radius: 8px;
-    color: #4e5f55;
-    background: #fff;
+    color: var(--muted, var(--muted));
+    background: var(--surface, #FFFDFA);
     text-decoration: none;
     font: inherit;
-    font-size: 0.62rem;
+    font-size: .875rem;
     font-weight: 750;
 }
 .advanced-actions .danger-admin {
@@ -1364,11 +1333,11 @@ function dateTime(value) {
     display: flex;
     align-items: center;
     gap: 0.45rem;
-    padding: 0.65rem 1rem;
-    border-top: 1px solid #dce5df;
-    background: rgba(255, 255, 255, 0.96);
-    box-shadow: 0 -10px 25px -22px rgba(12, 43, 24, 0.7);
-    backdrop-filter: blur(8px);
+    padding: .85rem 1.1rem;
+    border-top: 2px solid var(--line, var(--line));
+    background: var(--surface, #FFFDFA);
+    box-shadow: none;
+    backdrop-filter: none;
 }
 .payment-dock > div {
     display: flex;
@@ -1377,27 +1346,36 @@ function dateTime(value) {
     flex-direction: column;
 }
 .payment-dock > div span {
-    color: #758179;
-    font-size: 0.61rem;
+    color: var(--muted, var(--muted));
+    font-size: .875rem;
 }
 .payment-dock > div strong {
     color: var(--cx-primary);
-    font-size: 0.96rem;
+    font-size: 1.5rem;
+    font-variant-numeric: tabular-nums;
 }
-.payment-dock button {
-    min-height: 44px;
+.payment-dock button,
+.payment-dock .print-invoice {
+    min-height: 50px;
     padding-inline: 0.9rem;
-    border: 1px solid #d7e1da;
-    border-radius: 10px;
-    color: #36503f;
-    background: #fff;
+    border: 1px solid var(--line, var(--line));
+    border-radius: 8px;
+    color: var(--ink, var(--ink));
+    background: var(--surface, #FFFDFA);
     font: inherit;
-    font-size: 0.7rem;
+    font-size: .95rem;
     font-weight: 800;
+}
+.payment-dock .print-invoice {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    text-decoration: none;
 }
 .payment-dock .primary-action {
     border-color: var(--cx-primary);
-    color: #fff;
+    color: #FFFDFA;
     background: var(--cx-primary);
 }
 .payment-dock button:disabled {
@@ -1408,9 +1386,9 @@ function dateTime(value) {
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
-    color: #16763a;
-    font-size: 0.78rem;
-    font-weight: 850;
+    color: var(--brand);
+    font-size: .875rem;
+    font-weight: 800;
 }
 .workspace-empty {
     display: grid;
@@ -1418,7 +1396,7 @@ function dateTime(value) {
     place-items: center;
     align-content: center;
     padding: 1rem;
-    color: #7b887f;
+    color: var(--muted, var(--muted));
     text-align: center;
 }
 .empty-mark {
@@ -1426,20 +1404,20 @@ function dateTime(value) {
     width: 58px;
     height: 58px;
     place-items: center;
-    border-radius: 18px;
-    color: var(--cx-primary);
-    background: #edf7ef;
+    border-radius: 12px;
+    color: var(--brand, #A3422B);
+    background: var(--brand-soft, #F3E3D8);
     font-size: 1.35rem;
 }
 .workspace-empty h2 {
     margin: 0.7rem 0 0.2rem;
-    color: #435248;
+    color: var(--muted, var(--muted));
     font-size: 0.98rem;
 }
 .workspace-empty p {
     max-width: 390px;
     margin: 0;
-    font-size: 0.7rem;
+    font-size: .875rem;
     line-height: 1.7;
 }
 .spinning {
@@ -1449,6 +1427,10 @@ function dateTime(value) {
     to {
         transform: rotate(360deg);
     }
+}
+.payment-dock .primary-action:hover:not(:disabled) {
+    background: var(--brand-hover, #823321);
+    border-color: var(--brand-hover, #823321);
 }
 @media (max-width: 980px) {
     .workspace-grid {
@@ -1501,4 +1483,10 @@ function dateTime(value) {
         min-width: 108px;
     }
 }
+
+/* Task-focused workspace layout. */
+.checkout-workspace{border-radius:10px;overflow:hidden;padding:0;background:var(--surface)}.workspace-heading{padding:18px;border-bottom:1px solid var(--line);background:var(--surface)}.origin-title h2{font-size:25px}.workspace-meta{gap:10px}.customer-strip{margin:0;border-radius:0;border-bottom:1px solid var(--line);padding:12px 18px;background:var(--canvas)}.workspace-alert{margin:12px 16px;border-radius:6px;padding:12px}.workspace-grid{display:flex;flex-direction:column;gap:16px;padding:16px}.orders-column{min-width:0}.order-card{border-radius:6px;box-shadow:none}.order-card>header{background:var(--canvas);padding:12px;border-bottom:1px solid var(--line)}.back-to-queue{display:inline-flex;min-height:42px}.checkout-empty{min-height:420px;border:1px dashed var(--line);border-radius:10px;box-shadow:none}.checkout-empty h2{font-size:22px}@media(min-width:1400px){.workspace-grid{display:grid;grid-template-columns:minmax(0,1fr) 310px;align-items:start}}
+
+/* Task-specific component layout. */
+.workspace-empty{min-height:460px;border:1px dashed var(--line);border-radius:10px;background:transparent;box-shadow:none;display:grid;align-content:center;justify-items:center;padding:32px}.workspace-empty .empty-mark{width:54px;height:54px;border-radius:10px;background:var(--brand-soft);color:var(--brand)}.workspace-empty h2{font-size:23px;margin-top:16px}.payment-dock{position:sticky;bottom:0;padding:16px;background:var(--surface);border-top:1px solid var(--line);border-radius:0;gap:12px}.payment-dock .primary-action{min-height:52px;border-radius:8px;font-size:16px}.order-line{padding:14px 12px;border-bottom:1px solid var(--line);gap:10px}.line-qty{font-size:17px;min-width:28px}.line-copy strong{font-size:15px}.line-cancel-action{min-width:42px;min-height:42px}.money-column{min-width:0}.invoice-missing{padding:20px;border:1px solid var(--line);border-radius:8px}.invoice-missing-total{font-size:27px}.discount-action{min-height:46px;border-radius:6px;font-size:14px}
 </style>

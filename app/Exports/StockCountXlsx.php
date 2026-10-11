@@ -2,8 +2,8 @@
 
 namespace App\Exports;
 
+use App\Helpers\Brand;
 use App\Models\StockCount;
-use Carbon\Carbon;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
@@ -26,9 +26,12 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 class StockCountXlsx
 {
     protected string $brandGreen = '0F2D22';
-    protected string $brandGold  = 'B97818';
-    protected string $headerBg   = '1F4733';
-    protected string $rowAlt     = 'FAFDFA';
+
+    protected string $brandGold = 'B97818';
+
+    protected string $headerBg = '1F4733';
+
+    protected string $rowAlt = 'FAFDFA';
 
     protected string $currency;
 
@@ -37,11 +40,11 @@ class StockCountXlsx
         $this->currency = config('restaurant.currency_symbol', '₪');
         $count->loadMissing(['items.ingredient.baseUnit', 'creator', 'finalizer', 'storageLocation']);
 
-        $book = new Spreadsheet();
+        $book = new Spreadsheet;
         $book->getProperties()
-            ->setCreator(config('restaurant.name', 'Relax'))
-            ->setTitle('Stock Count ' . $count->number)
-            ->setSubject('تقرير الجرد ' . $count->number);
+            ->setCreator(Brand::name())
+            ->setTitle('Stock Count '.$count->number)
+            ->setSubject('تقرير الجرد '.$count->number);
 
         $this->buildSummarySheet($book->getActiveSheet(), $count);
         $this->buildAllItemsSheet($book->createSheet(), $count);
@@ -49,8 +52,8 @@ class StockCountXlsx
 
         $book->setActiveSheetIndex(0);
 
-        $stamp    = now()->format('Y-m-d_H-i');
-        $safeNum  = preg_replace('/[^A-Za-z0-9_.-]/', '_', $count->number);
+        $stamp = now()->format('Y-m-d_H-i');
+        $safeNum = preg_replace('/[^A-Za-z0-9_.-]/', '_', $count->number);
         $filename = "stock-count_{$safeNum}_{$stamp}.xlsx";
 
         return response()->streamDownload(function () use ($book) {
@@ -78,10 +81,10 @@ class StockCountXlsx
         $sheet->getRowDimension(1)->setRowHeight(38);
 
         $statusLabel = match ($count->status) {
-            'draft'     => 'مسودة (قيد العدّ)',
+            'draft' => 'مسودة (قيد العدّ)',
             'finalized' => 'مُعتمد (تم تطبيق التسويات)',
             'cancelled' => 'ملغي',
-            default     => $count->status ?? '—',
+            default => $count->status ?? '—',
         };
 
         $meta = [
@@ -111,23 +114,23 @@ class StockCountXlsx
         }
 
         // ─── KPIs ─────────────────────────────────────────────────────
-        $items     = $count->items;
-        $total     = $items->count();
-        $counted   = $items->whereNotNull('counted_qty')->count();
-        $pending   = $total - $counted;
+        $items = $count->items;
+        $total = $items->count();
+        $counted = $items->whereNotNull('counted_qty')->count();
+        $pending = $total - $counted;
         $shortages = $items->filter(fn ($i) => $i->counted_qty !== null && (float) $i->variance < -0.0001)->count();
-        $overages  = $items->filter(fn ($i) => $i->counted_qty !== null && (float) $i->variance > 0.0001)->count();
-        $matches   = $items->filter(fn ($i) => $i->counted_qty !== null && abs((float) $i->variance) <= 0.0001)->count();
+        $overages = $items->filter(fn ($i) => $i->counted_qty !== null && (float) $i->variance > 0.0001)->count();
+        $matches = $items->filter(fn ($i) => $i->counted_qty !== null && abs((float) $i->variance) <= 0.0001)->count();
         $costDelta = (float) $items->sum('variance_cost');
 
         $row += 1;
-        $this->writeKpi($sheet, $row++, 'إجمالي المكوّنات',       $total,     $this->brandGreen, 'count');
-        $this->writeKpi($sheet, $row++, 'تم عدّها',                $counted,   '14532D',          'count');
-        $this->writeKpi($sheet, $row++, 'لم تُعد بعد',             $pending,   '475569',          'count');
-        $this->writeKpi($sheet, $row++, 'مطابقة (لا فرق)',          $matches,   '14532D',          'count');
-        $this->writeKpi($sheet, $row++, 'فيها نقص',                 $shortages, 'B91C1C',          'count');
-        $this->writeKpi($sheet, $row++, 'فيها زيادة',               $overages,  'C2410C',          'count');
-        $this->writeKpi($sheet, $row++, 'صافي قيمة الفروقات',       $costDelta, $this->brandGold,  'money');
+        $this->writeKpi($sheet, $row++, 'إجمالي المكوّنات', $total, $this->brandGreen, 'count');
+        $this->writeKpi($sheet, $row++, 'تم عدّها', $counted, '14532D', 'count');
+        $this->writeKpi($sheet, $row++, 'لم تُعد بعد', $pending, '475569', 'count');
+        $this->writeKpi($sheet, $row++, 'مطابقة (لا فرق)', $matches, '14532D', 'count');
+        $this->writeKpi($sheet, $row++, 'فيها نقص', $shortages, 'B91C1C', 'count');
+        $this->writeKpi($sheet, $row++, 'فيها زيادة', $overages, 'C2410C', 'count');
+        $this->writeKpi($sheet, $row++, 'صافي قيمة الفروقات', $costDelta, $this->brandGold, 'money');
 
         // ─── Footnote ─────────────────────────────────────────────────
         $row += 1;
@@ -138,17 +141,19 @@ class StockCountXlsx
         ]);
         $row++;
         $note = "الجرد = مقارنة كمية النظام (المتوقعة) بالكمية الفعلية الموجودة في المخزن.\n\n"
-              . "• «نقص» = الكمية الفعلية أقل من النظام (احتمال هدر، سرقة، خطأ تسجيل، أو استهلاك غير موثَّق).\n"
-              . "• «زيادة» = الكمية الفعلية أكبر من النظام (احتمال استلام غير مُسجّل أو خطأ في حركة سابقة).\n"
-              . "• «صافي قيمة الفروقات» = القيمة المالية للتسوية. سالب = خسارة، موجب = ربح غير مُسجّل.\n"
-              . "• عند اعتماد الجرد، النظام يُنشئ حركة «تعديل» لكل فرق ليطابق المخزون الفعلي.\n"
-              . "• المكونات «لم تُعد» تبقى كما هي ولا تُؤثَّر بالاعتماد.";
+              ."• «نقص» = الكمية الفعلية أقل من النظام (احتمال هدر، سرقة، خطأ تسجيل، أو استهلاك غير موثَّق).\n"
+              ."• «زيادة» = الكمية الفعلية أكبر من النظام (احتمال استلام غير مُسجّل أو خطأ في حركة سابقة).\n"
+              ."• «صافي قيمة الفروقات» = القيمة المالية للتسوية. سالب = خسارة، موجب = ربح غير مُسجّل.\n"
+              ."• عند اعتماد الجرد، النظام يُنشئ حركة «تعديل» لكل فرق ليطابق المخزون الفعلي.\n"
+              .'• المكونات «لم تُعد» تبقى كما هي ولا تُؤثَّر بالاعتماد.';
         $sheet->setCellValue("A{$row}", $note);
         $sheet->mergeCells("A{$row}:D{$row}");
         $sheet->getStyle("A{$row}")->getAlignment()->setWrapText(true)->setVertical(Alignment::VERTICAL_TOP);
         $sheet->getRowDimension($row)->setRowHeight(140);
 
-        foreach (['A', 'B', 'C', 'D'] as $col) $sheet->getColumnDimension($col)->setWidth(28);
+        foreach (['A', 'B', 'C', 'D'] as $col) {
+            $sheet->getColumnDimension($col)->setWidth(28);
+        }
     }
 
     /** @param string $kind 'count' | 'money' */
@@ -192,7 +197,7 @@ class StockCountXlsx
         foreach ($count->items as $it) {
             $cost = (float) ($it->ingredient?->cost_per_unit ?? 0);
             $countedQty = $it->counted_qty === null ? null : (float) $it->counted_qty;
-            $variance   = (float) $it->variance;
+            $variance = (float) $it->variance;
             $varianceCost = (float) $it->variance_cost;
 
             $statusLabel = $countedQty === null
@@ -259,11 +264,13 @@ class StockCountXlsx
 
         $sheet->getColumnDimension('A')->setWidth(6);
         $sheet->getColumnDimension('B')->setWidth(28);
-        foreach (['C','D','E','F','G','H','I'] as $col) $sheet->getColumnDimension($col)->setAutoSize(true);
+        foreach (['C', 'D', 'E', 'F', 'G', 'H', 'I'] as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
         $sheet->getColumnDimension('J')->setWidth(35);
         $sheet->freezePane('A2');
         if ($count->items->count() > 0) {
-            $sheet->setAutoFilter('A1:J'.($row-1));
+            $sheet->setAutoFilter('A1:J'.($row - 1));
         }
     }
 
@@ -283,17 +290,18 @@ class StockCountXlsx
         )->values();
 
         if ($variances->isEmpty()) {
-            $sheet->setCellValue("A2", '🎉 لا توجد فروقات — كل المكونات المعدودة تطابق سجل النظام.');
-            $sheet->mergeCells("A2:I2");
-            $sheet->getStyle("A2")->applyFromArray([
+            $sheet->setCellValue('A2', '🎉 لا توجد فروقات — كل المكونات المعدودة تطابق سجل النظام.');
+            $sheet->mergeCells('A2:I2');
+            $sheet->getStyle('A2')->applyFromArray([
                 'font' => ['bold' => true, 'color' => ['rgb' => '14532D']],
                 'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
                 'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'D1FAE5']],
             ]);
             $sheet->getRowDimension(2)->setRowHeight(40);
-            foreach (['A','B','C','D','E','F','G','H','I'] as $col) {
+            foreach (['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'] as $col) {
                 $sheet->getColumnDimension($col)->setWidth(15);
             }
+
             return;
         }
 
@@ -342,10 +350,12 @@ class StockCountXlsx
 
         $sheet->getColumnDimension('A')->setWidth(6);
         $sheet->getColumnDimension('B')->setWidth(28);
-        foreach (['C','D','E','F','G','H'] as $col) $sheet->getColumnDimension($col)->setAutoSize(true);
+        foreach (['C', 'D', 'E', 'F', 'G', 'H'] as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
         $sheet->getColumnDimension('I')->setWidth(35);
         $sheet->freezePane('A2');
-        $sheet->setAutoFilter('A1:I'.($row-1));
+        $sheet->setAutoFilter('A1:I'.($row - 1));
     }
 
     // ─── Common header ─────────────────────────────────────────────────

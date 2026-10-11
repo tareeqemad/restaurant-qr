@@ -1,4 +1,5 @@
 <script setup>
+import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 /**
  * Customer workspace for cashier and management. All common actions stay on
  * this page; history is split into calm tabs so a frequent customer never
@@ -106,9 +107,10 @@ async function deleteCustomer() {
 </script>
 
 <template>
-    <Head :title="customer.name" />
-
-    <PageHeader
+<Head :title="customer.name" />
+<FinancialWorkspace area="الزبائن" mode="records">
+<template #heading>
+<PageHeader
         :title="customer.name"
         icon="bi-person-vcard"
         subtitle="'ملف زبون داخلي مرتبط برقم الجوال — بلا حساب دخول'"
@@ -133,8 +135,8 @@ async function deleteCustomer() {
             </button>
         </template>
     </PageHeader>
-
-    <div v-if="customer.isBlocked" class="cp-block-alert">
+</template>
+<div v-if="customer.isBlocked" class="cp-block-alert">
         <i class="bi bi-slash-circle-fill"></i>
         <div>
             <strong>هذا الزبون محظور</strong
@@ -144,8 +146,7 @@ async function deleteCustomer() {
             إلغاء الحظر
         </button>
     </div>
-
-    <div class="cp-layout">
+<div class="cp-layout">
         <aside class="cp-profile">
             <div
                 class="cp-profile__hero"
@@ -429,8 +430,8 @@ async function deleteCustomer() {
             </button>
         </main>
     </div>
-
-    <Teleport to="body">
+</FinancialWorkspace>
+<Teleport to="body">
         <Transition name="cp-sheet">
             <div v-if="sheet" class="cp-backdrop" @click.self="closeSheet">
                 <section class="cp-sheet" role="dialog" aria-modal="true">
@@ -626,7 +627,7 @@ async function deleteCustomer() {
     flex-direction: column;
 }
 .cp-block-alert span {
-    font-size: 0.75rem;
+    font-size: .875rem;
 }
 .cp-block-alert button {
     margin-inline-start: auto;
@@ -649,7 +650,7 @@ async function deleteCustomer() {
     border: 1px solid #e3ebe6;
     border-radius: 16px;
     background: #fff;
-    box-shadow: 0 5px 20px rgba(24, 67, 43, 0.045);
+    box-shadow: 0 5px 20px rgba(37,52,58, 0.045);
 }
 .cp-profile {
     position: sticky;
@@ -661,11 +662,7 @@ async function deleteCustomer() {
     align-items: center;
     gap: 0.8rem;
     padding: 1rem;
-    background: linear-gradient(
-        145deg,
-        hsl(var(--hue) 45% 96%),
-        hsl(var(--hue) 42% 91%)
-    );
+    background: var(--surface, #FFFDFA);
 }
 .cp-avatar {
     width: 60px;
@@ -673,11 +670,7 @@ async function deleteCustomer() {
     border-radius: 19px;
     display: grid;
     place-items: center;
-    background: linear-gradient(
-        145deg,
-        hsl(var(--hue) 55% 48%),
-        hsl(var(--hue) 60% 33%)
-    );
+    background: var(--surface, #FFFDFA);
     color: #fff;
     font-size: 1.55rem;
     font-weight: 900;
@@ -685,15 +678,15 @@ async function deleteCustomer() {
 }
 .cp-profile h2 {
     margin: 0 0 0.25rem;
-    color: #14271d;
+    color: #25343A;
     font-size: 1.05rem;
 }
 .cp-state {
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
-    color: #14733f;
-    font-size: 0.7rem;
+    color: #A3422B;
+    font-size: .875rem;
     font-weight: 800;
 }
 .cp-state.blocked {
@@ -711,13 +704,13 @@ async function deleteCustomer() {
     align-items: center;
     gap: 0.55rem;
     min-width: 0;
-    color: #53675d;
-    font-size: 0.76rem;
+    color: #A3422B;
+    font-size: .875rem;
     text-decoration: none;
 }
 .cp-contact i {
     width: 18px;
-    color: #1b7b49;
+    color: #A3422B;
 }
 .cp-mini-stats {
     display: grid;
@@ -736,11 +729,11 @@ async function deleteCustomer() {
     display: block;
 }
 .cp-mini-stats b {
-    color: #183728;
+    color: #25343A;
 }
 .cp-mini-stats small {
-    color: #839188;
-    font-size: 0.64rem;
+    color: #A3422B;
+    font-size: .875rem;
 }
 .cp-loyalty {
     margin: 0 0.75rem 0.75rem;
@@ -768,10 +761,10 @@ async function deleteCustomer() {
 }
 .cp-loyalty small {
     color: #977536;
-    font-size: 0.62rem;
+    font-size: .875rem;
 }
 .cp-loyalty > span {
-    font-size: 0.68rem;
+    font-size: .875rem;
     color: #7d5a17;
     font-weight: 800;
 }
@@ -786,8 +779,8 @@ async function deleteCustomer() {
     border: 1px solid #dfe8e3;
     border-radius: 10px;
     background: #fff;
-    color: #345247;
-    font-size: 0.74rem;
+    color: #25343A;
+    font-size: .875rem;
     font-weight: 750;
 }
 .cp-side-actions .warn {
@@ -809,7 +802,7 @@ async function deleteCustomer() {
 }
 .cp-debt.owing {
     border-color: #ebaaaa;
-    background: linear-gradient(90deg, #fff 55%, #fff7f7);
+    background: #fff;
 }
 .cp-debt__icon {
     width: 48px;
@@ -818,7 +811,7 @@ async function deleteCustomer() {
     display: grid;
     place-items: center;
     background: #eaf6ef;
-    color: #177543;
+    color: #A3422B;
     font-size: 1.2rem;
 }
 .cp-debt.owing .cp-debt__icon {
@@ -831,12 +824,12 @@ async function deleteCustomer() {
 }
 .cp-debt small,
 .cp-debt span {
-    color: #7f8d85;
-    font-size: 0.68rem;
+    color: #A3422B;
+    font-size: .875rem;
 }
 .cp-debt strong {
     font-size: 1.22rem;
-    color: #183426;
+    color: #25343A;
 }
 .cp-debt.owing strong {
     color: #b52e2e;
@@ -848,10 +841,10 @@ async function deleteCustomer() {
     border-inline-start: 1px solid #e3e9e5;
 }
 .cp-credit b {
-    font-size: 0.82rem;
+    font-size: .875rem;
 }
 .cp-credit--advance b {
-    color: #177543;
+    color: #A3422B;
 }
 .cp-tabs {
     display: flex;
@@ -870,13 +863,13 @@ async function deleteCustomer() {
     border: 0;
     border-radius: 10px;
     background: transparent;
-    color: #66796f;
+    color: #A3422B;
     font-weight: 750;
 }
 .cp-tabs button.active {
     background: #fff;
-    color: #106b3b;
-    box-shadow: 0 3px 12px rgba(22, 78, 45, 0.08);
+    color: #A3422B;
+    box-shadow: 0 3px 12px rgba(37,52,58, 0.08);
 }
 .cp-tabs i {
     margin-inline-end: 0.4rem;
@@ -886,7 +879,7 @@ async function deleteCustomer() {
     padding: 0.12rem 0.38rem;
     border-radius: 99px;
     background: #e8f5ed;
-    font-size: 0.65rem;
+    font-size: .875rem;
 }
 .cp-panel {
     min-height: 360px;
@@ -903,7 +896,7 @@ async function deleteCustomer() {
 }
 .cp-section-title h3 {
     margin: 0.08rem 0 0;
-    color: #173326;
+    color: #25343A;
     font-size: 1.05rem;
 }
 .cp-overview-grid {
@@ -928,7 +921,7 @@ async function deleteCustomer() {
     place-items: center;
     border-radius: 12px;
     background: #e9f6ee;
-    color: #177544;
+    color: #A3422B;
     font-size: 1.05rem;
 }
 .cp-overview-card div {
@@ -936,19 +929,19 @@ async function deleteCustomer() {
     flex-direction: column;
 }
 .cp-overview-card small {
-    color: #819087;
-    font-size: 0.68rem;
+    color: #A3422B;
+    font-size: .875rem;
 }
 .cp-overview-card strong {
-    color: #19382a;
+    color: #25343A;
     font-size: 0.95rem;
 }
 .cp-branches {
     margin-top: 1.25rem;
 }
 .cp-branches h4 {
-    font-size: 0.85rem;
-    color: #44594e;
+    font-size: .875rem;
+    color: #25343A;
 }
 .cp-branch-list {
     display: flex;
@@ -960,18 +953,18 @@ async function deleteCustomer() {
     border-radius: 11px;
     background: hsl(var(--hue) 55% 96%);
     color: hsl(var(--hue) 45% 30%);
-    font-size: 0.73rem;
+    font-size: .875rem;
 }
 .cp-branch-list b {
     margin-inline-start: 0.5rem;
     padding: 0.12rem 0.35rem;
     border-radius: 99px;
     background: #fff;
-    font-size: 0.63rem;
+    font-size: .875rem;
 }
 .cp-empty-line {
     color: #8b9790;
-    font-size: 0.75rem;
+    font-size: .875rem;
 }
 .cp-timeline {
     display: grid;
@@ -988,7 +981,7 @@ async function deleteCustomer() {
     width: 9px;
     height: 9px;
     border-radius: 50%;
-    background: #1b7c49;
+    background: #A3422B;
     box-shadow: 0 0 0 4px #e7f4ec;
 }
 .cp-timeline__main,
@@ -997,20 +990,20 @@ async function deleteCustomer() {
     flex-direction: column;
 }
 .cp-timeline__main strong {
-    color: #1d382b;
+    color: #25343A;
 }
 .cp-timeline__main span,
 .cp-timeline__main small,
 .cp-timeline__when small {
     color: #85938b;
-    font-size: 0.68rem;
+    font-size: .875rem;
 }
 .cp-timeline__when {
     text-align: end;
 }
 .cp-timeline__when b {
-    color: #495e53;
-    font-size: 0.73rem;
+    color: #25343A;
+    font-size: .875rem;
 }
 .cp-reviews {
     display: grid;
@@ -1029,24 +1022,24 @@ async function deleteCustomer() {
 }
 .cp-reviews strong {
     display: block;
-    color: #243c30;
+    color: #25343A;
 }
 .cp-reviews p {
     margin: 0.35rem 0;
-    color: #596c62;
-    font-size: 0.76rem;
+    color: #A3422B;
+    font-size: .875rem;
     line-height: 1.65;
 }
 .cp-reviews small {
     color: #89958f;
-    font-size: 0.66rem;
+    font-size: .875rem;
 }
 .cp-delete {
     margin-top: 0.8rem;
     border: 0;
     background: transparent;
     color: #b54a4a;
-    font-size: 0.72rem;
+    font-size: .875rem;
 }
 .cp-backdrop {
     position: fixed;
@@ -1054,7 +1047,7 @@ async function deleteCustomer() {
     z-index: 1090;
     display: flex;
     justify-content: flex-start;
-    background: rgba(11, 26, 18, 0.43);
+    background: rgba(37,52,58, 0.43);
     backdrop-filter: blur(2px);
 }
 .cp-sheet {
@@ -1073,12 +1066,12 @@ async function deleteCustomer() {
     border-bottom: 1px solid #e8eeea;
 }
 .cp-sheet header small {
-    color: #7b8e83;
+    color: #A3422B;
 }
 .cp-sheet header h3 {
     margin: 0.1rem 0 0;
     font-size: 1.08rem;
-    color: #19392a;
+    color: #25343A;
 }
 .cp-sheet header button {
     width: 40px;
@@ -1096,8 +1089,8 @@ async function deleteCustomer() {
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
-    color: #4c6156;
-    font-size: 0.74rem;
+    color: #A3422B;
+    font-size: .875rem;
     font-weight: 700;
 }
 .cp-sheet input,
@@ -1117,8 +1110,8 @@ async function deleteCustomer() {
 .cp-sheet input:focus,
 .cp-sheet select:focus,
 .cp-sheet textarea:focus {
-    border-color: #187947;
-    box-shadow: 0 0 0 3px rgba(24, 121, 71, 0.08);
+    border-color: #A3422B;
+    box-shadow: 0 0 0 3px rgba(37,52,58, 0.08);
 }
 .cp-form-grid {
     display: grid;
@@ -1129,8 +1122,8 @@ async function deleteCustomer() {
     padding: 0.7rem;
     border-radius: 10px;
     background: #eef7f2;
-    color: #406153;
-    font-size: 0.75rem;
+    color: #A3422B;
+    font-size: .875rem;
 }
 .cp-note--warn {
     background: #fff7e8;
@@ -1139,7 +1132,7 @@ async function deleteCustomer() {
 .cp-error,
 .cp-form-errors {
     color: #bd3434;
-    font-size: 0.7rem;
+    font-size: .875rem;
 }
 .cp-form-errors {
     display: grid;
@@ -1217,4 +1210,6 @@ async function deleteCustomer() {
         grid-template-columns: 1fr;
     }
 }
+
+.cp-layout{grid-template-columns:minmax(270px,.75fr) minmax(0,1.65fr);gap:24px}.cp-profile,.cp-card{padding:24px;border-radius:16px;border-color:#DFD7CB;background:#FFFDFA}.cp-profile h2{font-size:26px}.cp-avatar{width:72px;height:72px;font-size:28px;background:#F3E3D8;color:#A3422B}.cp-tabs{gap:8px}.cp-tabs button{min-height:44px;font-size:14px;border-radius:9px}
 </style>

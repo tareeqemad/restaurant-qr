@@ -1,4 +1,5 @@
 <script setup>
+import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 import { computed, ref, watch } from "vue";
 import { Head, Link, router, useForm } from "@inertiajs/vue3";
 import AdminLayout from "../../../Layouts/AdminLayout.vue";
@@ -155,9 +156,10 @@ async function unpark(invoice) {
 </script>
 
 <template>
-    <Head :title="`دين ${customer.name}`" />
-
-    <PageHeader
+<Head :title="`دين ${customer.name}`" />
+<FinancialWorkspace area="الذمم والتحصيل" mode="records">
+<template #heading>
+<PageHeader
         :title="customer.name"
         icon="bi-person-lines-fill"
         :subtitle="`${customer.phone || 'بدون رقم جوال'} · ${stats.openInvoices} فاتورة مفتوحة`"
@@ -188,10 +190,12 @@ async function unpark(invoice) {
             </button>
         </template>
     </PageHeader>
-
-    <CollectionNav :items="collectionNav" active="debts" />
-
-    <StatRail
+</template>
+<template #navigation>
+<CollectionNav :items="collectionNav" active="debts" />
+</template>
+<template #metrics>
+<StatRail
         :stats="[
             {
                 label: 'الرصيد المفتوح',
@@ -225,8 +229,8 @@ async function unpark(invoice) {
             },
         ]"
     />
-
-    <div class="debt-detail-grid">
+</template>
+<div class="debt-detail-grid">
         <DataPanel
             title="الفواتير المفتوحة"
             :count="openInvoices.length"
@@ -307,8 +311,7 @@ async function unpark(invoice) {
             >
         </aside>
     </div>
-
-    <DataPanel
+<DataPanel
         title="حركة دفتر الدين"
         :count="timeline.length"
         icon="bi-clock-history"
@@ -368,8 +371,8 @@ async function unpark(invoice) {
             message="يظهر هنا تسجيل الدين والتحصيل والاسترداد والشطب وتعديل الحد الائتماني."
         />
     </DataPanel>
-
-    <CollectionSheet
+</FinancialWorkspace>
+<CollectionSheet
         :open="collecting"
         title="تحصيل دفعة"
         :eyebrow="customer.name"
@@ -460,8 +463,7 @@ async function unpark(invoice) {
             </button></template
         >
     </CollectionSheet>
-
-    <CollectionSheet :open="adjusting" title="تخفيض دين بإشعار دائن" :eyebrow="customer.name" icon="bi-file-earmark-minus" @close="adjusting = false">
+<CollectionSheet :open="adjusting" title="تخفيض دين بإشعار دائن" :eyebrow="customer.name" icon="bi-file-earmark-minus" @close="adjusting = false">
         <form id="debtAdjustmentForm" class="sheet-form" @submit.prevent="submitAdjustment">
             <p class="limit-note"><i class="bi bi-journal-check"></i> يصحح هذا قيمة البيع والضريبة ويخفض الذمة بلا حركة نقدية. استخدم التحصيل إذا استلمت مالاً.</p>
             <label><span>الفاتورة *</span><select v-model="adjustment.invoice_id" required><option v-for="invoice in openInvoices" :key="invoice.id" :value="invoice.id">{{ invoice.number }} — {{ invoice.balanceFormatted }}</option></select></label>
@@ -472,8 +474,7 @@ async function unpark(invoice) {
         </form>
         <template #footer><button type="button" class="btn btn-light" @click="adjusting = false">تراجع</button><button type="submit" form="debtAdjustmentForm" class="btn btn-primary" :disabled="adjustment.processing"><i class="bi bi-check2-circle"></i> إصدار الإشعار</button></template>
     </CollectionSheet>
-
-    <CollectionSheet :open="writingOff" title="شطب دين غير قابل للتحصيل" :eyebrow="customer.name" icon="bi-slash-circle" @close="writingOff = false">
+<CollectionSheet :open="writingOff" title="شطب دين غير قابل للتحصيل" :eyebrow="customer.name" icon="bi-slash-circle" @close="writingOff = false">
         <form id="debtWriteoffForm" class="sheet-form" @submit.prevent="submitWriteoff">
             <p class="danger-note"><i class="bi bi-exclamation-triangle"></i> الشطب مصروف محاسبي وليس خصماً للزبون. استخدمه فقط بعد اعتماد عدم إمكانية التحصيل، ويمكن عكسه لاحقاً.</p>
             <label><span>الفاتورة *</span><select v-model="writeoff.invoice_id" required><option v-for="invoice in openInvoices" :key="invoice.id" :value="invoice.id">{{ invoice.number }} — {{ invoice.balanceFormatted }}</option></select></label>
@@ -482,16 +483,14 @@ async function unpark(invoice) {
         </form>
         <template #footer><button type="button" class="btn btn-light" @click="writingOff = false">تراجع</button><button type="submit" form="debtWriteoffForm" class="btn btn-dark" :disabled="writeoff.processing"><i class="bi bi-slash-circle"></i> اعتماد الشطب</button></template>
     </CollectionSheet>
-
-    <CollectionSheet :open="Boolean(reverseTarget)" title="عكس مستند محاسبي" :eyebrow="reverseTarget?.reference || reverseTarget?.invoiceNumber" icon="bi-arrow-counterclockwise" @close="reverseTarget = null">
+<CollectionSheet :open="Boolean(reverseTarget)" title="عكس مستند محاسبي" :eyebrow="reverseTarget?.reference || reverseTarget?.invoiceNumber" icon="bi-arrow-counterclockwise" @close="reverseTarget = null">
         <form id="debtReversalForm" class="sheet-form" @submit.prevent="submitReversal">
             <p class="limit-note"><i class="bi bi-shield-check"></i> سيُنشئ النظام قيداً عكسياً ويعيد رصيد الفاتورة، ولن يحذف المستند الأصلي.</p>
             <label><span>سبب العكس *</span><textarea v-model="reversal.reason" rows="3" maxlength="500" required placeholder="سبب واضح للمراجع والمحاسب"></textarea><small v-if="reversal.errors.reason" class="error">{{ reversal.errors.reason }}</small></label>
         </form>
         <template #footer><button type="button" class="btn btn-light" @click="reverseTarget = null">تراجع</button><button type="submit" form="debtReversalForm" class="btn btn-warning" :disabled="reversal.processing"><i class="bi bi-arrow-counterclockwise"></i> تأكيد العكس</button></template>
     </CollectionSheet>
-
-    <CollectionSheet
+<CollectionSheet
         :open="editingLimit"
         title="الحد الائتماني"
         :eyebrow="customer.name"
@@ -565,16 +564,16 @@ async function unpark(invoice) {
     display: block;
 }
 .invoice-row code {
-    color: #254536;
+    color: #25343A;
     font-weight: 800;
 }
 .invoice-row > div:first-child span {
     margin-top: 0.2rem;
     color: #849189;
-    font-size: 0.62rem;
+    font-size: .875rem;
 }
 .invoice-row > div:first-child .invoice-origin {
-    color: #48695a;
+    color: #A3422B;
     font-weight: 700;
 }
 .invoice-row > div:first-child .is-overdue { color: #b43333; font-weight: 800; }
@@ -599,7 +598,7 @@ async function unpark(invoice) {
     line-height: 1;
 }
 .invoice-age small {
-    font-size: 0.55rem;
+    font-size: .875rem;
 }
 .invoice-money {
     text-align: end;
@@ -610,7 +609,7 @@ async function unpark(invoice) {
 .invoice-money small,
 .invoice-money span {
     color: #8a968f;
-    font-size: 0.58rem;
+    font-size: .875rem;
 }
 .invoice-money strong {
     color: #b53232;
@@ -623,15 +622,15 @@ async function unpark(invoice) {
     border-radius: 9px;
     background: #fffaf0;
     color: #8d6114;
-    font-size: 0.65rem;
+    font-size: .875rem;
     font-weight: 750;
 }
 .debt-summary-card {
     padding: 1rem;
     border-radius: 16px;
-    background: linear-gradient(145deg, #123f2b, #0b6a39);
+    background: #25343A;
     color: #fff;
-    box-shadow: 0 14px 30px rgba(10, 87, 46, 0.17);
+    box-shadow: 0 14px 30px rgba(37,52,58, 0.17);
 }
 .debt-summary-card__icon {
     width: 44px;
@@ -658,7 +657,7 @@ async function unpark(invoice) {
 .debt-summary-card p {
     margin: 0.7rem 0;
     opacity: 0.75;
-    font-size: 0.66rem;
+    font-size: .875rem;
     line-height: 1.8;
 }
 .debt-summary-card button,
@@ -670,14 +669,14 @@ async function unpark(invoice) {
     justify-content: center;
     gap: 0.35rem;
     border-radius: 10px;
-    font-size: 0.7rem;
+    font-size: .875rem;
     font-weight: 800;
     text-decoration: none;
 }
 .debt-summary-card button {
     border: 0;
     background: #fff;
-    color: #0c6a39;
+    color: #A3422B;
 }
 .debt-summary-card a {
     margin-top: 0.35rem;
@@ -705,7 +704,7 @@ async function unpark(invoice) {
     place-items: center;
     border-radius: 11px;
     background: #e9f7ee;
-    color: #168047;
+    color: #A3422B;
 }
 .debt-event.tone-danger .debt-event__icon {
     background: #fff0f0;
@@ -717,7 +716,7 @@ async function unpark(invoice) {
 }
 .debt-event.tone-dark .debt-event__icon {
     background: #edf0ee;
-    color: #34443b;
+    color: #25343A;
 }
 .debt-event.tone-primary .debt-event__icon {
     background: #edf4ff;
@@ -730,29 +729,29 @@ async function unpark(invoice) {
     gap: 0.5rem;
 }
 .debt-event__title strong {
-    color: #233f31;
-    font-size: 0.74rem;
+    color: #25343A;
+    font-size: .875rem;
 }
 .debt-event__title b {
-    color: #146f40;
+    color: #A3422B;
     font-family: ui-monospace, monospace;
-    font-size: 0.76rem;
+    font-size: .875rem;
 }
 .debt-event__main p {
     margin: 0.18rem 0 0.35rem;
-    color: #718078;
-    font-size: 0.66rem;
+    color: #A3422B;
+    font-size: .875rem;
 }
 .debt-event__meta {
     display: flex;
     flex-wrap: wrap;
     gap: 0.35rem 0.75rem;
-    color: #7c8b83;
-    font-size: 0.6rem;
+    color: #A3422B;
+    font-size: .875rem;
 }
 .debt-event__meta i {
     margin-inline-end: 0.18rem;
-    color: #416a56;
+    color: #A3422B;
 }
 .debt-event__document {
     display: grid;
@@ -761,15 +760,15 @@ async function unpark(invoice) {
     text-align: end;
 }
 .debt-event__document code {
-    color: #385948;
+    color: #25343A;
     font-weight: 800;
 }
 .debt-event__document span,
 .debt-event__document small {
     color: #839088;
-    font-size: 0.59rem;
+    font-size: .875rem;
 }
-.event-reverse { margin-top: .3rem; padding: .3rem .5rem; border: 1px solid #d8c990; border-radius: 7px; color: #7d6418; background: #fffaf0; font-size: .58rem; font-weight: 800; }
+.event-reverse { margin-top: .3rem; padding: .3rem .5rem; border: 1px solid #d8c990; border-radius: 7px; color: #7d6418; background: #fffaf0; font-size: .875rem; font-weight: 800; }
 .sheet-form {
     display: grid;
     gap: 0.75rem;
@@ -777,8 +776,8 @@ async function unpark(invoice) {
 .sheet-form > label {
     display: grid;
     gap: 0.3rem;
-    color: #4e6257;
-    font-size: 0.72rem;
+    color: #A3422B;
+    font-size: .875rem;
     font-weight: 750;
 }
 .sheet-form input,
@@ -807,8 +806,8 @@ async function unpark(invoice) {
 }
 .amount-due small {
     align-self: center;
-    color: #126c3e;
-    font-size: 0.64rem;
+    color: #A3422B;
+    font-size: .875rem;
     font-weight: 750;
 }
 .method-grid {
@@ -824,13 +823,13 @@ async function unpark(invoice) {
     gap: 0.4rem;
     border: 1px solid #dce5e0;
     border-radius: 10px;
-    color: #56695f;
+    color: #A3422B;
     cursor: pointer;
 }
 .method-grid label.selected {
-    border-color: #16804a;
+    border-color: #A3422B;
     background: #eef8f2;
-    color: #0d6d3a;
+    color: #A3422B;
 }
 .method-grid input {
     display: none;
@@ -840,14 +839,14 @@ async function unpark(invoice) {
     padding: 0.65rem;
     border-radius: 10px;
     background: #f4f7f5;
-    color: #687971;
-    font-size: 0.68rem;
+    color: #A3422B;
+    font-size: .875rem;
     line-height: 1.7;
 }
 .limit-note i {
-    color: #167542;
+    color: #A3422B;
 }
-.danger-note { margin: 0; padding: .65rem; border-radius: 10px; color: #852d34; background: #fff0f1; font-size: .68rem; line-height: 1.7; }
+.danger-note { margin: 0; padding: .65rem; border-radius: 10px; color: #852d34; background: #fff0f1; font-size: .875rem; line-height: 1.7; }
 .danger-note i { margin-inline-end: .25rem; }
 .error {
     color: #b62f2f;

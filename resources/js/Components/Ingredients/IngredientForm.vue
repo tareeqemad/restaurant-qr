@@ -413,12 +413,12 @@ const submit = () => {
 
 <style scoped>
 .ing-home {
-    background: linear-gradient(135deg, rgba(15, 71, 49, .04), rgba(15, 71, 49, .01));
-    border: 1px solid rgba(15, 71, 49, .12);
+    background: var(--surface, #FFFDFA);
+    border: 1px solid color-mix(in srgb, var(--brand, #A3422B) 12%, transparent);
     border-radius: .6rem;
     padding: 1rem 1.1rem;
 }
-.ing-err { display: block; margin-top: .2rem; color: #dc2626; font-size: .76rem; font-weight: 700; }
+.ing-err { display: block; margin-top: .2rem; color: #dc2626; font-size: .875rem; font-weight: 700; }
 .form-control, .form-select { min-height: 44px; }
 .form-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
 .form-actions .btn { min-height: 44px; min-width: 110px; }

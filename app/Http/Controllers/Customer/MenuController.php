@@ -210,9 +210,7 @@ class MenuController extends Controller
             ? $item->recipeItems->map(fn ($r) => $r->ingredient?->localizedName())->filter()->values()
             : collect();
         $removableIngredients = $item->relationLoaded('recipeItems')
-            ? $item->recipeItems
-                ->filter(fn ($recipe) => $recipe->ingredient !== null)
-                ->unique(fn ($recipe) => (int) $recipe->ingredient_id)
+            ? $item->removableRecipeItems()
                 ->map(fn ($recipe) => [
                     'id' => (int) $recipe->ingredient_id,
                     'name' => $recipe->ingredient->localizedName(),

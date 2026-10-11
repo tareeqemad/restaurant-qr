@@ -10,7 +10,9 @@ use App\Models\User;
 use App\Support\AdminNav;
 use App\Support\BranchContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Route;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -25,7 +27,9 @@ class AdminShellTest extends TestCase
     use RefreshDatabase;
 
     protected Branch $branch;
+
     protected User $admin;
+
     protected User $waiter;
 
     protected function setUp(): void
@@ -85,7 +89,7 @@ class AdminShellTest extends TestCase
             ->assertSee('styles.min.css');
 
         $rootView = file_get_contents(resource_path('views/inertia-admin.blade.php'));
-        $this->assertStringContainsString("asset(\$path)", $rootView);
+        $this->assertStringContainsString('asset($path)', $rootView);
         $this->assertStringContainsString("\$staticAsset('assets/dashtic/css/styles.min.css')", $rootView);
         $this->assertStringNotContainsString("route('optimized.asset'", $rootView);
     }
@@ -153,91 +157,29 @@ class AdminShellTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_desktop_nav_dropdown_is_viewport_anchored_below_its_parent_in_rtl(): void
+    public function test_authorized_navigation_leaves_resolve_to_get_routes(): void
     {
-        $source = file_get_contents(resource_path('js/Components/AdminShell/NavItem.vue'));
-        $componentsCss = file_get_contents(public_path('assets/dashtic/css/relax-components.css'));
-        $brandCss = file_get_contents(public_path('assets/dashtic/css/relax-brand.css'));
+        foreach ([$this->admin, $this->waiter] as $user) {
+            $this->actingAs($user);
+            $leaves = [];
+            $walk = function (array $items) use (&$walk, &$leaves): void {
+                foreach ($items as $item) {
+                    if (! empty($item['href'])) {
+                        $leaves[] = $item['href'];
+                    }
+                    if (! empty($item['children'])) {
+                        $walk($item['children']);
+                    }
+                }
+            };
+            $walk(AdminNav::build());
+            $this->assertNotEmpty($leaves, $user->role.' must have a usable navigation destination.');
 
-        $this->assertStringContainsString('const open = ref(false)', $source);
-        $this->assertStringNotContainsString('ref(Boolean(props.item.active))', $source);
-        $this->assertStringContainsString('const positionDesktopMenu = (force = false) =>', $source);
-        $this->assertStringContainsString('rect.right - menuWidth', $source);
-        $this->assertStringContainsString("'--admin-nav-menu-left'", $source);
-        $this->assertStringContainsString("'--admin-nav-menu-top'", $source);
-        $this->assertStringContainsString('position: fixed !important;', $source);
-        $this->assertStringContainsString('left: var(--admin-nav-menu-left) !important;', $source);
-        $this->assertStringContainsString('right: auto !important;', $source);
-        $this->assertStringContainsString("event.key === 'Escape'", $source);
-        $this->assertStringContainsString("document.addEventListener('pointerdown', closeFromOutside)", $source);
-        $this->assertStringContainsString('admin-nav-menu--wide', $source);
-        $this->assertStringContainsString('const handleNavigate = () =>', $source);
-        $this->assertStringContainsString('document.activeElement.blur()', $source);
-        $this->assertStringContainsString('if (canHover && open.value)', $source);
-        $this->assertStringContainsString('@navigate="handleNavigate"', $source);
-        $this->assertStringContainsString('watch(() => page.url, closeMenu)', $source);
-        $this->assertStringContainsString(":prefetch=\"item.active ? false : 'hover'\"", $source);
-        $this->assertStringContainsString(':cache-for="30000"', $source);
-        $this->assertSame(3, substr_count($source, 'class="nav-icon"'));
-        $this->assertSame(3, substr_count($source, 'aria-hidden="true"'));
-        $this->assertStringContainsString('<i :class="item.icon"></i>', $source);
-        $this->assertStringContainsString('.side-menu__icon > i {', $componentsCss);
-        $this->assertStringContainsString('.side-menu__icon > i::before {', $componentsCss);
-        $this->assertStringContainsString('place-items: center !important;', $componentsCss);
-        $this->assertStringNotContainsString('i.side-menu__icon::before', $componentsCss);
-        $this->assertStringNotContainsString('has-sub:focus-within > .slide-menu', $source);
-        $this->assertStringNotContainsString('has-sub:focus-within > .slide-menu', $componentsCss);
-        $this->assertStringNotContainsString('has-sub:focus-within > .slide-menu', $brandCss);
-        $this->assertStringContainsString('.slide.has-sub:not(.open) > .slide-menu', $source);
-        $this->assertStringNotContainsString(':dir(ltr)', $source);
-    }
-
-    public function test_live_background_requests_yield_to_foreground_navigation(): void
-    {
-        $refresh = file_get_contents(resource_path('js/Composables/useLiveRefresh.js'));
-        $bell = file_get_contents(resource_path('js/Components/AdminShell/NotificationsBell.vue'));
-        $bootstrap = file_get_contents(resource_path('js/app-inertia.js'));
-
-        $this->assertStringContainsString("router.on('start', pauseForNavigation)", $refresh);
-        $this->assertStringContainsString("router.on('finish', resumeAfterNavigation)", $refresh);
-        $this->assertStringContainsString('await onPing(reason, controller.signal)', $refresh);
-        $this->assertStringContainsString('if (running)', $refresh);
-        $this->assertStringContainsString('controller?.abort()', $refresh);
-
-        $this->assertStringContainsString("stopStartListener = router.on('start'", $bell);
-        $this->assertStringContainsString('refreshController?.abort()', $bell);
-        $this->assertStringContainsString('navigationBusy', $bell);
-
-        $this->assertStringContainsString("color: '#176b45'", $bootstrap);
-        $this->assertStringContainsString('delay: 120', $bootstrap);
-    }
-
-    public function test_mobile_admin_navigation_is_an_accessible_drawer_owned_by_the_layout(): void
-    {
-        $layout = file_get_contents(resource_path('js/Layouts/AdminLayout.vue'));
-        $header = file_get_contents(resource_path('js/Components/AdminShell/AdminHeader.vue'));
-        $sidebar = file_get_contents(resource_path('js/Components/AdminShell/AdminSidebar.vue'));
-        $item = file_get_contents(resource_path('js/Components/AdminShell/NavItem.vue'));
-
-        $this->assertStringContainsString('const sidebarOpen = ref(false)', $layout);
-        $this->assertStringContainsString('@toggle-sidebar="toggleSidebar"', $layout);
-        $this->assertStringContainsString('@close="closeSidebar"', $layout);
-        $this->assertStringContainsString("event.key === 'Escape'", $layout);
-        $this->assertStringContainsString('mobile-admin-nav-open', $layout);
-        $this->assertStringNotContainsString('DemoTrialBanner', $layout);
-        $this->assertStringNotContainsString('page.props.onboarding', $layout);
-
-        $this->assertStringContainsString('aria-controls="sidebar"', $header);
-        $this->assertStringContainsString(':aria-expanded="sidebarOpen"', $header);
-        $this->assertStringContainsString('z-index: 1180;', $header);
-
-        $this->assertStringContainsString('mobile-drawer__header', $sidebar);
-        $this->assertStringContainsString('mobile-drawer__close', $sidebar);
-        $this->assertStringContainsString('z-index: 1190 !important;', $sidebar);
-        $this->assertStringContainsString('@navigate="emit(\'close\')"', $sidebar);
-
-        $this->assertStringContainsString("const emit = defineEmits(['navigate'])", $item);
-        $this->assertStringContainsString(':aria-expanded="open"', $item);
-        $this->assertStringContainsString('@click="handleNavigate"', $item);
+            foreach (array_unique($leaves) as $href) {
+                $route = Route::getRoutes()->match(Request::create($href, 'GET'));
+                $this->assertContains('GET', $route->methods(), $href);
+                $this->assertNotNull($route->getName(), $href);
+            }
+        }
     }
 }

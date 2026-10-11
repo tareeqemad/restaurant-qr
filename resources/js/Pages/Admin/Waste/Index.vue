@@ -1,4 +1,5 @@
 <script setup>
+import ManagementPage from '../../../Components/Inventory/ManagementPage.vue';
 /**
  * سجل الهدر — the read side of the waste surface (the form shipped in Wave 4).
  *
@@ -67,6 +68,7 @@ const badgeStyle = (hex) => ({
 </script>
 
 <template>
+    <ManagementPage mode="records">
     <Head title="الهدر" />
 
     <PageHeader title="الهدر" icon="bi-trash3-fill"
@@ -252,6 +254,7 @@ const badgeStyle = (hex) => ({
             <Pagination :links="movements.links" />
         </template>
     </DataPanel>
+    </ManagementPage>
 </template>
 
 <style scoped>
@@ -262,7 +265,7 @@ const badgeStyle = (hex) => ({
     gap: .75rem;
     padding: .5rem;
     border-radius: .5rem;
-    background: #f8f9fa;
+    background: var(--canvas, #F7F3ED);
 }
 .wi-reason__icon { font-size: 20px; }
 .wi-reason__body { flex: 1 1 auto; min-width: 0; }
@@ -271,7 +274,7 @@ const badgeStyle = (hex) => ({
     justify-content: space-between;
     gap: .5rem;
     font-weight: 600;
-    font-size: .8125rem;
+    font-size: .875rem;
 }
 .wi-reason__bar { height: 4px; margin-top: .25rem; }
 

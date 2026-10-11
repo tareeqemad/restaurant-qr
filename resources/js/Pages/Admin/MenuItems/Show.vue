@@ -1,4 +1,5 @@
 <script setup>
+import ManagementPage from '../../../Components/Inventory/ManagementPage.vue';
 import { Head, Link } from '@inertiajs/vue3';
 import AdminLayout from '../../../Layouts/AdminLayout.vue';
 import MenuItemCard from '../../../Components/MenuAdmin/MenuItemCard.vue';
@@ -19,6 +20,7 @@ defineProps({
 </script>
 
 <template>
+    <ManagementPage mode="detail">
     <Head :title="`كرت ${item.name}`" />
 
     <PageHeader :title="`كرت الصنف — ${item.name}`" icon="bi-card-checklist"
@@ -34,4 +36,5 @@ defineProps({
 
     <MenuItemCard :item="item" :sales="sales" :price-history="priceHistory"
                   :promotions="promotions" :can="can" :urls="urls" />
+    </ManagementPage>
 </template>

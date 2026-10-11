@@ -1,4 +1,5 @@
 <script setup>
+import ManagementPage from '../../../Components/Inventory/ManagementPage.vue';
 /**
  * تسجيل هدر — Wave 4. Everything the form needs was seeded once by the
  * server; the only round-trip before submit is the FIFO batch list of the
@@ -190,6 +191,7 @@ const fmt = (n) => Number(n || 0).toLocaleString('en-US', { maximumFractionDigit
 </script>
 
 <template>
+    <ManagementPage mode="form">
     <Head title="تسجيل هدر" />
 
     <PageHeader title="تسجيل هدر" icon="bi-trash3"
@@ -306,6 +308,7 @@ const fmt = (n) => Number(n || 0).toLocaleString('en-US', { maximumFractionDigit
             </div>
         </template>
     </DataPanel>
+    </ManagementPage>
 </template>
 
 <style scoped>
@@ -316,7 +319,7 @@ const fmt = (n) => Number(n || 0).toLocaleString('en-US', { maximumFractionDigit
     background: #fef2f2;
     border: 1px solid #fecaca;
     color: #991b1b;
-    border-radius: 14px;
+    border-radius: 12px;
     padding: .85rem 1rem;
     margin-bottom: .9rem;
 }
@@ -331,16 +334,16 @@ const fmt = (n) => Number(n || 0).toLocaleString('en-US', { maximumFractionDigit
 .wl-field { display: flex; flex-direction: column; gap: .4rem; margin: 0; }
 .wl-field--wide { grid-column: 1 / -1; }
 .wl-field > span {
-    font-size: .86rem;
+    font-size: .875rem;
     font-weight: 800;
-    color: #334155;
+    color: var(--ink, #25343A);
     display: flex;
     align-items: center;
     gap: .35rem;
 }
-.wl-field > span i { color: rgb(var(--primary-rgb)); }
-.wl-field > span small { font-weight: 600; color: #94a3b8; }
-.wl-field small { font-size: .74rem; color: #94a3b8; }
+.wl-field > span i { color: var(--brand, #A3422B); }
+.wl-field > span small { font-weight: 600; color: var(--muted, #626B6D); }
+.wl-field small { font-size: .875rem; color: var(--muted, #626B6D); }
 .wl-field small.wl-warn { color: #b91c1c; font-weight: 700; }
 .wl-search { margin-bottom: .2rem; }
 
@@ -355,19 +358,19 @@ const fmt = (n) => Number(n || 0).toLocaleString('en-US', { maximumFractionDigit
     gap: .35rem;
     min-height: 44px;
     padding: 0 .9rem;
-    border: 1.5px solid #e2e8f0;
+    border: 1.5px solid var(--line, #DFD7CB);
     border-radius: 12px;
-    background: #fff;
-    color: #334155;
+    background: var(--surface, #FFFDFA);
+    color: var(--ink, #25343A);
     font: inherit;
-    font-size: .84rem;
+    font-size: .875rem;
     font-weight: 700;
     cursor: pointer;
 }
 .wl-reason.is-on {
-    border-color: var(--r-color, rgb(var(--primary-rgb)));
-    background: color-mix(in srgb, var(--r-color, rgb(var(--primary-rgb))) 10%, #fff);
-    color: var(--r-color, rgb(var(--primary-rgb)));
+    border-color: var(--r-color, var(--brand, #A3422B));
+    background: color-mix(in srgb, var(--r-color, var(--brand, #A3422B)) 10%, var(--surface, #FFFDFA));
+    color: var(--r-color, var(--brand, #A3422B));
 }
 
 .wl-foot {
@@ -378,8 +381,8 @@ const fmt = (n) => Number(n || 0).toLocaleString('en-US', { maximumFractionDigit
     flex-wrap: wrap;
 }
 .wl-preview { display: flex; align-items: baseline; gap: .5rem; }
-.wl-preview span { font-size: .82rem; color: #64748b; font-weight: 700; }
+.wl-preview span { font-size: .875rem; color: #64748b; font-weight: 700; }
 .wl-preview strong { font-size: 1.3rem; font-weight: 900; color: #b91c1c; }
-.wl-preview small { font-size: .74rem; color: #94a3b8; }
+.wl-preview small { font-size: .875rem; color: #94a3b8; }
 .wl-submit { min-height: 52px; font-weight: 800; }
 </style>

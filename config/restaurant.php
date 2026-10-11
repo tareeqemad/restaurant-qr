@@ -1,7 +1,9 @@
 <?php
 
 return [
-    'name' => env('RESTAURANT_NAME', 'مطعم QR'),
+    'name' => env('RESTAURANT_NAME', 'مطعم دار السرو'),
+    'demo' => env('RESTAURANT_DEMO_MODE', false),
+    'demo_password' => env('RESTAURANT_DEMO_PASSWORD'),
     'currency' => env('RESTAURANT_CURRENCY', 'ILS'),
     'currency_symbol' => env('RESTAURANT_CURRENCY_SYMBOL', '₪'),
 
@@ -40,11 +42,11 @@ return [
     'phone_country' => env('RESTAURANT_PHONE_COUNTRY', 'PS'),
 
     'theme' => [
-        'primary' => '#1f6b50',
-        'dark' => '#123f31',
-        'header' => '#ffffff',
-        'accent' => '#d97706',
-        'menu' => '#ffffff',
+        'primary' => '#a3422b',
+        'dark' => '#25343a',
+        'header' => '#fffdfa',
+        'accent' => '#b78338',
+        'menu' => '#f7f3ed',
         'menu_style' => 'brand',
         'header_style' => 'light',
     ],

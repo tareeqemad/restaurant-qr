@@ -468,6 +468,7 @@ class MenuItemController extends Controller
                     'quantity' => (float) $row->quantity,
                     'unit_id' => $row->ingredient_unit_id ? 'iu:'.$row->ingredient_unit_id : 'u:'.$row->unit_id,
                     'is_optional' => (bool) $row->is_optional,
+                    'is_removable' => (bool) $row->is_removable,
                 ])->values(),
             ] : null,
             'categories' => $data['categories'],
@@ -529,6 +530,8 @@ class MenuItemController extends Controller
 
     protected function syncRecipe(MenuItem $item, array $recipe): void
     {
+        // Older callers omit this field; editing quantities must not unlock a sealed item.
+        $existingRemovability = $item->recipeItems()->pluck('is_removable', 'ingredient_id');
         $item->recipeItems()->delete();
 
         // recipe_items carries a UNIQUE(menu_item_id, ingredient_id), so the
@@ -590,6 +593,9 @@ class MenuItemController extends Controller
                 $rows[$ingredientId]['unit_id'] = $unitId;
                 $rows[$ingredientId]['ingredient_unit_id'] = $ingredientUnitId;
                 $rows[$ingredientId]['is_optional'] = ! empty($r['is_optional']);
+                if (array_key_exists('is_removable', $r)) {
+                    $rows[$ingredientId]['is_removable'] = (bool) $r['is_removable'];
+                }
 
                 continue;
             }
@@ -601,6 +607,9 @@ class MenuItemController extends Controller
                 'unit_id' => $unitId,
                 'ingredient_unit_id' => $ingredientUnitId,
                 'is_optional' => ! empty($r['is_optional']),
+                'is_removable' => array_key_exists('is_removable', $r)
+                    ? (bool) $r['is_removable']
+                    : (bool) $existingRemovability->get($ingredientId, true),
             ];
         }
 
@@ -639,6 +648,7 @@ class MenuItemController extends Controller
             // we only validate the shape, not exists:units,id (which "u:5" fails).
             'recipe.*.unit_id' => ['nullable', 'string', 'regex:/^(u:|iu:)?\d+$/'],
             'recipe.*.is_optional' => ['sometimes', 'boolean'],
+            'recipe.*.is_removable' => ['sometimes', 'boolean'],
         ]);
 
         // Catch incompatible unit pairings up front with a clear message that

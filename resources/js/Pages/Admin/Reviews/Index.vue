@@ -111,15 +111,15 @@ const RATINGS = [
     <Head title="التقييمات" />
 
     <PageHeader title="تقييمات الزبائن" icon="bi-star-fill"
-                subtitle="اقرأ، ردّ، وأخفِ اللي بيخالف الأصول — الإخفاء بيتسجّل بسببه" />
+                 />
 
-    <StatRail :stats="[
+    <details class="ops-summary"><summary><i class="bi bi-bar-chart"></i> ملخص التقييمات<i class="bi bi-chevron-down"></i></summary><StatRail :stats="[
         { label: 'إجمالي التقييمات', value: stats.total, icon: 'bi-star', color: 'primary' },
         { label: 'متوسط التقييم', value: `${stats.avg} ★`, icon: 'bi-star-fill', color: 'accent' },
         { label: 'منخفضة (★★ فأقل)', value: stats.low, icon: 'bi-emoji-frown', color: 'warning' },
         { label: 'منخفضة اليوم', value: stats.lowToday, icon: 'bi-exclamation-triangle-fill', color: 'danger' },
         { label: 'جديدة اليوم', value: stats.newToday, icon: 'bi-bell', color: 'success' },
-    ]" />
+    ]" /></details>
 
     <div class="rv-lenses">
         <button type="button" class="rv-lens rv-lens--low" @click="showLow">
@@ -244,12 +244,12 @@ const RATINGS = [
     gap: .4rem;
     min-height: 42px;
     padding: 0 1rem;
-    border: 1px solid #e2e8f0;
-    border-radius: 999px;
-    background: #fff;
-    color: #334155;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface);
+    color: var(--ink);
     font: inherit;
-    font-size: .84rem;
+    font-size: .875rem;
     font-weight: 700;
     cursor: pointer;
 }
@@ -257,45 +257,45 @@ const RATINGS = [
 
 .rv-list { display: flex; flex-direction: column; gap: .7rem; }
 .rv-card {
-    border: 1px solid #eef0f3;
-    border-radius: 14px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
     padding: .85rem 1rem;
-    background: #fff;
+    background: var(--surface);
     display: flex;
     flex-direction: column;
     gap: .5rem;
 }
-.rv-card.is-hidden { background: #f8fafc; opacity: .85; }
+.rv-card.is-hidden { background: var(--canvas); opacity: .85; }
 
 .rv-head { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; }
 .rv-stars { color: #f59e0b; font-size: .9rem; letter-spacing: .05em; }
 .rv-stars.is-low { color: #dc2626; }
 .rv-who { display: flex; flex-direction: column; min-width: 0; }
-.rv-who strong { font-size: .9rem; color: #0f172a; }
-.rv-who small { font-size: .74rem; color: #94a3b8; }
+.rv-who strong { font-size: .9rem; color: var(--ink); }
+.rv-who small { font-size: .875rem; color: var(--muted); }
 .rv-tag {
     margin-inline-start: auto;
-    background: #f1f5f9;
-    color: #475569;
-    border-radius: 999px;
+    background: var(--canvas);
+    color: var(--ink);
+    border-radius: 12px;
     padding: .15rem .6rem;
-    font-size: .72rem;
+    font-size: .875rem;
     font-weight: 800;
 }
 
-.rv-body strong { display: block; font-size: .92rem; color: #0f172a; margin-bottom: .2rem; }
-.rv-body p { margin: 0; font-size: .86rem; color: #475569; line-height: 1.65; }
-.rv-empty-body { color: #cbd5e1 !important; font-style: italic; }
+.rv-body strong { display: block; font-size: .92rem; color: var(--ink); margin-bottom: .2rem; }
+.rv-body p { margin: 0; font-size: .875rem; color: var(--ink); line-height: 1.65; }
+.rv-empty-body { color: var(--muted) !important; font-style: italic; }
 
 .rv-reason {
     display: flex;
     gap: .45rem;
     align-items: flex-start;
-    background: #f1f5f9;
+    background: var(--canvas);
     border-radius: 10px;
     padding: .5rem .7rem;
-    font-size: .78rem;
-    color: #475569;
+    font-size: .875rem;
+    color: var(--ink);
 }
 
 .rv-hideform { display: flex; gap: .5rem; flex-wrap: wrap; }
@@ -303,4 +303,10 @@ const RATINGS = [
 
 .rv-actions { display: flex; gap: .4rem; flex-wrap: wrap; }
 .rv-del { margin-inline-start: auto; }
+
+/* Operational layout and responsive hierarchy. */
+.ops-summary{margin-bottom:16px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}.ops-summary>summary{display:flex;align-items:center;gap:10px;min-height:48px;padding:12px 16px;cursor:pointer;list-style:none;font-size:14px;font-weight:700}.ops-summary>summary>i:last-child{margin-inline-start:auto}.ops-summary[open]>summary{border-bottom:1px solid var(--line)}.ops-summary>:deep(.stat-rail){margin:0;border:0;border-radius:0}.row.g-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin:0;gap:12px}.row.g-2>div{width:auto;max-width:none;padding:0;margin:0}.row.g-2 .form-control,.row.g-2 .form-select{min-height:46px;font-size:14px}.row.g-2 .btn{min-height:46px;width:100%}@media(max-width:560px){.row.g-2{grid-template-columns:1fr 1fr}.row.g-2>div:first-child{grid-column:1/-1}}
+
+/* Operational layout and responsive hierarchy. */
+.rv-lenses{gap:8px;margin-bottom:16px}.rv-lens{border-radius:6px;min-height:44px;font-size:14px}.rv-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;padding:18px;background:var(--canvas)}.rv-card{border:1px solid var(--line);border-radius:8px;box-shadow:none;display:flex;flex-direction:column;background:var(--surface);min-width:0}.rv-head{padding:16px;display:flex;flex-wrap:wrap;gap:10px;border-bottom:1px solid var(--line)}.rv-stars{order:2;flex-basis:100%;font-size:16px}.rv-who{flex:1}.rv-who strong{font-size:17px}.rv-who small{font-size:14px}.rv-body{padding:16px;flex:1;line-height:1.8;font-size:15px}.rv-actions{padding:12px 16px;border-top:1px solid var(--line);gap:8px}.rv-actions .btn{min-height:42px;font-size:14px}.rv-hide-form{padding:16px;background:var(--canvas)}@media(max-width:850px){.rv-list{grid-template-columns:1fr;padding:12px}}
 </style>

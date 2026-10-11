@@ -15,7 +15,7 @@
 :root {
     /* Primary (fresh green) — flows to Dashtic's --primary01..09 tiers.
        Reserved for primary buttons + active states only; surfaces stay neutral. */
-    --primary-rgb: 22, 101, 52;
+    --primary-rgb: 163, 66, 43;
 
     /* Semantic colors — clear and distinct from the brand green so states
        (success / warning / danger) never compete with primary actions. */
@@ -29,7 +29,7 @@
     --secondary-rgb: 100, 116, 139;
 
     /* Body surface (cool neutral) */
-    --body-bg-rgb: 248, 250, 252;
+    --body-bg-rgb: 247, 243, 237;
     --body-bg-rgb2: 255, 255, 255;
     --default-body-bg-color: rgb(var(--body-bg-rgb));
 
@@ -43,7 +43,7 @@
     --default-border: rgba(15, 23, 42, 0.08);
 
     /* Arabic-first typography */
-    --default-font-family: "Tajawal", "Segoe UI", sans-serif;
+    --default-font-family: "Cairo", "Segoe UI", sans-serif;
 }
 
 /* Bootstrap semantic overrides (so .btn-success / .bg-danger / .text-warning

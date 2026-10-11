@@ -1,4 +1,5 @@
 <script setup>
+import ManagementPage from '../../../Components/Inventory/ManagementPage.vue';
 /**
  * حركات المخزون — the stock ledger: every in, out, waste, return and
  * adjustment, with the batch it hit and the document that caused it.
@@ -77,6 +78,7 @@ const visibleIngredients = computed(() => {
 </script>
 
 <template>
+    <ManagementPage mode="records">
     <Head title="حركات المخزون" />
 
     <PageHeader title="حركات المخزون" icon="bi-boxes"
@@ -210,6 +212,7 @@ const visibleIngredients = computed(() => {
             <Pagination :links="movements.links" />
         </template>
     </DataPanel>
+    </ManagementPage>
 </template>
 
 <style scoped>

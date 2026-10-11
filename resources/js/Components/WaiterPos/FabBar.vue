@@ -36,10 +36,10 @@ const emit = defineEmits({
     margin-inline: auto;
     padding: .6rem 1rem;
     border: 0;
-    border-radius: 999px;
-    color: #fff;
+    border-radius: 8px;
+    color: #FFFDFA;
     background: var(--wp-primary);
-    box-shadow: 0 10px 26px -8px rgba(15, 71, 49, .55);
+    box-shadow: none;
     cursor: pointer;
 }
 .cart-fab:hover { background: var(--wp-primary-dark); }
@@ -50,7 +50,7 @@ const emit = defineEmits({
     min-width: 30px;
     height: 30px;
     padding-inline: .45rem;
-    border-radius: 999px;
+    border-radius: 8px;
     background: rgba(255, 255, 255, .24);
     font-size: 14px;
     font-weight: 800;
@@ -68,7 +68,10 @@ const emit = defineEmits({
 .fab-total { font-size: 15.5px; font-weight: 800; font-variant-numeric: tabular-nums; }
 @media (max-width: 370px) {
     .cart-fab { gap: .4rem; padding-inline: .75rem; }
-    .fab-label { font-size: 13px; }
-    .fab-total { font-size: 13.5px; }
+    .fab-label { font-size: 14px; }
+    .fab-total { font-size: 14px; }
 }
+
+/* Task-specific component layout. */
+.cart-fab{display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:12px;min-height:62px;border-radius:8px;padding:12px 18px;box-shadow:0 6px 20px #25343A26}.fab-count{border-radius:5px;width:30px;height:30px;font-size:16px}.fab-label{font-size:16px;text-align:start}.fab-total{font-size:18px;white-space:nowrap}
 </style>

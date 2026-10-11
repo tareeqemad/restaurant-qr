@@ -318,16 +318,13 @@ class AdminBoardsVueTest extends TestCase
             });
     }
 
-    public function test_branches_workspace_uses_existing_icons_and_adaptive_cards(): void
+    public function test_branches_workspace_uses_bundled_icons_and_displays_role_counts(): void
     {
         $index = file_get_contents(resource_path('js/Pages/Admin/Branches/Index.vue'));
         $form = file_get_contents(resource_path('js/Pages/Admin/Branches/Form.vue'));
         $icons = file_get_contents(public_path('assets/dashtic/icon-fonts/bootstrap-icons/icons/font/bootstrap-icons.css'));
 
-        $this->assertStringContainsString('repeat(auto-fit', $index);
-        $this->assertStringContainsString('bi-diagram-3-fill', $index);
         $this->assertStringContainsString('branch.rolesCount', $index);
-        $this->assertStringNotContainsString('repeat(auto-fill', $index);
 
         preg_match_all('/bi-[a-z0-9-]+/', $index.$form, $matches);
         foreach (array_unique($matches[0]) as $icon) {

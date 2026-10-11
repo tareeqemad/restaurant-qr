@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Hash;
  * Walks the operator through:
  *   1. Migrating the database (only if pending migrations exist).
  *   2. Wiping any existing demo data (with explicit confirmation).
- *   3. Seeding system references + the preserved production menu catalogue.
+ *   3. Seeding system references without a sample restaurant catalogue.
  *   4. Creating the first Super Admin account interactively.
  *
  * Designed for first-time deployment on a client server. Idempotent — running
@@ -36,13 +36,13 @@ class InstallApp extends Command
         {--force : Skip the destructive-action confirmations}
         {--no-demo-wipe : Don\'t offer to wipe demo data even if it exists}';
 
-    protected $description = 'تثبيت إنتاجي تفاعلي: schema + system/catalogue seed + إنشاء أول مدير نظام.';
+    protected $description = 'تثبيت إنتاجي تفاعلي: schema + system seed + إنشاء أول مدير نظام.';
 
     public function handle(DemoResetService $reset): int
     {
         $this->newLine();
         $this->line('<fg=cyan;options=bold>──────────────────────────────────────────────</>');
-        $this->line('<fg=cyan;options=bold>  تثبيت نظام Relax Restaurant QR — Production  </>');
+        $this->line('<fg=cyan;options=bold>  تثبيت نظام Restaurant QR — Production  </>');
         $this->line('<fg=cyan;options=bold>──────────────────────────────────────────────</>');
         $this->newLine();
 
@@ -75,7 +75,7 @@ class InstallApp extends Command
         }
 
         // ── 3. Production seed (idempotent on a clean install) ───────
-        $this->task('زرع بيانات النظام ومنيو الإنتاج المحفوظ', function () {
+        $this->task('تجهيز بيانات النظام الأساسية', function () {
             Artisan::call('db:seed', ['--class' => ProductionSeeder::class, '--force' => true]);
 
             return true;
@@ -123,7 +123,7 @@ class InstallApp extends Command
         $this->newLine();
         $this->line('الخطوات التالية:');
         $this->line('  1. <fg=cyan>افتح /admin</> وسجّل دخول بحساب مدير النظام.');
-        $this->line('  2. راجع الفرع ومنيو الإنتاج المحفوظ من لوحة الإدارة.');
+        $this->line('  2. جهّز فرع المطعم ومنيوه من لوحة الإدارة.');
         $this->line('  3. أضف الطاولات والموظفين وأرصدة المخزون الافتتاحية.');
         $this->line('  4. انسخ مجلد <fg=cyan>storage/app/public</> القديم إن أردت الاحتفاظ بالصور المرفوعة.');
         $this->line('  5. لتسليم نسخة تجريبية لعميل، استخدم <fg=cyan>/setup</> لاحقاً بعد موافقته؛ هذا الأمر مخصص لمشغّل الخادم.');

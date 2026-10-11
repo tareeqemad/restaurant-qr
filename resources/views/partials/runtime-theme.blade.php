@@ -15,6 +15,6 @@
         --cream: var(--menu);
         --bg: var(--menu);
         --border: rgba(var(--primary-rgb), 0.14);
-        --line: rgba(var(--primary-rgb), 0.14);
+        --line: #dfd7cb;
     }
 </style>

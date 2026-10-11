@@ -5,6 +5,6 @@
     'detailIcon' => 'bi-qr-code',
 ])
 
-@section('heading')انتهت جلسة هذه الطاولة@endsection
+@section('heading')انتهت جلسة الطاولة@endsection
 @section('body'){{ $message ?? 'أُغلقت الجلسة السابقة بعد إنهاء الطلب والدفع.' }}@endsection
-@section('detail')امسح رمز QR الموجود على الطاولة مرة أخرى لفتح جلسة صحيحة وآمنة.@endsection
+@section('detail')امسح رمز الطاولة مرة أخرى لفتح المنيو.@endsection

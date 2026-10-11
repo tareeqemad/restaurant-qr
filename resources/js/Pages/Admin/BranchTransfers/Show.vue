@@ -1,4 +1,5 @@
 <script setup>
+import ManagementPage from '../../../Components/Inventory/ManagementPage.vue';
 /**
  * تفاصيل تحويل بين الفروع.
  *
@@ -77,6 +78,7 @@ const submitCancel = () => {
 </script>
 
 <template>
+    <ManagementPage mode="detail">
     <Head :title="transfer.number" />
 
     <PageHeader :title="`تحويل ${transfer.number}`" icon="bi-truck"
@@ -238,6 +240,7 @@ const submitCancel = () => {
             </div>
         </Transition>
     </Teleport>
+    </ManagementPage>
 </template>
 
 <style scoped>
@@ -261,14 +264,14 @@ const submitCancel = () => {
     padding: 1rem;
 }
 .btx-card {
-    background: #fff;
-    border-radius: 16px;
+    background: var(--surface, #FFFDFA);
+    border-radius: 12px;
     padding: 1.1rem 1.2rem;
     width: min(480px, 100%);
     display: flex;
     flex-direction: column;
     gap: .8rem;
-    box-shadow: 0 24px 60px rgba(15, 23, 42, .28);
+    box-shadow: none;
 }
 .btx-card h3 { margin: 0; font-size: 1.02rem; font-weight: 800; color: #0f172a; }
 .btx-warn {
@@ -280,11 +283,11 @@ const submitCancel = () => {
     color: #92400e;
     border-radius: 10px;
     padding: .6rem .75rem;
-    font-size: .82rem;
+    font-size: .875rem;
     line-height: 1.6;
 }
 .btx-field { display: flex; flex-direction: column; gap: .35rem; margin: 0; }
-.btx-field > span { font-size: .84rem; font-weight: 800; color: #334155; }
+.btx-field > span { font-size: .875rem; font-weight: 800; color: var(--ink, #25343A); }
 .btx-actions { display: flex; gap: .5rem; justify-content: flex-end; flex-wrap: wrap; }
 
 .btx-enter-active, .btx-leave-active { transition: opacity .15s ease; }

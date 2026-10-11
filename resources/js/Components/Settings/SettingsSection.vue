@@ -23,15 +23,18 @@ defineProps({
 </template>
 
 <style scoped>
-.settings-section { overflow: hidden; border: 1px solid #dfe7e2; border-radius: 18px; background: #fff; box-shadow: 0 8px 28px rgba(15, 44, 30, .045); }
-.settings-section__header { display: flex; align-items: flex-start; gap: 12px; padding: 18px 20px; border-bottom: 1px solid #edf1ee; background: linear-gradient(135deg, #fbfdfb 0%, #fff 72%); }
-.settings-section__icon { display: grid; flex: 0 0 40px; width: 40px; height: 40px; place-items: center; border-radius: 12px; color: #166534; background: #eaf5ee; font-size: 1.1rem; }
+.settings-section { overflow: hidden; border: 1px solid var(--brand-soft, #F3E3D8); border-radius: 12px; background: var(--surface, #FFFDFA); box-shadow: none; }
+.settings-section__header { display: flex; align-items: flex-start; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--canvas, #F7F3ED); background: var(--surface, #FFFDFA); }
+.settings-section__icon { display: grid; flex: 0 0 40px; width: 40px; height: 40px; place-items: center; border-radius: 12px; color: var(--ink, #25343A); background: var(--canvas, #F7F3ED); font-size: 1.1rem; }
 [data-tone="amber"] .settings-section__icon { color: #a85700; background: #fff3df; }
 [data-tone="blue"] .settings-section__icon { color: #175e96; background: #edf6fc; }
-.settings-section__header h2 { margin: 0; color: #17251d; font-size: 1.05rem; font-weight: 800; }
-.settings-section__header p { margin: 4px 0 0; color: #728078; font-size: .83rem; line-height: 1.6; }
+.settings-section__header h2 { margin: 0; color: var(--ink, #25343A); font-size: 1.05rem; font-weight: 800; }
+.settings-section__header p { margin: 4px 0 0; color: var(--muted, #626B6D); font-size: .875rem; line-height: 1.6; }
 .settings-section__actions { margin-inline-start: auto; }
 .settings-section__body { padding: 20px; }
-.settings-section__footer { padding: 14px 20px; border-top: 1px solid #edf1ee; background: #fbfcfb; }
-@media (max-width: 640px) { .settings-section { border-radius: 15px; } .settings-section__header, .settings-section__body { padding: 16px; } }
+.settings-section__footer { padding: 14px 20px; border-top: 1px solid var(--canvas, #F7F3ED); background: var(--surface, #FFFDFA); }
+@media (max-width: 640px) { .settings-section { border-radius: 12px; } .settings-section__header, .settings-section__body { padding: 16px; } }
+
+/* Dar Al Sarw management layout */
+.settings-section { border-radius: 12px; background: var(--surface); } .settings-section__header { padding: 20px 22px; background: var(--canvas); border-bottom: 1px solid var(--line); } .settings-section__header h2 { color: var(--ink); font-size: 1.125rem; } .settings-section__body { padding: 22px; } .settings-section__header p { color: var(--muted); font-size: .875rem; max-width: 75ch; }
 </style>

@@ -8,27 +8,46 @@
  *
  * Registered once per page load; safe to import from multiple components.
  */
+import { readonly, ref } from 'vue';
+
 let ctx = null;
 let unlocked = false;
+const readiness = ref(false);
+export const audioReady = readonly(readiness);
+
+function syncReadiness() {
+    readiness.value = Boolean(unlocked && ctx?.state === 'running');
+}
 
 function ensureContext() {
     if (! ctx) {
         const AC = window.AudioContext || window.webkitAudioContext;
         if (! AC) return null;
-        ctx = new AC();
+        try {
+            ctx = new AC();
+            ctx.addEventListener('statechange', syncReadiness);
+        } catch {
+            return null;
+        }
     }
     return ctx;
 }
 
-function unlock() {
+export async function unlockAudio() {
     const c = ensureContext();
-    if (! c) return;
-    if (c.state === 'suspended') c.resume().catch(() => {});
-    unlocked = true;
+    if (! c) return false;
+    try {
+        if (c.state === 'suspended') await c.resume();
+        unlocked = c.state === 'running';
+    } catch {
+        unlocked = false;
+    }
+    syncReadiness();
+    return readiness.value;
 }
 
 ['pointerdown', 'keydown', 'touchstart', 'click'].forEach((evt) => {
-    document.addEventListener(evt, unlock, { passive: true });
+    document.addEventListener(evt, unlockAudio, { passive: true });
 });
 
 function tone(c, freq, at, duration = 0.18, peak = 0.18) {

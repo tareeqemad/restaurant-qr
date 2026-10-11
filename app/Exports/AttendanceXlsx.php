@@ -2,6 +2,7 @@
 
 namespace App\Exports;
 
+use App\Helpers\Brand;
 use App\Models\Attendance;
 use App\Models\Branch;
 use App\Models\User;
@@ -51,7 +52,7 @@ class AttendanceXlsx
 
         $book = new Spreadsheet;
         $book->getProperties()
-            ->setCreator(config('restaurant.name', 'Relax'))
+            ->setCreator(Brand::name())
             ->setTitle('Attendance Report')
             ->setSubject('تقرير الحضور والانصراف');
 

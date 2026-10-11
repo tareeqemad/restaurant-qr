@@ -1,4 +1,5 @@
 <script setup>
+import ManagementPage from '../../../Components/Inventory/ManagementPage.vue';
 /**
  * مساحة الجرد — Wave 4. One row per ingredient: type the physically
  * counted quantity, see the variance and its money value instantly.
@@ -197,6 +198,7 @@ const fmtMoney = (n) => `${Number(n || 0).toLocaleString('en-US', { maximumFract
 </script>
 
 <template>
+    <ManagementPage mode="detail">
     <Head :title="`جرد ${count.number}`" />
 
     <PageHeader :title="`جرد ${count.number}`" icon="bi-clipboard-check"
@@ -348,6 +350,7 @@ const fmtMoney = (n) => `${Number(n || 0).toLocaleString('en-US', { maximumFract
             </div>
         </Transition>
     </Teleport>
+    </ManagementPage>
 </template>
 
 <style scoped>
@@ -355,16 +358,16 @@ const fmtMoney = (n) => `${Number(n || 0).toLocaleString('en-US', { maximumFract
     display: flex;
     gap: .7rem;
     align-items: flex-start;
-    border-radius: 14px;
+    border-radius: 12px;
     padding: .85rem 1rem;
     margin-bottom: .9rem;
-    font-size: .86rem;
+    font-size: .875rem;
 }
 .sc-status > i { font-size: 1.2rem; }
 .sc-status strong { display: block; }
 .sc-status--draft { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
-.sc-status--finalized { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
-.sc-status--cancelled { background: #f1f5f9; border: 1px solid #e2e8f0; color: #475569; }
+.sc-status--finalized { background: var(--canvas, #F7F3ED); border: 1px solid var(--brand-soft, #F3E3D8); color: var(--ink, #25343A); }
+.sc-status--cancelled { background: #f1f5f9; border: 1px solid var(--line, #DFD7CB); color: var(--muted, #626B6D); }
 
 .sc-tools { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; }
 .sc-search { max-width: 260px; }
@@ -372,33 +375,33 @@ const fmtMoney = (n) => `${Number(n || 0).toLocaleString('en-US', { maximumFract
 .sc-chip {
     min-height: 38px;
     padding: 0 .8rem;
-    border: 1px solid #e2e8f0;
-    border-radius: 999px;
-    background: #fff;
-    color: #334155;
+    border: 1px solid var(--line, #DFD7CB);
+    border-radius: 12px;
+    background: var(--surface, #FFFDFA);
+    color: var(--ink, #25343A);
     font: inherit;
-    font-size: .8rem;
+    font-size: .875rem;
     font-weight: 700;
     cursor: pointer;
 }
-.sc-chip.is-active { background: rgb(var(--primary-rgb)); border-color: rgb(var(--primary-rgb)); color: #fff; }
+.sc-chip.is-active { background: var(--brand, #A3422B); border-color: var(--brand, #A3422B); color: #fff; }
 
 .sc-table th { white-space: nowrap; }
 .sc-name { font-weight: 700; color: #0f172a; }
-.sc-name small { display: block; font-weight: 600; color: #94a3b8; font-size: .72rem; }
+.sc-name small { display: block; font-weight: 600; color: var(--muted, #626B6D); font-size: .875rem; }
 .sc-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .sc-input { width: 120px; text-align: center; font-weight: 800; }
 .sc-note { min-width: 140px; }
 
 .sc-var--short { color: #b91c1c; font-weight: 800; }
 .sc-var--over { color: #b45309; font-weight: 800; }
-.sc-var--match { color: #059669; font-weight: 700; }
-.sc-var--pending { color: #cbd5e1; }
+.sc-var--match { color: var(--brand, #A3422B); font-weight: 700; }
+.sc-var--pending { color: var(--line, #DFD7CB); }
 .sc-row--short { background: rgba(254, 226, 226, .35); }
 .sc-row--over { background: rgba(254, 243, 199, .3); }
 
 .sc-state { width: 34px; text-align: center; }
-.sc-ok { color: #059669; }
+.sc-ok { color: var(--brand, #A3422B); }
 .sc-dirty { color: #f59e0b; font-size: 1.4rem; }
 .sc-err { color: #b91c1c; cursor: help; }
 .sc-spin { animation: sc-rotate 1s linear infinite; display: inline-block; }
@@ -406,7 +409,7 @@ const fmtMoney = (n) => `${Number(n || 0).toLocaleString('en-US', { maximumFract
 
 .sc-foot { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; }
 .sc-finalize { margin-inline-start: auto; font-weight: 800; }
-.sc-locked { color: #64748b; font-weight: 700; display: flex; align-items: center; gap: .4rem; }
+.sc-locked { color: var(--muted, #626B6D); font-weight: 700; display: flex; align-items: center; gap: .4rem; }
 
 .scx-backdrop {
     position: fixed;
@@ -420,19 +423,19 @@ const fmtMoney = (n) => `${Number(n || 0).toLocaleString('en-US', { maximumFract
 }
 .scx-card {
     width: min(460px, 100%);
-    background: #fff;
-    border-radius: 18px;
+    background: var(--surface, #FFFDFA);
+    border-radius: 12px;
     padding: 1.2rem;
     display: flex;
     flex-direction: column;
     gap: .8rem;
 }
 .scx-card h3 { margin: 0; font-size: 1.02rem; font-weight: 900; }
-.scx-card p { margin: 0; font-size: .84rem; color: #64748b; }
+.scx-card p { margin: 0; font-size: .875rem; color: var(--muted, #626B6D); }
 .scx-card label { display: flex; flex-direction: column; gap: .3rem; margin: 0; }
-.scx-card label span { font-size: .8rem; font-weight: 800; color: #334155; }
+.scx-card label span { font-size: .875rem; font-weight: 800; color: var(--ink, #25343A); }
 .scx-card textarea {
-    border: 1.5px solid #e2e8f0;
+    border: 1.5px solid var(--line, #DFD7CB);
     border-radius: 11px;
     padding: .6rem .8rem;
     font: inherit;
@@ -446,7 +449,7 @@ const fmtMoney = (n) => `${Number(n || 0).toLocaleString('en-US', { maximumFract
     border: 0;
     border-radius: 12px;
     background: #f1f5f9;
-    color: #334155;
+    color: var(--ink, #25343A);
     font: inherit;
     font-weight: 800;
     cursor: pointer;
@@ -456,4 +459,7 @@ const fmtMoney = (n) => `${Number(n || 0).toLocaleString('en-US', { maximumFract
 
 .scx-enter-active, .scx-leave-active { transition: opacity .15s; }
 .scx-enter-from, .scx-leave-to { opacity: 0; }
+
+/* Dar Al Sarw management layout */
+.sc-status { padding: 18px 20px; border-radius: 10px; } .sc-search { min-height: 46px; } .sc-input { min-width: 110px; min-height: 46px; font-size: 1rem; }
 </style>

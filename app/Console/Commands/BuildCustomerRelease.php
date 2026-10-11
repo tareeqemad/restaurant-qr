@@ -24,18 +24,24 @@ class BuildCustomerRelease extends Command
     private array $excludedDirectories = [
         '.git',
         '.github',
+        '.agents',
+        '.aws',
+        '.claude',
+        '.codex',
+        '.codex-staging',
         '.idea',
+        '.phpunit.cache',
+        '.ssh',
+        '.tmp',
+        '.tmp-appdata',
         '.vscode',
+        'bootstrap/cache',
         'docs',
         'node_modules',
-        'storage/app/backups',
-        'storage/app/releases',
-        'storage/framework/cache',
-        'storage/framework/sessions',
-        'storage/framework/testing',
-        'storage/framework/views',
-        'storage/logs',
+        'public/storage',
+        'storage',
         'tests',
+        'tmp',
     ];
 
     private array $excludedFiles = [
@@ -44,7 +50,11 @@ class BuildCustomerRelease extends Command
         '.env.local',
         '.env.production',
         '.phpunit.result.cache',
+        'auth.json',
         'phpunit.xml',
+        'public/hot',
+        'public/default_logo.png',
+        'public/assets/brand/relax-monogram.svg',
     ];
 
     private array $excludedExtensions = [
@@ -85,6 +95,11 @@ class BuildCustomerRelease extends Command
 
         $root = base_path();
         $this->addProjectFiles($zip, $root, $outputPath);
+        foreach (['docs/REPAIR-PLAN.md', 'docs/demo-dar-al-sarw.md', 'docs/ui-redesign-audit.json'] as $releaseDocument) {
+            if (is_file($root.'/'.$releaseDocument)) {
+                $this->addFile($zip, $root.'/'.$releaseDocument, $releaseDocument);
+            }
+        }
         $this->addRuntimeDirectories($zip);
         $this->addGeneratedEnv($zip);
         $this->addDeploymentGuide($zip);
@@ -159,6 +174,13 @@ class BuildCustomerRelease extends Command
         }
 
         $fileName = basename($relativePath);
+        // Only the checked-in template is distributable. Preview/test/local
+        // dotenv copies and editor backups can contain live credentials.
+        $lowerFileName = strtolower($fileName);
+        if ($lowerFileName !== '.env.example'
+            && preg_match('/^\\.env(?:$|[.\\-_~])/', $lowerFileName) === 1) {
+            return true;
+        }
         if (in_array($relativePath, $this->excludedFiles, true) || in_array($fileName, $this->excludedFiles, true)) {
             return true;
         }
@@ -178,6 +200,8 @@ class BuildCustomerRelease extends Command
     {
         foreach ([
             'storage/app',
+            'storage/app/private',
+            'storage/app/public',
             'storage/framework/cache',
             'storage/framework/cache/data',
             'storage/framework/sessions',
@@ -240,8 +264,35 @@ php artisan app:deploy
 php artisan app:health
 ```
 
-5. Open `/login` and let the customer try the demo data first.
+5. Open `/login`. The deployment command does not install demonstration data; use the separate trial instructions below for a demo.
 6. When the customer decides to go live, open `/setup` to wipe demo data and create the real restaurant setup.
+
+## Dar Al Sarw demonstration
+
+Use a new, empty database dedicated to the trial. Set its connection details in `.env`, set `RESTAURANT_DEMO_MODE=true`, and set `RESTAURANT_DEMO_PASSWORD` to a private password of at least 12 characters. The package does not contain a shared demo password or credentials from the source installation.
+
+For this trial, run these commands instead of installation step 4:
+
+```bash
+php artisan migrate --force
+php artisan db:seed --class=DemoSeeder --force
+php artisan app:health
+```
+
+The fictional restaurant has these login usernames, initially using the private password you configured:
+
+| Role | Username |
+| --- | --- |
+| Administrator | `admin` |
+| Partner | `partner` |
+| Manager | `manager` |
+| Waiters | `waiter1`, `waiter2` |
+| Kitchen | `chef1` |
+| Bar | `bar1` |
+| Cashier | `cashier1` |
+| Accountant | `accountant1` |
+
+Share only the role accounts intended for each tester; keep administrator access with the person managing the trial. Names, menu, stock and supplier details are fictional demonstration data. This clean package excludes existing uploads, private files, logs and local database files. Never seed the demonstration into an existing customer's database.
 
 MD;
 

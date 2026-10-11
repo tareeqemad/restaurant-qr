@@ -12,35 +12,19 @@
     <title>{{ $pageTitle }} · {{ $brandName }}</title>
     <link rel="icon" href="{{ \App\Helpers\Brand::faviconUrl() }}">
     <link href="{{ asset('assets/dashtic/icon-fonts/bootstrap-icons/icons/font/bootstrap-icons.css') }}" rel="stylesheet">
-    <style>
-        :root { --primary: {{ $theme['primary'] }}; --dark: {{ $theme['dark'] }}; --accent: {{ $theme['accent'] }}; }
-        * { box-sizing: border-box; }
-        html, body { min-height: 100%; margin: 0; }
-        body { display: grid; min-height: 100dvh; place-items: center; padding: 1rem; color: #1d2b22; background: radial-gradient(circle at 15% 12%, color-mix(in srgb, var(--primary) 13%, transparent), transparent 26rem), #f3f7f4; font-family: Tahoma, Arial, sans-serif; }
-        .status-card { width: min(100%, 440px); padding: clamp(1.25rem, 6vw, 2rem); border: 1px solid #d9e4dd; border-radius: 24px; background: #fff; box-shadow: 0 28px 70px -48px #123f31; text-align: center; }
-        .brand { display: flex; align-items: center; justify-content: center; gap: .55rem; margin-bottom: 1.5rem; }
-        .brand span { display: grid; width: 46px; height: 46px; place-items: center; padding: .3rem; border: 1px solid #dfe8e2; border-radius: 13px; }
-        .brand img { width: 100%; height: 100%; object-fit: contain; }
-        .brand strong { font-size: .8rem; }
-        .status-icon { display: grid; width: 74px; height: 74px; margin: 0 auto 1rem; place-items: center; border-radius: 22px; font-size: 1.8rem; }
-        .status-icon.amber { color: #a2630d; background: #fff2d7; }
-        .status-icon.red { color: #a6373f; background: #fff0f1; }
-        h1 { margin: 0; color: var(--dark); font-size: clamp(1.2rem, 5vw, 1.55rem); line-height: 1.5; }
-        .body { margin: .55rem 0 0; color: #718078; font-size: .76rem; line-height: 1.9; }
-        .detail { display: flex; align-items: flex-start; gap: .55rem; margin-top: 1.15rem; padding: .8rem; border: 1px solid #dce6e0; border-radius: 13px; color: #3c5a49; background: #f7faf8; text-align: start; font-size: .66rem; line-height: 1.7; }
-        .detail i { margin-top: .08rem; color: var(--primary); font-size: .9rem; }
-        .footer { margin: 1.2rem 0 0; color: #929d96; font-size: .55rem; }
-        @media (max-width: 480px) { body { align-items: end; padding: .75rem; } .status-card { margin-bottom: max(.25rem, env(safe-area-inset-bottom)); border-radius: 22px; } }
+    <link href="{{ \App\Support\MarketProfile::fontUrl() }}" rel="stylesheet"><style>
+        :root { --primary: {{ $theme['primary'] }}; --dark:#25343A; --accent:#B78338; }
+        *{box-sizing:border-box}html,body{min-height:100%;margin:0}body{min-height:100dvh;display:grid;place-items:center;padding:24px 16px;background:#F7F3ED;color:#25343A;font-family:Cairo,Tahoma,Arial,sans-serif}.status-card{width:min(100%,500px);padding:0;border:1px solid #DFD7CB;border-radius:12px;background:#FFFDFA;overflow:hidden;text-align:start}.brand{display:flex;align-items:center;gap:12px;margin:0;padding:22px 26px;border-bottom:1px solid #DFD7CB}.brand span{display:grid;width:44px;height:44px;place-items:center}.brand img{width:100%;height:100%;object-fit:contain}.brand strong{font-size:18px}.status-content{padding:28px 26px}.status-icon{display:grid;width:46px;height:46px;place-items:center;border-radius:8px;margin-bottom:20px;font-size:23px}.status-icon.amber{color:#7F5525;background:#F8F0E2}.status-icon.red{color:#A3422B;background:#F3E3D8}h1{margin:0;font-size:26px;line-height:1.5;color:var(--dark)}.body{margin:12px 0 22px;color:#626B6D;font-size:15px;line-height:1.8}.detail{display:flex;align-items:flex-start;gap:10px;padding:16px;border-inline-start:3px solid var(--primary);background:#F7F3ED;color:#25343A;font-size:15px;line-height:1.7}.detail i{color:var(--primary);margin-top:3px}.footer{font-size:14px;color:#626B6D;line-height:1.7;border-top:1px solid #DFD7CB;padding:18px 26px;margin:0;background:#F7F3ED}@media(max-width:500px){.status-content{padding:24px 20px}.brand,.footer{padding-inline:20px}h1{font-size:24px}}
     </style>
 </head>
 <body>
     <main class="status-card" role="status">
         <div class="brand"><span><img src="{{ \App\Helpers\Brand::logoUrl() }}" alt=""></span><strong>{{ $brandName }}</strong></div>
-        <span class="status-icon {{ $tone }}"><i class="bi {{ $icon }}"></i></span>
+        <section class="status-content"><span class="status-icon {{ $tone }}"><i class="bi {{ $icon }}"></i></span>
         <h1>@yield('heading')</h1>
         <p class="body">@yield('body')</p>
         <div class="detail"><i class="bi {{ $detailIcon ?? 'bi-info-circle' }}"></i><span>@yield('detail')</span></div>
-        <p class="footer">@yield('footer', 'امسح رمز QR الموجود على الطاولة للوصول الآمن إلى المنيو.')</p>
+        </section><p class="footer">@yield('footer', 'امسح رمز QR الموجود على الطاولة للوصول الآمن إلى المنيو.')</p>
     </main>
 </body>
 </html>

@@ -1,4 +1,5 @@
 <script setup>
+import ManagementPage from '../../../Components/Inventory/ManagementPage.vue';
 /**
  * تعديل مكوّن — three independent forms on one screen, exactly as the
  * Blade had them, because each posts to its own endpoint:
@@ -99,6 +100,7 @@ const lineError = (idx, field) => recipeForm.errors[`lines.${idx}.${field}`];
 </script>
 
 <template>
+    <ManagementPage mode="form">
     <Head :title="`تعديل: ${ingredient.name}`" />
 
     <PageHeader :title="`تعديل: ${ingredient.name}`" icon="bi-pencil-square"
@@ -263,10 +265,11 @@ const lineError = (idx, field) => recipeForm.errors[`lines.${idx}.${field}`];
             </button>
         </div>
     </DataPanel>
+    </ManagementPage>
 </template>
 
 <style scoped>
-.ing-err { display: block; margin-top: .2rem; color: #dc2626; font-size: .72rem; font-weight: 700; }
+.ing-err { display: block; margin-top: .2rem; color: #dc2626; font-size: .875rem; font-weight: 700; }
 .form-control-sm, .form-select-sm { min-height: 44px; }
 .btn-sm { min-height: 44px; }
 .form-check-input { width: 1.3rem; height: 1.3rem; }

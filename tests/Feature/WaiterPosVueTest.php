@@ -27,6 +27,8 @@ use App\Services\InventoryService;
 use App\Services\OrderService;
 use App\Support\BranchContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -469,19 +471,78 @@ class WaiterPosVueTest extends TestCase
         ), 'an excluded ingredient must not be reserved or deducted from inventory');
     }
 
-    public function test_submit_replayed_token_refuses_without_a_twin_order(): void
+    public function test_submit_replays_durable_confirmation_without_a_twin_order(): void
     {
         $table = $this->table('5');
         $this->actingAs($this->waiter)->get(route('admin.waiter-orders.create', $table));
         $sessionId = $table->fresh()->activeSession->id;
 
-        $payload = ['token' => 'vue-t-2', 'cart' => [$this->line($this->burger)]];
-        $this->postJson(route('admin.waiter-orders.submit', $table), $payload)->assertOk();
+        $payload = ['token' => 'vue-t-2', 'session_id' => $sessionId, 'cart' => [$this->line($this->burger)]];
+        $first = $this->postJson(route('admin.waiter-orders.submit', $table), $payload)->assertOk();
+        Cache::flush();
+        $this->travel(1)->days();
+        TableSession::findOrFail($sessionId)->update(['status' => 'closed']);
         $this->postJson(route('admin.waiter-orders.submit', $table), $payload)
-            ->assertStatus(422)
-            ->assertJsonPath('ok', false);
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('replayed', true)
+            ->assertJsonPath('submission_state', 'committed')
+            ->assertJsonPath('order_number', $first->json('order_number'));
 
         $this->assertSame(1, Order::where('table_session_id', $sessionId)->count());
+    }
+
+    public function test_a_committed_waiter_token_cannot_be_reused_for_changed_lines(): void
+    {
+        $table = $this->table('receipt-conflict');
+        $this->actingAs($this->waiter)->get(route('admin.waiter-orders.create', $table))->assertOk();
+        $payload = ['token' => 'immutable', 'cart' => [$this->line($this->burger)]];
+        $this->postJson(route('admin.waiter-orders.submit', $table), $payload)->assertOk();
+        $payload['cart'][0]['quantity'] = 2;
+        $this->postJson(route('admin.waiter-orders.submit', $table), $payload)
+            ->assertStatus(409)->assertJsonPath('submission_state', 'unknown');
+        $this->assertSame(1, Order::count());
+        $this->assertDatabaseCount('waiter_submission_receipts', 1);
+    }
+
+    public function test_waiter_receipts_are_scoped_to_the_table_session_and_operator(): void
+    {
+        $first = $this->table('receipt-a');
+        $second = $this->table('receipt-b');
+        $this->actingAs($this->waiter)->get(route('admin.waiter-orders.create', $first))->assertOk();
+        $this->get(route('admin.waiter-orders.create', $second))->assertOk();
+        $payload = ['token' => 'shared-token', 'cart' => [$this->line($this->burger)]];
+        $this->postJson(route('admin.waiter-orders.submit', $first), $payload)->assertOk();
+        $this->postJson(route('admin.waiter-orders.submit', $second), $payload)->assertOk()->assertJsonMissing(['replayed' => true]);
+        $otherWaiter = User::create([
+            'name' => 'Other', 'username' => 'other_waiter_receipt', 'password' => bcrypt('x'),
+            'status' => 'active', 'primary_branch_id' => $this->branch->id, 'role' => 'waiter',
+        ]);
+        $otherWaiter->branches()->attach($this->branch->id);
+        $this->actingAs($otherWaiter)->postJson(route('admin.waiter-orders.submit', $first), $payload)
+            ->assertOk()->assertJsonMissing(['replayed' => true]);
+        $this->assertSame(3, Order::count());
+        $this->assertDatabaseCount('waiter_submission_receipts', 3);
+    }
+
+    public function test_receipt_failure_rolls_back_the_waiter_order_and_allows_safe_retry(): void
+    {
+        $table = $this->table('receipt-rollback');
+        $this->actingAs($this->waiter)->get(route('admin.waiter-orders.create', $table))->assertOk();
+        $payload = ['token' => 'rollback-token', 'cart' => [$this->line($this->burger)]];
+        $failReceipt = true;
+        DB::listen(function ($query) use (&$failReceipt) {
+            if ($failReceipt && str_starts_with(strtolower($query->sql), 'update `waiter_submission_receipts`')) {
+                $failReceipt = false;
+                throw new \RuntimeException('Receipt storage unavailable');
+            }
+        });
+        $this->postJson(route('admin.waiter-orders.submit', $table), $payload)->assertStatus(500);
+        $this->assertSame(0, Order::count());
+        $this->assertDatabaseCount('waiter_submission_receipts', 0);
+        $this->postJson(route('admin.waiter-orders.submit', $table), $payload)
+            ->assertOk()->assertJsonPath('submission_state', 'committed');
+        $this->assertSame(1, Order::count());
     }
 
     public function test_a_stock_refusal_releases_the_token_for_an_honest_retry(): void
@@ -492,8 +553,9 @@ class WaiterPosVueTest extends TestCase
 
         $this->postJson(route('admin.waiter-orders.submit', $table), [
             'token' => 'vue-t-3', 'cart' => [$this->line($this->truffle)],
-        ])->assertStatus(422)->assertJsonPath('ok', false);
+        ])->assertStatus(422)->assertJsonPath('ok', false)->assertJsonPath('submission_state', 'rejected');
         $this->assertSame(0, Order::where('table_session_id', $sessionId)->count());
+        $this->assertDatabaseCount('waiter_submission_receipts', 0);
 
         $this->postJson(route('admin.waiter-orders.submit', $table), [
             'token' => 'vue-t-3', 'cart' => [$this->line($this->burger)],

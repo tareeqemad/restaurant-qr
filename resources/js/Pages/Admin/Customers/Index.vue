@@ -1,4 +1,5 @@
 <script setup>
+import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 /**
  * Staff customer directory. The page favours fast lookup over CRM-style
  * density: one search row, four useful lenses, and cards that collapse to a
@@ -51,17 +52,19 @@ function clear() {
 </script>
 
 <template>
-    <Head title="الزبائن" />
-
-    <PageHeader title="الزبائن" icon="bi-people-fill" :subtitle="scope.label">
+<Head title="الزبائن" />
+<FinancialWorkspace area="الزبائن" mode="records">
+<template #heading>
+<PageHeader title="الزبائن" icon="bi-people-fill" :subtitle="scope.label">
         <template #actions>
             <a :href="urls.debts" class="btn btn-outline-danger">
                 <i class="bi bi-wallet2"></i> الديون والتحصيل
             </a>
         </template>
     </PageHeader>
-
-    <div class="cu-stats">
+</template>
+<template #metrics>
+<div class="cu-stats">
         <StatRail :stats="[
             { label: 'إجمالي الزبائن', value: stats.total, icon: 'bi-people-fill', color: 'primary' },
             { label: 'جدد اليوم', value: stats.new_today, icon: 'bi-person-plus-fill', color: 'success' },
@@ -69,8 +72,8 @@ function clear() {
             { label: 'نشطون آخر 30 يوم', value: stats.active_30d, icon: 'bi-activity', color: 'muted' },
         ]" />
     </div>
-
-    <div class="cu-lenses" aria-label="فلاتر سريعة">
+</template>
+<div class="cu-lenses" aria-label="فلاتر سريعة">
         <button type="button" class="cu-lens" :class="{ active: !hasFilters }" @click="clear">
             <i class="bi bi-people"></i> الكل
             <b>{{ stats.total }}</b>
@@ -91,8 +94,7 @@ function clear() {
             <b>{{ filteredStats.blocked }}</b>
         </button>
     </div>
-
-    <DataPanel title="دليل الزبائن" :count="filteredStats.count" icon="bi-person-lines-fill">
+<DataPanel title="دليل الزبائن" :count="filteredStats.count" icon="bi-person-lines-fill">
         <template #actions>
             <button v-if="hasFilters" type="button" class="btn btn-light" @click="clear">
                 <i class="bi bi-x-circle"></i> مسح
@@ -170,55 +172,57 @@ function clear() {
             <Pagination :links="customers.links" />
         </template>
     </DataPanel>
+</FinancialWorkspace>
+
 </template>
 
 <style scoped>
 .cu-lenses { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .65rem; margin-bottom: .9rem; }
 .cu-lens {
     min-height: 58px; padding: .65rem .85rem; border: 1px solid #e4ebe7; border-radius: 13px;
-    background: #fff; color: #405249; display: flex; align-items: center; gap: .55rem;
+    background: #fff; color: #25343A; display: flex; align-items: center; gap: .55rem;
     font-weight: 750; transition: .16s ease; text-align: start;
 }
-.cu-lens i { color: #167443; font-size: 1.05rem; }
+.cu-lens i { color: #A3422B; font-size: 1.05rem; }
 .cu-lens b { margin-inline-start: auto; min-width: 28px; padding: .18rem .45rem; border-radius: 99px; background: #edf7f1; text-align: center; }
-.cu-lens:hover, .cu-lens.active { border-color: #178047; background: #f2faf5; color: #0d6737; transform: translateY(-1px); }
+.cu-lens:hover, .cu-lens.active { border-color: #A3422B; background: #f2faf5; color: #A3422B; transform: translateY(-1px); }
 .cu-lens--danger i { color: #c33b3b; }
 .cu-lens--danger.active { border-color: #e3a1a1; background: #fff5f5; color: #a52f2f; }
 .cu-search { display: grid; grid-template-columns: minmax(260px, 1fr) 190px auto; gap: .65rem; align-items: center; }
 .cu-search__box { min-height: 46px; display: flex; align-items: center; gap: .65rem; padding: 0 .9rem; border: 1px solid #dfe7e2; border-radius: 11px; background: #fff; }
-.cu-search__box:focus-within { border-color: #1a7f49; box-shadow: 0 0 0 3px rgba(26,127,73,.09); }
-.cu-search__box i { color: #789087; }
+.cu-search__box:focus-within { border-color: #A3422B; box-shadow: 0 0 0 3px rgba(37,52,58,.09); }
+.cu-search__box i { color: #A3422B; }
 .cu-search__box input { width: 100%; border: 0; outline: 0; background: transparent; min-height: 42px; }
 .cu-search select { min-height: 46px; border: 1px solid #dfe7e2; border-radius: 11px; padding: 0 .8rem; background: #fff; }
 .cu-search .btn { min-height: 46px; padding-inline: 1.25rem; }
-.cu-scope { margin: .65rem 0 0; color: #74857d; font-size: .78rem; }
+.cu-scope { margin: .65rem 0 0; color: #A3422B; font-size: .875rem; }
 .cu-grid { display: grid; gap: .65rem; }
 .cu-card {
     position: relative; display: grid; grid-template-columns: 52px minmax(210px, 1.3fr) minmax(155px, .8fr) minmax(230px, .9fr) 18px;
     gap: .9rem; align-items: center; min-height: 86px; padding: .8rem .9rem; border: 1px solid #e5ece8;
     border-radius: 14px; background: #fff; color: inherit; text-decoration: none; transition: .15s ease;
 }
-.cu-card:hover { border-color: #a9cfb8; box-shadow: 0 8px 24px rgba(21,80,47,.08); transform: translateY(-1px); }
-.cu-card.is-blocked { border-inline-start: 4px solid #d9534f; background: linear-gradient(90deg, #fff 75%, #fff8f8); }
-.cu-avatar { width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; color: #fff; font-size: 1.25rem; font-weight: 900; background: linear-gradient(145deg, hsl(var(--hue) 50% 48%), hsl(var(--hue) 55% 35%)); }
+.cu-card:hover { border-color: #F3E3D8; box-shadow: 0 8px 24px rgba(37,52,58,.08); transform: translateY(-1px); }
+.cu-card.is-blocked { border-inline-start: 4px solid #d9534f; background: #fff; }
+.cu-avatar { width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; color: #fff; font-size: 1.25rem; font-weight: 900; background: var(--surface, #FFFDFA); }
 .cu-person { min-width: 0; }
 .cu-person__title { display: flex; gap: .55rem; align-items: center; }
-.cu-person__title strong { font-size: .98rem; color: #17251e; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cu-status { font-size: .68rem; padding: .15rem .45rem; border-radius: 99px; font-weight: 800; }
-.cu-status.is-active { color: #0d7540; background: #e8f7ee; }
+.cu-person__title strong { font-size: .98rem; color: #25343A; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cu-status { font-size: .875rem; padding: .15rem .45rem; border-radius: 99px; font-weight: 800; }
+.cu-status.is-active { color: #A3422B; background: #e8f7ee; }
 .cu-status.is-danger { color: #b52e2e; background: #feecec; }
-.cu-contact { display: flex; flex-wrap: wrap; gap: .35rem .85rem; margin-top: .32rem; color: #6e7e76; font-size: .76rem; }
+.cu-contact { display: flex; flex-wrap: wrap; gap: .35rem .85rem; margin-top: .32rem; color: #A3422B; font-size: .875rem; }
 .cu-contact i { margin-inline-end: .2rem; }
-.cu-block-reason { margin: .35rem 0 0; color: #ae3434; font-size: .72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cu-block-reason { margin: .35rem 0 0; color: #ae3434; font-size: .875rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cu-branch { display: flex; flex-direction: column; gap: .35rem; align-items: flex-start; }
-.cu-branch small, .cu-muted { color: #89968f; font-size: .7rem; }
-.cu-branch__tag { max-width: 100%; padding: .25rem .55rem; border-radius: 8px; background: hsl(var(--hue) 55% 95%); color: hsl(var(--hue) 45% 30%); font-size: .72rem; font-weight: 750; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cu-branch small, .cu-muted { color: #89968f; font-size: .875rem; }
+.cu-branch__tag { max-width: 100%; padding: .25rem .55rem; border-radius: 8px; background: hsl(var(--hue) 55% 95%); color: hsl(var(--hue) 45% 30%); font-size: .875rem; font-weight: 750; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cu-activity { display: grid; grid-template-columns: repeat(3, 1fr); gap: .35rem; }
 .cu-activity span { min-height: 48px; padding: .4rem; border-radius: 10px; background: #f6f9f7; display: grid; grid-template-columns: auto auto; align-items: center; justify-content: center; gap: .15rem .35rem; }
-.cu-activity i { color: #608073; }
-.cu-activity b { color: #1b3328; }
-.cu-activity small { grid-column: 1 / -1; color: #86948d; font-size: .62rem; text-align: center; }
-.cu-open { color: #91a49a; }
+.cu-activity i { color: #A3422B; }
+.cu-activity b { color: #25343A; }
+.cu-activity small { grid-column: 1 / -1; color: #86948d; font-size: .875rem; text-align: center; }
+.cu-open { color: #A3422B; }
 @media (max-width: 1100px) {
     .cu-card { grid-template-columns: 52px minmax(200px, 1fr) minmax(210px, .8fr) 18px; }
     .cu-branch { display: none; }
@@ -227,14 +231,16 @@ function clear() {
     .cu-stats :deep(.stat-rail) { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem; }
     .cu-stats :deep(.stat-rail-item) { min-height: 68px; padding: .55rem .65rem; gap: .5rem; }
     .cu-stats :deep(.stat-rail-icon) { width: 34px; height: 34px; font-size: .9rem; }
-    .cu-stats :deep(.stat-rail-label) { font-size: .66rem; line-height: 1.25; }
+    .cu-stats :deep(.stat-rail-label) { font-size: .875rem; line-height: 1.25; }
     .cu-stats :deep(.stat-rail-value) { font-size: 1.05rem; }
     .cu-lenses { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .cu-lens { min-height: 50px; font-size: .78rem; }
+    .cu-lens { min-height: 50px; font-size: .875rem; }
     .cu-search { grid-template-columns: 1fr; }
     .cu-card { grid-template-columns: 46px minmax(0, 1fr) 14px; padding: .75rem; }
     .cu-avatar { width: 46px; height: 46px; border-radius: 14px; }
     .cu-activity { grid-column: 1 / -1; }
     .cu-contact { flex-direction: column; }
 }
+
+.cu-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.cu-card{display:grid;grid-template-columns:48px minmax(0,1fr) 20px;gap:14px;padding:20px;border:1px solid #DFD7CB;border-radius:14px;background:#FFFDFA}.cu-avatar{width:48px;height:48px;background:#F3E3D8;color:#A3422B}.cu-person{min-width:0}.cu-person__title strong{font-size:17px}.cu-contact{display:grid;gap:4px;font-size:13px}.cu-branch{grid-column:2/-1;display:flex;gap:10px;align-items:center}.cu-activity{grid-column:1/-1;border-top:1px solid #DFD7CB;padding-top:14px;justify-content:space-around}.cu-activity span{min-width:0}.cu-activity b{font-size:20px}.cu-open{grid-column:3;grid-row:1}.cu-card:hover{transform:none;background:#F7F3ED;border-color:#B78338}@media(max-width:1000px){.cu-grid{grid-template-columns:1fr}}
 </style>

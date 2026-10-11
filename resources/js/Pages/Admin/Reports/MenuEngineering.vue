@@ -1,4 +1,5 @@
 <script setup>
+import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 /**
  * هندسة المنيو — the 2×2 popularity × margin matrix.
  *
@@ -118,13 +119,15 @@ onBeforeUnmount(() => document.body.classList.remove('printing-menu-engineering'
 </script>
 
 <template>
-    <Head title="هندسة المنيو" />
-
-    <PageHeader title="هندسة المنيو" icon="bi-bezier2"
+<Head title="هندسة المنيو" />
+<FinancialWorkspace area="التقارير والتحليل" mode="report">
+<template #heading>
+<PageHeader title="هندسة المنيو" icon="bi-bezier2"
                 subtitle="تصنيف الأصناف حسب الربحية × الشعبية لاتخاذ قرارات التسعير"
                 :crumbs="[{ label: 'التقارير', url: urls.reportsIndex }]" />
-
-    <div class="data-panel-filters mb-3 me-filters">
+</template>
+<template #filters>
+<div class="data-panel-filters mb-3 me-filters">
         <form class="row g-2 align-items-end" @submit.prevent="submit">
             <div class="col-md-3">
                 <label class="form-label small text-muted fw-bold">من تاريخ</label>
@@ -147,13 +150,12 @@ onBeforeUnmount(() => document.body.classList.remove('printing-menu-engineering'
             </div>
         </form>
     </div>
-
-    <EmptyState v-if="rows.length === 0"
+</template>
+<EmptyState v-if="rows.length === 0"
                 icon="bi-bezier2"
                 title="ما في بيانات كافية"
                 message="لا يوجد مبيعات في الفترة المحددة لتحليل المنيو. جرّب تمديد الفترة أو تأكد من وجود طلبات معتمدة." />
-
-    <template v-else>
+<template v-else>
         <StatRail :stats="[
             { label: 'نجوم', value: buckets.star, icon: 'bi-star-fill', color: 'success' },
             { label: 'رائجة بهامش ضعيف', value: buckets.plowhorse, icon: 'bi-speedometer2', color: 'accent' },
@@ -259,6 +261,8 @@ onBeforeUnmount(() => document.body.classList.remove('printing-menu-engineering'
             </div>
         </DataPanel>
     </template>
+</FinancialWorkspace>
+
 </template>
 
 <style scoped>
@@ -290,7 +294,7 @@ onBeforeUnmount(() => document.body.classList.remove('printing-menu-engineering'
     top: 50%;
     transform: translateY(-50%) rotate(-90deg);
     transform-origin: left;
-    font-size: .75rem;
+    font-size: .875rem;
     font-weight: 900;
     color: var(--primary);
     letter-spacing: .06em;
@@ -299,7 +303,7 @@ onBeforeUnmount(() => document.body.classList.remove('printing-menu-engineering'
     position: absolute;
     bottom: 0;
     inset-inline-end: 0;
-    font-size: .75rem;
+    font-size: .875rem;
     font-weight: 900;
     color: var(--primary);
     letter-spacing: .06em;
@@ -322,7 +326,7 @@ onBeforeUnmount(() => document.body.classList.remove('printing-menu-engineering'
     align-items: center;
 }
 .me-quadrant-desc {
-    font-size: .8rem;
+    font-size: .875rem;
     color: #57534e;
     line-height: 1.4;
 }
@@ -333,7 +337,7 @@ onBeforeUnmount(() => document.body.classList.remove('printing-menu-engineering'
     margin-top: auto;
 }
 .me-item-chip {
-    font-size: .72rem;
+    font-size: .875rem;
     font-weight: 700;
     padding: 3px 10px;
     border-radius: 99px;

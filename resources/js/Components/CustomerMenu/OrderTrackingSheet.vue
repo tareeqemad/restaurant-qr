@@ -346,11 +346,11 @@ onBeforeUnmount(() => {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr) auto;
     overflow: hidden;
-    border: 1px solid #dce6df;
-    border-radius: 26px;
-    background: #f6f9f7;
-    color: #17251d;
-    box-shadow: 0 32px 90px -30px rgba(9, 40, 25, .6);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--canvas);
+    color: var(--ink);
+    box-shadow: none;
 }
 .ots-header, .ots-footer {
     position: relative;
@@ -362,11 +362,11 @@ onBeforeUnmount(() => {
     padding: .9rem 1rem;
     background: rgba(255, 255, 255, .96);
 }
-.ots-header { border-bottom: 1px solid #e3ebe6; }
-.ots-header h2 { margin: .12rem 0 0; font-size: 1.08rem; font-weight: 950; }
-.ots-live { display: inline-flex; align-items: center; gap: .3rem; color: #66776d; font-size: .65rem; font-weight: 800; }
-.ots-live i, .ots-footer span i { width: 7px; height: 7px; border-radius: 50%; background: #19a367; box-shadow: 0 0 0 4px rgba(25, 163, 103, .1); }
-.ots-close { width: 42px; height: 42px; border: 1px solid #dfe7e2; border-radius: 13px; background: #fff; color: #53645a; cursor: pointer; }
+.ots-header { border-bottom: 1px solid var(--line); }
+.ots-header h2 { margin: .12rem 0 0; font-size: 1.08rem; font-weight: 800; }
+.ots-live { display: inline-flex; align-items: center; gap: .3rem; color: var(--brand); font-size: .875rem; font-weight: 800; }
+.ots-live i, .ots-footer span i { width: 7px; height: 7px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand) 10%, transparent); }
+.ots-close { width: 42px; height: 42px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--brand); cursor: pointer; }
 .ots-scroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 1rem; }
 .ots-hero {
     min-height: 128px;
@@ -377,52 +377,52 @@ onBeforeUnmount(() => {
     margin-bottom: 1rem;
     padding: 1.1rem;
     overflow: hidden;
-    border-radius: 22px;
-    background: linear-gradient(135deg, #123f31, #1f6b50);
-    color: #fff;
+    border-radius: 12px;
+    background: var(--canvas);
+    color: #FFFDFA;
 }
-.ots-hero.is-ready { background: linear-gradient(135deg, #0f6642, #1d8b59); }
-.ots-hero h3 { margin: 0; font-size: 1.18rem; font-weight: 950; }
-.ots-hero p { margin: .3rem 0 0; color: rgba(255, 255, 255, .78); font-size: .75rem; line-height: 1.6; }
-.ots-hero-icon { width: 58px; height: 58px; flex: 0 0 58px; display: grid; place-items: center; border-radius: 19px; background: rgba(255, 255, 255, .14); font-size: 1.45rem; }
+.ots-hero.is-ready { background: var(--canvas); }
+.ots-hero h3 { margin: 0; font-size: 1.18rem; font-weight: 800; }
+.ots-hero p { margin: .3rem 0 0; color: rgba(255, 255, 255, .78); font-size: .875rem; line-height: 1.6; }
+.ots-hero-icon { width: 58px; height: 58px; flex: 0 0 58px; display: grid; place-items: center; border-radius: 12px; background: rgba(255, 255, 255, .14); font-size: 1.45rem; }
 .ots-facts { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .7rem; }
-.ots-facts span { padding: .3rem .55rem; border-radius: 999px; background: rgba(255, 255, 255, .12); font-size: .64rem; font-weight: 800; }
-.ots-facts b { font-size: .77rem; }
+.ots-facts span { padding: .3rem .55rem; border-radius: 12px; background: rgba(255, 255, 255, .12); font-size: .875rem; font-weight: 800; }
+.ots-facts b { font-size: .875rem; }
 .ots-section-head { display: flex; align-items: center; justify-content: space-between; gap: .6rem; margin: 0 0 .65rem; }
 .ots-section-head > div { display: grid; gap: .05rem; }
-.ots-section-head small { color: #718077; font-size: .64rem; }
-.ots-section-head strong { font-size: .9rem; font-weight: 950; }
-.ots-section-head button { width: 38px; height: 38px; border: 1px solid #dde6e0; border-radius: 12px; background: #fff; color: #1f6b50; cursor: pointer; }
+.ots-section-head small { color: var(--muted); font-size: .875rem; }
+.ots-section-head strong { font-size: .9rem; font-weight: 800; }
+.ots-section-head button { width: 38px; height: 38px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--brand); cursor: pointer; }
 .ots-orders { display: grid; gap: .75rem; }
-.ots-state { min-height: 280px; display: grid; place-items: center; align-content: center; gap: .6rem; text-align: center; color: #718077; }
-.ots-state > i { font-size: 2rem; color: #1f6b50; }
-.ots-state strong { color: #34473c; font-size: .85rem; }
-.ots-state small { font-size: .72rem; }
-.ots-state button { min-height: 40px; padding: 0 .9rem; border: 0; border-radius: 12px; background: #1f6b50; color: #fff; font: inherit; font-size: .75rem; font-weight: 850; cursor: pointer; }
+.ots-state { min-height: 280px; display: grid; place-items: center; align-content: center; gap: .6rem; text-align: center; color: var(--muted); }
+.ots-state > i { font-size: 2rem; color: var(--brand); }
+.ots-state strong { color: var(--brand); font-size: .875rem; }
+.ots-state small { font-size: .875rem; }
+.ots-state button { min-height: 40px; padding: 0 .9rem; border: 0; border-radius: 8px; background: var(--brand); color: #FFFDFA; font: inherit; font-size: .875rem; font-weight: 800; cursor: pointer; }
 .ots-state--error > i { color: #b64635; }
-.ots-finished { margin-top: .9rem; border: 1px solid #e0e7e3; border-radius: 17px; background: rgba(255, 255, 255, .75); overflow: hidden; }
-.ots-finished summary { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: .6rem; padding: 0 .85rem; color: #53645a; font-size: .72rem; font-weight: 850; cursor: pointer; list-style: none; }
+.ots-finished { margin-top: .9rem; border: 1px solid var(--line); border-radius: 12px; background: rgba(255, 255, 255, .75); overflow: hidden; }
+.ots-finished summary { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: .6rem; padding: 0 .85rem; color: var(--brand); font-size: .875rem; font-weight: 800; cursor: pointer; list-style: none; }
 .ots-finished summary::-webkit-details-marker { display: none; }
-.ots-finished summary b { min-width: 25px; height: 25px; display: grid; place-items: center; border-radius: 999px; background: #edf3ef; }
+.ots-finished summary b { min-width: 25px; height: 25px; display: grid; place-items: center; border-radius: 12px; background: var(--canvas); }
 .ots-finished .ots-orders { padding: 0 .7rem .7rem; }
-.ots-footer { border-top: 1px solid #e3ebe6; }
-.ots-footer > button { min-height: 44px; padding: 0 .9rem; border: 0; border-radius: 13px; background: #1f6b50; color: #fff; font: inherit; font-size: .76rem; font-weight: 900; cursor: pointer; }
-.ots-footer > span { display: inline-flex; align-items: center; gap: .42rem; color: #718077; font-size: .65rem; font-weight: 750; }
+.ots-footer { border-top: 1px solid var(--line); }
+.ots-footer > button { min-height: 44px; padding: 0 .9rem; border: 0; border-radius: 8px; background: var(--brand); color: #FFFDFA; font: inherit; font-size: .875rem; font-weight: 800; cursor: pointer; }
+.ots-footer > span { display: inline-flex; align-items: center; gap: .42rem; color: var(--muted); font-size: .875rem; font-weight: 750; }
 .ots-action-layer { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; padding: 1rem; background: rgba(15, 23, 42, .64); }
-.ots-action { width: min(480px, 100%); max-height: calc(100dvh - 2rem); overflow-y: auto; padding: 1.1rem; border-radius: 22px; background: #fff; box-shadow: 0 24px 70px -25px rgba(0, 0, 0, .6); }
-.ots-action-icon { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 15px; background: #edf6f1; color: #1f6b50; font-size: 1.2rem; }
-.ots-action-icon.is-danger { background: #fff0f0; color: #b72d2d; }
-.ots-action h3 { margin: .75rem 0 .2rem; font-size: 1rem; font-weight: 950; }
-.ots-action > p { margin: 0 0 .85rem; color: #718077; font-size: .72rem; line-height: 1.65; }
-.ots-action label { display: grid; gap: .35rem; margin-top: .65rem; color: #405248; font-size: .7rem; font-weight: 850; }
-.ots-action label small { color: #8b9890; font-weight: 600; }
-.ots-action textarea, .ots-action select, .ots-action input { width: 100%; box-sizing: border-box; border: 1px solid #dce5df; border-radius: 12px; padding: .65rem .75rem; background: #fff; color: #26372d; font: inherit; font-size: .78rem; }
+.ots-action { width: min(480px, 100%); max-height: calc(100dvh - 2rem); overflow-y: auto; padding: 1.1rem; border-radius: 8px; background: var(--surface); box-shadow: none; }
+.ots-action-icon { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 8px; background: var(--canvas); color: var(--brand); font-size: 1.2rem; }
+.ots-action-icon.is-danger { background: var(--canvas); color: #b72d2d; }
+.ots-action h3 { margin: .75rem 0 .2rem; font-size: 1rem; font-weight: 800; }
+.ots-action > p { margin: 0 0 .85rem; color: var(--muted); font-size: .875rem; line-height: 1.65; }
+.ots-action label { display: grid; gap: .35rem; margin-top: .65rem; color: var(--brand); font-size: .875rem; font-weight: 800; }
+.ots-action label small { color: var(--muted); font-weight: 600; }
+.ots-action textarea, .ots-action select, .ots-action input { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; padding: .65rem .75rem; background: var(--surface); color: var(--brand); font: inherit; font-size: .875rem; }
 .ots-action textarea { resize: vertical; line-height: 1.6; }
-.ots-action textarea:focus, .ots-action select:focus, .ots-action input:focus { outline: 2px solid rgba(31, 107, 80, .16); border-color: #1f6b50; }
+.ots-action textarea:focus, .ots-action select:focus, .ots-action input:focus { outline: 2px solid color-mix(in srgb, var(--brand) 16%, transparent); border-color: var(--brand); }
 .ots-action-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: .55rem; margin-top: 1rem; }
-.ots-action-buttons button { min-height: 44px; border: 1px solid #dce5df; border-radius: 12px; background: #fff; color: #405248; font: inherit; font-size: .74rem; font-weight: 900; cursor: pointer; }
-.ots-action-buttons button.is-primary { border-color: #1f6b50; background: #1f6b50; color: #fff; }
-.ots-action-buttons button.is-danger { border-color: #c94040; background: #c94040; color: #fff; }
+.ots-action-buttons button { min-height: 44px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--brand); font: inherit; font-size: .875rem; font-weight: 800; cursor: pointer; }
+.ots-action-buttons button.is-primary { border-color: var(--brand); background: var(--brand); color: #FFFDFA; }
+.ots-action-buttons button.is-danger { border-color: #c94040; background: #c94040; color: #FFFDFA; }
 .ots-action-buttons button:disabled { opacity: .5; cursor: default; }
 .ots-spin { animation: ots-spin .8s linear infinite; }
 .tracking-sheet-enter-active, .tracking-sheet-leave-active { transition: opacity .18s ease; }
@@ -436,17 +436,20 @@ onBeforeUnmount(() => {
     .ots-sheet { width: 100%; max-height: 100dvh; height: 100dvh; border: 0; border-radius: 0; }
     .ots-header { padding-top: calc(.75rem + env(safe-area-inset-top)); }
     .ots-scroll { padding: .75rem; }
-    .ots-hero { min-height: 112px; margin-bottom: .75rem; border-radius: 19px; padding: .9rem; }
-    .ots-hero-icon { width: 48px; height: 48px; flex-basis: 48px; border-radius: 15px; }
+    .ots-hero { min-height: 112px; margin-bottom: .75rem; border-radius: 12px; padding: .9rem; }
+    .ots-hero-icon { width: 48px; height: 48px; flex-basis: 48px; border-radius: 12px; }
     .ots-footer { padding-bottom: calc(.75rem + env(safe-area-inset-bottom)); }
     .ots-footer > span { display: none; }
     .ots-footer > button { width: 100%; }
     .ots-action-layer { position: fixed; }
-    .ots-action { align-self: end; width: 100%; max-height: 88dvh; border-radius: 22px 22px 0 0; padding-bottom: calc(1.1rem + env(safe-area-inset-bottom)); }
+    .ots-action { align-self: end; width: 100%; max-height: 88dvh; border-radius: 8px 8px 0 0; padding-bottom: calc(1.1rem + env(safe-area-inset-bottom)); }
 }
 
 @media (prefers-reduced-motion: reduce) {
     .tracking-sheet-enter-active, .tracking-sheet-leave-active,
     .tracking-sheet-enter-active .ots-sheet, .tracking-sheet-leave-active .ots-sheet { transition: none; }
 }
+
+/* Task-specific component layout. */
+.ots-sheet{border-radius:12px;max-height:94dvh;background:var(--surface)}.ots-header{padding:20px 24px;border-bottom:1px solid var(--line);background:var(--surface);color:var(--ink)}.ots-header h2{font-size:23px}.ots-live{font-size:14px;color:var(--muted)}.ots-close{width:44px;height:44px;border-radius:8px;background:var(--canvas);color:var(--ink)}.ots-scroll{padding:20px 24px}.ots-hero{display:block;padding:18px;border:1px solid var(--line);border-inline-start:3px solid var(--brand);border-radius:8px;background:var(--canvas);color:var(--ink)}.ots-hero-icon{display:none}.ots-hero h3{font-size:23px}.ots-facts{gap:16px;margin-top:14px;border-top:1px solid var(--line);padding-top:14px}.ots-orders{display:grid;gap:14px}.ots-section-head{padding:18px 0 12px}.ots-section-head h3{font-size:19px}.ots-footer{padding:16px 24px;border-top:1px solid var(--line);background:var(--surface)}.ots-footer>button{min-height:50px;border-radius:8px;font-size:16px}.ots-action{padding:24px;border-radius:8px}.ots-action-buttons button{min-height:48px;border-radius:8px}
 </style>

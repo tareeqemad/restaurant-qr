@@ -1,4 +1,5 @@
 <script setup>
+import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 import { Head, Link, useForm } from '@inertiajs/vue3'
 import AdminLayout from '../../../Layouts/AdminLayout.vue'
 import PageHeader from '../../../Components/Ui/PageHeader.vue'
@@ -34,16 +35,20 @@ function submit() {
 </script>
 
 <template>
-    <Head title="حساب جديد" />
-    <PageHeader
+<Head title="حساب جديد" />
+<FinancialWorkspace area="دليل الحسابات" mode="form">
+<template #heading>
+<PageHeader
         title="حساب جديد"
         icon="bi-plus-circle-fill"
         subtitle="أضف الحساب في مكانه الصحيح؛ القيود الجديدة فقط ستتمكن من استخدامه"
         :crumbs="[{ label: 'شجرة الحسابات', url: urls.index }]"
     />
-    <AccountingNav :urls="urls.workspace" active="accounts" />
-
-    <form class="account-page-form" @submit.prevent="submit">
+</template>
+<template #navigation>
+<AccountingNav :urls="urls.workspace" active="accounts" />
+</template>
+<form class="account-page-form" @submit.prevent="submit">
         <AccountForm
             :form="form"
             variant="page"
@@ -60,6 +65,8 @@ function submit() {
             </button>
         </footer>
     </form>
+</FinancialWorkspace>
+
 </template>
 
 <style scoped>
@@ -81,7 +88,7 @@ function submit() {
     border: 1px solid #dce6df;
     border-radius: 13px;
     background: rgba(255, 255, 255, .96);
-    box-shadow: 0 10px 28px rgba(21, 52, 31, .08);
+    box-shadow: 0 10px 28px rgba(37,52,58, .08);
     backdrop-filter: blur(10px);
 }
 

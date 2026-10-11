@@ -1,4 +1,5 @@
 <script setup>
+import ManagementPage from '../../../Components/Inventory/ManagementPage.vue';
 /**
  * نقل مخزون بين المواقع — move a quantity of one ingredient from one
  * storage location to another. The server writes TWO movements (out + in)
@@ -139,6 +140,7 @@ const fmtQty = (v) => {
 </script>
 
 <template>
+    <ManagementPage mode="form">
     <Head title="نقل مخزون بين المواقع" />
 
     <PageHeader title="نقل بين المواقع" icon="bi-arrow-left-right"
@@ -349,6 +351,7 @@ const fmtQty = (v) => {
             <span>{{ blockedReason }}</span>
         </div>
     </form>
+    </ManagementPage>
 </template>
 
 <style scoped>
@@ -359,7 +362,7 @@ const fmtQty = (v) => {
     background: #fef2f2;
     border: 1px solid #fecaca;
     color: #991b1b;
-    border-radius: 14px;
+    border-radius: 12px;
     padding: .85rem 1rem;
     margin-bottom: .9rem;
 }
@@ -373,31 +376,31 @@ const fmtQty = (v) => {
     align-items: center;
     gap: .25rem;
     padding: .15rem .55rem;
-    border-radius: 999px;
-    font-size: 11.5px;
+    border-radius: 12px;
+    font-size: 14px;
     font-weight: 600;
     line-height: 1.5;
 }
-.lt-pill.ok { background: rgba(25, 135, 84, .12); color: #157347; }
+.lt-pill.ok { background: rgba(25, 135, 84, .12); color: var(--brand, #A3422B); }
 
 .lt-arrow { font-size: 2.2rem; color: var(--accent); }
 
 .lt-loc-card {
-    background: rgba(15, 71, 49, .03);
-    border: 1px solid rgba(15, 71, 49, .08);
+    background: color-mix(in srgb, var(--brand, #A3422B) 3%, transparent);
+    border: 1px solid color-mix(in srgb, var(--brand, #A3422B) 8%, transparent);
     border-radius: 10px;
     padding: 1rem;
 }
 .lt-loc-card .label {
     display: block;
-    font-size: 12px;
-    color: #6c757d;
+    font-size: 14px;
+    color: var(--muted, #626B6D);
     font-weight: 600;
     margin-bottom: .35rem;
 }
 
 .lt-msg {
-    font-size: 12.5px;
+    font-size: 14px;
     line-height: 1.45;
     margin-top: .35rem;
     display: flex;

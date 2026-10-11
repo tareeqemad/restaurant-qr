@@ -40,23 +40,23 @@ const emit = defineEmits({
     min-height: 46px;
     box-sizing: border-box;
     padding: .62rem 2.55rem;
-    border: 1px solid rgba(15, 71, 49, .18);
-    border-radius: 10px;
-    color: #1f2937;
-    background: #fff;
+    border: 1px solid color-mix(in srgb, var(--brand) 18%, transparent);
+    border-radius: 8px;
+    color: var(--ink);
+    background: var(--surface);
     font-size: 14px;
 }
 .search-bar input:focus {
     outline: none;
     border-color: var(--wp-primary);
-    box-shadow: 0 0 0 3px rgba(22, 101, 52, .12);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 12%, transparent);
 }
 .search-bar > .bi-search {
     position: absolute;
     inset-inline-start: .85rem;
     top: 50%;
     z-index: 1;
-    color: #9ca3af;
+    color: var(--muted);
     transform: translateY(-50%);
     pointer-events: none;
 }
@@ -70,13 +70,13 @@ const emit = defineEmits({
     width: 44px;
     height: 44px;
     border: 0;
-    border-radius: 9px;
-    color: #64748b;
+    border-radius: 8px;
+    color: #315B6B;
     background: transparent;
     transform: translateY(-50%);
     cursor: pointer;
 }
-.clear-search:hover { color: #1f2937; background: #f1f5f9; }
+.clear-search:hover { color: var(--ink); background: var(--canvas); }
 .visually-hidden {
     position: absolute;
     width: 1px;
@@ -88,4 +88,7 @@ const emit = defineEmits({
     white-space: nowrap;
     border: 0;
 }
+
+/* Task-specific component layout. */
+.search-bar{border-radius:8px;background:var(--surface);border:1px solid var(--line);min-height:50px}.search-bar input{height:50px;font-size:16px;padding-inline:42px}.clear-search{width:42px;height:42px;border-radius:6px}.search-bar>i{font-size:18px}
 </style>

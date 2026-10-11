@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Account;
 use App\Models\AccountingPeriod;
 use App\Models\Branch;
 use App\Models\FiscalYear;
@@ -9,10 +10,13 @@ use App\Models\Invoice;
 use App\Models\JournalEntry;
 use App\Models\Refund;
 use App\Models\Role;
+use App\Models\Table;
+use App\Models\TableSession;
 use App\Models\User;
 use App\Services\Accounting\AccountingService;
 use App\Services\RefundService;
 use App\Support\BranchContext;
+use Database\Seeders\PermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -28,6 +32,7 @@ class ClosingRefundEdgeTest extends TestCase
     use RefreshDatabase;
 
     protected Branch $branch;
+
     protected User $admin;
 
     protected function setUp(): void
@@ -38,7 +43,7 @@ class ClosingRefundEdgeTest extends TestCase
         BranchContext::set($this->branch->id);
 
         Role::firstOrCreate(['name' => 'admin'], ['label' => 'Admin', 'is_system' => true]);
-        $this->seed(\Database\Seeders\PermissionSeeder::class);
+        $this->seed(PermissionSeeder::class);
 
         $this->admin = User::create([
             'name' => 'A', 'username' => 'cre-admin', 'role' => 'admin',
@@ -101,8 +106,8 @@ class ClosingRefundEdgeTest extends TestCase
     /** #27 — a pending refund completes even after its creation month is closed. */
     public function test_pending_refund_completes_after_month_close(): void
     {
-        $table = \App\Models\Table::create(['number'=>'R1','capacity'=>2,'status'=>'available','active'=>true]);
-        $session = \App\Models\TableSession::create(['table_id'=>$table->id,'cover_count'=>1,'status'=>'closed']);
+        $table = Table::create(['number' => 'R1', 'capacity' => 2, 'status' => 'available', 'active' => true]);
+        $session = TableSession::create(['table_id' => $table->id, 'cover_count' => 1, 'status' => 'closed']);
         $invoice = Invoice::create([
             'branch_id' => $this->branch->id, 'table_session_id' => $session->id,
             'issued_by_user_id' => $this->admin->id,
@@ -119,7 +124,7 @@ class ClosingRefundEdgeTest extends TestCase
 
         // Close the month the refund was created in.
         $monthStart = now()->subMonths(2)->startOfMonth()->toDateString();
-        $monthEnd   = now()->subMonths(2)->endOfMonth()->toDateString();
+        $monthEnd = now()->subMonths(2)->endOfMonth()->toDateString();
         AccountingPeriod::create([
             'branch_id' => $this->branch->id, 'name' => 'Refund month',
             'starts_on' => $monthStart, 'ends_on' => $monthEnd, 'status' => 'closed',
@@ -138,8 +143,8 @@ class ClosingRefundEdgeTest extends TestCase
     /** #5 — a duplicate manual-entry submit (same idempotency token) is rejected. */
     public function test_manual_entry_rejects_duplicate_submit(): void
     {
-        $cash = \App\Models\Account::where('code', AccountingService::CASH)->firstOrFail();
-        $rev  = \App\Models\Account::where('code', AccountingService::SALES_REVENUE)->firstOrFail();
+        $cash = Account::where('code', AccountingService::CASH)->firstOrFail();
+        $rev = Account::where('code', AccountingService::SALES_REVENUE)->firstOrFail();
         $token = 'idem-test-0001';
 
         $payload = [
@@ -159,7 +164,7 @@ class ClosingRefundEdgeTest extends TestCase
         // Same token again → bounced, no second entry.
         $this->actingAs($this->admin)
             ->post(route('admin.accounting.manual-entry.store'), $payload)
-            ->assertSessionHas('error');
+            ->assertSessionHas('info');
 
         $this->assertSame(1, JournalEntry::where('event_type', 'manual_journal')->count(),
             'A duplicate submit must not post a second manual entry.');

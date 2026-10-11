@@ -17,7 +17,7 @@ class MarketProfile
 
     public static function fontFamily(): string
     {
-        return (string) config('market.font_family', "'Tajawal', system-ui, -apple-system, 'Segoe UI', sans-serif");
+        return (string) config('market.font_family', "'Cairo', system-ui, -apple-system, 'Segoe UI', sans-serif");
     }
 
     public static function timezone(): string

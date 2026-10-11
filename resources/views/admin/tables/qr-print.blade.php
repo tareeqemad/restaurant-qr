@@ -1,6 +1,6 @@
 @php
     $restaurantName = \App\Helpers\Brand::name();
-    $logo = asset('default_logo.png');
+    $logo = \App\Helpers\Brand::logoUrl();
     $branchName = $table->branch?->name ?: 'الفرع الرئيسي';
     $zoneLabel = $table->zone?->label ?: 'الصالة';
     $tableLabel = 'طاولة ' . $table->number;
@@ -19,16 +19,16 @@
 
     <style>
         :root {
-            --brand: #1f6b50;
-            --brand-deep: #124f3b;
-            --brand-soft: #edf7f2;
+            --brand: #a3422b;
+            --brand-deep: #25343a;
+            --brand-soft: #f3e3d8;
             --gold: #b7832f;
             --gold-soft: #fbf5e9;
-            --ink: #15251e;
+            --ink: #25343a;
             --text: #40534a;
             --muted: #728179;
-            --line: #d8e4dd;
-            --canvas: #f2f6f4;
+            --line: #dfd7cb;
+            --canvas: #f7f3ed;
             --paper: #fff;
             --sheet-width: 148mm;
             --sheet-height: 210mm;
@@ -624,7 +624,10 @@
             body.paper-a4 .card-footer { padding: 3.5mm; font-size: 9pt; }
         }
     </style>
-</head>
+<style>
+        .qr-card{border-radius:12px;box-shadow:none;border:1px solid var(--line)}.card-header{border-bottom:1px solid var(--line);background:var(--paper)}.table-badge{border-radius:6px;background:var(--brand-soft);color:var(--brand);border:0}.brand-copy strong{color:var(--ink)}.brand-copy span{color:var(--muted)}.card-main{background:var(--paper)}.card-main h1{color:var(--ink);font-weight:700}.eyebrow{color:var(--brand);background:transparent;border:0;padding:0}.qr-shell{border:1px solid var(--line);border-radius:8px;box-shadow:none;background:#fff}.qr-shell::before,.qr-shell::after{display:none}.scan-hint{color:var(--muted)}.card-footer{background:var(--brand-soft);color:var(--brand);border-top:1px solid var(--line)}.table-identity{border-top:1px solid var(--line)}
+        @media screen{body{background:var(--canvas);padding:24px}.workspace{display:grid;grid-template-columns:310px minmax(0,1fr);gap:24px;align-items:start;width:min(1140px,100%)}.screen-panel{position:sticky;top:24px;margin:0;padding:20px;border-radius:10px;border:1px solid var(--line);box-shadow:none;background:#FFFDFA}.screen-toolbar{display:grid;gap:18px}.toolbar-icon{display:none}.toolbar-copy strong{font-size:21px}.toolbar-copy span{font-size:14px;white-space:normal;line-height:1.7}.toolbar-actions{display:flex;flex-direction:column-reverse;gap:10px}.button{width:100%;min-height:48px;border-radius:8px;font-size:15px}.print-options{display:block;padding-top:20px;margin-top:20px;border-top:1px solid var(--line)}.paper-choices{display:grid;grid-template-columns:1fr;gap:8px;margin-top:12px}.paper-choice{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:62px;border-radius:6px;padding:12px;font-size:15px}.recommended{font-size:14px;border-radius:4px}.option-label,.print-tip{font-size:14px;line-height:1.7}.print-tip{margin-top:18px;max-width:none}.preview-stage{padding:18px;background:#EFE9E0;border:1px solid var(--line);border-radius:10px;min-width:0}.qr-card{min-height:620px}.card-header{padding:24px}.brand-logo{border:0;background:transparent}.brand-copy strong{font-size:22px}.brand-copy span{font-size:14px}.table-badge{padding:10px 18px;min-width:90px}.table-badge span{font-size:14px}.table-badge strong{font-size:36px}.card-main{padding:30px 24px 20px}.card-main h1{font-size:30px;margin:12px 0}.card-main__intro{font-size:16px;line-height:1.8;max-width:340px}.qr-shell{padding:18px;margin:22px 0 0}.qr-shell svg{width:min(100%,290px)}.scan-hint{font-size:14px;margin-top:14px}.table-identity{font-size:14px;margin-top:24px;padding-top:16px}.card-footer{font-size:14px;padding:16px}.target-check{grid-column:2;display:flex;margin:0;border-radius:8px;padding:14px;background:#FFFDFA}.target-check strong,.target-check a{font-size:14px}.target-check span{font-size:14px}.target-check__copy{min-width:0}@media(max-width:850px){body{padding:14px}.workspace{grid-template-columns:1fr;gap:16px}.screen-panel{position:static}.toolbar-actions{flex-direction:row}.paper-choices{grid-template-columns:repeat(3,minmax(0,1fr))}.paper-choice{display:grid;min-height:70px}.recommended{display:none}.target-check{grid-column:1}.card-header{padding:18px}.card-main{padding:24px 18px}.brand-copy strong{font-size:19px}.card-main h1{font-size:26px}.qr-card{min-height:570px}}}
+    </style></head>
 <body class="paper-a5">
     <main class="workspace">
         <section class="screen-panel no-print" aria-label="إعداد طباعة بطاقة الطاولة">
@@ -695,8 +698,8 @@
 
                 <section class="card-main">
                     <span class="eyebrow">منيو المطعم على جوالك</span>
-                    <h1>امسح الرمز واطلب بسهولة</h1>
-                    <p class="card-main__intro">افتح كاميرا جوالك، وجّهها نحو الرمز، ثم تصفّح المنيو وأرسل طلبك من مكانك.</p>
+                    <h1>أهلاً بك على طاولتنا</h1>
+                    <p class="card-main__intro">امسح الرمز بكاميرا هاتفك لتصفح القائمة وإرسال طلبك.</p>
 
                     <div class="qr-shell" aria-label="رمز فتح منيو {{ $tableLabel }}">
                         {!! $svg !!}
@@ -707,23 +710,7 @@
                         وجّه الكاميرا هنا
                     </div>
 
-                    <ol class="quick-steps" aria-label="طريقة الطلب">
-                        <li class="quick-step">
-                            <span class="quick-step__number">1</span>
-                            <strong>امسح</strong>
-                            <span>بكاميرا الهاتف</span>
-                        </li>
-                        <li class="quick-step">
-                            <span class="quick-step__number">2</span>
-                            <strong>اختر</strong>
-                            <span>من المنيو</span>
-                        </li>
-                        <li class="quick-step">
-                            <span class="quick-step__number">3</span>
-                            <strong>أرسل</strong>
-                            <span>من نفس الصفحة</span>
-                        </li>
-                    </ol>
+
 
                     <footer class="table-identity">
                         <span>{{ $branchName }}</span>

@@ -1,4 +1,5 @@
 <script setup>
+import ManagementPage from '../../../Components/Inventory/ManagementPage.vue';
 /**
  * دفعات المكونات — FIFO lots with their expiry dates, remaining quantity and
  * per-lot unit cost.
@@ -104,6 +105,7 @@ const submitBatch = () => {
 </script>
 
 <template>
+    <ManagementPage mode="records">
     <Head title="دفعات المكونات" />
 
     <PageHeader title="دفعات المكونات" icon="bi-box2-fill"
@@ -112,12 +114,9 @@ const submitBatch = () => {
     <!-- Plain-Arabic explainer: a manager opening this for the first time
          needs to know what a "batch" is and why it is separate from the
          supplier-invoice/payment trail. -->
-    <div class="card custom-card mb-3 bx-explain">
+    <details class="management-help bx-explain"><summary>كيف تعمل الدفعات والصلاحية؟</summary>
         <div class="card-body p-3 small bx-explain__body">
-            <div class="d-flex align-items-start gap-2 mb-2">
-                <i class="bi bi-info-circle-fill text-primary fs-5"></i>
-                <strong class="fs-13">شو هي «الدفعات» وليش بتلزم؟</strong>
-            </div>
+
             <div class="text-muted">
                 كل مرة بتستلم بضاعة من مورد، النظام بيخزّن السطر كـ <strong>دفعة</strong> منفصلة فيها:
                 تاريخ استلامها، تاريخ صلاحيتها، الكمية الأصلية، الكمية المتبقية، وتكلفة الوحدة في تلك الدفعة بالذات.
@@ -139,7 +138,7 @@ const submitBatch = () => {
                 </div>
             </div>
         </div>
-    </div>
+    </details>
 
     <StatRail :stats="[
         { label: 'دفعات نشطة', value: stats.active, icon: 'bi-box2-fill', color: 'primary' },
@@ -355,10 +354,11 @@ const submitBatch = () => {
             </div>
         </Transition>
     </Teleport>
+    </ManagementPage>
 </template>
 
 <style scoped>
-.bx-explain { border-color: rgba(15, 71, 49, .12); }
+.bx-explain { border-color: color-mix(in srgb, var(--brand, #A3422B) 12%, transparent); }
 .bx-explain__body { line-height: 1.85; }
 
 .bx-soon { color: #8a6920; }
@@ -384,8 +384,8 @@ const submitBatch = () => {
     overflow-y: auto;
 }
 .bxm-card {
-    background: #fff;
-    border-radius: 16px;
+    background: var(--surface, #FFFDFA);
+    border-radius: 12px;
     width: min(560px, 100%);
     max-height: 92vh;
     display: flex;
@@ -398,7 +398,7 @@ const submitBatch = () => {
     justify-content: space-between;
     gap: .5rem;
     padding: .9rem 1.1rem;
-    border-bottom: 1px solid #eef0f3;
+    border-bottom: 1px solid var(--line, #DFD7CB);
 }
 .bxm-body { padding: 1rem 1.1rem; overflow-y: auto; display: flex; flex-direction: column; gap: .6rem; }
 .bxm-foot {
@@ -406,11 +406,11 @@ const submitBatch = () => {
     justify-content: flex-end;
     gap: .5rem;
     padding: .8rem 1.1rem;
-    border-top: 1px solid #eef0f3;
+    border-top: 1px solid var(--line, #DFD7CB);
 }
 .bxm-field { display: flex; flex-direction: column; gap: .3rem; margin: 0; }
-.bxm-field > span { font-size: .84rem; font-weight: 700; color: #334155; }
-.bxm-err { color: #b91c1c; font-size: .76rem; font-weight: 700; }
+.bxm-field > span { font-size: .875rem; font-weight: 700; color: var(--ink, #25343A); }
+.bxm-err { color: #b91c1c; font-size: .875rem; font-weight: 700; }
 
 .bxm-enter-active, .bxm-leave-active { transition: opacity .15s ease; }
 .bxm-enter-from, .bxm-leave-to { opacity: 0; }

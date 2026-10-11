@@ -11,14 +11,11 @@
     };
 @endphp
 <!DOCTYPE html>
-{{-- Root document for Inertia ADMIN pages (Wave 0 — AdminLayout.vue chrome).
-     Wears the exact Dashtic skin the Blade admin wears — Bootstrap RTL,
-     styles.min, relax-brand/components, DB-driven theme vars — but loads
-     NONE of the classic admin JS: no jQuery, no SweetAlert, no Choices /
-     flatpickr auto-init, no menu scripts. AdminLayout.vue owns all
-     behavior. Everything self-hosted (offline doctrine). --}}
+{{-- Dar Al Sarw administration document. Legacy base styles support existing
+     controls; brand/interface.css owns the shared visual system.
+     AdminLayout.vue owns navigation and all assets are self-hosted. --}}
 <html lang="ar" dir="rtl"
-      data-nav-layout="horizontal"
+      data-nav-layout="sarw"
       data-theme-mode="light"
       data-header-styles="{{ $theme['header_style'] }}"
       data-menu-styles="{{ $theme['dashtic_menu_style'] }}"
@@ -49,6 +46,7 @@
 
     {{-- Plain LOCAL font stylesheet: offline it paints instantly in system font. --}}
     <link href="{{ $market::fontUrl() }}" rel="stylesheet">
+    <link href="{{ $staticAsset('brand/interface.css') }}" rel="stylesheet">
 
     @routes
     @vite('resources/js/app-inertia.js')

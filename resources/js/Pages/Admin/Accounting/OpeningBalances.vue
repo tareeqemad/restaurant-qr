@@ -1,6 +1,8 @@
 <script setup>
+import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
+import { createAccountingToken } from '../../../Components/Accounting/accountingToken'
 import { computed, ref } from "vue";
-import { Head, useForm } from "@inertiajs/vue3";
+import { Link, Head, useForm } from "@inertiajs/vue3";
 import AdminLayout from "../../../Layouts/AdminLayout.vue";
 import PageHeader from "../../../Components/Ui/PageHeader.vue";
 import AccountingNav from "../../../Components/Accounting/AccountingNav.vue";
@@ -26,7 +28,7 @@ const search = ref("");
 const accountForm = useForm({
     posted_on: props.suggestedOpeningDate || today,
     description: "الأرصدة الافتتاحية",
-    _idem: crypto.randomUUID(),
+    _idem: createAccountingToken(),
     balances: props.accounts.map((a) => ({
         account_id: a.id,
         amount: "",
@@ -36,7 +38,7 @@ const accountForm = useForm({
     })),
 });
 const customerForm = useForm({
-    _idem: crypto.randomUUID(),
+    _idem: createAccountingToken(),
     customer_id: "",
     amount: "",
     posted_on: today,
@@ -44,14 +46,14 @@ const customerForm = useForm({
     description: "",
 });
 const advanceForm = useForm({
-    _idem: crypto.randomUUID(),
+    _idem: createAccountingToken(),
     customer_id: "",
     amount: "",
     posted_on: props.suggestedOpeningDate || today,
     description: "",
 });
 const supplierForm = useForm({
-    _idem: crypto.randomUUID(),
+    _idem: createAccountingToken(),
     supplier_id: "",
     reference: "",
     amount: "",
@@ -132,48 +134,59 @@ const submitAccounts = () => {
     if (props.generalOpeningPosted) return;
     accountForm.post(props.urls.storeAccounts, {
         preserveScroll: true,
-        onSuccess: () => {
-            accountForm._idem = crypto.randomUUID();
+        onSuccess: (page) => {
+            if (!page.props.flash?.success && !page.props.flash?.info) return;
+            accountForm._idem = createAccountingToken();
         },
     });
 };
 const submitCustomer = () =>
     customerForm.post(props.urls.storeCustomer, {
         preserveScroll: true,
-        onSuccess: () => {
+        onSuccess: (page) => {
+            if (!page.props.flash?.success && !page.props.flash?.info) return;
             customerForm.reset();
             customerForm.posted_on = today;
-            customerForm._idem = crypto.randomUUID();
+            customerForm._idem = createAccountingToken();
         },
     });
 const submitAdvance = () =>
     advanceForm.post(props.urls.storeCustomerAdvance, {
         preserveScroll: true,
-        onSuccess: () => {
+        onSuccess: (page) => {
+            if (!page.props.flash?.success && !page.props.flash?.info) return;
             advanceForm.reset();
             advanceForm.posted_on = props.suggestedOpeningDate || today;
-            advanceForm._idem = crypto.randomUUID();
+            advanceForm._idem = createAccountingToken();
         },
     });
 const submitSupplier = () =>
     supplierForm.post(props.urls.storeSupplier, {
         preserveScroll: true,
-        onSuccess: () => {
+        onSuccess: (page) => {
+            if (!page.props.flash?.success && !page.props.flash?.info) return;
             supplierForm.reset();
             supplierForm.currency_code = props.baseCurrencyCode;
             supplierForm.exchange_rate = 1;
             supplierForm.posted_on = today;
-            supplierForm._idem = crypto.randomUUID();
+            supplierForm._idem = createAccountingToken();
         },
     });
 </script>
 <template>
-    <Head title="الأرصدة الافتتاحية" /><PageHeader
+<Head title="الأرصدة الافتتاحية" />
+<FinancialWorkspace area="المحاسبة" mode="records">
+<template #heading>
+<PageHeader
         title="الأرصدة الافتتاحية"
         icon="bi-door-open-fill"
         subtitle="صورة المطعم يوم بدء استخدام النظام، دون بناء القيود يدوياً"
-    /><AccountingNav :urls="urls" active="openingBalances" />
-    <section v-if="!hasBranch" class="branch-warning">
+    />
+</template>
+<template #navigation>
+<AccountingNav :urls="urls" active="openingBalances" />
+</template>
+<section v-if="!hasBranch" class="branch-warning">
         <i class="bi bi-shop"></i>
         <div>
             <strong>اختر فرعاً محدداً أولاً</strong
@@ -183,7 +196,7 @@ const submitSupplier = () =>
             >
         </div>
     </section>
-    <section v-else-if="generalOpeningPosted" class="branch-warning">
+<section v-else-if="generalOpeningPosted" class="branch-warning">
         <i class="bi bi-shield-check"></i>
         <div>
             <strong>تم اعتماد رصيد البداية لهذا الفرع</strong
@@ -193,7 +206,7 @@ const submitSupplier = () =>
             >
         </div>
     </section>
-    <nav class="mode-tabs">
+<nav class="mode-tabs">
         <button
             v-for="tab in [
                 [
@@ -233,7 +246,7 @@ const submitSupplier = () =>
             ><i class="bi bi-chevron-left"></i>
         </button>
     </nav>
-    <template v-if="active === 'accounts'"
+<template v-if="active === 'accounts'"
         ><section class="tip">
             <i class="bi bi-magic"></i>
             <div>
@@ -376,7 +389,7 @@ const submitSupplier = () =>
             </fieldset>
         </form></template
     >
-    <template v-else-if="active === 'customers'"
+<template v-else-if="active === 'customers'"
         ><section class="tip blue">
             <i class="bi bi-person-check"></i>
             <div>
@@ -448,7 +461,7 @@ const submitSupplier = () =>
             </form></AccountingPanel
         ></template
     >
-    <template v-else-if="active === 'advances'"
+<template v-else-if="active === 'advances'"
         ><section class="tip green">
             <i class="bi bi-wallet-fill"></i>
             <div>
@@ -517,7 +530,7 @@ const submitSupplier = () =>
             </form></AccountingPanel
         ></template
     >
-    <template v-else
+<template v-else
         ><section class="tip amber">
             <i class="bi bi-receipt"></i>
             <div>
@@ -621,14 +634,14 @@ const submitSupplier = () =>
             </form></AccountingPanel
         ></template
     >
-    <details v-if="openingEntries.length" class="history">
+<details v-if="openingEntries.length" class="history">
         <summary>
             <span
                 ><i class="bi bi-clock-history"></i> آخر القيود الافتتاحية</span
             ><b>{{ openingEntries.length }}</b>
         </summary>
         <div>
-            <a
+            <Link
                 v-for="entry in openingEntries"
                 :key="entry.id"
                 :href="entry.journalUrl"
@@ -639,9 +652,11 @@ const submitSupplier = () =>
                     ></span
                 ><time>{{ entry.date }}</time
                 ><i class="bi bi-chevron-left"></i
-            ></a>
+            ></Link>
         </div>
     </details>
+</FinancialWorkspace>
+
 </template>
 <style scoped>
 .branch-warning,
@@ -652,7 +667,7 @@ const submitSupplier = () =>
     margin-bottom: 10px;
     padding: 12px 14px;
     border: 1px solid #e5c886;
-    border-radius: 13px;
+    border-radius: 12px;
     color: #875000;
     background: #fff7e7;
 }
@@ -666,11 +681,11 @@ const submitSupplier = () =>
 }
 .branch-warning strong,
 .tip strong {
-    font-size: 0.75rem;
+    font-size: .875rem;
 }
 .branch-warning small,
 .tip small {
-    font-size: 0.64rem;
+    font-size: .875rem;
     line-height: 1.55;
 }
 .mode-tabs {
@@ -684,10 +699,10 @@ const submitSupplier = () =>
     align-items: center;
     gap: 9px;
     padding: 11px;
-    border: 1px solid #dfe7e2;
-    border-radius: 13px;
-    color: #536158;
-    background: #fff;
+    border: 1px solid var(--line, #DFD7CB);
+    border-radius: 8px;
+    color: var(--muted, #626B6D);
+    background: var(--surface, #FFFDFA);
     text-align: start;
 }
 .mode-tabs button > i:first-child {
@@ -695,34 +710,34 @@ const submitSupplier = () =>
     width: 38px;
     height: 38px;
     place-items: center;
-    border-radius: 10px;
-    color: #1f6b50;
-    background: #e9f4ed;
+    border-radius: 8px;
+    color: var(--ink, #25343A);
+    background: var(--brand-soft, #F3E3D8);
 }
 .mode-tabs button span {
     display: grid;
     flex: 1;
 }
 .mode-tabs strong {
-    font-size: 0.72rem;
+    font-size: .875rem;
 }
 .mode-tabs small {
-    color: #829087;
-    font-size: 0.59rem;
+    color: var(--muted, #626B6D);
+    font-size: .875rem;
 }
 .mode-tabs button > i:last-child {
-    font-size: 0.58rem;
+    font-size: .875rem;
 }
 .mode-tabs button.active {
-    border-color: #98c8a7;
-    color: #1f6b50;
-    background: #f1f8f3;
-    box-shadow: inset 0 -2px #1f6b50;
+    border-color: var(--line, #DFD7CB);
+    color: var(--ink, #25343A);
+    background: var(--surface, #FFFDFA);
+    box-shadow: inset 0 -2px #A3422B;
 }
 .tip {
-    border-color: #acd2b7;
-    color: #1f6b50;
-    background: #f0f8f2;
+    border-color: var(--line, #DFD7CB);
+    color: var(--ink, #25343A);
+    background: var(--surface, #FFFDFA);
 }
 .tip.blue {
     border-color: #b9d7e8;
@@ -740,9 +755,9 @@ const submitSupplier = () =>
     gap: 9px;
     margin-bottom: 10px;
     padding: 11px;
-    border: 1px solid #dfe7e2;
-    border-radius: 13px;
-    background: #fff;
+    border: 1px solid var(--line, #DFD7CB);
+    border-radius: 12px;
+    background: var(--surface, #FFFDFA);
 }
 .account-head > label {
     display: grid;
@@ -751,7 +766,7 @@ const submitSupplier = () =>
 .account-head label > span,
 .account-group article label > span,
 .debt-form label > span {
-    font-size: 0.62rem;
+    font-size: .875rem;
     font-weight: 850;
 }
 .search > div {
@@ -759,7 +774,7 @@ const submitSupplier = () =>
     align-items: center;
     gap: 6px;
     padding: 0 9px;
-    border: 1px solid #dfe7e2;
+    border: 1px solid var(--line, #DFD7CB);
     border-radius: 8px;
 }
 .search input {
@@ -767,14 +782,14 @@ const submitSupplier = () =>
     padding: 8px 0;
     border: 0;
     outline: 0;
-    font-size: 0.68rem;
+    font-size: .875rem;
 }
 .account-group {
     overflow: hidden;
     margin-bottom: 8px;
-    border: 1px solid #dfe7e2;
-    border-radius: 14px;
-    background: #fff;
+    border: 1px solid var(--line, #DFD7CB);
+    border-radius: 12px;
+    background: var(--surface, #FFFDFA);
 }
 .account-group summary {
     display: flex;
@@ -795,30 +810,30 @@ const submitSupplier = () =>
     height: 36px;
     place-items: center;
     border-radius: 10px;
-    color: #1f6b50;
-    background: #e9f4ed;
+    color: var(--ink, #25343A);
+    background: var(--brand-soft, #F3E3D8);
 }
 .account-group summary > span > span {
     display: grid;
 }
 .account-group summary strong {
-    font-size: 0.72rem;
+    font-size: .875rem;
 }
 .account-group summary small {
-    color: #819087;
-    font-size: 0.58rem;
+    color: var(--muted, #626B6D);
+    font-size: .875rem;
 }
 .account-group summary > b {
     display: grid;
     min-width: 23px;
     height: 23px;
     place-items: center;
-    border-radius: 999px;
-    background: #eff3f0;
-    font-size: 0.62rem;
+    border-radius: 12px;
+    background: var(--surface, #FFFDFA);
+    font-size: .875rem;
 }
 .account-group > div {
-    border-top: 1px solid #edf1ee;
+    border-top: 1px solid var(--line, #DFD7CB);
 }
 .account-group article {
     display: grid;
@@ -826,7 +841,7 @@ const submitSupplier = () =>
     align-items: end;
     gap: 8px;
     padding: 8px 12px;
-    border-bottom: 1px solid #edf1ee;
+    border-bottom: 1px solid var(--line, #DFD7CB);
 }
 .account-group article:last-child {
     border: 0;
@@ -841,9 +856,9 @@ const submitSupplier = () =>
     min-width: 48px;
     padding: 4px 6px;
     border-radius: 7px;
-    color: #1f6b50;
-    background: #eef6f0;
-    font-size: 0.63rem;
+    color: var(--ink, #25343A);
+    background: var(--surface, #FFFDFA);
+    font-size: .875rem;
     font-weight: 900;
     text-align: center;
 }
@@ -851,11 +866,11 @@ const submitSupplier = () =>
     display: grid;
 }
 .account-name strong {
-    font-size: 0.68rem;
+    font-size: .875rem;
 }
 .account-name small {
-    color: #89958d;
-    font-size: 0.56rem;
+    color: var(--muted, #626B6D);
+    font-size: .875rem;
 }
 .account-group article label {
     display: grid;
@@ -869,21 +884,21 @@ const submitSupplier = () =>
     align-items: center;
     gap: 16px;
     padding: 12px 14px;
-    border: 1px solid #cbded1;
-    border-radius: 14px;
+    border: 1px solid var(--line, #DFD7CB);
+    border-radius: 12px;
     background: rgba(255, 255, 255, 0.97);
-    box-shadow: 0 12px 35px rgba(20, 50, 31, 0.12);
-    backdrop-filter: blur(10px);
+    box-shadow: none;
+    backdrop-filter: none;
 }
 .totals span {
     display: grid;
 }
 .totals small {
-    color: #7d8a82;
-    font-size: 0.59rem;
+    color: var(--muted, #626B6D);
+    font-size: .875rem;
 }
 .totals strong {
-    font-size: 0.72rem;
+    font-size: .875rem;
 }
 .totals .auto {
     flex: 1;
@@ -908,9 +923,9 @@ const submitSupplier = () =>
 .history {
     overflow: hidden;
     margin-top: 12px;
-    border: 1px solid #dfe7e2;
-    border-radius: 14px;
-    background: #fff;
+    border: 1px solid var(--line, #DFD7CB);
+    border-radius: 12px;
+    background: var(--surface, #FFFDFA);
 }
 .history summary {
     display: flex;
@@ -918,7 +933,7 @@ const submitSupplier = () =>
     padding: 12px 14px;
     cursor: pointer;
     list-style: none;
-    font-size: 0.7rem;
+    font-size: .875rem;
     font-weight: 850;
 }
 .history summary span {
@@ -930,35 +945,35 @@ const submitSupplier = () =>
     width: 23px;
     height: 23px;
     place-items: center;
-    border-radius: 999px;
-    background: #eef3ef;
-    font-size: 0.6rem;
+    border-radius: 12px;
+    background: var(--surface, #FFFDFA);
+    font-size: .875rem;
 }
 .history > div {
-    border-top: 1px solid #edf1ee;
+    border-top: 1px solid var(--line, #DFD7CB);
 }
 .history a {
     display: flex;
     align-items: center;
     gap: 10px;
     padding: 9px 13px;
-    border-bottom: 1px solid #edf1ee;
-    color: #35463b;
+    border-bottom: 1px solid var(--line, #DFD7CB);
+    color: var(--ink, #25343A);
 }
 .history a > span {
     display: grid;
     flex: 1;
 }
 .history a strong {
-    font-size: 0.67rem;
+    font-size: .875rem;
 }
 .history a small,
 .history time {
-    color: #829087;
-    font-size: 0.58rem;
+    color: var(--muted, #626B6D);
+    font-size: .875rem;
 }
 .history a > i {
-    font-size: 0.55rem;
+    font-size: .875rem;
 }
 @media (max-width: 950px) {
     .account-head {

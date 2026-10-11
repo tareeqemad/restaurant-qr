@@ -63,12 +63,12 @@ const { state, accept, dismiss } = useConfirm();
     margin: 0 0 .35rem;
     font-size: 1.05rem;
     font-weight: 800;
-    color: #111827;
+    color: var(--ink, #25343a);
 }
 .cfm-message {
     margin: 0 0 1rem;
     font-size: .88rem;
-    color: #6b7280;
+    color: var(--muted, #626b6d);
     line-height: 1.55;
 }
 .cfm-actions { display: flex; gap: 10px; margin-top: 1rem; }
@@ -84,7 +84,7 @@ const { state, accept, dismiss } = useConfirm();
     transition: filter .12s, background-color .12s;
 }
 .cfm-btn:hover { filter: brightness(.96); }
-.cfm-btn--cancel { background: #f3f4f6; color: #374151; }
+.cfm-btn--cancel { background: var(--surface-muted, #efe9e0); color: var(--ink, #25343a); }
 .cfm-btn--confirm { background: rgb(var(--primary-rgb)); color: #fff; }
 .cfm-btn--danger { background: #dc2626; color: #fff; }
 

@@ -1,4 +1,5 @@
 <script setup>
+import ManagementPage from '../../../Components/Inventory/ManagementPage.vue';
 /**
  * استلام بضاعة — Wave 4. Partial receipts are normal: enter what actually
  * arrived and the rest stays open on the PO.
@@ -107,6 +108,7 @@ const money = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDig
 </script>
 
 <template>
+    <ManagementPage mode="form">
     <Head :title="`استلام ${po.number}`" />
 
     <PageHeader :title="`استلام بضاعة — ${po.number}`" icon="bi-box-arrow-in-down"
@@ -205,6 +207,7 @@ const money = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDig
             </div>
         </template>
     </DataPanel>
+    </ManagementPage>
 </template>
 
 <style scoped>
@@ -215,30 +218,30 @@ const money = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDig
     background: #eff6ff;
     border: 1px solid #bfdbfe;
     color: #1e40af;
-    border-radius: 14px;
+    border-radius: 12px;
     padding: .85rem 1rem;
     margin-bottom: .9rem;
-    font-size: .82rem;
+    font-size: .875rem;
 }
 .rc-note > i { font-size: 1.15rem; }
 .rc-note ul { margin: .3rem 0 0; padding-inline-start: 1.1rem; display: grid; gap: .2rem; }
 
 .rc-dest { display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap; }
 .rc-field { display: flex; flex-direction: column; gap: .35rem; margin: 0; flex: 1 1 280px; }
-.rc-field > span { font-size: .84rem; font-weight: 800; color: #334155; }
-.rc-field small { font-size: .72rem; color: #94a3b8; }
+.rc-field > span { font-size: .875rem; font-weight: 800; color: var(--ink, #25343A); }
+.rc-field small { font-size: .875rem; color: var(--muted, #626B6D); }
 .rc-fill { min-height: 46px; font-weight: 700; }
 
 .table-responsive { overscroll-behavior-inline: contain; scrollbar-width: thin; }
 .rc-table { min-width: 1040px; }
-.rc-table th { white-space: nowrap; font-size: .8rem; }
+.rc-table th { white-space: nowrap; font-size: .875rem; }
 .rc-table th:first-child,
-.rc-table td:first-child { position: sticky; inset-inline-start: 0; z-index: 1; background: #fff; box-shadow: -1px 0 #e5e7eb; }
+.rc-table td:first-child { position: sticky; inset-inline-start: 0; z-index: 1; background: var(--surface, #FFFDFA); box-shadow: none; }
 .rc-table thead th:first-child { z-index: 2; background: #f8fafc; }
 .rc-name { font-weight: 700; color: #0f172a; }
-.rc-name small { display: block; font-weight: 600; color: #94a3b8; font-size: .72rem; }
+.rc-name small { display: block; font-weight: 600; color: var(--muted, #626B6D); font-size: .875rem; }
 .rc-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.rc-out { font-weight: 800; color: rgb(var(--primary-rgb)); }
+.rc-out { font-weight: 800; color: var(--brand, #A3422B); }
 .rc-input { width: 110px; text-align: center; font-weight: 700; }
 .rc-batch { min-width: 120px; }
 .rc-date { min-width: 150px; }
@@ -247,19 +250,19 @@ const money = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDig
 
 .rc-foot { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }
 .rc-total { display: flex; align-items: baseline; gap: .5rem; }
-.rc-total span { font-size: .82rem; color: #64748b; font-weight: 700; }
-.rc-total strong { font-size: 1.25rem; font-weight: 900; color: #059669; }
-.rc-total small { color: #94a3b8; font-size: .74rem; }
-.rc-problem { color: #b45309; font-size: .82rem; font-weight: 700; }
+.rc-total span { font-size: .875rem; color: var(--muted, #626B6D); font-weight: 700; }
+.rc-total strong { font-size: 1.25rem; font-weight: 900; color: var(--brand, #A3422B); }
+.rc-total small { color: var(--muted, #626B6D); font-size: .875rem; }
+.rc-problem { color: #b45309; font-size: .875rem; font-weight: 700; }
 .rc-save { margin-inline-start: auto; font-weight: 800; }
 .rc-spin { animation: rc-rotate 1s linear infinite; display: inline-block; }
 @keyframes rc-rotate { to { transform: rotate(360deg); } }
 @media (max-width: 1399px) {
-    .rc-note { padding: .7rem .8rem; font-size: .75rem; }
+    .rc-note { padding: .7rem .8rem; font-size: .875rem; }
     .rc-note ul { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; padding-inline-start: 0; list-style: none; }
-    .rc-table th { font-size: .72rem; }
+    .rc-table th { font-size: .875rem; }
     .rc-table td { padding-block: .55rem; }
-    .rc-foot { position: sticky; inset-block-end: 0; z-index: 4; margin: -.35rem; padding: .65rem; border: 1px solid #dfe8e3; border-radius: 12px; background: rgba(255,255,255,.96); box-shadow: 0 -8px 22px rgba(15,71,49,.06); }
+    .rc-foot { position: sticky; inset-block-end: 0; z-index: 4; margin: -.35rem; padding: .65rem; border: 1px solid var(--brand-soft, #F3E3D8); border-radius: 12px; background: rgba(255,255,255,.96); box-shadow: none; }
 }
 @media (max-width: 760px) {
     .rc-note ul { grid-template-columns: 1fr; gap: .3rem; }
@@ -269,4 +272,7 @@ const money = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDig
     .rc-total,.rc-problem { grid-column: 1 / -1; }
     .rc-save { margin-inline-start: 0; }
 }
+
+/* Dar Al Sarw management layout */
+.rc-note { padding: 18px 20px; border-radius: 10px; line-height: 1.75; } .rc-note strong { font-size: .9375rem; } .rc-input { min-height: 46px; border-radius: 8px; } .rc-table td { padding: 16px 12px; } .rc-table input { min-height: 46px; min-width: 100px; border-radius: 8px; }
 </style>

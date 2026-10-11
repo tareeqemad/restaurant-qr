@@ -10,11 +10,11 @@ class ThemePalette
     {
         $defaults = config('restaurant.theme', []);
 
-        $primaryDefault = $defaults['primary'] ?? '#1f6b50';
-        $darkDefault = $defaults['dark'] ?? '#123f31';
+        $primaryDefault = $defaults['primary'] ?? '#a3422b';
+        $darkDefault = $defaults['dark'] ?? '#25343a';
         $headerDefault = $defaults['header'] ?? $primaryDefault;
-        $accentDefault = $defaults['accent'] ?? '#b97818';
-        $menuDefault = $defaults['menu'] ?? '#f7f8f5';
+        $accentDefault = $defaults['accent'] ?? '#b78338';
+        $menuDefault = $defaults['menu'] ?? '#f7f3ed';
 
         $primary = self::normalizeHex(Setting::get('theme_primary', $primaryDefault), $primaryDefault);
         $dark = self::normalizeHex(Setting::get('theme_dark', $darkDefault), $darkDefault);
@@ -34,11 +34,11 @@ class ThemePalette
             'header' => $header,
             'accent' => $accent,
             'menu' => $menu,
-            'primary_rgb' => self::hexToRgb($primary, '31, 107, 80'),
-            'dark_rgb' => self::hexToRgb($dark, '18, 63, 49'),
-            'header_rgb' => self::hexToRgb($header, '31, 107, 80'),
-            'accent_rgb' => self::hexToRgb($accent, '185, 120, 24'),
-            'menu_rgb' => self::hexToRgb($menu, '247, 248, 245'),
+            'primary_rgb' => self::hexToRgb($primary, '163, 66, 43'),
+            'dark_rgb' => self::hexToRgb($dark, '37, 52, 58'),
+            'header_rgb' => self::hexToRgb($header, '163, 66, 43'),
+            'accent_rgb' => self::hexToRgb($accent, '183, 131, 56'),
+            'menu_rgb' => self::hexToRgb($menu, '247, 243, 237'),
             'primary_light' => self::mix($primary, '#ffffff', 0.24),
             'primary_soft' => self::mix($primary, '#ffffff', 0.86),
             'accent_dark' => self::darken($accent),

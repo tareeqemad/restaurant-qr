@@ -3,7 +3,7 @@
 @section('title', 'الصفحة غير موجودة')
 @section('code', '404')
 @section('headline', 'لم نجد هذه الصفحة')
-@section('message', 'قد يكون الرابط قديماً أو تم نقلك إلى عنوان غير صحيح. ارجع للصفحة السابقة أو ابدأ من المكان المناسب لك.')
+@section('message', 'الرابط غير متاح. ارجع للصفحة السابقة أو افتح الصفحة الرئيسية.')
 
 @section('illustration')
     {{-- Compass needle broken --}}

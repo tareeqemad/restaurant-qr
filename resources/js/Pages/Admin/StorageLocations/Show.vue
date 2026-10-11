@@ -1,4 +1,5 @@
 <script setup>
+import ManagementPage from '../../../Components/Inventory/ManagementPage.vue';
 /**
  * تفاصيل موقع تخزين — what is physically sitting in one location.
  *
@@ -63,6 +64,7 @@ const paths = computed(() => [
 </script>
 
 <template>
+    <ManagementPage mode="detail">
     <Head :title="location.name" />
 
     <PageHeader :title="location.name" icon="bi-boxes" :crumbs="crumbs" />
@@ -136,10 +138,11 @@ const paths = computed(() => [
                     title="هذا الموقع فاضي حالياً"
                     message="استخدم أحد المسارات بالأعلى لإدخال مكوّنات إلى هنا — أمر شراء، فاتورة مورّد، نقل بين المواقع، أو تحويل بين الفروع." />
     </DataPanel>
+    </ManagementPage>
 </template>
 
 <style scoped>
-.sl-inflow { border-color: rgba(15, 71, 49, .12); }
+.sl-inflow { border-color: color-mix(in srgb, var(--brand, #A3422B) 12%, transparent); }
 .sl-inflow-icon {
     display: inline-flex;
     align-items: center;
@@ -148,7 +151,7 @@ const paths = computed(() => [
     height: 44px;
     flex: 0 0 44px;
     border-radius: 12px;
-    background: rgba(15, 71, 49, .08);
+    background: color-mix(in srgb, var(--brand, #A3422B) 8%, transparent);
     color: var(--primary);
     font-size: 1.2rem;
 }
@@ -164,23 +167,23 @@ const paths = computed(() => [
     padding: .75rem;
     border-radius: .5rem;
     text-decoration: none;
-    background: rgba(15, 71, 49, .04);
-    border: 1px solid rgba(15, 71, 49, .12);
+    background: color-mix(in srgb, var(--brand, #A3422B) 4%, transparent);
+    border: 1px solid color-mix(in srgb, var(--brand, #A3422B) 12%, transparent);
     color: inherit;
     min-height: 44px;
 }
-.sl-path:hover { background: rgba(15, 71, 49, .07); }
+.sl-path:hover { background: color-mix(in srgb, var(--brand, #A3422B) 7%, transparent); }
 .sl-path-head {
     display: flex;
     align-items: center;
     gap: .5rem;
     margin-bottom: .25rem;
-    font-size: .82rem;
+    font-size: .875rem;
 }
 .sl-path-head i { color: var(--primary); }
 .sl-path-body {
-    font-size: .82rem;
-    color: #6c757d;
+    font-size: .875rem;
+    color: var(--muted, #626B6D);
     line-height: 1.5;
 }
 

@@ -2,6 +2,8 @@
 
 namespace App\Http\Middleware;
 
+use App\Helpers\Brand;
+use App\Models\Setting;
 use App\Support\BranchContext;
 use App\Support\ThemePalette;
 use Illuminate\Http\Request;
@@ -33,6 +35,13 @@ class HandleInertiaRequests extends Middleware
             ],
             'branchId' => fn () => BranchContext::current(),
             'theme' => fn () => ThemePalette::current(),
+            'restaurantBrand' => fn () => [
+                'name' => Brand::name(),
+                'logo' => Brand::logoUrl(),
+                'demoNotice' => Setting::get('demo_dataset') === 'dar-al-sarw-v1'
+                    ? 'نسخة تجريبية لمطعم وهمي · الأسعار للتوضيح'
+                    : null,
+            ],
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),

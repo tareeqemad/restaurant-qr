@@ -1,4 +1,5 @@
 <script setup>
+import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 /**
  * أكثر الأصناف مبيعاً — what was sold in the period, ranked by quantity.
  *
@@ -50,13 +51,14 @@ const qty2 = (v) => new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, m
 </script>
 
 <template>
-    <Head title="أكثر الأصناف مبيعاً" />
-
-    <PageHeader title="أكثر الأصناف مبيعاً" icon="bi-trophy"
+<Head title="أكثر الأصناف مبيعاً" />
+<FinancialWorkspace area="التقارير والتحليل" mode="report">
+<template #heading>
+<PageHeader title="أكثر الأصناف مبيعاً" icon="bi-trophy"
                 subtitle="ترتيب الأصناف حسب الكمية أو الإيراد"
                 :crumbs="[{ label: 'التقارير', url: urls.reportsIndex }]" />
-
-    <DataPanel title="الأصناف الأكثر حركة" icon="bi-trophy-fill" :count="rows.total">
+</template>
+<DataPanel title="الأصناف الأكثر حركة" icon="bi-trophy-fill" :count="rows.total">
         <template #filters>
             <form class="row g-2 align-items-end" @submit.prevent="visit">
                 <div class="col-md-3">
@@ -115,6 +117,8 @@ const qty2 = (v) => new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, m
             <Pagination :links="rows.links" />
         </template>
     </DataPanel>
+</FinancialWorkspace>
+
 </template>
 
 <style scoped>

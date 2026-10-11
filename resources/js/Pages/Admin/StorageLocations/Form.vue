@@ -1,4 +1,5 @@
 <script setup>
+import ManagementPage from '../../../Components/Inventory/ManagementPage.vue';
 /**
  * موقع تخزين — create/edit. One component for both, because the retired
  * Blade was one shared `_form` partial included by two wrappers.
@@ -43,6 +44,7 @@ const submit = () => {
 </script>
 
 <template>
+    <ManagementPage mode="form">
     <Head :title="title" />
 
     <PageHeader :title="title" :icon="isEdit ? 'bi-pencil-square' : 'bi-plus-circle-fill'"
@@ -133,6 +135,7 @@ const submit = () => {
             </div>
         </form>
     </DataPanel>
+    </ManagementPage>
 </template>
 
 <style scoped>
@@ -140,8 +143,8 @@ const submit = () => {
    the project — they were bare hooks in the retired Blade. Give them the
    look they were always meant to have, scoped to this page. */
 .form-section {
-    border: 1px solid #eef0f3;
-    border-radius: 14px;
+    border: 1px solid var(--line, #DFD7CB);
+    border-radius: 12px;
     padding: 1rem;
 }
 .form-section-head {
@@ -149,10 +152,10 @@ const submit = () => {
     align-items: center;
     gap: .45rem;
     font-weight: 800;
-    color: #334155;
+    color: var(--ink, #25343A);
     margin-bottom: .9rem;
     padding-bottom: .6rem;
-    border-bottom: 1px solid #eef0f3;
+    border-bottom: 1px solid var(--line, #DFD7CB);
 }
 .form-section-head i { color: var(--primary); }
 .req { color: #dc3545; }

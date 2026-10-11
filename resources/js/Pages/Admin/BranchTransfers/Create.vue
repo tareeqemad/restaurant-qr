@@ -1,4 +1,5 @@
 <script setup>
+import ManagementPage from '../../../Components/Inventory/ManagementPage.vue';
 /**
  * تحويل بين الفروع — إنشاء.
  *
@@ -242,6 +243,7 @@ const fmtMoney = (v) => Number(v || 0).toLocaleString('en-US', {
 </script>
 
 <template>
+    <ManagementPage mode="form">
     <Head title="تحويل بين الفروع" />
 
     <PageHeader title="تحويل بين الفروع" icon="bi-arrow-left-right"
@@ -520,6 +522,7 @@ const fmtMoney = (v) => Number(v || 0).toLocaleString('en-US', {
             </div>
         </template>
     </DataPanel>
+    </ManagementPage>
 </template>
 
 <style scoped>
@@ -527,10 +530,10 @@ const fmtMoney = (v) => Number(v || 0).toLocaleString('en-US', {
 
 .bt-hint {
     line-height: 1.55;
-    font-size: .84rem;
-    color: #64748b;
-    background: rgba(15, 71, 49, .03);
-    border: 1px solid rgba(15, 71, 49, .06);
+    font-size: .875rem;
+    color: var(--muted, #626B6D);
+    background: color-mix(in srgb, var(--brand, #A3422B) 3%, transparent);
+    border: 1px solid color-mix(in srgb, var(--brand, #A3422B) 6%, transparent);
     border-radius: .5rem;
     padding: .55rem .75rem;
     margin-bottom: .75rem;
@@ -546,18 +549,18 @@ const fmtMoney = (v) => Number(v || 0).toLocaleString('en-US', {
     align-items: center;
     gap: .25rem;
     padding: .12rem .5rem;
-    border-radius: 999px;
-    font-size: 11.5px;
+    border-radius: 12px;
+    font-size: 14px;
     font-weight: 600;
     line-height: 1.5;
 }
-.bt-stock-pill.ok { background: rgba(25, 135, 84, .12); color: #157347; }
+.bt-stock-pill.ok { background: rgba(25, 135, 84, .12); color: var(--brand, #A3422B); }
 .bt-stock-pill.warn { background: rgba(255, 193, 7, .18); color: #997404; }
 .bt-stock-pill.error { background: rgba(220, 53, 69, .12); color: #b02a37; }
-.bt-stock-pill.empty { background: rgba(108, 117, 125, .12); color: #6c757d; }
+.bt-stock-pill.empty { background: rgba(108, 117, 125, .12); color: var(--muted, #626B6D); }
 
 .bt-line-msg {
-    font-size: 12px;
+    font-size: 14px;
     line-height: 1.4;
     margin-top: .25rem;
     display: flex;
@@ -568,15 +571,15 @@ const fmtMoney = (v) => Number(v || 0).toLocaleString('en-US', {
 .bt-line-msg.warn { color: #997404; }
 
 .bt-summary {
-    background: linear-gradient(135deg, rgba(15, 71, 49, .04), rgba(15, 71, 49, .01));
-    border: 1px solid rgba(15, 71, 49, .08);
+    background: var(--surface, #FFFDFA);
+    border: 1px solid color-mix(in srgb, var(--brand, #A3422B) 8%, transparent);
     border-radius: .5rem;
     padding: .85rem 1rem;
 }
-.bt-note { font-size: 11px; }
-.bt-cur { font-size: 10.5px; }
+.bt-note { font-size: 14px; }
+.bt-cur { font-size: 14px; }
 
-.bt-empty-state { padding: 2rem 1rem; text-align: center; color: #6c757d; }
+.bt-empty-state { padding: 2rem 1rem; text-align: center; color: var(--muted, #626B6D); }
 .bt-empty-state i { font-size: 2.25rem; opacity: .35; display: block; margin-bottom: .35rem; }
 
 .bt-foot { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }

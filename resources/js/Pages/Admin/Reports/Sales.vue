@@ -1,4 +1,5 @@
 <script setup>
+import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 /**
  * المبيعات اليومية — one row per calendar day: what was invoiced vs what
  * was actually collected, with the gap made visible.
@@ -60,13 +61,15 @@ const rateTone = (v) => (v >= 95 ? 'success' : (v >= 80 ? 'accent' : 'danger'));
 </script>
 
 <template>
-    <Head title="تقرير المبيعات" />
-
-    <PageHeader title="المبيعات اليومية" icon="bi-cash-coin"
+<Head title="تقرير المبيعات" />
+<FinancialWorkspace area="التقارير والتحليل" mode="report">
+<template #heading>
+<PageHeader title="المبيعات اليومية" icon="bi-cash-coin"
                 subtitle="قراءة يومية للتحصيل والفواتير والفجوة بين المفوتر والمقبوض"
                 :crumbs="[{ label: 'التقارير', url: urls.reportsIndex }]" />
-
-    <div class="data-panel-filters mb-3"
+</template>
+<template #filters>
+<div class="data-panel-filters mb-3"
          style="background: white; border-radius: 14px; padding: 1rem; border: 1px solid rgba(var(--primary-rgb), .1);">
         <form class="row g-2 align-items-end" @submit.prevent="visit">
             <div class="col-md-3">
@@ -92,8 +95,9 @@ const rateTone = (v) => (v >= 95 ? 'success' : (v >= 80 ? 'accent' : 'danger'));
             </div>
         </form>
     </div>
-
-    <StatRail :stats="[
+</template>
+<template #metrics>
+<StatRail :stats="[
         { label: 'المقبوض', value: money(totals.paid), icon: 'bi-wallet2', color: 'success' },
         { label: 'المفوتر', value: money(totals.total), icon: 'bi-receipt', color: 'primary' },
         { label: 'نسبة التحصيل', value: pct1(collectionRate) + '%', icon: 'bi-check2-circle', color: rateTone(collectionRate) },
@@ -101,8 +105,8 @@ const rateTone = (v) => (v >= 95 ? 'success' : (v >= 80 ? 'accent' : 'danger'));
         { label: 'متوسط الفاتورة', value: money(averageInvoice), icon: 'bi-calculator', color: 'info' },
         { label: 'غير محصل', value: money(collectionGap), icon: 'bi-exclamation-circle', color: collectionGap > 0 ? 'warning' : 'muted' },
     ]" />
-
-    <div class="row g-3 mb-3">
+</template>
+<div class="row g-3 mb-3">
         <div class="col-lg-8">
             <DataPanel title="خط الأيام" icon="bi-bar-chart-line-fill">
                 <EmptyState v-if="rows.length === 0"
@@ -143,8 +147,7 @@ const rateTone = (v) => (v >= 95 ? 'success' : (v >= 80 ? 'accent' : 'danger'));
             </DataPanel>
         </div>
     </div>
-
-    <DataPanel title="تفاصيل المبيعات اليومية" icon="bi-table" :count="rows.length">
+<DataPanel title="تفاصيل المبيعات اليومية" icon="bi-table" :count="rows.length">
         <div class="table-responsive">
             <table class="table align-middle mb-0">
                 <thead class="bg-light">
@@ -197,6 +200,8 @@ const rateTone = (v) => (v >= 95 ? 'success' : (v >= 80 ? 'accent' : 'danger'));
             </table>
         </div>
     </DataPanel>
+</FinancialWorkspace>
+
 </template>
 
 <style scoped>
@@ -230,11 +235,11 @@ const rateTone = (v) => (v >= 95 ? 'success' : (v >= 80 ? 'accent' : 'danger'));
 .sales-pulse-bar {
     width: 100%;
     min-height: 8px;
-    background: linear-gradient(180deg, var(--primary), var(--accent));
+    background: var(--surface, #FFFDFA);
     border-radius: 8px 8px 0 0;
 }
 .sales-pulse-day span {
-    font-size: .72rem;
+    font-size: .875rem;
     font-weight: 700;
     color: #78716c;
 }
@@ -252,7 +257,7 @@ const rateTone = (v) => (v >= 95 ? 'success' : (v >= 80 ? 'accent' : 'danger'));
 }
 .sales-insight span {
     color: #78716c;
-    font-size: .8rem;
+    font-size: .875rem;
     font-weight: 800;
 }
 .sales-insight strong {
@@ -262,4 +267,6 @@ const rateTone = (v) => (v >= 95 ? 'success' : (v >= 80 ? 'accent' : 'danger'));
 .sales-insight small {
     color: #64748b;
 }
+
+.reports-trend{height:220px;gap:12px;padding:24px 10px 0}.reports-trend-bar{background:#A3422B;border-radius:5px 5px 0 0}.reports-trend-day>span{font-size:13px}.reports-alert{padding:18px 0;border-bottom:1px solid #DFD7CB;background:transparent}.reports-alert strong{font-size:15px}.report-tile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0}.report-tile{display:flex;align-items:center;gap:14px;padding:20px 12px;border:0;border-bottom:1px solid #DFD7CB;border-radius:0;background:transparent}.report-tile:hover{background:#F7F3ED;transform:none}.report-tile-icon{background:transparent;color:#A3422B;font-size:22px}.report-tile-body strong{font-size:16px}.report-tile-body small{font-size:13px;color:#626B6D}@media(max-width:650px){.report-tile-grid{grid-template-columns:1fr}}
 </style>

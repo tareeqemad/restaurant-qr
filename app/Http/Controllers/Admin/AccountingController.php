@@ -27,6 +27,7 @@ use App\Models\TableSession;
 use App\Services\Accounting\AccountingService;
 use App\Services\CustomerAdvanceService;
 use App\Services\ExchangeRateService;
+use App\Support\AccountingCommandRejected;
 use App\Support\AccountingGuide;
 use App\Support\AccountingWorkspace;
 use App\Support\AdminShell;
@@ -436,7 +437,7 @@ class AccountingController extends Controller
             ->orderByDesc('id');
 
         $entries = $entriesQuery->paginate(20)->withQueryString();
-        $reversedEntryIds = $this->reversedEntryIds();
+        $reversedEntryIds = $this->reversedEntryIds($entries->getCollection()->modelKeys());
 
         $eventTypes = $this->scopeToCurrentBranch(JournalEntry::query())
             ->whereNotNull('event_type')
@@ -566,8 +567,9 @@ class AccountingController extends Controller
                     ->orderBy('journal_entries.id')
                     ->orderBy('journal_lines.line_no')
                     ->limit($skip)
-                    ->get(['journal_lines.debit', 'journal_lines.credit']);
-                $beforePageRaw = (float) $previousLines->sum(fn ($line) => (float) $line->debit - (float) $line->credit);
+                    ->select(['journal_lines.debit', 'journal_lines.credit']);
+                $beforePageRaw = (float) DB::query()->fromSub($previousLines, 'previous_lines')
+                    ->selectRaw('COALESCE(SUM(debit - credit), 0) as balance')->value('balance');
             }
 
             $running = $openingRaw + $beforePageRaw;
@@ -628,14 +630,19 @@ class AccountingController extends Controller
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],
             'event_type' => ['nullable', 'string', 'max:80'],
+            'search' => ['nullable', 'string', 'max:120'],
         ]);
         [$from, $to] = $this->dateRange($filters['from'] ?? null, $filters['to'] ?? null);
-        $from ??= Carbon::parse($to)->startOfMonth()->toDateString();
 
         $query = $this->scopeToCurrentBranch(JournalEntry::query()->with('lines.account'))
-            ->whereDate('posted_on', '>=', $from)
+            ->when($from, fn (Builder $query) => $query->whereDate('posted_on', '>=', $from))
             ->whereDate('posted_on', '<=', $to)
             ->when($filters['event_type'] ?? null, fn (Builder $query, string $eventType) => $query->where('event_type', $eventType))
+            ->when(trim((string) ($filters['search'] ?? '')), function (Builder $query, string $search) {
+                $query->where(fn (Builder $nested) => $nested
+                    ->where('entry_no', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%"));
+            })
             ->orderBy('posted_on')
             ->orderBy('id');
 
@@ -667,7 +674,7 @@ class AccountingController extends Controller
             });
 
             fclose($out);
-        }, 'general-ledger-'.$from.'-'.$to.'.csv', ['Content-Type' => 'text/csv; charset=UTF-8']);
+        }, 'general-ledger-'.($from ?: 'all').'-'.$to.'.csv', ['Content-Type' => 'text/csv; charset=UTF-8']);
     }
 
     public function trialBalance(Request $request)
@@ -890,11 +897,12 @@ class AccountingController extends Controller
 
     public function storeManualEntry(Request $request)
     {
-        abort_unless(auth()->user()?->hasPermission('chart_of_accounts.create'), 403);
-        if ($dupe = $this->duplicateSubmitGuard($request)) {
-            return $dupe;
-        }
+        return $this->runAccountingCommand($request, __FUNCTION__, fn () => $this->performManualEntry($request));
+    }
 
+    private function performManualEntry(Request $request)
+    {
+        abort_unless(auth()->user()?->hasPermission('chart_of_accounts.create'), 403);
         $data = $request->validate([
             'posted_on' => ['required', 'date'],
             'description' => ['required', 'string', 'max:255'],
@@ -1007,8 +1015,8 @@ class AccountingController extends Controller
             ['lines' => $postLines],
         );
 
-        return redirect()->route('admin.accounting.journal')
-            ->with('success', "تم تسجيل القيد رقم #{$entry->id} بنجاح.");
+        return ['response' => redirect()->route('admin.accounting.journal')
+            ->with('success', "تم تسجيل القيد رقم #{$entry->id} بنجاح.")];
     }
 
     public function createEntryAdjustment(JournalEntry $entry)
@@ -1347,6 +1355,11 @@ class AccountingController extends Controller
 
     public function storeOpeningBalances(Request $request)
     {
+        return $this->runAccountingCommand($request, __FUNCTION__, fn () => $this->performOpeningBalances($request));
+    }
+
+    private function performOpeningBalances(Request $request)
+    {
         abort_unless(auth()->user()?->hasPermission('chart_of_accounts.create'), 403);
 
         if (! BranchContext::current()) {
@@ -1372,10 +1385,6 @@ class AccountingController extends Controller
             'balances.*.currency_code' => ['required', 'string', 'regex:/^[A-Za-z]{3}$/'],
             'balances.*.exchange_rate' => ['nullable', 'numeric', 'min:0.000001', 'max:999999'],
         ]);
-
-        if ($dupe = $this->duplicateSubmitGuard($request)) {
-            return $dupe;
-        }
 
         $generalOpeningExists = $this->scopeToCurrentBranch(
             JournalEntry::query()
@@ -1449,11 +1458,16 @@ class AccountingController extends Controller
 
         ActivityLog::log('accounting.opening_balance_posted', 'ترحيل أرصدة افتتاحية');
 
-        return redirect()->route('admin.accounting.opening-balances')
-            ->with('success', 'تم ترحيل الأرصدة الافتتاحية كقيد محاسبي.');
+        return ['response' => redirect()->route('admin.accounting.opening-balances')
+            ->with('success', 'تم ترحيل الأرصدة الافتتاحية كقيد محاسبي.')];
     }
 
     public function storeCustomerOpeningDebt(Request $request)
+    {
+        return $this->runAccountingCommand($request, __FUNCTION__, fn () => $this->performCustomerOpeningDebt($request));
+    }
+
+    private function performCustomerOpeningDebt(Request $request)
     {
         abort_unless(auth()->user()?->hasPermission('chart_of_accounts.create'), 403);
 
@@ -1469,10 +1483,6 @@ class AccountingController extends Controller
             'due_date' => ['nullable', 'date', 'after_or_equal:posted_on'],
             'description' => ['nullable', 'string', 'max:500'],
         ]);
-
-        if ($dupe = $this->duplicateSubmitGuard($request)) {
-            return $dupe;
-        }
 
         try {
             $invoice = DB::transaction(function () use ($data, $branchId) {
@@ -1517,10 +1527,15 @@ class AccountingController extends Controller
 
         ActivityLog::log('accounting.customer_opening_debt', 'إضافة دين افتتاحي لزبون', $invoice);
 
-        return back()->with('success', 'تم إنشاء دين الزبون الافتتاحي وربطه بسجل التحصيلات.');
+        return ['response' => back()->with('success', 'تم إنشاء دين الزبون الافتتاحي وربطه بسجل التحصيلات.')];
     }
 
     public function storeCustomerAdvanceOpeningBalance(Request $request, CustomerAdvanceService $advances)
+    {
+        return $this->runAccountingCommand($request, __FUNCTION__, fn () => $this->performCustomerAdvanceOpeningBalance($request, $advances));
+    }
+
+    private function performCustomerAdvanceOpeningBalance(Request $request, CustomerAdvanceService $advances)
     {
         abort_unless(auth()->user()?->hasPermission('chart_of_accounts.create'), 403);
 
@@ -1536,10 +1551,6 @@ class AccountingController extends Controller
             'description' => ['nullable', 'string', 'max:500'],
         ]);
 
-        if ($dupe = $this->duplicateSubmitGuard($request)) {
-            return $dupe;
-        }
-
         try {
             $advances->openingBalance(
                 customer: Customer::findOrFail($data['customer_id']),
@@ -1553,10 +1564,15 @@ class AccountingController extends Controller
             return back()->withInput()->with('error', $e->getMessage());
         }
 
-        return back()->with('success', 'تم حفظ الرصيد المقدم الافتتاحي وربطه بدفتر الزبون وحساب الالتزامات.');
+        return ['response' => back()->with('success', 'تم حفظ الرصيد المقدم الافتتاحي وربطه بدفتر الزبون وحساب الالتزامات.')];
     }
 
     public function storeSupplierOpeningDebt(Request $request)
+    {
+        return $this->runAccountingCommand($request, __FUNCTION__, fn () => $this->performSupplierOpeningDebt($request));
+    }
+
+    private function performSupplierOpeningDebt(Request $request)
     {
         abort_unless(auth()->user()?->hasPermission('chart_of_accounts.create'), 403);
 
@@ -1575,10 +1591,6 @@ class AccountingController extends Controller
             'due_date' => ['nullable', 'date', 'after_or_equal:posted_on'],
             'description' => ['nullable', 'string', 'max:500'],
         ]);
-
-        if ($dupe = $this->duplicateSubmitGuard($request)) {
-            return $dupe;
-        }
 
         try {
             $invoice = DB::transaction(function () use ($data, $branchId) {
@@ -1623,10 +1635,10 @@ class AccountingController extends Controller
 
         ActivityLog::log('accounting.supplier_opening_debt', 'إضافة رصيد افتتاحي لمورد', $invoice);
 
-        return back()->with('success', 'تم إنشاء رصيد المورد الافتتاحي وربطه بفاتورة قابلة للسداد.');
+        return ['response' => back()->with('success', 'تم إنشاء رصيد المورد الافتتاحي وربطه بفاتورة قابلة للسداد.')];
     }
 
-    public function periods()
+    public function periods(Request $request)
     {
         abort_unless(auth()->user()?->hasPermission('chart_of_accounts.update'), 403);
 
@@ -1637,6 +1649,7 @@ class AccountingController extends Controller
             ->orderByDesc('starts_on')
             ->get();
         $periodChecklists = $periods->getCollection()
+            ->filter(fn (AccountingPeriod $period) => $period->id === $request->integer('check_period_id'))
             ->mapWithKeys(fn (AccountingPeriod $period) => [
                 $period->id => $this->closingChecklist(
                     $period->starts_on->toDateString(),
@@ -1648,6 +1661,7 @@ class AccountingController extends Controller
         return AdminShell::render('Admin/Accounting/Periods', [
             'periods' => [
                 'data' => $periods->getCollection()->map(function (AccountingPeriod $period) use ($periodChecklists) {
+                    $checksLoaded = $periodChecklists->has($period->id);
                     $checks = collect($periodChecklists->get($period->id, []));
 
                     return [
@@ -1662,7 +1676,9 @@ class AccountingController extends Controller
                         'fiscalYearId' => $period->fiscal_year_id,
                         'fiscalYearName' => $period->fiscalYear?->name,
                         'checks' => $checks->values(),
-                        'issueCount' => $checks->where('ok', false)->count(),
+                        'checksLoaded' => $checksLoaded,
+                        'checkUrl' => route('admin.accounting.periods', array_merge(request()->query(), ['check_period_id' => $period->id])),
+                        'issueCount' => $checksLoaded ? $checks->where('ok', false)->count() : null,
                         'updateUrl' => route('admin.accounting.periods.update', $period),
                         'destroyUrl' => route('admin.accounting.periods.destroy', $period),
                         'closeUrl' => route('admin.accounting.periods.close', $period),
@@ -1894,7 +1910,7 @@ class AccountingController extends Controller
             : 'تمت إعادة فتح الفترة لاستقبال القيود من جديد.');
     }
 
-    public function fiscalYears()
+    public function fiscalYears(Request $request)
     {
         abort_unless(auth()->user()?->hasPermission('chart_of_accounts.update'), 403);
 
@@ -1902,6 +1918,7 @@ class AccountingController extends Controller
             ->orderByDesc('starts_on')
             ->paginate(20);
         $yearChecklists = $years->getCollection()
+            ->filter(fn (FiscalYear $year) => $year->id === $request->integer('check_year_id'))
             ->mapWithKeys(fn (FiscalYear $year) => [
                 $year->id => $this->closingChecklist(
                     $year->starts_on->toDateString(),
@@ -1932,6 +1949,8 @@ class AccountingController extends Controller
                         ])->values(),
                         'closedPeriods' => $periods->filter(fn (AccountingPeriod $period) => $period->isClosed())->count(),
                         'checks' => collect($yearChecklists->get($year->id, []))->values(),
+                        'checksLoaded' => $yearChecklists->has($year->id),
+                        'checkUrl' => route('admin.accounting.fiscal-years', array_merge(request()->query(), ['check_year_id' => $year->id])),
                         'updateUrl' => route('admin.accounting.fiscal-years.update', $year),
                         'destroyUrl' => route('admin.accounting.fiscal-years.destroy', $year),
                         'closeUrl' => route('admin.accounting.fiscal-years.close', $year),
@@ -2713,6 +2732,11 @@ class AccountingController extends Controller
 
     public function storeWalletTransfer(Request $request)
     {
+        return $this->runAccountingCommand($request, __FUNCTION__, fn () => $this->performWalletTransfer($request));
+    }
+
+    private function performWalletTransfer(Request $request)
+    {
         abort_unless(auth()->user()?->hasPermission('chart_of_accounts.update'), 403);
 
         $data = $request->validate([
@@ -2722,10 +2746,6 @@ class AccountingController extends Controller
             'amount' => ['required', 'numeric', 'gt:0'],
             'notes' => ['nullable', 'string', 'max:1000'],
         ]);
-
-        if ($dupe = $this->duplicateSubmitGuard($request)) {
-            return $dupe;
-        }
 
         try {
             $entry = app(AccountingService::class)->recordWalletTransfer(
@@ -2742,14 +2762,18 @@ class AccountingController extends Controller
 
         ActivityLog::log('accounting.wallet_transferred', 'تحويل محفظة إلى البنك', $entry);
 
-        return redirect()->route('admin.accounting.settlements', ['as_of' => $data['posted_on']])
-            ->with('success', 'تم ترحيل المحفظة إلى البنك وتحديث الرصيدين.');
+        return ['response' => redirect()->route('admin.accounting.settlements', ['as_of' => $data['posted_on']])
+            ->with('success', 'تم ترحيل المحفظة إلى البنك وتحديث الرصيدين.')];
     }
 
-    private function reversedEntryIds(): array
+    private function reversedEntryIds(array $entryIds): array
     {
+        if ($entryIds === []) {
+            return [];
+        }
+
         return $this->scopeToCurrentBranch(JournalEntry::query())
-            ->whereNotNull('metadata')
+            ->whereIn('metadata->reverses_entry_id', $entryIds)
             ->get(['metadata'])
             ->map(fn (JournalEntry $entry) => (int) ($entry->metadata['reverses_entry_id'] ?? 0))
             ->filter()
@@ -2760,7 +2784,8 @@ class AccountingController extends Controller
 
     private function entryIsReversed(JournalEntry $entry): bool
     {
-        return in_array((int) $entry->id, $this->reversedEntryIds(), true);
+        return $this->scopeToCurrentBranch(JournalEntry::query())
+            ->where('metadata->reverses_entry_id', (int) $entry->id)->exists();
     }
 
     private function assertEntryInCurrentBranch(JournalEntry $entry): void
@@ -3008,22 +3033,65 @@ class AccountingController extends Controller
     }
 
     /**
-     * One-shot idempotency guard for source-less financial posts (manual journal,
-     * opening balances). The form carries a fresh `_idem` UUID; the first submit
-     * claims it atomically, a duplicate (F5 / back-then-resubmit) finds it taken
-     * and is bounced with a clear message instead of double-posting.
+     * The unique receipt and all financial writes share one transaction. A
+     * failed validation/command rolls both back; a committed replay survives
+     * cache expiry and cannot post a second entry, even after a lost response.
      */
-    private function duplicateSubmitGuard(Request $request)
+    private function runAccountingCommand(Request $request, string $operation, callable $command)
     {
-        $token = (string) $request->input('_idem', '');
+        abort_unless(auth()->user()?->hasPermission($operation === 'storeWalletTransfer'
+            ? 'chart_of_accounts.update' : 'chart_of_accounts.create'), 403);
+        $request->validate(['_idem' => ['nullable', 'string', 'max:128']]);
+        $token = trim((string) $request->input('_idem', ''));
         if ($token === '') {
-            return null;   // stale cached form without the field — let it through
-        }
-        if (! Cache::add('idem:acct:'.$token, true, now()->addMinutes(10))) {
-            return back()->withInput()->with('error', 'تم ترحيل هذا القيد مسبقاً — مُنع إرسال مكرر.');
+            $result = $command();
+
+            return is_array($result) ? $result['response'] : $result;
         }
 
-        return null;
+        $key = hash('sha256', implode('|', [auth()->id(), BranchContext::current(), $operation, $token]));
+        $payload = $request->except(['_idem', '_token']);
+        $sort = function (array &$values) use (&$sort): void {
+            ksort($values);
+            foreach ($values as &$value) {
+                if (is_array($value)) {
+                    $sort($value);
+                }
+            }
+        };
+        $sort($payload);
+        $payloadHash = hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR));
+
+        try {
+            return DB::transaction(function () use ($key, $payloadHash, $command) {
+                $claimed = DB::table('accounting_command_receipts')->insertOrIgnore([
+                    'token_hash' => $key,
+                    'payload_hash' => $payloadHash,
+                    'created_at' => now(),
+                ]);
+                if (! $claimed) {
+                    $receipt = DB::table('accounting_command_receipts')->where('token_hash', $key)->first();
+                    if (! hash_equals($receipt->payload_hash, $payloadHash)) {
+                        return back()->withInput()->with('error', 'حُفظت عملية أخرى بهذا الطلب. افتح نموذجاً جديداً لتسجيل حركة جديدة.');
+                    }
+
+                    return redirect($receipt->redirect_url)->with('info', 'هذه العملية محفوظة مسبقاً؛ لم تُسجل مرة ثانية.');
+                }
+
+                $result = $command();
+                if (! is_array($result)) {
+                    throw new AccountingCommandRejected($result);
+                }
+                $response = $result['response'];
+                DB::table('accounting_command_receipts')->where('token_hash', $key)->update([
+                    'redirect_url' => $response->getTargetUrl(),
+                ]);
+
+                return $response;
+            }, 3);
+        } catch (AccountingCommandRejected $exception) {
+            return $exception->response;
+        }
     }
 
     private function closingChecklist(string $from, string $to, ?int $branchId): array

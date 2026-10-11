@@ -92,9 +92,9 @@ const latestOrder = computed(() => props.orders[0] ?? null);
     flex: 0 0 auto;
     align-items: center;
     overflow: hidden;
-    border: 1px solid rgba(15, 71, 49, .18);
-    border-radius: 999px;
-    background: #fff;
+    border: 1px solid color-mix(in srgb, var(--brand) 18%, transparent);
+    border-radius: 12px;
+    background: var(--surface);
 }
 .covers-control > span {
     display: inline-flex;
@@ -102,9 +102,9 @@ const latestOrder = computed(() => props.orders[0] ?? null);
     justify-content: center;
     gap: .3rem;
     min-width: 54px;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 800;
-    color: #1f2937;
+    color: var(--ink);
 }
 .covers-control > span i { color: var(--wp-primary); }
 .covers-control button {
@@ -114,11 +114,11 @@ const latestOrder = computed(() => props.orders[0] ?? null);
     width: 44px;
     height: 44px;
     border: 0;
-    color: #374151;
-    background: #f8fafc;
+    color: var(--ink);
+    background: var(--surface);
     cursor: pointer;
 }
-.covers-control button:hover:not(:disabled) { background: #eef2f7; }
+.covers-control button:hover:not(:disabled) { background: var(--canvas); }
 .covers-control button:disabled { opacity: .4; cursor: default; }
 .order-pill,
 .customer-pill,
@@ -130,15 +130,15 @@ const latestOrder = computed(() => props.orders[0] ?? null);
     min-height: 44px;
     box-sizing: border-box;
     padding: .3rem .7rem;
-    border-radius: 999px;
-    font-size: 12.5px;
+    border-radius: 8px;
+    font-size: 14px;
     font-weight: 700;
     white-space: nowrap;
 }
 .order-pill {
     border: 1px solid transparent;
-    color: #475569;
-    background: #f1f5f9;
+    color: var(--ink);
+    background: var(--canvas);
     font-family: inherit;
     text-decoration: none;
 }
@@ -146,17 +146,20 @@ const latestOrder = computed(() => props.orders[0] ?? null);
 .session-summary { gap: .4rem; cursor: pointer; }
 .session-summary:hover { border-color: currentColor; }
 .session-summary small { padding-inline-start: .4rem; border-inline-start: 1px solid currentColor; opacity: .75; }
-.session-summary__arrow { margin-inline-start: .1rem; font-size: .7rem; }
-.order-pill.is-pending { color: #b45309; background: #fef3c7; }
+.session-summary__arrow { margin-inline-start: .1rem; font-size: .875rem; }
+.order-pill.is-pending { color: #b45309; background: #F8F0E2; }
 .order-pill.is-approved,
-.order-pill.is-preparing { color: #1d4ed8; background: #dbeafe; }
-.order-pill.is-ready { color: #047857; background: #d1fae5; }
-.order-pill.is-delivered { color: #475569; background: #f1f5f9; }
-.customer-pill { color: #475569; background: #f1f5f9; }
-.customer-pill.is-action { border: 1px solid #e2e8f0; font-family: inherit; cursor: pointer; }
+.order-pill.is-preparing { color: #315B6B; background: var(--canvas); }
+.order-pill.is-ready { color: var(--ink); background: #EAF0E9; }
+.order-pill.is-delivered { color: var(--ink); background: var(--canvas); }
+.customer-pill { color: var(--ink); background: var(--canvas); }
+.customer-pill.is-action { border: 1px solid var(--line); font-family: inherit; cursor: pointer; }
 .customer-pill.is-action:hover { border-color: var(--wp-primary); color: var(--wp-primary); }
-.debt-pill { color: #b91c1c; background: #fef2f2; }
+.debt-pill { color: #b91c1c; background: var(--canvas); }
 @media (max-width: 560px) {
     .session-summary small { display: none; }
 }
+
+/* Task-specific component layout. */
+.session-bar{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:12px 0;border-block:1px solid var(--line);border-radius:0;background:transparent}.covers-control{border-radius:6px;background:var(--surface);border:1px solid var(--line)}.covers-control button{width:42px;height:42px}.order-pill,.customer-pill,.debt-pill{min-height:44px;border-radius:6px;font-size:14px;padding:8px 12px;background:var(--surface);border:1px solid var(--line)}.session-summary{margin-inline-start:auto}.session-summary__arrow{margin-inline-start:8px}.customer-pill{color:var(--ink)}@media(max-width:600px){.session-summary{margin-inline-start:0;flex:1}.order-pill{white-space:normal;text-align:start}}
 </style>

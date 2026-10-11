@@ -32,6 +32,8 @@ class InternetCardsSeeder extends Seeder
 {
     public function run(): void
     {
+        // Optional demo add-on only; not part of the Dar Al Sarw menu.
+        DemoDataset::assertDemo();
         // Default ladder. Slight discount for longer durations so customers
         // see an incentive to upgrade. Owner can override per-branch later.
         $cards = [
@@ -41,18 +43,18 @@ class InternetCardsSeeder extends Seeder
         ];
 
         foreach (Branch::all() as $branch) {
-            BranchContext::forBranch($branch->id, function () use ($branch, $cards) {
+            BranchContext::forBranch($branch->id, function () use ($cards) {
                 $category = Category::updateOrCreate(
                     ['slug' => 'internet-cards'],
                     [
-                        'name'           => 'بطاقات نت',
-                        'description'    => 'بطاقات استخدام واي فاي بأوقات مختلفة',
-                        'icon'           => 'bi-wifi',
-                        'color'          => '#0ea5e9',
+                        'name' => 'بطاقات نت',
+                        'description' => 'بطاقات استخدام واي فاي بأوقات مختلفة',
+                        'icon' => 'bi-wifi',
+                        'color' => '#0ea5e9',
                         // Pushed to the end so food + drinks stay on top of
                         // the customer menu — Wi-Fi is an add-on, not a draw.
-                        'display_order'  => 100,
-                        'active'         => true,
+                        'display_order' => 100,
+                        'active' => true,
                     ]
                 );
 
@@ -60,17 +62,17 @@ class InternetCardsSeeder extends Seeder
                     MenuItem::updateOrCreate(
                         ['slug' => 'net-card-'.$c['hours'].'h'],
                         [
-                            'category_id'        => $category->id,
-                            'station_id'         => null,    // sold at the till, not cooked
-                            'sku'                => $c['sku'],
-                            'name'               => $c['name'],
-                            'description'        => $c['hours'].' ساعة استخدام واي فاي بسرعة عالية',
-                            'price'              => $c['price'],
-                            'cost'               => 0,
-                            'prep_time_minutes'  => 0,
-                            'is_available'       => true,
-                            'is_featured'        => false,
-                            'display_order'      => $idx + 1,
+                            'category_id' => $category->id,
+                            'station_id' => null,    // sold at the till, not cooked
+                            'sku' => $c['sku'],
+                            'name' => $c['name'],
+                            'description' => $c['hours'].' ساعة استخدام واي فاي بسرعة عالية',
+                            'price' => $c['price'],
+                            'cost' => 0,
+                            'prep_time_minutes' => 0,
+                            'is_available' => true,
+                            'is_featured' => false,
+                            'display_order' => $idx + 1,
                         ]
                     );
                 }

@@ -1,4 +1,5 @@
 <script setup>
+import ManagementPage from '../../../Components/Inventory/ManagementPage.vue';
 /**
  * المكونات والمخزون — the inventory catalogue.
  *
@@ -106,6 +107,7 @@ const rowTone = (key) => (key === 'out' ? 'table-danger' : (key === 'low' ? 'tab
 </script>
 
 <template>
+    <ManagementPage mode="records">
     <Head title="المكونات" />
 
     <PageHeader title="المكونات والمخزون" icon="bi-basket2-fill"
@@ -130,12 +132,12 @@ const rowTone = (key) => (key === 'out' ? 'table-danger' : (key === 'low' ? 'tab
             <form class="row g-2" @submit.prevent="visit">
                 <div class="col-md-4">
                     <input v-model="form.search" class="form-control"
-                           placeholder="🔍 ابحث باسم المكون" @input="onType">
+                           aria-label="البحث باسم المكون" placeholder="اسم المكون" @input="onType">
                 </div>
                 <div class="col-md-4">
                     <select v-model="form.storage_location_id" class="form-select"
                             title="فلترة المكونات حسب موقع التخزين" @change="visit">
-                        <option value="">📍 كل المواقع</option>
+                        <option value="">كل المواقع</option>
                         <option v-for="loc in filterLocations" :key="loc.id" :value="String(loc.id)">
                             {{ loc.label }}
                         </option>
@@ -168,7 +170,7 @@ const rowTone = (key) => (key === 'out' ? 'table-danger' : (key === 'low' ? 'tab
                     <template v-if="branchName">في فرع «{{ branchName }}»</template>
                     <template v-else>عبر كل الفروع</template>
                     <template v-if="statusFilterLabel"> — مفلترة حسب «{{ statusFilterLabel }}»</template>.
-                    هذا هو رأس المال المحبوس في المخزون.
+
                 </small>
             </div>
             <div class="ing-capital__value">{{ money(totalInventoryValue) }}</div>
@@ -281,6 +283,7 @@ const rowTone = (key) => (key === 'out' ? 'table-danger' : (key === 'low' ? 'tab
 
     <AdjustStockSheet :open="Boolean(adjusting)" :ingredient="adjusting" :units="adjustUnits"
                       :today="today" @close="adjusting = null" />
+    </ManagementPage>
 </template>
 
 <style scoped>
@@ -289,9 +292,9 @@ const rowTone = (key) => (key === 'out' ? 'table-danger' : (key === 'low' ? 'tab
     margin: .35rem auto 0;
     border: 0;
     background: none;
-    color: #94a3b8;
+    color: var(--muted, #626B6D);
     font: inherit;
-    font-size: .8rem;
+    font-size: .875rem;
     cursor: pointer;
 }
 .ing-help { cursor: help; }
@@ -304,21 +307,21 @@ const rowTone = (key) => (key === 'out' ? 'table-danger' : (key === 'low' ? 'tab
     gap: .5rem;
     padding: .9rem 1rem;
     margin-bottom: 1rem;
-    background: linear-gradient(135deg, rgba(15, 71, 49, .06), rgba(15, 71, 49, .02));
-    border: 1px solid rgba(15, 71, 49, .12);
+    background: var(--surface, #FFFDFA);
+    border: 1px solid color-mix(in srgb, var(--brand, #A3422B) 12%, transparent);
     border-radius: .5rem;
 }
 .ing-capital small {
     display: block;
     margin-top: .25rem;
-    font-size: 12px;
+    font-size: 14px;
     line-height: 1.4;
-    color: #6b7280;
+    color: var(--muted, #626B6D);
 }
 .ing-capital__value {
     font-size: 1.5rem;
     font-weight: 800;
-    color: rgb(var(--primary-rgb));
+    color: var(--brand, #A3422B);
     font-variant-numeric: tabular-nums;
 }
 
@@ -329,22 +332,22 @@ const rowTone = (key) => (key === 'out' ? 'table-danger' : (key === 'low' ? 'tab
     align-items: center;
     gap: 4px;
     padding: 2px 8px;
-    background: #f0fdf4;
-    border: 1px solid #bbf7d0;
-    color: #14532d;
-    border-radius: 99px;
-    font-size: .72rem;
+    background: var(--canvas, #F7F3ED);
+    border: 1px solid var(--brand-soft, #F3E3D8);
+    color: var(--ink, #25343A);
+    border-radius: 12px;
+    font-size: .875rem;
     font-weight: 600;
     line-height: 1.5;
     white-space: nowrap;
 }
-.loc-chip i { font-size: .7rem; color: #16a34a; }
+.loc-chip i { font-size: .875rem; color: var(--brand, #A3422B); }
 .loc-chip__name { font-weight: 700; }
 .loc-chip__qty {
-    background: #fff;
-    border: 1px solid #bbf7d0;
+    background: var(--surface, #FFFDFA);
+    border: 1px solid var(--brand-soft, #F3E3D8);
     padding: 0 6px;
-    border-radius: 99px;
+    border-radius: 12px;
     font-variant-numeric: tabular-nums;
 }
 
@@ -362,5 +365,8 @@ const rowTone = (key) => (key === 'out' ? 'table-danger' : (key === 'low' ? 'tab
     line-height: 1;
 }
 .ing-actions .ing-act-btn i { font-size: .95rem; }
-.fs-11 { font-size: 11px; }
+.fs-11 { font-size: 14px; }
+
+/* Dar Al Sarw management layout */
+.ing-capital { margin: 0 0 18px; padding: 18px 20px; border: 1px solid var(--line); border-inline-start: 4px solid var(--brand); border-radius: 10px; background: var(--canvas); } .ing-capital__value { color: var(--ink); font-size: 1.65rem; font-weight: 800; } .ing-capital small { display: block; max-width: 68ch; margin-top: 5px; } .ing-actions { gap: 6px; flex-wrap: nowrap; } .loc-chip { padding: 5px 8px; border-radius: 6px; background: var(--surface-muted); color: var(--ink); }
 </style>

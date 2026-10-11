@@ -12,8 +12,8 @@ use Illuminate\Support\Facades\Storage;
  *   - When a client uploads a custom logo from /admin/settings →
  *     it instantly shows in the admin header, sidebar, login page,
  *     customer topbar, browser tab, error pages, etc.
- *   - When NO custom logo is uploaded yet → public/default_logo.png
- *     is used as the standard restaurant placeholder.
+ *   - When NO custom logo is uploaded yet, the bundled Dar Al Sarw mark
+ *     provides a small, self-hosted default.
  *
  * The monogram remains a last-resort inline data URI if the default file is
  * missing, so the UI never shows a broken image.
@@ -44,8 +44,8 @@ class Brand
             return $url;
         }
 
-        if (file_exists(public_path('default_logo.png'))) {
-            return asset('default_logo.png').'?v='.filemtime(public_path('default_logo.png'));
+        if (file_exists(public_path('brand/dar-al-sarw-mark.svg'))) {
+            return asset('brand/dar-al-sarw-mark.svg');
         }
 
         return static::defaultMonogramDataUri();
@@ -58,7 +58,7 @@ class Brand
             return $url;
         }
 
-        return static::defaultMonogramDataUri(square: true);
+        return asset('brand/dar-al-sarw-mark.svg');
     }
 
     /** True if a custom logo has been uploaded (for preview UI). */
@@ -102,8 +102,8 @@ class Brand
 
     /**
      * Inline-SVG data URI of a clean monogram. Pulls the first letter of
-     * the configured site name and renders it on a forest-green disc with
-     * a gold border — matches the rest of the brand palette without
+     * the configured site name and renders it on a terracotta tile with
+     * a warm border — matches the rest of the brand palette without
      * hard-coding any specific restaurant name.
      *
      * `square` flips the aspect to fit favicon containers (browser tabs).
@@ -120,21 +120,21 @@ class Brand
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {$size} {$size}">
   <defs>
     <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#2d6e4a"/>
-      <stop offset="100%" stop-color="#1f4733"/>
+      <stop offset="0%" stop-color="#a3422b"/>
+      <stop offset="100%" stop-color="#823321"/>
     </linearGradient>
   </defs>
-  <circle cx="50%" cy="50%" r="46%" fill="url(#g)"/>
-  <circle cx="50%" cy="50%" r="44%" fill="none" stroke="#d4a550" stroke-width="2"/>
+  <rect x="4%" y="4%" width="92%" height="92%" rx="18%" fill="url(#g)"/>
   <text x="50%" y="50%"
         text-anchor="middle"
         dominant-baseline="central"
         font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Tahoma, sans-serif"
         font-weight="800"
         font-size="56%"
-        fill="#f1e4c2">{$letterSafe}</text>
+        fill="#fffdfa">{$letterSafe}</text>
 </svg>
 SVG;
+
         return 'data:image/svg+xml;utf8,'.rawurlencode($svg);
     }
 
@@ -152,6 +152,7 @@ SVG;
 <path d="M20 90 C20 68, 80 68, 80 90 Z" fill="#a8a29e"/>
 </svg>
 SVG;
+
         return 'data:image/svg+xml;utf8,'.rawurlencode($svg);
     }
 }

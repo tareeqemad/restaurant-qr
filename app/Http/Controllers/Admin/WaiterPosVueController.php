@@ -7,6 +7,7 @@ use App\Enums\OrderStatus;
 use App\Enums\UserRole;
 use App\Events\TableStatusChanged;
 use App\Exceptions\DuplicatePendingTransferException;
+use App\Exceptions\WaiterSubmissionRejected;
 use App\Helpers\SafeBroadcast;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
@@ -31,6 +32,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 /**
@@ -166,6 +168,7 @@ class WaiterPosVueController extends Controller
                 'lastRound' => $this->lastRound($orders),
                 'reviewOrder' => $reviewOrder,
                 'submitToken' => (string) Str::uuid(),
+                'submissionScope' => implode('.', [$session->branch_id, auth()->id(), $table->id, $session->id]),
                 // §10 (sol request, 2026-08-11): the client renders every price
                 // itself, so it needs the display currency instead of assuming
                 // the shekel. Mirrors Money::format exactly — the rendered
@@ -424,182 +427,239 @@ class WaiterPosVueController extends Controller
     }
 
     /**
-     * §7 — the one write: atomic token, authoritative whole-cart stock gate
-     * that RELEASES the token on refusal, per-line group enforcement,
-     * server-side pricing via OrderService, direct fire behind
-     * `waiter_direct_fire` + OrderPolicy, and the $committed rule — once
-     * createFromCart commits, the token is never released again.
+     * An order and its durable receipt commit together. Refused attempts
+     * roll back; retries of a successful request replay its saved response.
+     * Stock, modifier, pricing and direct-fire rules remain authoritative.
      */
     public function submit(Request $request, Table $table)
     {
         $this->authorize('create', Order::class);
 
-        $data = $request->validate([
-            'token' => ['required', 'string', 'max:64'],
-            'notes' => ['nullable', 'string', 'max:1000'],
-            'staff_employee_id' => ['nullable', 'integer', 'exists:employees,id'],
-            // Backward-compatible API input for older cached waiter clients.
-            'staff_user_id' => ['nullable', 'integer', 'exists:users,id'],
-            'cart' => ['required', 'array', 'min:1'],
-            'cart.*.menu_item_id' => ['required', 'integer'],
-            'cart.*.quantity' => ['required', 'integer', 'min:1', 'max:99'],
-            'cart.*.modifier_ids' => ['array'],
-            'cart.*.excluded_ingredient_ids' => ['array'],
-            'cart.*.excluded_ingredient_ids.*' => ['integer', 'distinct'],
-            'cart.*.line_notes' => ['nullable', 'string', 'max:500'],
-        ]);
-
-        $session = $table->activeSession;
-        if (! $session || $session->status !== 'active') {
-            return $this->refuse('انتهت جلسة هذه الطاولة — ارجع للصالة وافتحها من جديد.');
-        }
-
-        // Staff-meal eligibility is checked BEFORE the token is consumed —
-        // a bad pick must leave an honest retry possible (classic rule:
-        // active allowance + this branch).
-        $staff = null;
-        if (! empty($data['staff_employee_id'])) {
-            $staff = Employee::find($data['staff_employee_id']);
-        } elseif (! empty($data['staff_user_id'])) {
-            $legacy = User::find($data['staff_user_id']);
-            $staff = $legacy ? Employee::fromUser($legacy) : null;
-        }
-        if ($staff) {
-            $eligible = $staff
-                && $staff->monthly_meal_allowance !== null
-                && (float) $staff->monthly_meal_allowance > 0
-                && $staff->branches()->where('branches.id', $session->branch_id)->exists();
-            if (! $eligible) {
-                return $this->refuse('الموظف المختار غير مفعّل لبدل الوجبات في هذا الفرع.');
-            }
-        }
-
-        $tokenKey = 'waiter_pos.submit.'.$data['token'];
-        if (! Cache::add($tokenKey, 1, 900)) {
-            return $this->refuse('الطلب انبعت من قبل — ما انبعت مرتين.');
-        }
-
-        return BranchContext::forBranch($session->branch_id, function () use ($data, $session, $tokenKey, $staff) {
-            $cart = collect($data['cart'])->map(fn ($line) => [
-                'menu_item_id' => (int) $line['menu_item_id'],
-                'quantity' => (float) $line['quantity'],
-                'modifier_ids' => array_map('intval', $line['modifier_ids'] ?? []),
-                'excluded_ingredient_ids' => array_map('intval', $line['excluded_ingredient_ids'] ?? []),
-                'notes' => isset($line['line_notes']) ? (trim(mb_substr((string) $line['line_notes'], 0, 500)) ?: null) : null,
+        try {
+            $data = $request->validate([
+                'token' => ['required', 'string', 'max:64'],
+                'session_id' => ['sometimes', 'integer'],
+                'notes' => ['nullable', 'string', 'max:1000'],
+                'staff_employee_id' => ['nullable', 'integer'],
+                // Backward-compatible API input for older cached waiter clients.
+                'staff_user_id' => ['nullable', 'integer'],
+                'cart' => ['required', 'array', 'min:1'],
+                'cart.*.menu_item_id' => ['required', 'integer'],
+                'cart.*.quantity' => ['required', 'integer', 'min:1', 'max:99'],
+                'cart.*.modifier_ids' => ['array'],
+                'cart.*.excluded_ingredient_ids' => ['array'],
+                'cart.*.excluded_ingredient_ids.*' => ['integer', 'distinct'],
+                'cart.*.line_notes' => ['nullable', 'string', 'max:500'],
             ]);
+        } catch (ValidationException $exception) {
+            return response()->json(['ok' => false, 'submission_state' => 'rejected',
+                'message' => $exception->getMessage(), 'errors' => $exception->errors()], 422);
+        }
 
-            // Per-line business validation: sellable item + its REAL modifier
-            // ids only + group min/max — the client checks these for politeness,
-            // the server checks them for truth.
-            if ($problem = $this->firstLineProblem($cart)) {
-                Cache::forget($tokenKey);
+        $session = isset($data['session_id'])
+            ? $table->sessions()->whereKey($data['session_id'])->firstOrFail()
+            : $table->activeSession;
+        if (! $session) {
+            return response()->json(['ok' => false, 'submission_state' => 'rejected',
+                'message' => 'انتهت جلسة هذه الطاولة — ارجع للصالة وافتحها من جديد.'], 422);
+        }
 
-                return $this->refuse($problem);
+        return $this->runSubmission($data, $table, $session, function () use ($data, $session) {
+            if ($session->status !== 'active') {
+                return $this->refuse('انتهت جلسة هذه الطاولة — ارجع للصالة وافتحها من جديد.');
+            }
+            // A rejected staff pick rolls back the claim so the cart can be edited.
+            $staff = null;
+            if (! empty($data['staff_employee_id'])) {
+                $staff = Employee::find($data['staff_employee_id']);
+            } elseif (! empty($data['staff_user_id'])) {
+                $legacy = User::find($data['staff_user_id']);
+                $staff = $legacy ? Employee::fromUser($legacy) : null;
+            }
+            if ((! empty($data['staff_employee_id']) || ! empty($data['staff_user_id'])) && ! $staff) {
+                return $this->refuse('الموظف المختار لم يعد متاحاً. اختر موظفاً آخر.');
+            }
+            if ($staff) {
+                $eligible = $staff
+                    && $staff->monthly_meal_allowance !== null
+                    && (float) $staff->monthly_meal_allowance > 0
+                    && $staff->branches()->where('branches.id', $session->branch_id)->exists();
+                if (! $eligible) {
+                    return $this->refuse('الموظف المختار غير مفعّل لبدل الوجبات في هذا الفرع.');
+                }
             }
 
-            // Authoritative whole-cart stock gate — createFromCart never
-            // re-checks stock, so this is the last gate before commit.
-            $issues = app(InventoryService::class)->checkStockForOrderPreview($cart->all());
-            if (! empty($issues)) {
-                Cache::forget($tokenKey);
-                $short = collect($issues)
-                    ->map(fn ($i) => $i['ingredient'].' (متاح '.rtrim(rtrim(number_format($i['available'], 2), '0'), '.').')')
-                    ->take(3)->join('، ');
+            return BranchContext::forBranch($session->branch_id, function () use ($data, $session, $staff) {
+                $cart = collect($data['cart'])->map(fn ($line) => [
+                    'menu_item_id' => (int) $line['menu_item_id'],
+                    'quantity' => (float) $line['quantity'],
+                    'modifier_ids' => array_map('intval', $line['modifier_ids'] ?? []),
+                    'excluded_ingredient_ids' => array_map('intval', $line['excluded_ingredient_ids'] ?? []),
+                    'notes' => isset($line['line_notes']) ? (trim(mb_substr((string) $line['line_notes'], 0, 500)) ?: null) : null,
+                ]);
 
-                return $this->refuse("نفد المخزون من: {$short}.");
-            }
-
-            $committed = false;
-
-            try {
-                $order = app(OrderService::class)->createFromCart(
-                    session: $session,
-                    cart: $cart->all(),
-                    createdByUserId: auth()->id(),
-                    customerNotes: trim((string) ($data['notes'] ?? '')) ?: null,
-                );
-                $committed = true;
-
-                // Staff meal (classic order of operations: stamp + charge
-                // BEFORE the fire). Runs inside the committed zone — if the
-                // charge hits the monthly ceiling, the outer catch returns
-                // ok:true + warning («راجعه، لا تعد الإرسال») instead of an
-                // error that used to breed twin orders.
-                $staffMealWarning = null;
-                if ($staff) {
-                    $order->update([
-                        'staff_consumer_employee_id' => $staff->id,
-                        'staff_consumer_user_id' => $staff->user_id,
-                    ]);
-                    $mealCheck = app(StaffMealService::class)
-                        ->previewLimitCheck($staff, (float) $order->fresh()->total);
-                    $actorCanOverride = auth()->user()->isManagementLevel()
-                        || auth()->user()->hasPermission('staff_meals.waive');
-
-                    if ($mealCheck['status'] === 'blocked'
-                        || ($mealCheck['status'] === 'requires_approval' && ! $actorCanOverride)) {
-                        app(OrderService::class)->cancel(
-                            $order->fresh(),
-                            auth()->id(),
-                            'أُلغي تلقائياً قبل الإرسال: تجاوز سياسة بدل وجبات الموظفين.',
-                        );
-
-                        return $this->refuse($mealCheck['reason'] ?? 'تحتاج وجبة الموظف إلى موافقة مدير قبل إرسالها.');
-                    }
-
-                    if ($mealCheck['status'] === 'warn') {
-                        $staffMealWarning = $mealCheck['reason'];
-                    }
+                // Per-line business validation: sellable item + its REAL modifier
+                // ids only + group min/max — the client checks these for politeness,
+                // the server checks them for truth.
+                if ($problem = $this->firstLineProblem($cart)) {
+                    return $this->refuse($problem);
                 }
 
-                // ONE-STEP FIRE — same rule as the live screen: staff orders
-                // go straight to the kitchen unless the operator turned the
-                // ceremony back on.
-                $fired = false;
-                $directFire = Setting::get('waiter_direct_fire', true)
-                    || Setting::get('auto_approve', config('restaurant.order.auto_approve', false));
-                if ($directFire && auth()->user()->can('approve', $order)) {
-                    try {
-                        app(OrderService::class)->approve($order->fresh(), auth()->id());
-                        $fired = true;
-                    } catch (\Throwable $e) {
-                        // The order EXISTS — degrade to a warning, never to an
-                        // error that reads as "nothing was sent".
-                        return response()->json([
-                            'ok' => true,
-                            'order_number' => $order->number,
-                            'fired' => false,
-                            'warning' => 'أُنشئ الطلب لكن تعذّر إرساله للمطبخ تلقائياً: '.$e->getMessage(),
+                // Authoritative whole-cart stock gate — createFromCart never
+                // re-checks stock, so this is the last gate before commit.
+                $issues = app(InventoryService::class)->checkStockForOrderPreview($cart->all());
+                if (! empty($issues)) {
+                    $short = collect($issues)
+                        ->map(fn ($i) => $i['ingredient'].' (متاح '.rtrim(rtrim(number_format($i['available'], 2), '0'), '.').')')
+                        ->take(3)->join('، ');
+
+                    return $this->refuse("نفد المخزون من: {$short}.");
+                }
+
+                $orderCreated = false;
+
+                try {
+                    $order = app(OrderService::class)->createFromCart(
+                        session: $session,
+                        cart: $cart->all(),
+                        createdByUserId: auth()->id(),
+                        customerNotes: trim((string) ($data['notes'] ?? '')) ?: null,
+                    );
+                    $orderCreated = true;
+
+                    // Staff policy is checked before firing. A refusal rolls
+                    // back the order and receipt; an unexpected later failure
+                    // keeps the order and returns a recoverable warning.
+                    $staffMealWarning = null;
+                    if ($staff) {
+                        $order->update([
+                            'staff_consumer_employee_id' => $staff->id,
+                            'staff_consumer_user_id' => $staff->user_id,
                         ]);
+                        $mealCheck = app(StaffMealService::class)
+                            ->previewLimitCheck($staff, (float) $order->fresh()->total);
+                        $actorCanOverride = auth()->user()->isManagementLevel()
+                            || auth()->user()->hasPermission('staff_meals.waive');
+
+                        if ($mealCheck['status'] === 'blocked'
+                            || ($mealCheck['status'] === 'requires_approval' && ! $actorCanOverride)) {
+                            app(OrderService::class)->cancel(
+                                $order->fresh(),
+                                auth()->id(),
+                                'أُلغي تلقائياً قبل الإرسال: تجاوز سياسة بدل وجبات الموظفين.',
+                            );
+
+                            return $this->refuse($mealCheck['reason'] ?? 'تحتاج وجبة الموظف إلى موافقة مدير قبل إرسالها.');
+                        }
+
+                        if ($mealCheck['status'] === 'warn') {
+                            $staffMealWarning = $mealCheck['reason'];
+                        }
                     }
+
+                    // ONE-STEP FIRE — same rule as the live screen: staff orders
+                    // go straight to the kitchen unless the operator turned the
+                    // ceremony back on.
+                    $fired = false;
+                    $directFire = Setting::get('waiter_direct_fire', true)
+                        || Setting::get('auto_approve', config('restaurant.order.auto_approve', false));
+                    if ($directFire && auth()->user()->can('approve', $order)) {
+                        try {
+                            app(OrderService::class)->approve($order->fresh(), auth()->id());
+                            $fired = true;
+                        } catch (\Throwable $e) {
+                            // The order EXISTS — degrade to a warning, never to an
+                            // error that reads as "nothing was sent".
+                            return response()->json([
+                                'ok' => true,
+                                'order_number' => $order->number,
+                                'fired' => false,
+                                'warning' => 'أُنشئ الطلب لكن تعذّر إرساله للمطبخ تلقائياً: '.$e->getMessage(),
+                            ]);
+                        }
+                    }
+
+                    return response()->json([
+                        'ok' => true,
+                        'order_number' => $order->number,
+                        'fired' => $fired,
+                        'warning' => $staffMealWarning,
+                    ]);
+                } catch (\Throwable $e) {
+                    if (! $orderCreated) {
+                        // Refusing rolls back the receipt and all order writes.
+                        return $this->refuse($e->getMessage());
+                    }
+
+                    // Preserve the created order and warning in the same receipt.
+                    return response()->json([
+                        'ok' => true,
+                        'order_number' => null,
+                        'fired' => false,
+                        'warning' => 'أُنشئ الطلب لكن تعطّلت خطوة بعده: '.$e->getMessage().' — راجعه من لوحة الطلبات ولا تعد إرساله.',
+                    ]);
                 }
-
-                return response()->json([
-                    'ok' => true,
-                    'order_number' => $order->number,
-                    'fired' => $fired,
-                    'warning' => $staffMealWarning,
-                ]);
-            } catch (\Throwable $e) {
-                if (! $committed) {
-                    // Nothing was created — release the token so an honest
-                    // retry works.
-                    Cache::forget($tokenKey);
-
-                    return $this->refuse($e->getMessage());
-                }
-
-                // Post-commit failure with the order already real: keep the
-                // token consumed (releasing it here was the duplicate-order
-                // source of duplicate orders caught during review).
-                return response()->json([
-                    'ok' => true,
-                    'order_number' => null,
-                    'fired' => false,
-                    'warning' => 'أُنشئ الطلب لكن تعطّلت خطوة بعده: '.$e->getMessage().' — راجعه من لوحة الطلبات ولا تعد إرساله.',
-                ]);
-            }
+            });
         });
+    }
+
+    private function runSubmission(array $data, Table $table, TableSession $session, callable $command)
+    {
+        $key = hash('sha256', implode('|', [
+            $session->branch_id, auth()->id(), $table->id, $session->id, $data['token'],
+        ]));
+        $payload = $data;
+        unset($payload['token']);
+        $sort = function (array &$values) use (&$sort): void {
+            ksort($values);
+            foreach ($values as &$value) {
+                if (is_array($value)) {
+                    $sort($value);
+                }
+            }
+        };
+        $sort($payload);
+        $payloadHash = hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR));
+
+        try {
+            return DB::transaction(function () use ($key, $payloadHash, $command, $table) {
+                // The unique insert waits for a concurrent request's transaction.
+                // No processing claim is committed without its confirmed result.
+                $claimed = DB::table('waiter_submission_receipts')->insertOrIgnore([
+                    'token_hash' => $key, 'payload_hash' => $payloadHash, 'created_at' => now(),
+                ]);
+                if (! $claimed) {
+                    $receipt = DB::table('waiter_submission_receipts')->where('token_hash', $key)->first();
+                    if (! $receipt || ! $receipt->response_json || ! hash_equals($receipt->payload_hash, $payloadHash)) {
+                        return response()->json(['ok' => false, 'submission_state' => 'unknown',
+                            'message' => 'هذا الإرسال مرتبط بطلب آخر. راجع طلبات الطاولة قبل المتابعة.'], 409);
+                    }
+
+                    return response()->json(array_merge(json_decode($receipt->response_json, true, 512, JSON_THROW_ON_ERROR), [
+                        'replayed' => true,
+                    ]));
+                }
+
+                $response = $command();
+                $body = $response->getData(true);
+                if (($body['ok'] ?? false) !== true) {
+                    throw new WaiterSubmissionRejected($response);
+                }
+                $body['submission_state'] = 'committed';
+                DB::table('waiter_submission_receipts')->where('token_hash', $key)->update([
+                    'response_json' => json_encode($body, JSON_THROW_ON_ERROR),
+                ]);
+                // Service pulses can be observed before this outer transaction
+                // commits. Publish a final safe pulse for the committed change.
+                DB::afterCommit(fn () => SafeBroadcast::dispatch(new TableStatusChanged($table, (string) $table->status)));
+
+                return response()->json($body, $response->getStatusCode());
+            }, 3);
+        } catch (WaiterSubmissionRejected $exception) {
+            return response()->json(array_merge($exception->response->getData(true), [
+                'submission_state' => 'rejected',
+            ]), $exception->response->getStatusCode());
+        }
     }
 
     /**
@@ -755,9 +815,7 @@ class WaiterPosVueController extends Controller
                         'price_delta' => (float) $m->price_delta,
                     ])->values(),
                 ])->values(),
-                'removable_ingredients' => $item->recipeItems
-                    ->filter(fn ($recipe) => $recipe->ingredient !== null)
-                    ->unique(fn ($recipe) => (int) $recipe->ingredient_id)
+                'removable_ingredients' => $item->removableRecipeItems()
                     ->map(fn ($recipe) => [
                         'id' => (int) $recipe->ingredient_id,
                         'name' => $recipe->ingredient->localizedName(),
@@ -913,7 +971,7 @@ class WaiterPosVueController extends Controller
     protected function firstLineProblem($cart): ?string
     {
         foreach ($cart as $line) {
-            $item = MenuItem::with('modifierGroups.modifiers', 'recipeItems')
+            $item = MenuItem::with('modifierGroups.modifiers', 'recipeItems.ingredient')
                 ->where('is_available', true)
                 ->find($line['menu_item_id']);
 
@@ -924,10 +982,10 @@ class WaiterPosVueController extends Controller
             $allowed = $item->modifierGroups->flatMap(fn ($g) => $g->modifiers->pluck('id'))
                 ->map(fn ($id) => (int) $id);
             $selected = collect($line['modifier_ids'])->intersect($allowed);
-            $allowedExclusions = $item->recipeItems->pluck('ingredient_id')->map(fn ($id) => (int) $id)->unique();
+            $allowedExclusions = $item->removableRecipeItems()->pluck('ingredient_id')->map(fn ($id) => (int) $id);
             $requestedExclusions = collect($line['excluded_ingredient_ids'] ?? [])->map(fn ($id) => (int) $id)->unique();
             if ($requestedExclusions->diff($allowedExclusions)->isNotEmpty()) {
-                return "«{$item->name}»: مكوّن مستبعد غير موجود في الوصفة. أعد فتح الصنف.";
+                return "«{$item->name}»: لا يمكن استبعاد أحد المكوّنات المحددة. أعد فتح الصنف.";
             }
 
             foreach ($item->modifierGroups as $group) {

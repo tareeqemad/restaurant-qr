@@ -590,12 +590,11 @@ class OrderService
             ->map(fn ($id) => (int) $id)
             ->filter()
             ->unique();
-        $removableIngredients = $item->recipeItems
-            ->filter(fn ($recipe) => $recipe->ingredient !== null)
+        $removableIngredients = $item->removableRecipeItems()
             ->keyBy(fn ($recipe) => (int) $recipe->ingredient_id);
         $unknownExclusions = $requestedExclusionIds->diff($removableIngredients->keys()->map(fn ($id) => (int) $id));
         if ($unknownExclusions->isNotEmpty()) {
-            throw new \RuntimeException("أحد المكوّنات المستبعدة لا ينتمي إلى وصفة «{$item->name}». أعد فتح الصنف.");
+            throw new \RuntimeException("لا يمكن استبعاد أحد المكوّنات المحددة من «{$item->name}». أعد فتح الصنف.");
         }
 
         $modifiersTotal = (float) $modifiers->sum('price_delta');

@@ -1,4 +1,5 @@
 <script setup>
+import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 /**
  * لوحة التقارير — the reports hub.
  *
@@ -63,12 +64,14 @@ const marginTone = (v) => (v >= 45 ? 'success' : (v >= 30 ? 'accent' : 'danger')
 </script>
 
 <template>
-    <Head title="لوحة التقارير" />
-
-    <PageHeader title="لوحة التقارير" icon="bi-speedometer2"
+<Head title="لوحة التقارير" />
+<FinancialWorkspace area="التقارير والتحليل" mode="report">
+<template #heading>
+<PageHeader title="لوحة التقارير" icon="bi-speedometer2"
                 subtitle="مركز قراءة سريع يحوّل أرقام المطعم إلى قرارات تشغيلية." />
-
-    <div class="data-panel-filters mb-3"
+</template>
+<template #filters>
+<div class="data-panel-filters mb-3"
          style="background: white; border-radius: 14px; padding: 1rem; border: 1px solid rgba(var(--primary-rgb), .1);">
         <form class="row g-2 align-items-end" @submit.prevent="visit">
             <div class="col-md-3">
@@ -94,8 +97,9 @@ const marginTone = (v) => (v >= 45 ? 'success' : (v >= 30 ? 'accent' : 'danger')
             </div>
         </form>
     </div>
-
-    <StatRail :stats="[
+</template>
+<template #metrics>
+<StatRail :stats="[
         { label: 'الإيراد المحصل', value: money(stats.revenue), icon: 'bi-cash-stack', color: 'primary' },
         { label: 'الربح الإجمالي', value: money(stats.grossProfit), icon: 'bi-graph-up-arrow', color: stats.grossProfit >= 0 ? 'success' : 'danger' },
         { label: 'هامش الربح', value: pct1(stats.marginPct) + '%', icon: 'bi-percent', color: marginTone(stats.marginPct) },
@@ -103,8 +107,8 @@ const marginTone = (v) => (v >= 45 ? 'success' : (v >= 30 ? 'accent' : 'danger')
         { label: 'طلبات الفترة', value: stats.ordersCount, icon: 'bi-bag-check', color: 'info' },
         { label: 'الهدر', value: money(stats.wasteCost), icon: 'bi-trash3', color: stats.wasteCost > 0 ? 'warning' : 'muted' },
     ]" />
-
-    <div class="row g-3 mb-3">
+</template>
+<div class="row g-3 mb-3">
         <div class="col-xl-8">
             <DataPanel title="نبض الإيراد اليومي" icon="bi-activity">
                 <div class="reports-trend">
@@ -140,8 +144,7 @@ const marginTone = (v) => (v >= 45 ? 'success' : (v >= 30 ? 'accent' : 'danger')
             </DataPanel>
         </div>
     </div>
-
-    <div class="row g-3 mb-3">
+<div class="row g-3 mb-3">
         <div class="col-xl-7">
             <DataPanel title="خارطة التقارير" icon="bi-compass-fill">
                 <div class="report-tile-grid">
@@ -188,6 +191,7 @@ const marginTone = (v) => (v >= 45 ? 'success' : (v >= 30 ? 'accent' : 'danger')
             </DataPanel>
         </div>
     </div>
+</FinancialWorkspace>
 
 </template>
 
@@ -215,7 +219,7 @@ const marginTone = (v) => (v >= 45 ? 'success' : (v >= 30 ? 'accent' : 'danger')
     width: 100%;
     height: 220px;
     border-radius: 8px;
-    background: linear-gradient(180deg, rgba(var(--primary-rgb), .05), rgba(var(--accent-rgb), .08));
+    background: var(--surface, #FFFDFA);
     display: flex;
     align-items: end;
     overflow: hidden;
@@ -223,11 +227,11 @@ const marginTone = (v) => (v >= 45 ? 'success' : (v >= 30 ? 'accent' : 'danger')
 .reports-trend-bar {
     width: 100%;
     min-height: 6px;
-    background: linear-gradient(180deg, var(--primary), var(--accent));
+    background: var(--surface, #FFFDFA);
     border-radius: 8px 8px 0 0;
 }
 .reports-trend-day span {
-    font-size: .72rem;
+    font-size: .875rem;
     font-weight: 700;
     color: #78716c;
 }
@@ -284,7 +288,7 @@ const marginTone = (v) => (v >= 45 ? 'success' : (v >= 30 ? 'accent' : 'danger')
 .reports-alert-danger > i { color: #b91c1c; background: rgba(185, 28, 28, .08); }
 .reports-alert-warning > i { color: #8a6920; background: rgba(var(--accent-rgb), .12); }
 .reports-alert-info > i { color: #0369a1; background: rgba(3, 105, 161, .08); }
-.reports-alert-success > i { color: #15803d; background: rgba(21, 128, 61, .08); }
+.reports-alert-success > i { color: #A3422B; background: rgba(37,52,58, .08); }
 .report-tile-grid {
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
@@ -292,4 +296,6 @@ const marginTone = (v) => (v >= 45 ? 'success' : (v >= 30 ? 'accent' : 'danger')
     margin-inline-start: auto;
     color: #94a3b8;
 }
+
+.reports-trend{height:220px;gap:12px;padding:24px 10px 0}.reports-trend-bar{background:#A3422B;border-radius:5px 5px 0 0}.reports-trend-day>span{font-size:13px}.reports-alert{padding:18px 0;border-bottom:1px solid #DFD7CB;background:transparent}.reports-alert strong{font-size:15px}.report-tile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0}.report-tile{display:flex;align-items:center;gap:14px;padding:20px 12px;border:0;border-bottom:1px solid #DFD7CB;border-radius:0;background:transparent}.report-tile:hover{background:#F7F3ED;transform:none}.report-tile-icon{background:transparent;color:#A3422B;font-size:22px}.report-tile-body strong{font-size:16px}.report-tile-body small{font-size:13px;color:#626B6D}@media(max-width:650px){.report-tile-grid{grid-template-columns:1fr}}
 </style>

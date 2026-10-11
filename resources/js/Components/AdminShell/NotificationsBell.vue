@@ -1,7 +1,7 @@
 <script setup>
 /**
  * Header notifications bell — the Vue rebirth of window.notifBell.
- * Operational alerts poll every 3s on shared hosting. New order/help/ready
+ * Operational alerts poll with a gap of at least 3s after each response. New order/help/ready
  * events chime once and carry their safe primary action inside the dropdown.
  */
 import { router } from '@inertiajs/vue3';
@@ -9,6 +9,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useDropdown } from '../../Composables/useDropdown';
 import { useToast } from '../../Composables/useToast';
 import { playNotify } from '../../Support/audio';
+import { createNotificationPolling } from '../../Support/notificationPolling';
 
 const props = defineProps({
     urls: { type: Object, required: true }, // { recent, readAll, base, index }
@@ -25,10 +26,7 @@ const dismissedAlerts = ref(new Set());
 const toast = useToast();
 let knownIds = new Set();
 let initialized = false;
-let timer = null;
-let polling = false;
 let navigationBusy = false;
-let refreshController = null;
 let stopStartListener = null;
 let stopFinishListener = null;
 
@@ -52,17 +50,10 @@ const call = (url, method = 'GET', payload = null, signal = undefined) => fetch(
     signal,
 }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
 
-const refresh = async () => {
-    if (document.hidden || polling || navigationBusy) return;
-    if (! navigator.onLine) {
-        loading.value = false;
-        return;
-    }
-    polling = true;
-    refreshController = new AbortController();
+const refreshNotifications = async (signal) => {
     try {
-        const data = await call(props.urls.recent, 'GET', null, refreshController.signal);
-        if (! data) return;
+        const data = await call(props.urls.recent, 'GET', null, signal);
+        if (! data || signal.aborted) return;
         const next = data.items ?? [];
         if (initialized) {
             const fresh = next
@@ -79,9 +70,21 @@ const refresh = async () => {
         unread.value = data.unread ?? 0;
         items.value = next;
     } finally {
-        polling = false;
-        refreshController = null;
         loading.value = false;
+    }
+};
+
+const poller = createNotificationPolling({
+    refresh: refreshNotifications,
+    canPoll: () => !document.hidden && navigator.onLine && !navigationBusy,
+});
+const refresh = () => poller.request();
+const syncPolling = () => {
+    if (document.hidden || !navigator.onLine || navigationBusy) {
+        poller.pause();
+        if (!navigator.onLine) loading.value = false;
+    } else {
+        poller.resume();
     }
 };
 
@@ -154,23 +157,25 @@ const sevClass = (s) => ({
 onMounted(() => {
     stopStartListener = router.on('start', () => {
         navigationBusy = true;
-        refreshController?.abort();
+        poller.pause();
     });
     stopFinishListener = router.on('finish', () => {
         navigationBusy = false;
+        syncPolling();
     });
-    refresh();
-    timer = setInterval(refresh, 3000);
-    document.addEventListener('visibilitychange', refresh);
-    window.addEventListener('online', refresh);
+    poller.start();
+    syncPolling();
+    document.addEventListener('visibilitychange', syncPolling);
+    window.addEventListener('online', syncPolling);
+    window.addEventListener('offline', syncPolling);
 });
 onBeforeUnmount(() => {
-    refreshController?.abort();
-    clearInterval(timer);
+    poller.stop();
     stopStartListener?.();
     stopFinishListener?.();
-    document.removeEventListener('visibilitychange', refresh);
-    window.removeEventListener('online', refresh);
+    document.removeEventListener('visibilitychange', syncPolling);
+    window.removeEventListener('online', syncPolling);
+    window.removeEventListener('offline', syncPolling);
 });
 </script>
 
@@ -327,7 +332,7 @@ onBeforeUnmount(() => {
     border-radius: 999px;
     color: #fff;
     background: #d33e45;
-    font-size: .5rem;
+    font-size: .8125rem;
     font-weight: 900;
     line-height: 1;
 }
@@ -377,12 +382,12 @@ onBeforeUnmount(() => {
 }
 .bell-menu__heading strong {
     color: #1f382c;
-    font-size: .78rem;
+    font-size: .8125rem;
     font-weight: 900;
 }
 .bell-menu__heading small {
     color: #7c8c84;
-    font-size: .59rem;
+    font-size: .8125rem;
     font-weight: 700;
 }
 .mark-all {
@@ -396,7 +401,7 @@ onBeforeUnmount(() => {
     color: rgb(var(--primary-rgb));
     background: #fff;
     font: inherit;
-    font-size: .6rem;
+    font-size: .8125rem;
     font-weight: 850;
     white-space: nowrap;
 }
@@ -459,7 +464,7 @@ onBeforeUnmount(() => {
 .notification-title strong {
     overflow: hidden;
     color: #253a30;
-    font-size: .7rem;
+    font-size: .8125rem;
     font-weight: 900;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -467,14 +472,14 @@ onBeforeUnmount(() => {
 .notification-title small {
     flex: 0 0 auto;
     color: #8b9991;
-    font-size: .54rem;
+    font-size: .8125rem;
     white-space: nowrap;
 }
 .notification-body {
     display: -webkit-box;
     overflow: hidden;
     color: #697a71;
-    font-size: .61rem;
+    font-size: .8125rem;
     line-height: 1.55;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
@@ -500,7 +505,7 @@ onBeforeUnmount(() => {
     color: rgb(var(--primary-rgb));
     background: rgba(var(--primary-rgb), .065);
     font: inherit;
-    font-size: .62rem;
+    font-size: .8125rem;
     font-weight: 850;
 }
 .quick-action:hover { background: rgba(var(--primary-rgb), .11); }
@@ -526,9 +531,9 @@ onBeforeUnmount(() => {
     background: #eaf6ee;
     font-size: 1.2rem;
 }
-.notifications-empty strong { color: #294137; font-size: .72rem; font-weight: 900; }
+.notifications-empty strong { color: #294137; font-size: .8125rem; font-weight: 900; }
 .notifications-empty small,
-.notifications-loading small { color: #819087; font-size: .59rem; }
+.notifications-loading small { color: #819087; font-size: .8125rem; }
 .notifications-loading {
     grid-template-columns: repeat(3, 8px);
     column-gap: .3rem;
@@ -553,13 +558,13 @@ onBeforeUnmount(() => {
     border-top: 1px solid #e7eee9;
     color: #285c43;
     background: #fbfdfc;
-    font-size: .65rem;
+    font-size: .8125rem;
     font-weight: 850;
     text-decoration: none;
 }
 .bell-menu__footer span { display: inline-flex; align-items: center; gap: .4rem; }
 .bell-menu__footer:hover,
-.bell-menu__footer:focus-visible { color: rgb(var(--primary-rgb)); background: #f1f8f4; outline: none; }
+.bell-menu__footer:focus-visible { color: rgb(var(--primary-rgb)); background: var(--brand-soft, #f3e3d8); outline: none; }
 @keyframes bell-loading { to { opacity: .28; transform: translateY(-3px); } }
 .operational-float { display: none; }
 
@@ -581,7 +586,7 @@ onBeforeUnmount(() => {
         color: #163126;
         background: rgba(255, 255, 255, .98);
         box-shadow: 0 20px 50px -24px rgba(15, 45, 31, .55);
-        backdrop-filter: blur(12px);
+
     }
     .operational-float.is-danger { border-inline-start-color: #dc2626; }
     .operational-float.is-warning { border-inline-start-color: #d97706; }
@@ -600,7 +605,7 @@ onBeforeUnmount(() => {
     .operational-copy strong,
     .operational-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .operational-copy strong { font-size: .82rem; font-weight: 900; }
-    .operational-copy small { margin-top: .15rem; color: #64756c; font-size: .68rem; }
+    .operational-copy small { margin-top: .15rem; color: #64756c; font-size: .8125rem; }
     .operational-action {
         min-height: 42px;
         padding: 0 .85rem;
@@ -609,7 +614,7 @@ onBeforeUnmount(() => {
         color: #fff;
         background: rgb(var(--primary-rgb));
         font: inherit;
-        font-size: .72rem;
+        font-size: .8125rem;
         font-weight: 850;
         white-space: nowrap;
     }

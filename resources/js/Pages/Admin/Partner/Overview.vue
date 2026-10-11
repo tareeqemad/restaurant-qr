@@ -1,4 +1,5 @@
 <script setup>
+import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 import { computed, ref, watch } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import AdminLayout from '../../../Layouts/AdminLayout.vue';
@@ -115,9 +116,10 @@ useLiveRefresh({
 </script>
 
 <template>
-    <Head title="متابعة المالك" />
-
-    <PageHeader title="متابعة المالك" icon="bi-binoculars-fill"
+<Head title="متابعة المالك" />
+<FinancialWorkspace area="متابعة المطعم" mode="overview">
+<template #heading>
+<PageHeader title="متابعة المالك" icon="bi-binoculars-fill"
                 subtitle="الاستثناءات أولاً، ثم مقارنة الفروع من شاشة واحدة">
         <template #actions>
             <button type="button" class="btn btn-light owner-refresh" :disabled="refreshing" @click="refresh">
@@ -129,15 +131,36 @@ useLiveRefresh({
             </a>
         </template>
     </PageHeader>
-
-    <section class="owner-statusbar" aria-label="حالة التحديث">
+</template>
+<template #metrics>
+<section class="owner-statusbar" aria-label="حالة التحديث">
         <div class="owner-live"><span></span><strong>متصل ومحدّث تلقائياً</strong></div>
         <small>آخر تحديث {{ updatedLabel }}</small>
         <span class="owner-statusbar-sep"></span>
         <small>{{ totals.branches }} {{ totals.branches === 1 ? 'فرع' : 'فروع' }} ضمن صلاحيتك</small>
     </section>
-
-    <section class="owner-overview">
+</template>
+<section class="owner-focus" :class="{ 'is-clear': ! actions.length }">
+        <header>
+            <div>
+                <span class="section-eyebrow">ما يحتاج قراراً</span>
+                <h2>{{ actions.length ? 'ابدأ من هنا' : 'الوضع مستقر' }}</h2>
+            </div>
+            <span v-if="actions.length" class="focus-count">{{ actions.length }} ملفات مفتوحة</span>
+        </header>
+        <div v-if="actions.length" class="owner-actions">
+            <a v-for="action in actions" :key="action.label" :href="action.url" class="owner-action" :class="`is-${action.tone}`">
+                <span class="owner-action-icon"><i class="bi" :class="action.icon"></i></span>
+                <span><strong>{{ action.display }}</strong><small>{{ action.label }}</small></span>
+                <i class="bi bi-arrow-left-short"></i>
+            </a>
+        </div>
+        <div v-else class="owner-clear">
+            <i class="bi bi-check2-circle"></i>
+            <span><strong>لا يوجد شيء عاجل الآن</strong><small>كل الفروع تعمل ضمن المؤشرات الطبيعية.</small></span>
+        </div>
+    </section>
+<section class="owner-overview">
         <div class="owner-kpis">
             <article class="owner-kpi owner-kpi--sales">
                 <span class="owner-kpi-icon"><i class="bi bi-cash-stack"></i></span>
@@ -175,28 +198,7 @@ useLiveRefresh({
         </article>
     </section>
 
-    <section class="owner-focus" :class="{ 'is-clear': ! actions.length }">
-        <header>
-            <div>
-                <span class="section-eyebrow">ما يحتاج قراراً</span>
-                <h2>{{ actions.length ? 'ابدأ من هنا' : 'الوضع مستقر' }}</h2>
-            </div>
-            <span v-if="actions.length" class="focus-count">{{ actions.length }} ملفات مفتوحة</span>
-        </header>
-        <div v-if="actions.length" class="owner-actions">
-            <a v-for="action in actions" :key="action.label" :href="action.url" class="owner-action" :class="`is-${action.tone}`">
-                <span class="owner-action-icon"><i class="bi" :class="action.icon"></i></span>
-                <span><strong>{{ action.display }}</strong><small>{{ action.label }}</small></span>
-                <i class="bi bi-arrow-left-short"></i>
-            </a>
-        </div>
-        <div v-else class="owner-clear">
-            <i class="bi bi-check2-circle"></i>
-            <span><strong>لا يوجد شيء عاجل الآن</strong><small>كل الفروع تعمل ضمن المؤشرات الطبيعية.</small></span>
-        </div>
-    </section>
-
-    <section class="owner-branches">
+<section class="owner-branches">
         <header class="branches-head">
             <div><span class="section-eyebrow">مقارنة الفروع</span><h2>أين تركز اليوم؟</h2></div>
             <div class="branches-tools">
@@ -278,114 +280,116 @@ useLiveRefresh({
             </div>
         </div>
     </section>
+</FinancialWorkspace>
+
 </template>
 
 <style scoped>
-.section-eyebrow { display: block; color: #7c8b82; font-size: .72rem; font-weight: 800; margin-bottom: .12rem; }
-h2 { margin: 0; color: #13251b; font-size: 1.1rem; font-weight: 900; }
-.positive { color: #087a43 !important; }
+.section-eyebrow { display: block; color: #A3422B; font-size: .875rem; font-weight: 800; margin-bottom: .12rem; }
+h2 { margin: 0; color: #25343A; font-size: 1.1rem; font-weight: 900; }
+.positive { color: #A3422B !important; }
 .negative { color: #be2934 !important; }
 .spin { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.owner-statusbar { display: flex; align-items: center; gap: .7rem; min-height: 38px; margin: -.25rem 0 .75rem; padding: .45rem .75rem; border: 1px solid #e4ebe7; border-radius: 12px; background: #fbfdfc; color: #6a7a71; }
-.owner-statusbar small { font-size: .72rem; }
-.owner-live { display: inline-flex; align-items: center; gap: .4rem; color: #147346; font-size: .74rem; }
-.owner-live span { width: 8px; height: 8px; border-radius: 50%; background: #1fa865; box-shadow: 0 0 0 4px rgba(31,168,101,.11); }
+.owner-statusbar { display: flex; align-items: center; gap: .7rem; min-height: 38px; margin: -.25rem 0 .75rem; padding: .45rem .75rem; border: 1px solid #e4ebe7; border-radius: 12px; background: #fbfdfc; color: #A3422B; }
+.owner-statusbar small { font-size: .875rem; }
+.owner-live { display: inline-flex; align-items: center; gap: .4rem; color: #A3422B; font-size: .875rem; }
+.owner-live span { width: 8px; height: 8px; border-radius: 50%; background: #A3422B; box-shadow: 0 0 0 4px rgba(37,52,58,.11); }
 .owner-statusbar-sep { width: 1px; height: 16px; background: #dfe7e2; }
 .owner-refresh { border-color: #dfe7e2; }
 
 .owner-overview { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(260px, .7fr); gap: .8rem; margin-bottom: .8rem; }
 .owner-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .55rem; }
-.owner-kpi { display: flex; align-items: center; gap: .65rem; min-width: 0; padding: .85rem; background: #fff; border: 1px solid #e8eeea; border-radius: 15px; box-shadow: 0 4px 16px rgba(27,50,38,.035); }
-.owner-kpi-icon { width: 36px; height: 36px; flex: 0 0 36px; display: grid; place-items: center; border-radius: 11px; background: #eff6f1; color: #157246; }
+.owner-kpi { display: flex; align-items: center; gap: .65rem; min-width: 0; padding: .85rem; background: #fff; border: 1px solid #e8eeea; border-radius: 15px; box-shadow: 0 4px 16px rgba(37,52,58,.035); }
+.owner-kpi-icon { width: 36px; height: 36px; flex: 0 0 36px; display: grid; place-items: center; border-radius: 11px; background: #eff6f1; color: #A3422B; }
 .owner-kpi > div { min-width: 0; }
-.owner-kpi small, .owner-kpi p { display: block; margin: 0; font-size: .67rem; color: #87958d; white-space: nowrap; }
-.owner-kpi strong { display: block; color: #14251b; font-size: 1.05rem; line-height: 1.45; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.owner-kpi--sales { border-color: #cfe6d8; background: #fbfefc; }
-.owner-kpi--sales .owner-kpi-icon { background: #147346; color: #fff; }
+.owner-kpi small, .owner-kpi p { display: block; margin: 0; font-size: .875rem; color: #87958d; white-space: nowrap; }
+.owner-kpi strong { display: block; color: #25343A; font-size: 1.05rem; line-height: 1.45; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.owner-kpi--sales { border-color: #F7F3ED; background: #fbfefc; }
+.owner-kpi--sales .owner-kpi-icon { background: #A3422B; color: #fff; }
 .owner-kpi--alert { border-color: #f2d4bd; background: #fffaf5; }
 .owner-kpi--alert .owner-kpi-icon { background: #fff0e4; color: #bf5d12; }
 
-.owner-trend { padding: .8rem .9rem .55rem; background: #153a29; border-radius: 15px; color: #fff; overflow: hidden; }
+.owner-trend { padding: .8rem .9rem .55rem; background: #25343A; border-radius: 15px; color: #fff; overflow: hidden; }
 .owner-trend header { display: flex; justify-content: space-between; gap: .7rem; }
-.owner-trend header small { display: block; color: #9bc0aa; font-size: .66rem; }
-.owner-trend header strong { font-size: .84rem; font-weight: 900; }
+.owner-trend header small { display: block; color: #F3E3D8; font-size: .875rem; }
+.owner-trend header strong { font-size: .875rem; font-weight: 900; }
 .owner-trend-total { text-align: left; }
 .owner-trend svg { width: 100%; height: 62px; margin-top: .25rem; overflow: visible; }
-.trend-area { fill: rgba(92,211,148,.12); }
-.trend-line { fill: none; stroke: #5cd394; stroke-width: 1.6; vector-effect: non-scaling-stroke; }
-.owner-trend circle { fill: #d8ffe9; vector-effect: non-scaling-stroke; }
-.owner-trend-days { display: flex; justify-content: space-between; color: #789c88; font-size: .6rem; }
+.trend-area { fill: rgba(37,52,58,.12); }
+.trend-line { fill: none; stroke: #F3E3D8; stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.owner-trend circle { fill: #F3E3D8; vector-effect: non-scaling-stroke; }
+.owner-trend-days { display: flex; justify-content: space-between; color: #A3422B; font-size: .875rem; }
 
 .owner-focus, .owner-branches { padding: .9rem; margin-bottom: .8rem; background: #fff; border: 1px solid #e7ede9; border-radius: 16px; }
 .owner-focus > header, .branches-head { display: flex; align-items: center; justify-content: space-between; gap: .8rem; margin-bottom: .7rem; }
-.focus-count { padding: .23rem .6rem; border-radius: 999px; background: #fff4e8; color: #a65416; font-size: .7rem; font-weight: 800; }
+.focus-count { padding: .23rem .6rem; border-radius: 999px; background: #fff4e8; color: #a65416; font-size: .875rem; font-weight: 800; }
 .owner-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: .5rem; }
-.owner-action { display: flex; align-items: center; gap: .55rem; min-height: 58px; padding: .6rem .7rem; color: #22362b; text-decoration: none; border: 1px solid #e8eeea; border-radius: 13px; transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease; }
-.owner-action:hover { transform: translateY(-1px); border-color: #bdcfc4; box-shadow: 0 7px 18px rgba(26,55,39,.07); }
+.owner-action { display: flex; align-items: center; gap: .55rem; min-height: 58px; padding: .6rem .7rem; color: #25343A; text-decoration: none; border: 1px solid #e8eeea; border-radius: 13px; transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease; }
+.owner-action:hover { transform: translateY(-1px); border-color: #bdcfc4; box-shadow: 0 7px 18px rgba(37,52,58,.07); }
 .owner-action-icon { width: 34px; height: 34px; flex: 0 0 34px; display: grid; place-items: center; border-radius: 10px; background: #fff5e8; color: #a75718; }
 .owner-action.is-danger .owner-action-icon { background: #fff0f1; color: #c42b36; }
 .owner-action > span:nth-child(2) { flex: 1; min-width: 0; }
 .owner-action strong, .owner-action small { display: block; }
 .owner-action strong { font-size: .92rem; font-weight: 900; }
-.owner-action small { color: #7d8c84; font-size: .68rem; }
+.owner-action small { color: #A3422B; font-size: .875rem; }
 .owner-action > i { color: #9caaa2; }
-.owner-clear { display: flex; align-items: center; gap: .65rem; padding: .75rem; background: #effaf4; color: #137247; border-radius: 12px; }
+.owner-clear { display: flex; align-items: center; gap: .65rem; padding: .75rem; background: #effaf4; color: #A3422B; border-radius: 12px; }
 .owner-clear > i { font-size: 1.4rem; }
 .owner-clear strong, .owner-clear small { display: block; }
-.owner-clear small { color: #66907a; font-size: .7rem; }
+.owner-clear small { color: #A3422B; font-size: .875rem; }
 
 .branches-tools { display: flex; align-items: center; flex-wrap: wrap; gap: .45rem; }
-.branch-search { display: flex; align-items: center; gap: .4rem; min-width: 230px; height: 40px; padding-inline: .65rem; border: 1px solid #dfe7e2; border-radius: 11px; color: #849289; background: #fff; }
-.branch-search input { width: 100%; border: 0; outline: 0; color: #263a2f; background: transparent; font-size: .78rem; }
-.branches-tools select { height: 40px; padding: 0 .65rem; border: 1px solid #dfe7e2; border-radius: 11px; color: #415349; background: #fff; font-size: .75rem; }
+.branch-search { display: flex; align-items: center; gap: .4rem; min-width: 230px; height: 40px; padding-inline: .65rem; border: 1px solid #dfe7e2; border-radius: 11px; color: #A3422B; background: #fff; }
+.branch-search input { width: 100%; border: 0; outline: 0; color: #25343A; background: transparent; font-size: .875rem; }
+.branches-tools select { height: 40px; padding: 0 .65rem; border: 1px solid #dfe7e2; border-radius: 11px; color: #25343A; background: #fff; font-size: .875rem; }
 .layout-toggle { display: flex; padding: 3px; border-radius: 10px; background: #eff3f0; }
-.layout-toggle button { width: 33px; height: 32px; border: 0; border-radius: 8px; background: transparent; color: #7d8c84; }
-.layout-toggle button.active { background: #fff; color: #126d43; box-shadow: 0 2px 8px rgba(20,55,36,.1); }
+.layout-toggle button { width: 33px; height: 32px; border: 0; border-radius: 8px; background: transparent; color: #A3422B; }
+.layout-toggle button.active { background: #fff; color: #A3422B; box-shadow: 0 2px 8px rgba(37,52,58,.1); }
 .branch-filters { display: flex; gap: .35rem; overflow-x: auto; padding-bottom: .65rem; scrollbar-width: none; }
-.branch-filters button { min-height: 35px; padding: .3rem .65rem; border: 1px solid #e1e8e4; border-radius: 999px; background: #fff; color: #607168; white-space: nowrap; font-size: .72rem; font-weight: 750; }
-.branch-filters button span { display: inline-grid; min-width: 20px; height: 20px; place-items: center; margin-inline-start: .2rem; border-radius: 999px; background: #edf2ef; font-size: .64rem; }
-.branch-filters button.active { border-color: #187549; background: #187549; color: #fff; }
+.branch-filters button { min-height: 35px; padding: .3rem .65rem; border: 1px solid #e1e8e4; border-radius: 999px; background: #fff; color: #A3422B; white-space: nowrap; font-size: .875rem; font-weight: 750; }
+.branch-filters button span { display: inline-grid; min-width: 20px; height: 20px; place-items: center; margin-inline-start: .2rem; border-radius: 999px; background: #edf2ef; font-size: .875rem; }
+.branch-filters button.active { border-color: #A3422B; background: #A3422B; color: #fff; }
 .branch-filters button.active span { background: rgba(255,255,255,.18); }
 
 .branch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(360px, 100%), 1fr)); gap: .65rem; }
 .branch-grid.is-list { grid-template-columns: 1fr; }
-.branch-card { display: flex; flex-direction: column; gap: .7rem; min-width: 0; padding: .8rem; border: 1px solid #e5ece8; border-top: 3px solid #5eaa80; border-radius: 14px; background: #fff; }
+.branch-card { display: flex; flex-direction: column; gap: .7rem; min-width: 0; padding: .8rem; border: 1px solid #e5ece8; border-top: 3px solid #A3422B; border-radius: 14px; background: #fff; }
 .branch-card.tone-warning { border-top-color: #e1a23a; }
 .branch-card.tone-danger { border-top-color: #d44b55; }
 .branch-card-head, .branch-identity, .branch-pressure > span { display: flex; align-items: center; justify-content: space-between; gap: .55rem; }
 .branch-identity { justify-content: flex-start; min-width: 0; }
-.branch-mark { width: 36px; height: 36px; flex: 0 0 36px; display: grid; place-items: center; border-radius: 11px; background: #eaf5ee; color: #147346; font-weight: 900; }
+.branch-mark { width: 36px; height: 36px; flex: 0 0 36px; display: grid; place-items: center; border-radius: 11px; background: #eaf5ee; color: #A3422B; font-weight: 900; }
 .branch-identity strong, .branch-identity small { display: block; }
-.branch-identity strong { color: #182b20; font-size: .9rem; font-weight: 900; }
-.branch-identity small { color: #89968f; font-size: .65rem; }
-.branch-health { display: inline-flex; align-items: center; gap: .3rem; padding: .22rem .5rem; border-radius: 999px; background: #edf8f2; color: #187347; font-size: .66rem; font-weight: 800; white-space: nowrap; }
+.branch-identity strong { color: #25343A; font-size: .9rem; font-weight: 900; }
+.branch-identity small { color: #89968f; font-size: .875rem; }
+.branch-health { display: inline-flex; align-items: center; gap: .3rem; padding: .22rem .5rem; border-radius: 999px; background: #edf8f2; color: #A3422B; font-size: .875rem; font-weight: 800; white-space: nowrap; }
 .tone-warning .branch-health { background: #fff5e5; color: #a25b19; }
 .tone-danger .branch-health { background: #fff0f1; color: #b92531; }
-.branch-health i { font-size: .45rem; }
-.branch-pressure > span b { color: #44574c; font-size: .68rem; }
-.branch-pressure > span small { color: #819087; font-size: .65rem; }
+.branch-health i { font-size: .875rem; }
+.branch-pressure > span b { color: #25343A; font-size: .875rem; }
+.branch-pressure > span small { color: #A3422B; font-size: .875rem; }
 .branch-pressure > div { height: 5px; overflow: hidden; border-radius: 999px; background: #edf2ef; }
-.branch-pressure > div i { display: block; height: 100%; max-width: 100%; border-radius: inherit; background: #52a778; }
+.branch-pressure > div i { display: block; height: 100%; max-width: 100%; border-radius: inherit; background: #A3422B; }
 .tone-warning .branch-pressure > div i { background: #dfa13e; }
 .tone-danger .branch-pressure > div i { background: #d44a55; }
 .branch-primary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .45rem; }
 .branch-primary > div { padding: .5rem .55rem; border-radius: 10px; background: #f7faf8; }
 .branch-primary small, .branch-primary strong { display: block; }
-.branch-primary small { color: #88958e; font-size: .62rem; }
-.branch-primary strong { color: #1c3025; font-size: .82rem; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.branch-primary small { color: #88958e; font-size: .875rem; }
+.branch-primary strong { color: #25343A; font-size: .875rem; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .branch-operations { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .35rem; }
-.branch-operations span { display: grid; grid-template-columns: auto auto; justify-content: start; align-items: center; gap: .15rem .3rem; color: #607168; }
-.branch-operations i { color: #7e9086; font-size: .72rem; }
-.branch-operations b { color: #22372b; font-size: .8rem; }
-.branch-operations small { grid-column: 1 / -1; font-size: .58rem; color: #94a098; }
+.branch-operations span { display: grid; grid-template-columns: auto auto; justify-content: start; align-items: center; gap: .15rem .3rem; color: #A3422B; }
+.branch-operations i { color: #A3422B; font-size: .875rem; }
+.branch-operations b { color: #25343A; font-size: .875rem; }
+.branch-operations small { grid-column: 1 / -1; font-size: .875rem; color: #94a098; }
 .branch-alerts { display: flex; flex-wrap: wrap; gap: .3rem; }
-.branch-alerts span { display: inline-flex; align-items: center; gap: .25rem; padding: .2rem .45rem; border-radius: 7px; background: #fff6e8; color: #9b5a1e; font-size: .64rem; font-weight: 800; }
+.branch-alerts span { display: inline-flex; align-items: center; gap: .25rem; padding: .2rem .45rem; border-radius: 7px; background: #fff6e8; color: #9b5a1e; font-size: .875rem; font-weight: 800; }
 .branch-alerts span.danger { background: #fff0f1; color: #b82732; }
-.branch-clear { color: #4c8a68; font-size: .68rem; }
-.branch-card footer { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: auto; padding-top: .55rem; border-top: 1px solid #edf1ef; color: #7a8981; font-size: .64rem; }
-.branch-card footer strong { color: #415248; }
+.branch-clear { color: #A3422B; font-size: .875rem; }
+.branch-card footer { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: auto; padding-top: .55rem; border-top: 1px solid #edf1ef; color: #A3422B; font-size: .875rem; }
+.branch-card footer strong { color: #25343A; }
 .branch-empty { grid-column: 1 / -1; display: grid; place-items: center; min-height: 180px; color: #87958d; text-align: center; }
 .branch-empty i { font-size: 1.8rem; }
 .branch-empty strong, .branch-empty small { display: block; }
@@ -423,4 +427,7 @@ h2 { margin: 0; color: #13251b; font-size: 1.1rem; font-weight: 900; }
     .branch-operations { grid-template-columns: repeat(2, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) { .owner-action { transition: none; } .spin { animation: none; } }
+
+.owner-statusbar{border:0;padding:0;background:transparent}.owner-overview{grid-template-columns:minmax(0,1.25fr) minmax(320px,1fr);gap:24px}.owner-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:#DFD7CB;border:1px solid #DFD7CB;border-radius:16px;overflow:hidden}.owner-kpi{padding:24px;border:0;border-radius:0;background:#FFFDFA;box-shadow:none}.owner-kpi:first-child{grid-column:1/-1}.owner-kpi strong{font-size:30px;color:#25343A}.owner-kpi--sales strong{font-size:38px}.owner-kpi-icon{background:transparent;color:#A3422B}.owner-kpi small,.owner-kpi p{font-size:14px}.owner-trend{padding:24px;border-radius:16px;background:#FFFDFA}.owner-trend>header strong{font-size:22px}.owner-focus{padding:24px;border-radius:16px;background:#FFFDFA}.owner-focus.is-clear{padding:18px 24px;background:#F7F3ED}.owner-focus h2{font-size:22px}.owner-branches>header{margin-bottom:20px}.owner-branch{border-radius:16px;padding:24px}@media(max-width:1100px){.owner-overview{grid-template-columns:1fr}}
+.owner-trend{color:#25343A;border:1px solid #DFD7CB}.owner-trend header small{color:#626B6D}.owner-trend svg{height:180px;margin-top:26px}.trend-line{stroke:#A3422B}.trend-area{fill:#F3E3D8}.owner-trend circle{fill:#A3422B}.owner-trend-days{color:#626B6D}
 </style>

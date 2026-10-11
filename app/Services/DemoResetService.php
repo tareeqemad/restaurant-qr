@@ -66,6 +66,7 @@ class DemoResetService
             // accident because its foreign key happened to be nullable.
             $operational = [
                 'activity_logs',
+                'accounting_command_receipts', 'waiter_submission_receipts',
                 'notifications', 'announcements', 'section_assignments',
                 'delivery_assignments',
                 'order_item_ingredient_exclusions', 'order_change_requests',
@@ -88,6 +89,7 @@ class DemoResetService
                 'ingredient_stock',
                 'table_sessions',
                 'staff_meal_charges', 'staff_meal_month_closures',
+                'branch_employee', 'employees',
                 'tables',
                 'discounts',
                 'expenses',

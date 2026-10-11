@@ -58,10 +58,10 @@ const icons = {
     gap: .65rem;
     align-items: stretch;
     padding: .55rem;
-    border: 1px solid #e1e8e4;
-    border-radius: 14px;
-    background: #fff;
-    box-shadow: 0 8px 24px -22px rgba(15, 49, 31, .6);
+    border: 1px solid var(--line, var(--line));
+    border-radius: 12px;
+    background: var(--surface, #FFFDFA);
+    box-shadow: none;
 }
 .attention-rail > header {
     display: flex;
@@ -69,14 +69,14 @@ const icons = {
     justify-content: center;
     gap: .18rem;
     padding-inline: .55rem;
-    border-inline-end: 1px solid #edf1ef;
+    border-inline-end: 1px solid var(--line, var(--line));
 }
 .attention-rail > header span {
     color: var(--cx-primary);
-    font-size: .87rem;
-    font-weight: 850;
+    font-size: .875rem;
+    font-weight: 800;
 }
-.attention-rail > header strong { color: #647067; font-size: .72rem; }
+.attention-rail > header strong { color: var(--muted, var(--muted)); font-size: .875rem; }
 .attention-scroll {
     display: flex;
     gap: .5rem;
@@ -93,15 +93,15 @@ const icons = {
     min-width: min(330px, 80vw);
     min-height: 54px;
     padding: .45rem .55rem;
-    border: 1px solid #e7ece9;
+    border: 1px solid var(--line, var(--line));
     border-radius: 11px;
-    color: #26332b;
-    background: #fbfcfb;
+    color: var(--ink, var(--ink));
+    background: var(--surface, #FFFDFA);
     text-align: start;
     cursor: pointer;
     scroll-snap-align: start;
 }
-.attention-item:hover { border-color: rgba(var(--primary-rgb, 22 101 52), .35); background: #f7fbf8; }
+.attention-item:hover { border-color: color-mix(in srgb, var(--brand, #A3422B) 35%, transparent); background: var(--surface, #FFFDFA); }
 .attention-item.is-critical { border-inline-start: 3px solid #dc3545; }
 .attention-item.is-warning { border-inline-start: 3px solid #d97706; }
 .attention-icon {
@@ -117,21 +117,24 @@ const icons = {
 .is-warning .attention-icon { color: #a85d00; background: #fff7e7; }
 .attention-copy { display: flex; min-width: 0; flex-direction: column; }
 .attention-copy strong, .attention-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.attention-copy strong { font-size: .76rem; }
-.attention-copy small { margin-top: .12rem; color: #77837b; font-size: .66rem; }
-.attention-item > b { color: #24372a; font-size: .72rem; white-space: nowrap; }
-.attention-item > .bi-chevron-left { color: #a5afa8; font-size: .68rem; }
+.attention-copy strong { font-size: .875rem; }
+.attention-copy small { margin-top: .12rem; color: var(--muted, var(--muted)); font-size: .875rem; }
+.attention-item > b { color: var(--ink, var(--ink)); font-size: .875rem; white-space: nowrap; }
+.attention-item > .bi-chevron-left { color: var(--muted, var(--muted)); font-size: .875rem; }
 .attention-empty {
     display: flex;
     align-items: center;
     gap: .45rem;
     margin: 0;
-    color: #44805a;
-    font-size: .82rem;
+    color: var(--muted, var(--muted));
+    font-size: .875rem;
     font-weight: 750;
 }
 @media (max-width: 720px) {
     .attention-rail { grid-template-columns: 1fr; }
     .attention-rail > header { flex-direction: row; justify-content: space-between; border-inline-end: 0; }
 }
+
+/* Task-specific component layout. */
+.attention-rail{display:flex;align-items:stretch;gap:0;padding:0;border:1px solid var(--line);border-radius:8px;background:var(--surface);overflow:hidden}.attention-rail>header{display:flex;align-items:center;gap:8px;flex-shrink:0;padding:12px 16px;background:var(--canvas);border-inline-end:1px solid var(--line);font-size:14px}.attention-scroll{display:flex;gap:0;padding:0;overflow-x:auto;flex:1}.attention-item{border:0;border-inline-end:1px solid var(--line);border-radius:0;min-height:68px;padding:12px 16px;min-width:240px;background:transparent}.attention-copy strong{font-size:15px}.attention-copy small{font-size:14px}.attention-icon{border-radius:6px;width:32px;height:32px}.attention-empty{min-height:58px;padding:14px;font-size:14px}@media(max-width:650px){.attention-rail{flex-direction:column}.attention-rail>header{border-inline-end:0;border-bottom:1px solid var(--line);padding:10px 14px}}
 </style>

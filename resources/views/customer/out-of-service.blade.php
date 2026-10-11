@@ -6,5 +6,5 @@
 ])
 
 @section('heading')الطاولة {{ $table->number }} غير متاحة الآن@endsection
-@section('body')هذه الطاولة متوقفة مؤقتاً عن استقبال الطلبات، وليست محجوزة لمجرد فتح المنيو.@endsection
-@section('detail')اطلب من الجرسون اختيار طاولة متاحة أو فتح الطلب لك من شاشة الصالة.@endsection
+@section('body')هذه الطاولة متوقفة مؤقتاً عن استقبال الطلبات.@endsection
+@section('detail')اطلب من الجرسون طاولة متاحة أو المساعدة في طلبك.@endsection

@@ -2,9 +2,9 @@
 
 @section('title', 'خلل غير متوقع')
 @section('code', '500')
-@section('accent', '#e8a24a')
+@section('accent', '#A3422B')
 @section('headline', 'تعذر إكمال العملية الآن')
-@section('message', 'حدث خلل غير متوقع ولم نتمكن من إكمال طلبك. جرّب مرة ثانية، وإذا تكرر الأمر أخبر موظف المطعم.')
+@section('message', 'تعذّر تأكيد نتيجة العملية. حدّث الصفحة وتحقق من حالتها قبل إعادة تنفيذها.')
 
 @section('illustration')
     {{-- Warning triangle with ! --}}

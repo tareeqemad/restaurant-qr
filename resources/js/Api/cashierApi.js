@@ -11,17 +11,24 @@ function csrfToken() {
 }
 
 async function parseResponse(response) {
-    let data = {};
+    let data;
 
     try {
         data = await response.json();
     } catch {
-        // Hosting error pages and expired-session redirects are HTML. Treat
-        // them as transport failures instead of an empty successful command.
+        throw new Error('لم يصل تأكيد من الخادم. أعد المحاولة من نفس النافذة.');
+    }
+
+    // A successful HTTP status alone does not acknowledge a financial write.
+    // A proxy/login HTML page, null JSON, or an unrelated JSON response must
+    // keep the command form and its retry token intact.
+    if (!data || typeof data !== 'object' || Array.isArray(data)
+        || (response.ok && typeof data.ok !== 'boolean')) {
+        throw new Error('لم يصل تأكيد من الخادم. أعد المحاولة من نفس النافذة.');
     }
 
     return {
-        ok: response.ok && data.ok !== false,
+        ok: response.ok && data.ok === true,
         status: response.status,
         data,
     };

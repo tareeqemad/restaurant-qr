@@ -10,7 +10,7 @@
  * A phone number is optional: when supplied it links the visit to the internal
  * customer file; an empty value keeps the order anonymous.
  */
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 
 const props = defineProps({
     open: { type: Boolean, default: false },
@@ -24,12 +24,52 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['close', 'submit']);
+const dialogPanel = ref(null);
+const closeButton = ref(null);
+let previousFocus = null;
+let focusRevision = 0;
+
+function restoreDialogFocus() {
+    const target = previousFocus;
+    previousFocus = null;
+    const revision = ++focusRevision;
+    nextTick(() => {
+        if (revision === focusRevision && target?.isConnected) target.focus({ preventScroll: true });
+    });
+}
+
+function handleDialogKeydown(event) {
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        emit('close');
+        return;
+    }
+    if (event.key !== 'Tab' || !dialogPanel.value) return;
+
+    const focusable = [...dialogPanel.value.querySelectorAll(
+        'a[href], button, input, select, textarea, summary, [tabindex]',
+    )].filter((element) => element.tabIndex >= 0 && !element.disabled
+        && element.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden');
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (!first) {
+        event.preventDefault();
+        dialogPanel.value.focus({ preventScroll: true });
+    } else if (!dialogPanel.value.contains(active) || active === dialogPanel.value
+        || (event.shiftKey ? active === first : active === last)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+    }
+}
 
 const customerPhone = ref(props.sessionInfo.defaultPhone ?? '');
 const orderNotes = ref('');
 const editingNotes = ref(null); // row id whose notes editor is open
 const notesDraft = ref('');
 let previousBodyOverflow = '';
+let ownsBodyLock = false;
 
 const round = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const fmt = (n) => round(n).toFixed(2);
@@ -84,14 +124,25 @@ watch(() => props.open, (open) => {
     if (typeof document === 'undefined') return;
 
     if (open) {
-        previousBodyOverflow = document.body.style.overflow;
+        if (!ownsBodyLock) previousBodyOverflow = document.body.style.overflow;
+        ownsBodyLock = true;
         document.body.style.overflow = 'hidden';
+        previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        const revision = ++focusRevision;
+        nextTick(() => {
+            if (revision !== focusRevision || !props.open) return;
+            (closeButton.value || dialogPanel.value)?.focus({ preventScroll: true });
+        });
     } else {
-        document.body.style.overflow = previousBodyOverflow;
+        if (ownsBodyLock) document.body.style.overflow = previousBodyOverflow;
+        ownsBodyLock = false;
+        restoreDialogFocus();
     }
 }, { immediate: true });
 onBeforeUnmount(() => {
-    if (typeof document !== 'undefined') document.body.style.overflow = previousBodyOverflow;
+    if (typeof document !== 'undefined' && ownsBodyLock) document.body.style.overflow = previousBodyOverflow;
+    ownsBodyLock = false;
+    restoreDialogFocus();
 });
 </script>
 
@@ -99,12 +150,13 @@ onBeforeUnmount(() => {
     <Teleport to="body">
         <Transition name="ct">
             <div v-if="open" class="ct-backdrop" @click.self="$emit('close')">
-                <div class="ct-sheet" role="dialog" aria-modal="true" :aria-label="t('cart_title') ?? 'سلتك'">
+                <div ref="dialogPanel" class="ct-sheet" role="dialog" aria-modal="true" :aria-label="t('cart_title') ?? 'سلتك'"
+                     tabindex="-1" @keydown="handleDialogKeydown">
                     <header class="ct-head">
                         <h3><i class="bi bi-bag"></i> {{ t('cart_title') ?? 'سلتك' }}
                             <span v-if="cart.count.value" class="ct-count">{{ cart.count.value }}</span>
                         </h3>
-                        <button type="button" class="ct-close" aria-label="إغلاق" @click="$emit('close')">
+                        <button ref="closeButton" type="button" class="ct-close" aria-label="إغلاق" @click="$emit('close')">
                             <i class="bi bi-x-lg"></i>
                         </button>
                     </header>
@@ -226,13 +278,13 @@ onBeforeUnmount(() => {
     max-height: min(860px, calc(100dvh - 24px));
     display: flex;
     flex-direction: column;
-    background: #f8fafc;
-    border-radius: 20px 20px 0 0;
+    background: var(--surface);
+    border-radius: 12px 12px 0 0;
     overflow: hidden;
 }
 @media (min-width: 768px) {
     .ct-backdrop { align-items: center; padding: 1rem; }
-    .ct-sheet { border-radius: 20px; }
+    .ct-sheet { border-radius: 12px; }
 }
 
 .ct-head {
@@ -240,25 +292,25 @@ onBeforeUnmount(() => {
     align-items: center;
     justify-content: space-between;
     padding: .9rem 1.1rem;
-    background: #fff;
-    border-bottom: 1px solid #eef2f6;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
     flex-shrink: 0;
 }
 .ct-head h3 {
     margin: 0;
     font-size: 1.02rem;
-    font-weight: 900;
-    color: #0f172a;
+    font-weight: 800;
+    color: var(--ink);
     display: flex;
     align-items: center;
     gap: .5rem;
 }
-.ct-head h3 > i { color: rgb(var(--primary-rgb)); }
+.ct-head h3 > i { color: var(--brand); }
 .ct-count {
-    background: rgb(var(--primary-rgb));
-    color: #fff;
-    border-radius: 999px;
-    font-size: .72rem;
+    background: var(--brand);
+    color: #FFFDFA;
+    border-radius: 12px;
+    font-size: .875rem;
     padding: .1rem .5rem;
 }
 .ct-close {
@@ -266,8 +318,8 @@ onBeforeUnmount(() => {
     height: 42px;
     border: 0;
     border-radius: 10px;
-    background: #f1f5f9;
-    color: #475569;
+    background: var(--canvas);
+    color: var(--ink);
     cursor: pointer;
 }
 
@@ -282,16 +334,16 @@ onBeforeUnmount(() => {
     flex-direction: column;
     gap: .6rem;
 }
-.ct-empty { text-align: center; color: #94a3b8; padding: 2.5rem 1rem; }
+.ct-empty { text-align: center; color: #315B6B; padding: 2.5rem 1rem; }
 .ct-empty i { font-size: 2.2rem; display: block; margin-bottom: .6rem; }
 .ct-empty p { margin: 0; font-size: .9rem; font-weight: 600; }
 
 .ct-row {
     display: flex;
     gap: .65rem;
-    background: #fff;
-    border: 1px solid #eef0f3;
-    border-radius: 14px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
     padding: .6rem;
 }
 .ct-row.is-pending { opacity: .6; }
@@ -300,41 +352,41 @@ onBeforeUnmount(() => {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #f1f5f9;
-    color: #cbd5e1;
+    background: var(--canvas);
+    color: #FFFDFA;
     font-size: 1.3rem;
 }
 .ct-row-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .25rem; }
 .ct-row-top { display: flex; justify-content: space-between; gap: .5rem; align-items: baseline; }
-.ct-row-top strong { font-size: .88rem; font-weight: 800; color: #0f172a; }
-.ct-row-total { font-size: .84rem; font-weight: 900; color: rgb(var(--primary-rgb)); white-space: nowrap; }
-.ct-row-mods { color: #64748b; font-size: .74rem; }
+.ct-row-top strong { font-size: .88rem; font-weight: 800; color: var(--ink); }
+.ct-row-total { font-size: .875rem; font-weight: 800; color: var(--brand); white-space: nowrap; }
+.ct-row-mods { color: #315B6B; font-size: .875rem; }
 .ct-row-exclusions { display: flex; flex-wrap: wrap; gap: .22rem; }
-.ct-row-exclusions span { display: inline-flex; align-items: center; gap: .18rem; padding: .16rem .4rem; border-radius: 999px; background: #fee2e2; color: #991b1b; font-size: .7rem; font-weight: 800; }
-.ct-row-notes { color: #92400e; font-size: .74rem; cursor: pointer; }
+.ct-row-exclusions span { display: inline-flex; align-items: center; gap: .18rem; padding: .16rem .4rem; border-radius: 12px; background: #fee2e2; color: #991b1b; font-size: .875rem; font-weight: 800; }
+.ct-row-notes { color: #92400e; font-size: .875rem; cursor: pointer; }
 .ct-notes-edit { display: flex; gap: .35rem; }
 .ct-notes-edit input {
     flex: 1;
-    border: 1.5px solid #e2e8f0;
-    border-radius: 9px;
+    border: 1.5px solid var(--line);
+    border-radius: 8px;
     padding: .35rem .6rem;
     font: inherit;
-    font-size: .8rem;
+    font-size: .875rem;
 }
 .ct-notes-edit button {
     width: 38px;
     border: 0;
-    border-radius: 9px;
-    background: rgb(var(--primary-rgb));
-    color: #fff;
+    border-radius: 8px;
+    background: var(--brand);
+    color: #FFFDFA;
     cursor: pointer;
 }
 .ct-row-foot { display: flex; align-items: center; gap: .45rem; margin-top: .15rem; }
 .ct-stepper {
     display: inline-flex;
     align-items: center;
-    background: #f1f5f9;
-    border-radius: 10px;
+    background: var(--canvas);
+    border-radius: 8px;
     padding: 2px;
 }
 .ct-stepper button {
@@ -343,71 +395,71 @@ onBeforeUnmount(() => {
     border: 0;
     border-radius: 8px;
     background: transparent;
-    color: #0f172a;
-    font-size: .8rem;
+    color: var(--ink);
+    font-size: .875rem;
     cursor: pointer;
 }
 .ct-stepper button:disabled { opacity: .35; }
-.ct-stepper span { min-width: 1.8em; text-align: center; font-weight: 900; font-size: .9rem; }
+.ct-stepper span { min-width: 1.8em; text-align: center; font-weight: 800; font-size: .9rem; }
 .ct-mini {
     width: 34px;
     height: 34px;
     border: 0;
     border-radius: 9px;
-    background: #f1f5f9;
-    color: #64748b;
+    background: var(--canvas);
+    color: #315B6B;
     cursor: pointer;
-    font-size: .8rem;
+    font-size: .875rem;
 }
-.ct-mini--del { margin-inline-start: auto; color: #b91c1c; background: #fef2f2; }
+.ct-mini--del { margin-inline-start: auto; color: #b91c1c; background: var(--canvas); }
 
 .ct-identity, .ct-order-notes {
-    background: #fff;
-    border: 1px solid #eef0f3;
-    border-radius: 14px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
     padding: .75rem .8rem;
 }
 .ct-id-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: .6rem; }
 .ct-id-grid label { display: flex; flex-direction: column; gap: .3rem; margin: 0; }
-.ct-id-grid span { font-size: .74rem; font-weight: 700; color: #334155; }
-.ct-id-grid span small { color: #64748b; font-size: .7rem; font-weight: 600; }
+.ct-id-grid span { font-size: .875rem; font-weight: 700; color: var(--ink); }
+.ct-id-grid span small { color: #315B6B; font-size: .875rem; font-weight: 600; }
 .ct-id-grid input {
-    border: 1.5px solid #e2e8f0;
-    border-radius: 10px;
+    border: 1.5px solid var(--line);
+    border-radius: 8px;
     min-height: 42px;
     padding: 0 .7rem;
     font: inherit;
-    font-size: .86rem;
+    font-size: .875rem;
 }
-.ct-id-hint { display: block; margin-top: .4rem; color: #94a3b8; font-size: .7rem; }
+.ct-id-hint { display: block; margin-top: .4rem; color: #315B6B; font-size: .875rem; }
 .ct-locked {
     display: flex;
     align-items: flex-start;
     gap: .6rem;
     padding: .75rem .8rem;
-    border: 1px solid #bfdbfe;
-    border-radius: 14px;
-    background: #eff6ff;
-    color: #1e40af;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--canvas);
+    color: #315B6B;
 }
 .ct-locked div { display: flex; flex-direction: column; gap: .12rem; }
-.ct-locked strong { font-size: .82rem; font-weight: 850; }
-.ct-locked span { font-size: .73rem; color: #475569; line-height: 1.5; }
+.ct-locked strong { font-size: .875rem; font-weight: 800; }
+.ct-locked span { font-size: .875rem; color: var(--ink); line-height: 1.5; }
 .ct-order-notes { display: flex; flex-direction: column; gap: .35rem; }
-.ct-order-notes span { font-size: .78rem; font-weight: 700; color: #334155; }
+.ct-order-notes span { font-size: .875rem; font-weight: 700; color: var(--ink); }
 .ct-order-notes textarea {
-    border: 1.5px solid #e2e8f0;
+    border: 1.5px solid var(--line);
     border-radius: 10px;
     padding: .5rem .7rem;
     font: inherit;
-    font-size: .84rem;
+    font-size: .875rem;
     resize: none;
 }
 
 .ct-foot {
     padding: .8rem 1rem calc(.8rem + env(safe-area-inset-bottom));
-    background: #fff;
-    border-top: 1px solid #eef2f6;
+    background: var(--surface);
+    border-top: 1px solid var(--line);
     display: flex;
     flex-direction: column;
     gap: .6rem;
@@ -419,20 +471,20 @@ onBeforeUnmount(() => {
     display: flex;
     align-items: center;
     gap: .4rem;
-    color: #166534;
-    font-size: .74rem;
+    color: var(--brand);
+    font-size: .875rem;
     font-weight: 750;
 }
 .ct-total-line { display: flex; justify-content: space-between; align-items: baseline; }
-.ct-total-line span { font-size: .84rem; font-weight: 700; color: #475569; }
-.ct-total-line strong { font-size: 1.15rem; font-weight: 900; color: #0f172a; }
-.ct-tax-note { color: #94a3b8; font-size: .72rem; }
+.ct-total-line span { font-size: .875rem; font-weight: 700; color: var(--ink); }
+.ct-total-line strong { font-size: 1.15rem; font-weight: 800; color: var(--ink); }
+.ct-tax-note { color: #315B6B; font-size: .875rem; }
 .ct-submit {
     min-height: 50px;
     border: 0;
-    border-radius: 13px;
-    background: rgb(var(--primary-rgb));
-    color: #fff;
+    border-radius: 8px;
+    background: var(--brand);
+    color: #FFFDFA;
     font: inherit;
     font-size: 1rem;
     font-weight: 800;
@@ -471,12 +523,15 @@ onBeforeUnmount(() => {
     .ct-row { gap: .5rem; padding: .52rem; }
     .ct-thumb { width: 50px; height: 50px; }
     .ct-row-top { align-items: flex-start; flex-direction: column; gap: .1rem; }
-    .ct-row-total { font-size: .78rem; }
+    .ct-row-total { font-size: .875rem; }
     .ct-stepper button, .ct-mini { width: 32px; height: 32px; }
     .ct-foot { gap: .45rem; }
-    .ct-round-note { font-size: .68rem; }
+    .ct-round-note { font-size: .875rem; }
 }
 @media (prefers-reduced-motion: reduce) {
     .ct-enter-active, .ct-leave-active { transition: none; }
 }
+
+/* Task-specific component layout. */
+.ct-sheet{border-radius:12px 12px 0 0;max-height:94dvh;background:var(--surface)}.ct-head{padding:20px 24px;border-bottom:1px solid var(--line);background:var(--surface);color:var(--ink)}.ct-head h2{font-size:23px}.ct-count{border-radius:6px;background:var(--brand-soft);color:var(--brand)}.ct-close{width:44px;height:44px;border-radius:8px;background:var(--canvas)}.ct-body{padding:0 24px}.ct-row{display:grid;grid-template-columns:56px minmax(0,1fr);gap:12px;padding:18px 0;border:0;border-bottom:1px solid var(--line);border-radius:0}.ct-thumb{width:56px;height:56px;border-radius:6px}.ct-row-top strong{font-size:16px}.ct-row-foot{padding-top:12px;gap:10px}.ct-stepper{border-radius:6px}.ct-stepper button{width:40px;height:40px}.ct-mini{min-width:40px;min-height:40px}.ct-identity,.ct-order-notes{margin:20px 0;padding:16px;background:var(--canvas);border-radius:8px;border:1px solid var(--line)}.ct-foot{padding:20px 24px;border-top:1px solid var(--line);background:var(--surface)}.ct-total-line strong{font-size:27px}.ct-submit{min-height:54px;border-radius:8px;font-size:17px}.ct-round-note,.ct-id-hint,.ct-tax-note{font-size:14px;line-height:1.65}.ct-id-grid{gap:14px}.ct-id-grid input,.ct-order-notes textarea{min-height:48px;border-radius:6px;font-size:15px}
 </style>

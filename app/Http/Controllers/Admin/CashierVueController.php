@@ -39,8 +39,8 @@ use App\Models\Scopes\BranchScope;
 use App\Models\Setting;
 use App\Models\TableSession;
 use App\Services\BillingService;
-use App\Services\CustomerAdvanceService;
 use App\Services\CreditNoteService;
+use App\Services\CustomerAdvanceService;
 use App\Services\CustomerIdentityService;
 use App\Services\InventoryService;
 use App\Services\OrderDiscountService;
@@ -128,6 +128,20 @@ class CashierVueController extends Controller
         $this->authorize('viewAny', Payment::class);
 
         $filters = $this->validatedFilters($request);
+
+        if ($request->query('scope') === 'workspace') {
+            return response()->json([
+                'ok' => true,
+                'message' => null,
+                'data' => [
+                    'changed' => true,
+                    'scope' => 'workspace',
+                    'workspace' => $this->workspace($filters),
+                    'generated_at' => now()->toAtomString(),
+                ],
+            ]);
+        }
+
         $version = $this->pulseVersion();
 
         // Six skipped 10-second polls are followed by a forced read in the
@@ -1093,13 +1107,14 @@ class CashierVueController extends Controller
         });
     }
 
-    private function pendingTransferQueue(): Collection
+    private function pendingTransferQueue(?int $sessionId = null): Collection
     {
         return PendingTransfer::query()
             ->with(['tableSession.table:id,number', 'recordedBy:id,name'])
             ->pending()
+            ->when($sessionId, fn ($query) => $query->where('table_session_id', $sessionId))
             ->latest()
-            ->limit(50)
+            ->when(! $sessionId, fn ($query) => $query->limit(50))
             ->get()
             ->map(fn (PendingTransfer $transfer) => [
                 'id' => (int) $transfer->id,
@@ -1119,13 +1134,15 @@ class CashierVueController extends Controller
             ]);
     }
 
-    private function pendingChangeQueue(): Collection
+    private function pendingChangeQueue(?int $sessionId = null, ?int $orderId = null): Collection
     {
         return OrderChangeRequest::query()
             ->with(['order:id,number,table_session_id,table_id', 'order.table:id,number', 'orderItem:id,name_snapshot'])
             ->where('status', OrderChangeRequest::STATUS_PENDING)
+            ->when($sessionId, fn ($query) => $query->whereHas('order', fn ($order) => $order->where('table_session_id', $sessionId)))
+            ->when($orderId, fn ($query) => $query->where('order_id', $orderId))
             ->oldest()
-            ->limit(50)
+            ->when(! $sessionId && ! $orderId, fn ($query) => $query->limit(50))
             ->get()
             ->map(fn (OrderChangeRequest $change) => [
                 'id' => (int) $change->id,
@@ -1269,8 +1286,8 @@ class CashierVueController extends Controller
                 ->values(),
             'fulfillment' => $this->fulfillmentPayload($session->orders),
             'invoice' => $this->invoicePayload($session->invoice),
-            'pending_transfers' => $this->pendingTransferQueue()->where('session_id', $session->id)->values(),
-            'pending_changes' => $this->pendingChangeQueue()->where('session_id', $session->id)->values(),
+            'pending_transfers' => $this->pendingTransferQueue((int) $session->id)->values(),
+            'pending_changes' => $this->pendingChangeQueue((int) $session->id)->values(),
             'can_close_without_billing' => $session->status === 'active'
                 && ! $session->invoice
                 && $billable <= 0.001,
@@ -1316,7 +1333,7 @@ class CashierVueController extends Controller
             'fulfillment' => $this->fulfillmentPayload(collect([$order])),
             'invoice' => $this->invoicePayload($order->invoice),
             'pending_transfers' => [],
-            'pending_changes' => [],
+            'pending_changes' => $this->pendingChangeQueue(orderId: (int) $order->id)->values(),
             'can_close_without_billing' => false,
             'delivery' => [
                 'address' => $order->delivery_address,

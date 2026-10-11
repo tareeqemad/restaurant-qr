@@ -1,4 +1,5 @@
 <script setup>
+import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 /**
  * مقارنة الفروع — owner-only KPI matrix: 12 KPIs down, branches across,
  * best branch green, worst red.
@@ -46,13 +47,14 @@ const submit = () => router.get(props.urls.self, { from: form.from, to: form.to 
 </script>
 
 <template>
-    <Head title="مقارنة الفروع" />
-
-    <PageHeader title="مقارنة الفروع" icon="bi-arrows-collapse"
+<Head title="مقارنة الفروع" />
+<FinancialWorkspace area="التقارير والتحليل" mode="report">
+<template #heading>
+<PageHeader title="مقارنة الفروع" icon="bi-arrows-collapse"
                 subtitle="نظرة جنباً إلى جنب على KPIs لكل فرع — الأخضر هو الأفضل، الأحمر يحتاج انتباه."
                 :crumbs="[{ label: 'التقارير', url: urls.reportsIndex }]" />
-
-    <DataPanel title="مصفوفة الـ KPIs" icon="bi-grid-3x3-gap-fill" :count="rowCount">
+</template>
+<DataPanel title="مصفوفة الـ KPIs" icon="bi-grid-3x3-gap-fill" :count="rowCount">
         <template #actions>
             <!-- Streamed CSV: native navigation, never router.visit(). -->
             <a v-if="rowCount > 0 && canExport" :href="exportUrl" class="btn btn-sm btn-success">
@@ -126,6 +128,8 @@ const submit = () => router.get(props.urls.self, { from: form.from, to: form.to 
             </div>
         </template>
     </DataPanel>
+</FinancialWorkspace>
+
 </template>
 
 <style scoped>

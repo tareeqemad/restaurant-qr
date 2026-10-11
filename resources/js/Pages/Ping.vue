@@ -37,15 +37,15 @@ defineProps({
     justify-content: center;
     padding: 1.25rem;
     background:
-        linear-gradient(180deg, rgba(var(--primary-rgb, 22 101 52), .06) 0%, transparent 240px),
-        #f7f8f7;
+        linear-gradient(180deg, rgba(var(--primary-rgb, 163, 66, 43), .06) 0%, transparent 240px),
+        var(--canvas, #f7f3ed);
 }
 .ping-card {
     width: 100%;
     max-width: 420px;
     background: #fff;
-    border: 1px solid #e5e7eb;
-    border-top: 4px solid rgb(var(--primary-rgb, 22 101 52));
+    border: 1px solid var(--line, #dfd7cb);
+    border-top: 4px solid rgb(var(--primary-rgb, 163, 66, 43));
     border-radius: 16px;
     padding: 2rem 1.75rem;
     text-align: center;
@@ -53,13 +53,13 @@ defineProps({
 }
 .ping-mark {
     font-size: 2.6rem;
-    color: rgb(var(--primary-rgb, 22 101 52));
+    color: rgb(var(--primary-rgb, 163, 66, 43));
     margin-bottom: .5rem;
 }
-h1 { margin: 0 0 .5rem; font-size: 1.3rem; font-weight: 800; color: #1f2937; }
-p { margin: 0 0 1rem; color: #6b7280; font-size: .9rem; line-height: 1.7; }
-dl { margin: 0 0 1.25rem; font-size: .85rem; color: #374151; }
-dt { font-weight: 700; color: #9ca3af; }
+h1 { margin: 0 0 .5rem; font-size: 1.3rem; font-weight: 800; color: var(--ink, #25343a); }
+p { margin: 0 0 1rem; color: var(--muted, #626b6d); font-size: .9rem; line-height: 1.7; }
+dl { margin: 0 0 1.25rem; font-size: .85rem; color: var(--ink, #25343a); }
+dt { font-weight: 700; color: var(--muted, #626b6d); }
 dd { margin: 0; font-variant-numeric: tabular-nums; }
 .ping-back {
     display: inline-flex;
@@ -68,7 +68,7 @@ dd { margin: 0; font-variant-numeric: tabular-nums; }
     min-height: 44px;
     padding: .5rem 1rem;
     border-radius: 10px;
-    background: rgb(var(--primary-rgb, 22 101 52));
+    background: rgb(var(--primary-rgb, 163, 66, 43));
     color: #fff;
     font-weight: 800;
     font-size: .9rem;

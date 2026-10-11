@@ -6,6 +6,7 @@ use App\Models\Branch;
 use App\Models\Category;
 use App\Models\Ingredient;
 use App\Models\IngredientStock;
+use App\Models\Invoice;
 use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\OrderChangeRequest;
@@ -151,7 +152,7 @@ class KitchenBoardVueTest extends TestCase
                 ->component('Admin/Kitchen/Board')
                 ->where('station.code', 'kitchen')
                 ->has('board.waiting', 1, fn (Assert $card) => $card
-                    ->where('tableNum', 4)
+                    ->where('tableNum', '4')
                     ->where('roundNumber', 1)
                     ->where('roundLabel', 'الطلب الأول')
                     ->where('pieceCount', '1')
@@ -448,7 +449,7 @@ class KitchenBoardVueTest extends TestCase
         $this->assertSame('ready', $item->fresh()->status);
         $this->assertStringNotContainsString('serve-order', $board);
         $this->assertStringContainsString('card.handoff.recipientLabel', $card);
-        $this->assertStringContainsString('وهو يؤكد التقديم من شاشة الخدمة', $card);
+        $this->assertStringNotContainsString("act('serve-order'", $card);
     }
 
     public function test_a_stale_tap_answers_409_with_the_domain_message(): void
@@ -505,5 +506,126 @@ class KitchenBoardVueTest extends TestCase
         $this->actingAs($waiter)
             ->getJson(route('admin.station.pulse', 'kitchen'))
             ->assertForbidden();
+    }
+
+    public function test_partial_readiness_is_reported_without_duplicating_the_ticket(): void
+    {
+        $item = $this->approvedItem();
+        $ready = $item->replicate(['uuid']);
+        $ready->fill(['status' => 'ready', 'quantity' => 2, 'ready_at' => now()->subMinutes(4), 'prep_started_at' => now()->subMinutes(8)])->save();
+
+        $this->actingAs($this->chef)->get(route('admin.station.show', 'kitchen'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('board.waiting', 1)->has('board.ready', 0)
+                ->where('board.waiting.0.stageCounts.waiting', 1)
+                ->where('board.waiting.0.stageCounts.ready', 1)
+                ->where('board.waiting.0.readyQuantity', '2')
+                ->where('board.waiting.0.readyAgeMin', 4)
+                ->where('board.waiting.0.readyUrgency', 'amber')
+                ->where('board.load.totalTickets', 1)
+                ->where('board.load.readyTickets', 1)
+                ->where('board.readyIds.0', $item->order_id));
+    }
+
+    public function test_table_names_survive_and_a_link_filter_does_not_remove_other_tables_from_the_payload(): void
+    {
+        $this->table->update(['number' => 'A1']);
+        $this->approvedItem();
+        $secondTable = Table::create(['branch_id' => $this->branch->id, 'number' => '12B', 'capacity' => 2, 'status' => 'occupied', 'active' => true]);
+        $second = $this->approvedItem();
+        $second->order->update(['table_id' => $secondTable->id]);
+
+        $this->actingAs($this->chef)->get(route('admin.station.show', ['code' => 'kitchen', 'table' => 'A1']))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('filters.table', 'A1')
+                ->has('board.waiting', 2)
+                ->where('board.waiting.0.tableNum', 'A1')
+                ->where('board.waiting.1.tableNum', '12B')
+                ->where('board.activeTables', fn ($numbers) => collect($numbers)->sort()->values()->all() === ['12B', 'A1']));
+    }
+
+    public function test_batch_totals_keep_removals_modifiers_and_notes_separate(): void
+    {
+        $this->approvedItem();
+        $this->approvedItem();
+        $without = $this->approvedItem();
+        $without->exclusions()->create(['ingredient_id' => $this->burger->recipeItems()->firstOrFail()->ingredient_id, 'name_snapshot' => 'Patty']);
+        $extra = $this->approvedItem();
+        $extra->modifiers()->create(['name_snapshot' => 'إضافة جبنة', 'price_delta' => 1]);
+        $notes = $this->approvedItem();
+        $notes->update(['notes' => 'مستوي جيداً']);
+        $orderNotes = $this->approvedItem();
+        $orderNotes->order->update(['customer_notes' => 'بدون ملح لكل الطلب']);
+
+        $this->actingAs($this->chef)->get(route('admin.station.show', 'kitchen'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('board.allDay', 5)
+                ->where('board.allDay', function ($rows) {
+                    $rows = collect($rows);
+
+                    return $rows->sum(fn ($row) => (float) $row['qty']) === 6.0
+                        && $rows->first(fn ($row) => ! count($row['mods']) && ! count($row['exclusions']) && ! $row['notes'] && ! $row['orderNotes'])['qty'] === '2'
+                        && $rows->contains(fn ($row) => $row['exclusions'] === ['Patty'])
+                        && $rows->contains(fn ($row) => ($row['mods'][0]['name'] ?? null) === 'إضافة جبنة')
+                        && $rows->contains(fn ($row) => $row['notes'] === 'مستوي جيداً')
+                        && $rows->contains(fn ($row) => $row['orderNotes'] === 'بدون ملح لكل الطلب');
+                }));
+    }
+
+    public function test_invoiced_items_hide_corrections_but_keep_normal_preparation_available(): void
+    {
+        $item = $this->approvedItem();
+        $item->update(['status' => 'preparing', 'prep_started_at' => now()]);
+        $invoice = Invoice::create([
+            'branch_id' => $this->branch->id, 'table_session_id' => $this->session->id,
+            'number' => 'INV-KDS-GUARD', 'subtotal' => 10, 'total' => 10, 'balance' => 10,
+            'status' => 'issued', 'issued_at' => now(),
+        ]);
+
+        $this->actingAs($this->chef)->get(route('admin.station.show', 'kitchen'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('board.cooking.0.items.0.undoStartRemaining', null)
+                ->where('board.cooking.0.items.0.canCancel', false));
+        $this->postJson(route('admin.station.action', 'kitchen'), ['verb' => 'ready', 'item_id' => $item->id, 'include_board' => true])
+            ->assertOk()->assertJsonPath('board.ready.0.items.0.undoReadyRemaining', null);
+        $this->postJson(route('admin.station.action', 'kitchen'), ['verb' => 'undo-ready', 'item_id' => $item->id])
+            ->assertStatus(409);
+
+        $invoice->update(['status' => 'cancelled']);
+        $this->get(route('admin.station.show', 'kitchen'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('board.ready.0.items.0.canCancel', true)
+                ->where('board.ready.0.items.0.undoReadyRemaining', fn ($seconds) => $seconds > 0));
+    }
+
+    public function test_bulk_ready_changes_only_the_visible_requested_lines(): void
+    {
+        $visible = $this->approvedItem();
+        $visible->update(['status' => 'preparing', 'prep_started_at' => now()]);
+        $hidden = $visible->replicate(['uuid']);
+        $hidden->fill(['status' => 'approved', 'prep_started_at' => null])->save();
+        $otherOrder = $this->approvedItem();
+
+        $this->actingAs($this->chef)->postJson(route('admin.station.action', 'kitchen'), [
+            'verb' => 'ready-all', 'order_id' => $visible->order_id,
+            'item_ids' => [$visible->id, $otherOrder->id], 'include_board' => true,
+        ])->assertOk()->assertJsonPath('ok', true)->assertJsonStructure(['version', 'board']);
+
+        $this->assertSame('ready', $visible->fresh()->status);
+        $this->assertSame('approved', $hidden->fresh()->status);
+        $this->assertSame('approved', $otherOrder->fresh()->status);
+    }
+
+    public function test_pulse_returns_a_snapshot_only_when_changed_or_explicitly_refreshed(): void
+    {
+        $this->approvedItem();
+        $this->actingAs($this->chef);
+        $version = $this->getJson(route('admin.station.pulse', 'kitchen'))->json('version');
+        $this->getJson(route('admin.station.pulse', ['code' => 'kitchen', 'version' => $version]))
+            ->assertOk()->assertJsonMissingPath('board');
+        $this->getJson(route('admin.station.pulse', ['code' => 'kitchen', 'version' => 'outdated']))
+            ->assertOk()->assertJsonCount(1, 'board.waiting');
+        $this->getJson(route('admin.station.pulse', ['code' => 'kitchen', 'version' => $version, 'refresh' => 1]))
+            ->assertOk()->assertJsonCount(1, 'board.waiting');
     }
 }

@@ -15,7 +15,7 @@ function csrfToken() {
     return document.querySelector('meta[name="csrf-token"]')?.content ?? '';
 }
 
-async function postJson(url, body) {
+async function postJson(url, body, advisory = false) {
     const response = await fetch(url, {
         method: 'POST',
         credentials: 'same-origin',
@@ -27,7 +27,7 @@ async function postJson(url, body) {
         body: JSON.stringify(body),
     });
 
-    let data = {};
+    let data = null;
     try {
         data = await response.json();
     } catch {
@@ -35,10 +35,12 @@ async function postJson(url, body) {
         // read as a refusal, not a success with empty data.
     }
 
+    const valid = data !== null && typeof data === 'object' && !Array.isArray(data);
+    const acknowledged = valid && (advisory ? Array.isArray(data.issues) : data.ok === true);
     return {
-        ok: response.ok && data.ok !== false,
+        ok: response.ok && acknowledged,
         status: response.status,
-        data,
+        data: valid ? data : { message: 'لم يصل تأكيد من الخادم. السلة محفوظة؛ أعد المحاولة.' },
     };
 }
 
@@ -54,7 +56,7 @@ export function reviewOrder(tableId, orderId, payload) {
 
 /** §7 — { cart } → { issues: [{ingredient, available}] }. Advisory only. */
 export function previewStock(tableId, cart) {
-    return postJson(`/admin/waiter-orders/table/${tableId}/preview-stock`, { cart });
+    return postJson(`/admin/waiter-orders/table/${tableId}/preview-stock`, { cart }, true);
 }
 
 /** ربط/فك زبون — { phone?, name?, create_if_missing?, detach? } → { ok, customer }. */

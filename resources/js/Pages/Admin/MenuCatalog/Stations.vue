@@ -1,4 +1,5 @@
 <script setup>
+import ManagementPage from '../../../Components/Inventory/ManagementPage.vue';
 import { ref } from 'vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import AdminLayout from '../../../Layouts/AdminLayout.vue';
@@ -21,6 +22,7 @@ async function destroy(item){if(!item.can.delete)return;const yes=await ask({tit
 </script>
 
 <template>
+    <ManagementPage mode="workspace">
 <Head title="محطات التحضير"/>
 <CatalogWorkspacePage :navigation="navigation" title="محطات التحضير" icon="bi-fire"
                       subtitle="حدّد أين يصل كل صنف: المطبخ، البار أو أي نقطة إنتاج أخرى"
@@ -56,40 +58,41 @@ async function destroy(item){if(!item.can.delete)return;const yes=await ask({tit
  </form>
  <template #footer><button type="button" class="btn btn-light" @click="close">تراجع</button><button type="submit" form="station-form" class="btn btn-primary" :disabled="form.processing"><span v-if="form.processing" class="spinner-border spinner-border-sm"></span><i v-else class="bi bi-check-circle-fill"></i> حفظ</button></template>
 </MenuSheet>
+    </ManagementPage>
 </template>
 
 <style scoped>
 .ms-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(310px, 100%), 1fr)); gap: .72rem; }
-.ms-card { display: flex; flex-direction: column; gap: .72rem; padding: .8rem; border: 1px solid color-mix(in srgb, var(--station) 24%, var(--catalog-line)); border-top: 3px solid var(--station); border-radius: 15px; background: #fff; box-shadow: 0 6px 18px rgba(18, 63, 49, .03); }
-.ms-card.off { filter: saturate(.35); background: #f8faf9; opacity: .8; }
+.ms-card { display: flex; flex-direction: column; gap: .72rem; padding: .8rem; border: 1px solid color-mix(in srgb, var(--station) 24%, var(--catalog-line)); border-top: 3px solid var(--station); border-radius: 12px; background: var(--surface, #FFFDFA); box-shadow: none; }
+.ms-card.off { filter: saturate(.35); background: var(--canvas, #F7F3ED); opacity: .8; }
 .ms-card header { display: flex; align-items: center; gap: .55rem; }
 .ms-card header > span { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; color: var(--station); background: color-mix(in srgb, var(--station) 14%, white); font-size: 1.12rem; }
 .ms-card header > div { flex: 1; }
 .ms-card h3 { margin: 0; color: var(--catalog-primary-deep); font-size: .9rem; font-weight: 950; }
-.ms-card header small { color: #87948c; font-size: .63rem; }
-.ms-card header > b { padding: .16rem .43rem; border-radius: 999px; font-size: .6rem; font-weight: 900; }
+.ms-card header small { color: var(--muted, #626B6D); font-size: .875rem; }
+.ms-card header > b { padding: .16rem .43rem; border-radius: 12px; font-size: .875rem; font-weight: 900; }
 .ms-card header .on { color: var(--catalog-primary); background: var(--catalog-primary-soft); }
-.ms-card header .off { color: #6c7b73; background: #eef2ef; }
-.ms-route { display: flex; justify-content: space-between; gap: .5rem; padding: .5rem .6rem; border-radius: 10px; color: #6d7c74; background: #f5f8f6; font-size: .68rem; }
+.ms-card header .off { color: var(--muted, #626B6D); background: var(--canvas, #F7F3ED); }
+.ms-route { display: flex; justify-content: space-between; gap: .5rem; padding: .5rem .6rem; border-radius: 10px; color: var(--muted, #626B6D); background: var(--canvas, #F7F3ED); font-size: .875rem; }
 .ms-route span { display: inline-flex; align-items: center; gap: .24rem; }
-.ms-route strong { color: #40564b; }
+.ms-route strong { color: var(--muted, #626B6D); }
 .ms-facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: .35rem; }
-.ms-facts span { display: flex; flex-direction: column; padding: .45rem; border-radius: 9px; background: #fafcfb; text-align: center; }
-.ms-facts b { color: var(--station); font-size: .84rem; }
-.ms-facts small { color: #849188; font-size: .6rem; }
-.ms-card footer { display: flex; align-items: center; gap: .35rem; margin: auto -.8rem -.8rem; padding: .56rem .8rem; border-top: 1px solid #edf1ee; background: #fbfcfb; }
-.ms-card footer .btn { display: inline-flex; align-items: center; gap: .35rem; min-height: 42px; border-radius: 10px; font-size: .7rem; font-weight: 850; }
-.ms-lock { margin-inline-start: auto; color: #887854; font-size: .62rem; }
-.ms-tip { display: flex; gap: .62rem; padding: .68rem .76rem; border: 1px solid #f0dfad; border-radius: 13px; color: #765a18; background: #fff9e9; }
+.ms-facts span { display: flex; flex-direction: column; padding: .45rem; border-radius: 9px; background: var(--canvas, #F7F3ED); text-align: center; }
+.ms-facts b { color: var(--station); font-size: .875rem; }
+.ms-facts small { color: var(--muted, #626B6D); font-size: .875rem; }
+.ms-card footer { display: flex; align-items: center; gap: .35rem; margin: auto -.8rem -.8rem; padding: .56rem .8rem; border-top: 1px solid var(--canvas, #F7F3ED); background: var(--surface, #FFFDFA); }
+.ms-card footer .btn { display: inline-flex; align-items: center; gap: .35rem; min-height: 42px; border-radius: 10px; font-size: .875rem; font-weight: 850; }
+.ms-lock { margin-inline-start: auto; color: var(--muted, #626B6D); font-size: .875rem; }
+.ms-tip { display: flex; gap: .62rem; padding: .68rem .76rem; border: 1px solid #f0dfad; border-radius: 12px; color: #765a18; background: #fff9e9; }
 .ms-tip > i { margin-top: .08rem; }
 .ms-tip > div { display: flex; flex-direction: column; }
-.ms-tip b { font-size: .76rem; }
-.ms-tip span { font-size: .68rem; }
-.ms-error { display: block; color: #b42334; font-size: .67rem; }
-.ms-warning { display: block; margin-top: .2rem; color: #9a6810; font-size: .66rem; }
-.ms-toggle { display: flex; align-items: center; gap: .65rem; min-height: 58px; padding: .7rem; border: 1px solid color-mix(in srgb, var(--station) 25%, #e0e8e2); border-radius: 12px; background: color-mix(in srgb, var(--station) 7%, white); }
+.ms-tip b { font-size: .875rem; }
+.ms-tip span { font-size: .875rem; }
+.ms-error { display: block; color: #b42334; font-size: .875rem; }
+.ms-warning { display: block; margin-top: .2rem; color: #9a6810; font-size: .875rem; }
+.ms-toggle { display: flex; align-items: center; gap: .65rem; min-height: 58px; padding: .7rem; border: 1px solid color-mix(in srgb, var(--station) 25%, var(--brand-soft, #F3E3D8)); border-radius: 12px; background: color-mix(in srgb, var(--station) 7%, white); }
 .ms-form-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 11px; color: var(--station); background: color-mix(in srgb, var(--station) 17%, white); }
 .ms-toggle > span:last-child { display: flex; flex-direction: column; }
-.ms-toggle b { font-size: .78rem; }
-.ms-toggle small { color: #76857d; font-size: .66rem; }
+.ms-toggle b { font-size: .875rem; }
+.ms-toggle small { color: var(--muted, #626B6D); font-size: .875rem; }
 </style>

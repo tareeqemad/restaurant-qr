@@ -20,7 +20,7 @@ class InvoicePdfRenderer
      */
     public function render(Invoice $invoice): string
     {
-        $cacheKey = 'cashier:invoice-pdf:v4:'.$invoice->getKey().':'.$this->fingerprint($invoice);
+        $cacheKey = 'cashier:invoice-pdf:v5:'.$invoice->getKey().':'.$this->fingerprint($invoice);
 
         // The production cache table is UTF-8 text. Raw PDF bytes are not
         // valid UTF-8 and MySQL rejects them, so cache an ASCII-safe payload.
@@ -54,17 +54,17 @@ class InvoicePdfRenderer
             'orientation' => 'P',
             'tempDir' => $tempDir,
             'fontDir' => array_merge($baseConfig['fontDir'], [
-                public_path('assets/fonts/tajawal'),
+                public_path('assets/fonts/cairo'),
             ]),
             'fontdata' => $baseFonts['fontdata'] + [
-                'tajawal' => [
-                    'R' => 'Tajawal-Regular.ttf',
-                    'B' => 'Tajawal-Bold.ttf',
+                'cairo' => [
+                    'R' => 'Cairo-Regular.ttf',
+                    'B' => 'Cairo-Bold.ttf',
                     'useOTL' => 0xFF,
                     'useKashida' => 75,
                 ],
             ],
-            'default_font' => 'tajawal',
+            'default_font' => 'cairo',
             'default_font_size' => 10,
             'margin_left' => 14,
             'margin_right' => 14,

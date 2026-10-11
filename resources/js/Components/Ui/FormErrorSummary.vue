@@ -51,7 +51,7 @@ const messages = computed(() => {
 .form-error-summary strong { display: block; font-size: .82rem; }
 .form-error-summary ul { display: grid; gap: .2rem; margin: .3rem 0 0; padding-inline-start: 1.1rem; }
 .form-error-summary li,
-.form-error-summary small { font-size: .7rem; line-height: 1.55; }
+.form-error-summary small { font-size: .8125rem; line-height: 1.55; }
 @media (max-width: 540px) {
     .form-error-summary { grid-template-columns: 32px minmax(0, 1fr); padding: .65rem; }
     .form-error-summary__icon { width: 32px; height: 32px; }

@@ -1,9 +1,7 @@
 <script setup>
 /**
- * Wave-0 admin chrome — the Vue replacement for layouts/admin.blade.php.
- *
- * Renders Dashtic's .page skeleton (header / horizontal nav / content /
- * footer) entirely from the server-built `shell` prop (AdminShell.php).
+ * Dar Al Sarw administration shell with a persistent workspace sidebar.
+ * Renders navigation and utilities from the server-built `shell` prop.
  * The layout decides nothing about authorization — it draws exactly what
  * AdminNav emitted. Session flash messages surface as toasts.
  *
@@ -25,6 +23,7 @@ const toast = useToast();
 const sidebarOpen = ref(false);
 
 const setSidebarOpen = (open) => {
+    if (sidebarOpen.value === open) return;
     sidebarOpen.value = open;
     document.documentElement.setAttribute('data-toggled', open ? 'open' : 'close');
     document.body.classList.toggle('mobile-admin-nav-open', open);
@@ -66,7 +65,10 @@ const handleKeydown = (event) => {
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
 
-    if (event.shiftKey && document.activeElement === first) {
+    if (!drawer.contains(document.activeElement)) {
+        event.preventDefault();
+        first.focus();
+    } else if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus();
     } else if (! event.shiftKey && document.activeElement === last) {
@@ -75,7 +77,7 @@ const handleKeydown = (event) => {
     }
 };
 const handleResize = () => {
-    if (window.innerWidth >= 992 && sidebarOpen.value) closeSidebar();
+    if (window.innerWidth >= 1100 && sidebarOpen.value) closeSidebar();
 };
 
 onMounted(() => {
@@ -99,13 +101,15 @@ watch(
         if (flash.success) toast.success(flash.success);
         if (flash.error) toast.error(flash.error);
         if (flash.warning) toast.warning(flash.warning);
+        if (flash.info) toast.info(flash.info);
     },
     { immediate: true },
 );
 </script>
 
 <template>
-    <div class="page">
+    <div class="sarw-admin" :data-page="page.component">
+        <a class="sarw-skip-link" href="#admin-main" :inert="sidebarOpen || undefined">انتقل إلى محتوى الصفحة</a>
         <AdminHeader
             :shell="shell"
             :sidebar-open="sidebarOpen"
@@ -120,16 +124,16 @@ watch(
             @close="closeSidebar"
         />
 
-        <div class="main-content app-content" :inert="sidebarOpen || undefined">
-            <div class="container-fluid">
+        <main id="admin-main" class="sarw-main app-content" tabindex="-1" :inert="sidebarOpen || undefined">
+            <div class="sarw-page-content">
                 <InventoryWorkspaceNav v-if="shell.workspace?.type === 'inventory'" :workspace="shell.workspace" />
                 <FormErrorSummary class="admin-global-errors" :errors="page.props.errors" />
                 <slot />
             </div>
-        </div>
+        </main>
 
-        <footer class="footer mt-auto py-3 bg-white text-center" :inert="sidebarOpen || undefined">
-            <span class="text-muted fs-12">© {{ new Date().getFullYear() }} {{ shell.brand.name }}</span>
+        <footer class="sarw-footer" :inert="sidebarOpen || undefined">
+            <span>{{ shell.brand.name }}</span><span>© {{ new Date().getFullYear() }}</span>
         </footer>
     </div>
 
@@ -139,7 +143,7 @@ watch(
 
 <style>
 .admin-global-errors { margin-block: .75rem; }
-@media (max-width: 991.98px) {
+@media (max-width: 1099.98px) {
     body.mobile-admin-nav-open {
         overflow: hidden;
         overscroll-behavior: none;

@@ -1,10 +1,14 @@
 import { computed, ref, shallowRef, watch } from 'vue';
 import { defineStore } from 'pinia';
+import { requiresChoices } from '../Support/waiterChoices.js';
 
 export const useWaiterCartStore = defineStore('waiterCart', () => {
     const lines = ref([]);
     const sessionId = ref(null);
     const storageName = ref(null);
+    const pendingSubmission = ref(null);
+    const submissionScope = ref(null);
+    const submissionToken = ref(null);
     const menuCatalog = shallowRef(new Map());
 
     const unitCount = computed(() => lines.value.reduce(
@@ -28,16 +32,21 @@ export const useWaiterCartStore = defineStore('waiterCart', () => {
     function startSession(nextSessionId, menuItems, draft = {}) {
         sessionId.value = Number(nextSessionId);
         storageName.value = draft.storageKey || `waiter_cart_vue.${sessionId.value}`;
+        submissionScope.value = draft.submissionScope ?? null;
+        submissionToken.value = draft.submitToken ?? null;
         menuCatalog.value = new Map(
             menuItems.map((item) => [Number(item.id), item]),
         );
         const stored = loadCart();
-        const source = stored.length ? stored : (draft.initialLines ?? []);
+        pendingSubmission.value = stored.pending?.scope === submissionScope.value
+            ? stored.pending : null;
+        const source = stored.lines.length ? stored.lines : (draft.initialLines ?? []);
         lines.value = source.map(normalizeLine).filter(Boolean);
     }
 
     function addPlain(item) {
-        if (!item?.in_stock) return null;
+        if (pendingSubmission.value) return null;
+        if (!item?.in_stock || requiresChoices(item)) return null;
 
         const existingIndex = lines.value.findIndex((line) => (
             line.menu_item_id === Number(item.id)
@@ -58,6 +67,7 @@ export const useWaiterCartStore = defineStore('waiterCart', () => {
     }
 
     function saveLine(payload) {
+        if (pendingSubmission.value) return null;
         const index = Number.isInteger(payload.index) ? payload.index : null;
         const existing = index === null ? null : lines.value[index] ?? null;
         const line = configuredLine({
@@ -82,6 +92,7 @@ export const useWaiterCartStore = defineStore('waiterCart', () => {
     }
 
     function editLine(index) {
+        if (pendingSubmission.value) return null;
         const line = lines.value[index];
         if (!line) return null;
 
@@ -95,6 +106,7 @@ export const useWaiterCartStore = defineStore('waiterCart', () => {
     }
 
     function changeQty(index, delta) {
+        if (pendingSubmission.value) return null;
         const line = lines.value[index];
         if (!line) return null;
 
@@ -110,11 +122,13 @@ export const useWaiterCartStore = defineStore('waiterCart', () => {
     }
 
     function removeLine(index) {
+        if (pendingSubmission.value) return null;
         if (!lines.value[index]) return null;
         return lines.value.splice(index, 1)[0];
     }
 
     function repeatRound(roundLines) {
+        if (pendingSubmission.value) return roundLines.map((line) => line.name);
         const skipped = [];
 
         roundLines.forEach((historicalLine) => {
@@ -144,9 +158,44 @@ export const useWaiterCartStore = defineStore('waiterCart', () => {
 
     function clear() {
         lines.value = [];
-        if (typeof window !== 'undefined' && sessionId.value) {
-            window.localStorage.removeItem(storageKey());
+        pendingSubmission.value = null;
+        submissionToken.value = localLineId();
+        persistCart();
+    }
+
+    // Persist before the write. An unknown outcome always retries this exact
+    // request, including after navigation/reload or changes to menu prices.
+    function beginSubmission({ notes = '', staff_employee_id = null } = {}) {
+        if (pendingSubmission.value) return clone(pendingSubmission.value.payload);
+        if (!submissionScope.value || !submissionToken.value || !lines.value.length) {
+            throw new Error('تعذّر تجهيز الإرسال. حدّث الصفحة؛ السلة محفوظة.');
         }
+        pendingSubmission.value = {
+            scope: submissionScope.value,
+            payload: clone({
+                token: submissionToken.value,
+                session_id: sessionId.value,
+                notes,
+                staff_employee_id,
+                cart: lines.value,
+            }),
+        };
+        if (!persistCart()) {
+            pendingSubmission.value = null;
+            throw new Error('تعذّر حفظ الطلب على الجهاز. لم يُرسل؛ أعد المحاولة.');
+        }
+        return clone(pendingSubmission.value.payload);
+    }
+
+    function rejectSubmission() {
+        // Only an explicit server rejection guarantees there was no commit.
+        pendingSubmission.value = null;
+        submissionToken.value = localLineId();
+        persistCart();
+    }
+
+    function clone(value) {
+        return JSON.parse(JSON.stringify(value));
     }
 
     function configuredLine({
@@ -238,23 +287,31 @@ export const useWaiterCartStore = defineStore('waiterCart', () => {
     }
 
     function loadCart() {
-        if (typeof window === 'undefined' || !sessionId.value) return [];
+        const empty = { lines: [], pending: null };
+        if (typeof window === 'undefined' || !sessionId.value) return empty;
 
         try {
             const stored = JSON.parse(window.localStorage.getItem(storageKey()) || '[]');
-            return Array.isArray(stored) ? stored : [];
+            if (Array.isArray(stored)) return { lines: stored, pending: null };
+            if (!stored || !Array.isArray(stored.lines)) return empty;
+            return { lines: stored.lines, pending: stored.pending ?? null };
         } catch {
-            return [];
+            return empty;
         }
     }
 
     function persistCart() {
-        if (typeof window === 'undefined' || !sessionId.value) return;
+        if (typeof window === 'undefined' || !sessionId.value) return false;
 
         try {
-            window.localStorage.setItem(storageKey(), JSON.stringify(lines.value));
+            window.localStorage.setItem(storageKey(), JSON.stringify({
+                lines: lines.value,
+                pending: pendingSubmission.value,
+            }));
+            return true;
         } catch {
             // A private browser can deny storage; the in-memory cart must stay usable.
+            return false;
         }
     }
 
@@ -287,6 +344,7 @@ export const useWaiterCartStore = defineStore('waiterCart', () => {
 
     return {
         lines,
+        pendingSubmission,
         unitCount,
         total,
         itemQuantities,
@@ -298,5 +356,7 @@ export const useWaiterCartStore = defineStore('waiterCart', () => {
         removeLine,
         repeatRound,
         clear,
+        beginSubmission,
+        rejectSubmission,
     };
 });

@@ -20,6 +20,10 @@ class User extends Authenticatable
 {
     use HasFactory, Notifiable, SoftDeletes;
 
+    private ?object $permissionRequest = null;
+
+    private ?string $permissionRoleName = null;
+
     protected $fillable = [
         'name',
         'username',
@@ -181,6 +185,11 @@ class User extends Authenticatable
     {
         return $this->belongsToMany(Permission::class, 'user_permission')
             ->withPivot('granted');
+    }
+
+    public function permissionRole(): BelongsTo
+    {
+        return $this->belongsTo(Role::class, 'role', 'name')->whereNull('branch_id');
     }
 
     /**
@@ -457,18 +466,24 @@ class User extends Authenticatable
             return true;
         }
 
-        $direct = $this->permissions()->where('name', $name)->first();
+        // Reuse one permission snapshot while rendering this request. Never
+        // carry it into another request (including long-lived workers), and
+        // let refresh()/fresh() reload the ordinary Eloquent relations.
+        $request = request();
+        if ($this->permissionRequest !== $request || $this->permissionRoleName !== $this->role) {
+            $this->unsetRelation('permissions');
+            $this->unsetRelation('permissionRole');
+            $this->permissionRequest = $request;
+            $this->permissionRoleName = $this->role;
+        }
+        $this->loadMissing(['permissions', 'permissionRole.permissions']);
+
+        $direct = $this->permissions->firstWhere('name', $name);
         if ($direct) {
             return (bool) $direct->pivot->granted;
         }
 
-        // Role-based permissions
-        $role = Role::global()
-            ->where('name', $this->role)
-            ->with('permissions')
-            ->first();
-
-        return $role?->permissions->contains('name', $name) ?? false;
+        return $this->permissionRole?->permissions->contains('name', $name) ?? false;
     }
 
     // ─── Permission deviation helpers (powering the user edit form tree) ───

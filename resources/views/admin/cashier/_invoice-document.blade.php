@@ -73,9 +73,11 @@
             <p>{{ $branch->name }}@if($invoicePhone) · <span class="code-value">{{ $invoicePhone }}</span>@endif</p>
             @if($invoiceAddress)<p>{{ $invoiceAddress }}</p>@endif
         @endif
-        <div class="receipt-title">{{ $invoiceTitle }}</div>
-        <div class="receipt-number">{{ $invoice->number }}</div>
-        <span class="status-badge{{ $statusClass }}">{{ $invoice->statusLabel() }}</span>
+        <div class="receipt-reference">
+            <div class="receipt-title">{{ $invoiceTitle }}</div>
+            <div class="receipt-number">{{ $invoice->number }}</div>
+            <span class="status-badge{{ $statusClass }}">{{ $invoice->statusLabel() }}</span>
+        </div>
     </header>
 
     <hr class="receipt-rule">

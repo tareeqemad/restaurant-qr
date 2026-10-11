@@ -1,4 +1,5 @@
 <script setup>
+import ManagementPage from '../../../Components/Inventory/ManagementPage.vue';
 /**
  * تفاصيل أمر الشراء.
  *
@@ -73,6 +74,7 @@ const submitCancel = () => {
 </script>
 
 <template>
+    <ManagementPage mode="detail">
     <Head :title="po.number" />
 
     <PageHeader :title="`أمر شراء ${po.number}`" icon="bi-truck"
@@ -338,6 +340,7 @@ const submitCancel = () => {
             </div>
         </Transition>
     </Teleport>
+    </ManagementPage>
 </template>
 
 <style scoped>
@@ -360,12 +363,12 @@ const submitCancel = () => {
 .po-notes { background: rgba(var(--accent-rgb), .05); border-right: 3px solid var(--accent); }
 .po-cancel-note { border-right: 3px solid #b91c1c; }
 
-.po-fs11 { font-size: .69rem; }
+.po-fs11 { font-size: .875rem; }
 .po-strong-total { color: var(--primary); }
 
 .po-progress-cell { min-width: 150px; }
-.po-progress { height: 8px; background: rgba(var(--primary-rgb), .08); }
-.po-progress-bar { background: linear-gradient(90deg, var(--primary), var(--accent)); }
+.po-progress { height: 8px; background: color-mix(in srgb, var(--brand, #A3422B) 8%, transparent); }
+.po-progress-bar { background: var(--surface, #FFFDFA); }
 
 .pc-backdrop {
     position: fixed;
@@ -379,8 +382,8 @@ const submitCancel = () => {
 }
 .pc-card {
     width: min(460px, 100%);
-    background: #fff;
-    border-radius: 18px;
+    background: var(--surface, #FFFDFA);
+    border-radius: 12px;
     padding: 1.2rem;
     display: flex;
     flex-direction: column;
@@ -388,9 +391,9 @@ const submitCancel = () => {
 }
 .pc-card h3 { margin: 0; font-size: 1.02rem; font-weight: 900; }
 .pc-card label { display: flex; flex-direction: column; gap: .3rem; margin: 0; }
-.pc-card label > span { font-size: .8rem; font-weight: 800; color: #334155; }
+.pc-card label > span { font-size: .875rem; font-weight: 800; color: var(--ink, #25343A); }
 .pc-card textarea {
-    border: 1.5px solid #e2e8f0;
+    border: 1.5px solid var(--line, #DFD7CB);
     border-radius: 11px;
     padding: .6rem .8rem;
     font: inherit;
@@ -403,7 +406,7 @@ const submitCancel = () => {
     color: #92400e;
     border-radius: 12px;
     padding: .6rem .8rem;
-    font-size: .82rem;
+    font-size: .875rem;
 }
 .pc-actions { display: flex; gap: .6rem; }
 .pc-btn {
@@ -412,7 +415,7 @@ const submitCancel = () => {
     border: 0;
     border-radius: 12px;
     background: #f1f5f9;
-    color: #334155;
+    color: var(--ink, #25343A);
     font: inherit;
     font-weight: 800;
     cursor: pointer;
@@ -422,4 +425,7 @@ const submitCancel = () => {
 
 .pc-enter-active, .pc-leave-active { transition: opacity .15s; }
 .pc-enter-from, .pc-leave-to { opacity: 0; }
+
+/* Dar Al Sarw management layout */
+.po-notes { padding: 16px !important; border: 1px solid var(--line); border-radius: 10px; background: var(--canvas); } .po-fact-icon { width: 40px; height: 40px; color: var(--brand); background: var(--brand-soft); border-radius: 8px; } .po-progress { margin-block: 18px; border-radius: 10px; background: var(--canvas); } .po-act { min-height: 46px; padding-inline: 16px; border-radius: 8px; }
 </style>

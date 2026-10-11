@@ -70,8 +70,8 @@ function lineDetails(line) {
     flex: 0 0 auto;
     align-items: center;
     gap: .3rem;
-    color: #6b7280;
-    font-size: 12px;
+    color: var(--muted);
+    font-size: 14px;
     font-weight: 800;
     white-space: nowrap;
 }
@@ -87,25 +87,28 @@ function lineDetails(line) {
     min-height: 44px;
     box-sizing: border-box;
     padding: .4rem .8rem;
-    border-radius: 999px;
-    font-size: 13px;
+    border-radius: 8px;
+    font-size: 14px;
     font-weight: 700;
     white-space: nowrap;
     cursor: pointer;
 }
 .strip-chip {
-    border: 1px solid rgba(15, 71, 49, .18);
-    color: #1f2937;
-    background: #fff;
+    border: 1px solid color-mix(in srgb, var(--brand) 18%, transparent);
+    color: var(--ink);
+    background: var(--surface);
 }
 .strip-chip:hover { border-color: var(--wp-primary); color: var(--wp-primary); }
 .strip-chip b { color: var(--wp-primary); }
 .repeat-all {
     padding-inline: .85rem;
     border: 0;
-    color: #fff;
+    color: #FFFDFA;
     background: var(--wp-primary);
     font-weight: 800;
 }
 .repeat-all:hover { background: var(--wp-primary-dark); }
+
+/* Task-specific component layout. */
+.quick-strip{display:flex;align-items:center;gap:8px;padding:12px 0;margin:0 0 12px;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;overflow-x:auto}.strip-title{font-size:14px;color:var(--muted);min-width:max-content}.strip-chip{min-height:42px;padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-size:14px}.repeat-all{min-height:42px;border-radius:6px;font-size:14px;color:var(--brand);background:var(--brand-soft)}
 </style>

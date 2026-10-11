@@ -90,9 +90,9 @@ const switchTo = (url) => formPost(url);
     height: 40px;
     padding: 0 12px 0 8px;
     background: #fff;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--line, #dfd7cb);
     border-radius: 999px;
-    color: #111827;
+    color: var(--ink, #25343a);
     font-size: .86rem;
     font-weight: 700;
     text-decoration: none;
@@ -102,10 +102,10 @@ const switchTo = (url) => formPost(url);
     box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
 }
 .bsx-trigger:hover:not(.is-static) {
-    background: #f9fafb;
-    border-color: #d1d5db;
+    background: var(--canvas, #f7f3ed);
+    border-color: var(--line, #dfd7cb);
     box-shadow: 0 4px 12px -3px rgba(15, 23, 42, .08);
-    color: #111827;
+    color: var(--ink, #25343a);
 }
 .bsx-trigger.is-static { cursor: default; }
 .bsx-trigger__name {
@@ -114,7 +114,7 @@ const switchTo = (url) => formPost(url);
     text-overflow: ellipsis;
     line-height: 1;
 }
-.bsx-trigger__chev { flex-shrink: 0; color: #9ca3af; transition: transform .2s ease; }
+.bsx-trigger__chev { flex-shrink: 0; color: var(--muted, #626b6d); transition: transform .2s ease; }
 .bsx-trigger__chev.is-open { transform: rotate(180deg); }
 .bsx-trigger--all {
     background: linear-gradient(135deg, rgba(var(--primary-rgb), .07), rgba(var(--accent-rgb), .07));
@@ -130,7 +130,7 @@ const switchTo = (url) => formPost(url);
     display: inline-flex !important;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, hsl(var(--hue, 150) 50% 52%) 0%, hsl(var(--hue, 150) 55% 38%) 100%);
+    background: var(--brand, #a3422b);
     color: #fff;
     font-size: .82rem;
     font-weight: 800;
@@ -156,10 +156,10 @@ const switchTo = (url) => formPost(url);
 }
 .bsx-menu__head {
     padding: 10px 14px 6px;
-    font-size: .68rem;
+    font-size: .8125rem;
     font-weight: 700;
     letter-spacing: .04em;
-    color: #9ca3af;
+    color: var(--muted, #626b6d);
 }
 .bsx-menu__list {
     padding: 0 6px 6px;
@@ -170,7 +170,7 @@ const switchTo = (url) => formPost(url);
     overflow-y: auto;
 }
 .bsx-menu__list::-webkit-scrollbar { width: 6px; }
-.bsx-menu__list::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 3px; }
+.bsx-menu__list::-webkit-scrollbar-thumb { background: var(--line, #dfd7cb); border-radius: 3px; }
 
 .bsx-menu .bsx-row,
 button.bsx-row {
@@ -182,7 +182,7 @@ button.bsx-row {
     background: transparent !important;
     border: 0 !important;
     border-radius: 9px !important;
-    color: #1f2937 !important;
+    color: var(--ink, #25343a) !important;
     text-align: start !important;
     cursor: pointer !important;
     font: inherit !important;
@@ -192,15 +192,15 @@ button.bsx-row {
     box-shadow: none !important;
     transition: background-color .12s !important;
 }
-.bsx-menu .bsx-row:hover:not(:disabled) { background: #f3f4f6 !important; }
+.bsx-menu .bsx-row:hover:not(:disabled) { background: var(--surface-muted, #efe9e0) !important; }
 .bsx-menu .bsx-row:disabled { cursor: default !important; opacity: 1 !important; }
-.bsx-menu .bsx-row.is-active { background: #f3f4f6 !important; }
+.bsx-menu .bsx-row.is-active { background: var(--surface-muted, #efe9e0) !important; }
 
 .bsx-row__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .bsx-row__name {
     font-size: .88rem;
     font-weight: 700;
-    color: #111827;
+    color: var(--ink, #25343a);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -208,9 +208,9 @@ button.bsx-row {
 }
 .bsx-row.is-active .bsx-row__name { font-weight: 800; }
 .bsx-row__meta {
-    font-size: .72rem;
+    font-size: .8125rem;
     font-weight: 500;
-    color: #6b7280;
+    color: var(--muted, #626b6d);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -223,7 +223,7 @@ button.bsx-row {
     align-items: center;
     gap: 9px;
     padding: 10px 14px;
-    border-top: 1px solid #f3f4f6;
+    border-top: 1px solid var(--surface-muted, #efe9e0);
     background: #fafafa;
     font-size: .82rem;
     font-weight: 600;
@@ -231,8 +231,8 @@ button.bsx-row {
     text-decoration: none;
     transition: background-color .12s, color .12s;
 }
-.bsx-menu__manage:hover { background: #f3f4f6; color: rgb(var(--primary-rgb)); }
-.bsx-menu__manage > i { color: #9ca3af; font-size: .9rem; }
+.bsx-menu__manage:hover { background: var(--surface-muted, #efe9e0); color: rgb(var(--primary-rgb)); }
+.bsx-menu__manage > i { color: var(--muted, #626b6d); font-size: .9rem; }
 .bsx-menu__manage:hover > i { color: rgb(var(--primary-rgb)); }
 
 @media (max-width: 768px) {

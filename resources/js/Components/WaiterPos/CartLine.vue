@@ -75,7 +75,7 @@ async function removeLine() {
 </template>
 
 <style scoped>
-.cart-line { display: flex; gap: .5rem; padding: .6rem .8rem; border-bottom: 1px solid #f1f5f9; }
+.cart-line { display: flex; gap: .5rem; padding: .6rem .8rem; border-bottom: 1px solid var(--line); }
 .line-info {
     display: flex;
     flex: 1;
@@ -91,25 +91,25 @@ async function removeLine() {
     text-align: start;
     cursor: pointer;
 }
-.line-info:hover { background: #f8fafc; }
-.line-name { color: #1f2937; font-size: 13.5px; font-weight: 700; }
-.edit-hint { color: #9ca3af; font-size: 10px; }
+.line-info:hover { background: var(--surface); }
+.line-name { color: var(--ink); font-size: 14px; font-weight: 700; }
+.edit-hint { color: var(--muted); font-size: 14px; }
 .line-info:hover .line-name,
 .line-info:hover .edit-hint { color: var(--wp-primary); }
 .line-modifiers,
 .line-exclusions,
 .line-note,
 .unit-price { display: block; overflow-wrap: anywhere; }
-.line-modifiers { color: #6b7280; font-size: 11.5px; }
-.line-exclusions { padding: .12rem .35rem; border-radius: 6px; color: #991b1b; background: #fee2e2; font-size: 11.5px; font-weight: 800; }
-.line-note { color: #0369a1; font-size: 11.5px; }
-.unit-price { margin-top: .1rem; color: #6b7280; font-size: 11px; }
+.line-modifiers { color: var(--muted); font-size: 14px; }
+.line-exclusions { padding: .12rem .35rem; border-radius: 6px; color: #991b1b; background: #fee2e2; font-size: 14px; font-weight: 800; }
+.line-note { color: #315B6B; font-size: 14px; }
+.unit-price { margin-top: .1rem; color: var(--muted); font-size: 14px; }
 .line-side { display: flex; flex: 0 0 auto; flex-direction: column; align-items: flex-end; gap: .3rem; }
 .quantity-stepper {
     display: inline-flex;
     align-items: center;
     overflow: hidden;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--line);
     border-radius: 8px;
 }
 .quantity-stepper button {
@@ -119,21 +119,21 @@ async function removeLine() {
     width: 44px;
     height: 44px;
     border: 0;
-    color: #374151;
-    background: #f8fafc;
+    color: var(--ink);
+    background: var(--surface);
     font-size: 15px;
     cursor: pointer;
 }
-.quantity-stepper button:hover:not(:disabled) { background: #eef2f7; }
+.quantity-stepper button:hover:not(:disabled) { background: var(--canvas); }
 .quantity-stepper button:disabled { opacity: .38; cursor: default; }
 .quantity-stepper span {
     min-width: 30px;
-    color: #1f2937;
+    color: var(--ink);
     text-align: center;
     font-size: 14px;
     font-weight: 800;
 }
-.line-total { color: var(--wp-primary); font-size: 13px; font-weight: 800; }
+.line-total { color: var(--wp-primary); font-size: 14px; font-weight: 800; }
 .remove-line {
     display: inline-flex;
     align-items: center;
@@ -147,9 +147,12 @@ async function removeLine() {
     font-size: 15px;
     cursor: pointer;
 }
-.remove-line:hover { background: #fef2f2; }
+.remove-line:hover { background: var(--canvas); }
 @media (max-width: 390px) {
     .cart-line { align-items: flex-start; }
     .quantity-stepper button { width: 40px; }
 }
+
+/* Task-specific component layout. */
+.cart-line{padding:16px 0;border:0;border-bottom:1px solid var(--line);border-radius:0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px}.line-name{font-size:17px;line-height:1.5}.line-modifiers,.line-exclusions,.line-note,.unit-price{font-size:14px;line-height:1.6}.line-side{display:grid;justify-items:end;gap:10px}.quantity-stepper{border-radius:6px;background:var(--canvas)}.quantity-stepper button{width:40px;height:40px}.line-total{font-size:17px}.remove-line{width:38px;height:38px;border-radius:6px}.line-info{min-width:0}
 </style>

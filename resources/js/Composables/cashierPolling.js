@@ -31,6 +31,7 @@ export function useCashierPolling(store) {
         try {
             const forceAfter = store.selection ? 9 : 5;
             const result = await store.refresh({ force: quietPolls >= forceAfter, source: 'poll' });
+            if (result.skipped || result.stale) return;
             failures = 0;
             quietPolls = result.changed ? 0 : quietPolls + 1;
         } catch {

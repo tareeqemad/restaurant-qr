@@ -1,4 +1,5 @@
 <script setup>
+import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 /**
  * اقتراحات إعادة الطلب — Wave 4. Pick what to reorder, adjust the
  * quantity, optionally route a line to a CHEAPER supplier, and the server
@@ -116,27 +117,28 @@ const money = (n) => `${Number(n || 0).toLocaleString('en-US', { minimumFraction
 </script>
 
 <template>
-    <Head title="اقتراحات إعادة الطلب" />
-
-    <PageHeader title="اقتراحات إعادة الطلب" icon="bi-cart-plus-fill"
+<Head title="اقتراحات إعادة الطلب" />
+<FinancialWorkspace area="التقارير والتحليل" mode="report">
+<template #heading>
+<PageHeader title="اقتراحات إعادة الطلب" icon="bi-cart-plus-fill"
                 subtitle="شو قرب يخلص — والكمية المقترحة بتحسب استهلاك ٣٠ يوم وبتطرح اللي بالطريق">
         <template #actions>
             <a :href="urls.purchaseOrders" class="btn btn-light"><i class="bi bi-file-earmark-text"></i> أوامر الشراء</a>
         </template>
     </PageHeader>
-
-    <StatRail :stats="[
+</template>
+<template #metrics>
+<StatRail :stats="[
         { label: 'أصناف مقترحة', value: totals.items, icon: 'bi-box-seam', color: 'primary' },
         { label: 'حرج', value: urgencyCounts.critical, icon: 'bi-exclamation-octagon-fill', color: 'danger' },
         { label: 'عالٍ', value: urgencyCounts.high, icon: 'bi-exclamation-triangle-fill', color: 'accent' },
         { label: 'التكلفة التقديرية', value: money(totals.cost), icon: 'bi-cash-stack', color: 'success' },
     ]" />
-
-    <EmptyState v-if="rows.length === 0" icon="bi-check-circle"
+</template>
+<EmptyState v-if="rows.length === 0" icon="bi-check-circle"
                 title="ما في شي محتاج إعادة طلب"
                 message="كل المكوّنات فوق حد إعادة الطلب — نطمّنك، المخزون بخير." />
-
-    <DataPanel v-else title="هدف المخزون والكميات المقترحة" :count="rows.length" icon="bi-cart-check">
+<DataPanel v-else title="هدف المخزون والكميات المقترحة" :count="rows.length" icon="bi-cart-check">
         <template #actions>
             <button type="button" class="btn btn-light" @click="selectAll">
                 <i class="bi bi-check2-square"></i> اختر/ألغِ المعروض
@@ -233,6 +235,8 @@ const money = (n) => `${Number(n || 0).toLocaleString('en-US', { minimumFraction
             </div>
         </template>
     </DataPanel>
+</FinancialWorkspace>
+
 </template>
 
 <style scoped>
@@ -245,21 +249,21 @@ const money = (n) => `${Number(n || 0).toLocaleString('en-US', { minimumFraction
     background: #fff;
     color: #334155;
     font: inherit;
-    font-size: .8rem;
+    font-size: .875rem;
     font-weight: 700;
     cursor: pointer;
 }
 .rs-chip.is-active { background: rgb(var(--primary-rgb)); border-color: rgb(var(--primary-rgb)); color: #fff; }
 
-.rs-table th { white-space: nowrap; font-size: .8rem; }
+.rs-table th { white-space: nowrap; font-size: .875rem; }
 .rs-check { width: 20px; height: 20px; }
 .rs-name { font-weight: 700; color: #0f172a; }
-.rs-name small { display: block; font-weight: 600; color: #94a3b8; font-size: .72rem; }
+.rs-name small { display: block; font-weight: 600; color: #94a3b8; font-size: .875rem; }
 .rs-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .rs-dim { color: #94a3b8; }
 .rs-cost { font-weight: 800; }
 .rs-qty { width: 110px; text-align: center; font-weight: 700; }
-.rs-supplier { min-width: 190px; font-size: .82rem; }
+.rs-supplier { min-width: 190px; font-size: .875rem; }
 .rs-row-on { background: rgba(var(--primary-rgb), .05); }
 
 .rs-urg {
@@ -268,20 +272,20 @@ const money = (n) => `${Number(n || 0).toLocaleString('en-US', { minimumFraction
     align-items: center;
     border-radius: 8px;
     padding: .15rem .55rem;
-    font-size: .74rem;
+    font-size: .875rem;
     font-weight: 800;
 }
-.rs-urg small { font-weight: 600; opacity: .8; font-size: .66rem; }
+.rs-urg small { font-weight: 600; opacity: .8; font-size: .875rem; }
 .rs-urg--critical { background: #fef2f2; color: #b91c1c; }
 .rs-urg--high { background: #fff7ed; color: #c2410c; }
 .rs-urg--medium { background: #fffbeb; color: #b45309; }
 .rs-urg--low { background: #f1f5f9; color: #475569; }
 
 .rs-foot { display: flex; align-items: center; gap: .9rem; flex-wrap: wrap; }
-.rs-summary { font-size: .86rem; color: #475569; }
+.rs-summary { font-size: .875rem; color: #475569; }
 .rs-summary strong { color: #0f172a; font-size: 1rem; }
 .rs-total { margin-inline-start: .6rem; font-weight: 900; color: rgb(var(--primary-rgb)); font-size: 1.05rem; }
-.rs-warn { color: #b45309; font-size: .8rem; font-weight: 700; }
+.rs-warn { color: #b45309; font-size: .875rem; font-weight: 700; }
 .rs-create { margin-inline-start: auto; font-weight: 800; }
 .rs-spin { animation: rs-rotate 1s linear infinite; display: inline-block; }
 @keyframes rs-rotate { to { transform: rotate(360deg); } }

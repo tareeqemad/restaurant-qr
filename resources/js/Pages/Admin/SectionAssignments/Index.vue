@@ -150,13 +150,13 @@ const clearDay = async () => {
     <Head title="توزيع الأقسام" />
 
     <PageHeader title="توزيع الصالة" icon="bi-people"
-                subtitle="حدّد أقسام كل جرسون؛ ويمكن للجرسون تغطية أكثر من قسم" />
+                 />
 
     <div class="sa-wrap">
         <div class="sa-head">
             <div class="sa-head-copy">
-                <h3>من يغطي كل قسم اليوم؟</h3>
-                <p>تظهر هنا الحسابات النشطة بدور «جرسون» فقط. اختر لكل جرسون قسماً أو أكثر؛ الحفظ فوري ويؤثر على «قسمي»، مهامه وتنبيهاته.</p>
+                <h3>وردية الصالة</h3>
+                <p>اختر الأقسام لكل جرسون. يُحفظ التوزيع فوراً.</p>
             </div>
             <div class="sa-head-tools">
                 <input v-model="pickedDate" type="date" class="sa-date" aria-label="تاريخ الخدمة">
@@ -213,7 +213,7 @@ const clearDay = async () => {
                 <span>{{ uncoveredSections.map((z) => z.label).join('، ') }}</span>
             </div>
 
-            <div class="sa-grid">
+            <div class="sa-roster-workspace"><div class="sa-grid">
                 <section v-for="w in waiters" :key="w.id" class="sa-waiter" :class="{ 'is-unassigned': zonesFor(w.id).length === 0 }">
                     <header class="sa-waiter-head">
                         <span class="sa-avatar"><i class="bi bi-person"></i></span>
@@ -275,11 +275,12 @@ const clearDay = async () => {
                 </div>
             </section>
 
-            <div class="sa-legend">
+            </div>
+            <details class="sa-legend"><summary>قواعد التغطية</summary>
                 <span><span class="sa-onshift"></span> مسجّل حضور الآن</span>
                 <span>الجرسون يرى مهام وتنبيهات كل الأقسام المحددة له، وأي طاولة سبق أن استلم مسؤوليتها.</span>
                 <span>إن لم يوجد أي توزيع محفوظ، يبقى كل فريق الصالة على الوضع العام حتى لا تضيع الطلبات.</span>
-            </div>
+            </details>
         </template>
     </div>
 </template>

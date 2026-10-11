@@ -1,4 +1,5 @@
 <script setup>
+import ManagementPage from '../../../Components/Inventory/ManagementPage.vue';
 /**
  * مواقع التخزين — one card per physical location (kitchen, bar, cellar…).
  *
@@ -35,7 +36,7 @@ const { ask } = useConfirm();
 const toast = useToast();
 
 const headStyle = (loc) => ({
-    background: `linear-gradient(135deg, ${loc.color} 0%, ${loc.color}dd 100%)`,
+    '--location-color': loc.color,
 });
 
 const money = (v) => formatMoney(v, props.currency);
@@ -56,6 +57,7 @@ const destroy = async (loc) => {
 </script>
 
 <template>
+    <ManagementPage mode="records">
     <Head title="مواقع التخزين" />
 
     <PageHeader title="مواقع التخزين" icon="bi-geo-alt-fill"
@@ -146,6 +148,7 @@ const destroy = async (loc) => {
             </a>
         </template>
     </EmptyState>
+    </ManagementPage>
 </template>
 
 <style scoped>
@@ -156,9 +159,9 @@ const destroy = async (loc) => {
 }
 
 .loc-card {
-    background: #fff;
-    border: 1px solid rgba(15, 71, 49, .08);
-    border-radius: 14px;
+    background: var(--surface, #FFFDFA);
+    border: 1px solid color-mix(in srgb, var(--brand, #A3422B) 8%, transparent);
+    border-radius: 12px;
     overflow: hidden;
     transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
     display: flex;
@@ -167,8 +170,8 @@ const destroy = async (loc) => {
 }
 .loc-card:hover {
     transform: translateY(-3px);
-    box-shadow: 0 14px 32px rgba(15, 71, 49, .09);
-    border-color: rgba(15, 71, 49, .16);
+    box-shadow: none;
+    border-color: color-mix(in srgb, var(--brand, #A3422B) 16%, transparent);
 }
 .loc-card.is-inactive { opacity: .65; }
 .loc-card.is-default::before {
@@ -201,15 +204,15 @@ const destroy = async (loc) => {
     gap: .4rem .65rem;
     align-items: center;
     margin-top: .5rem;
-    font-size: 12.5px;
+    font-size: 14px;
     color: rgba(255, 255, 255, .92);
 }
 .loc-card-head .meta .code {
     font-family: ui-monospace, SFMono-Regular, monospace;
     background: rgba(255, 255, 255, .2);
     padding: 2px 9px;
-    border-radius: 999px;
-    font-size: 11.5px;
+    border-radius: 12px;
+    font-size: 14px;
 }
 .loc-card-head .meta .branch {
     display: inline-flex;
@@ -224,12 +227,12 @@ const destroy = async (loc) => {
     gap: .35rem;
 }
 .loc-card-head .pill {
-    font-size: 10.5px;
+    font-size: 14px;
     font-weight: 700;
     background: rgba(255, 255, 255, .22);
     color: #fff;
     padding: 3px 9px;
-    border-radius: 999px;
+    border-radius: 12px;
     display: inline-flex;
     align-items: center;
     gap: .25rem;
@@ -238,8 +241,8 @@ const destroy = async (loc) => {
 
 .loc-card-body { padding: 1rem 1.1rem; flex-grow: 1; }
 .loc-card-desc {
-    font-size: 12.5px;
-    color: #6c757d;
+    font-size: 14px;
+    color: var(--muted, #626B6D);
     line-height: 1.55;
     margin-bottom: .85rem;
     min-height: 1em;
@@ -252,14 +255,14 @@ const destroy = async (loc) => {
     margin-bottom: .85rem;
 }
 .loc-stat {
-    background: rgba(15, 71, 49, .04);
+    background: color-mix(in srgb, var(--brand, #A3422B) 4%, transparent);
     border-radius: 10px;
     padding: .55rem .75rem;
     text-align: center;
 }
 .loc-stat .label {
-    font-size: 11px;
-    color: #6c757d;
+    font-size: 14px;
+    color: var(--muted, #626B6D);
     font-weight: 600;
     margin-bottom: 2px;
 }
@@ -273,15 +276,15 @@ const destroy = async (loc) => {
 .loc-stat.is-warn .value { color: #b02a37; }
 
 .loc-value-card {
-    background: linear-gradient(135deg, rgba(15, 71, 49, .06), rgba(15, 71, 49, .015));
-    border: 1px solid rgba(15, 71, 49, .1);
+    background: var(--surface, #FFFDFA);
+    border: 1px solid color-mix(in srgb, var(--brand, #A3422B) 10%, transparent);
     border-radius: 10px;
     padding: .75rem 1rem;
     text-align: center;
 }
 .loc-value-card .label {
-    font-size: 11.5px;
-    color: #6c757d;
+    font-size: 14px;
+    color: var(--muted, #626B6D);
     font-weight: 600;
     margin-bottom: 3px;
 }
@@ -297,8 +300,8 @@ const destroy = async (loc) => {
     display: flex;
     gap: .4rem;
     padding: .7rem 1.1rem .9rem;
-    border-top: 1px solid rgba(15, 71, 49, .06);
-    background: #fafbfa;
+    border-top: 1px solid color-mix(in srgb, var(--brand, #A3422B) 6%, transparent);
+    background: var(--canvas, #F7F3ED);
 }
 .loc-card-actions .btn { min-height: 44px; }
 .loc-card-actions .btn-icon {
@@ -310,4 +313,9 @@ const destroy = async (loc) => {
     padding: 0;
 }
 .loc-card-actions .btn-icon.is-blocked { opacity: .6; }
+
+/* Dar Al Sarw management layout */
+.loc-grid { gap: 20px; grid-template-columns: repeat(auto-fill,minmax(min(360px,100%),1fr)); } .loc-card { border: 1px solid var(--line); border-radius: 12px; } .loc-card:hover { transform: none; border-color: var(--brand); } .loc-card-head { padding: 20px; background: var(--surface); }
+.loc-card-head { background: var(--ink, #25343A); border-inline-start: 4px solid var(--location-color, var(--brand)); }
+.loc-card-head .badges { position: static; margin-bottom: 12px; }
 </style>

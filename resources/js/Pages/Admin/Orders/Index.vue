@@ -93,7 +93,7 @@ const STATUSES = [
 <template>
     <Head title="الطلبات" />
 
-    <PageHeader title="الطلبات" icon="bi-receipt" subtitle="إدارة ومتابعة كل الطلبات الواردة">
+    <PageHeader title="الطلبات" icon="bi-receipt" >
         <template #actions>
             <a :href="urls.board" class="btn btn-primary">
                 <i class="bi bi-person-check-fill"></i> لوحة الخدمة
@@ -101,12 +101,12 @@ const STATUSES = [
         </template>
     </PageHeader>
 
-    <StatRail :stats="[
+    <details class="ops-summary"><summary><i class="bi bi-bar-chart"></i> ملخص الطلبات اليوم<i class="bi bi-chevron-down"></i></summary><StatRail :stats="[
         { label: 'بانتظار الاعتماد', value: stats.pending, icon: 'bi-hourglass-split', color: 'accent' },
         { label: 'طلبات اليوم', value: stats.todayCount, icon: 'bi-receipt', color: 'primary' },
         { label: 'نشطة الآن', value: stats.todayActive, icon: 'bi-activity', color: 'success' },
         { label: 'إيراد اليوم', value: stats.todayRevenue, icon: 'bi-cash-coin', color: 'accent' },
-    ]" />
+    ]" /></details>
 
     <DataPanel title="قائمة الطلبات" :count="orders.total" icon="bi-receipt">
         <template v-if="hasFilters()" #actions>
@@ -134,47 +134,14 @@ const STATUSES = [
             </form>
         </template>
 
-        <div class="table-responsive">
-            <table class="table align-middle">
-                <thead class="bg-light">
-                    <tr>
-                        <th>الرقم</th>
-                        <th v-if="showBranchColumn">الفرع</th>
-                        <th>الطاولة</th>
-                        <th>الأصناف</th>
-                        <th>الإجمالي</th>
-                        <th>الحالة</th>
-                        <th>الوقت</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-for="o in orders.data" :key="o.id">
-                        <td class="fw-bold">{{ o.number }}</td>
-                        <td v-if="showBranchColumn">{{ o.branchName ?? '—' }}</td>
-                        <td>{{ o.tableLabel }}</td>
-                        <td>{{ o.itemCount }}</td>
-                        <td>{{ o.total }}</td>
-                        <td><span class="badge" :class="`bg-${o.statusColor}`">{{ o.statusLabel }}</span></td>
-                        <td>{{ o.createdAgo }}</td>
-                        <td class="text-nowrap">
-                            <a :href="o.urls.show" class="btn btn-sm btn-primary"><i class="bi bi-eye"></i> تفاصيل</a>
-                            <button v-if="o.canApprove" type="button" class="btn btn-sm btn-success" @click="approve(o)">
-                                <i class="bi bi-check2"></i> اعتماد
-                            </button>
-                            <button v-else-if="o.canUnapprove" type="button" class="btn btn-sm btn-outline-warning" @click="unapprove(o)">
-                                <i class="bi bi-arrow-counterclockwise"></i> فك الاعتماد
-                            </button>
-                        </td>
-                    </tr>
-                    <tr v-if="orders.data.length === 0">
-                        <td :colspan="showBranchColumn ? 8 : 7">
-                            <EmptyState icon="bi-receipt" title="ما في طلبات بعد"
-                                        message="حالما يطلب الزبائن من خلال الـ QR، الطلبات ستظهر هنا للاعتماد والمتابعة." />
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+        <div class="order-register">
+            <article v-for="o in orders.data" :key="o.id" class="order-register-row">
+                <div class="order-register-id"><small>{{ o.tableLabel }}</small><strong>{{ o.number }}</strong><span v-if="showBranchColumn">{{ o.branchName ?? '—' }}</span></div>
+                <div class="order-register-state"><span class="badge" :class="`bg-${o.statusColor}`">{{ o.statusLabel }}</span><small>{{ o.createdAgo }}</small></div>
+                <div class="order-register-total"><strong>{{ o.total }}</strong><small>{{ o.itemCount }} صنف</small></div>
+                <div class="order-register-actions"><button v-if="o.canApprove" type="button" class="btn btn-primary" @click="approve(o)"><i class="bi bi-check2"></i> اعتماد</button><button v-else-if="o.canUnapprove" type="button" class="btn btn-outline-warning" @click="unapprove(o)"><i class="bi bi-arrow-counterclockwise"></i> فك الاعتماد</button><a :href="o.urls.show" class="btn btn-light">تفاصيل <i class="bi bi-arrow-left"></i></a></div>
+            </article>
+            <EmptyState v-if="!orders.data.length" icon="bi-receipt" title="لا توجد طلبات" message="ستظهر الطلبات الواردة هنا." />
         </div>
 
         <template #footer>
@@ -182,3 +149,10 @@ const STATUSES = [
         </template>
     </DataPanel>
 </template>
+
+<style scoped>
+.ops-summary{margin-bottom:16px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}.ops-summary>summary{display:flex;align-items:center;gap:10px;min-height:48px;padding:12px 16px;cursor:pointer;list-style:none;font-size:14px;font-weight:700}.ops-summary>summary>i:last-child{margin-inline-start:auto}.ops-summary[open]>summary{border-bottom:1px solid var(--line)}.ops-summary>:deep(.stat-rail){margin:0;border:0;border-radius:0}.row.g-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin:0;gap:12px}.row.g-2>div{width:auto;max-width:none;padding:0;margin:0}.row.g-2 .form-control,.row.g-2 .form-select{min-height:46px;font-size:14px}.row.g-2 .btn{min-height:46px;width:100%}@media(max-width:560px){.row.g-2{grid-template-columns:1fr 1fr}.row.g-2>div:first-child{grid-column:1/-1}}
+
+/* Operational layout and responsive hierarchy. */
+.order-register-row{display:grid;grid-template-columns:minmax(140px,1fr) 150px 130px auto;gap:16px;padding:18px;align-items:center;border-bottom:1px solid var(--line)}.order-register-id,.order-register-state,.order-register-total{display:grid;gap:6px}.order-register-id strong{font-size:18px}.order-register-row small,.order-register-id>span{font-size:14px;color:var(--muted)}.order-register-total strong{font-size:19px}.order-register-state .badge{justify-self:start;border-radius:4px;font-size:14px;font-weight:600}.order-register-actions{display:flex;gap:8px}.order-register-actions .btn{min-height:42px}@media(max-width:800px){.order-register-row{grid-template-columns:1fr auto}.order-register-actions{grid-column:1/-1;border-top:1px solid var(--line);padding-top:12px;justify-content:flex-end}.order-register-total{grid-column:2;grid-row:2}.order-register-state{grid-column:1;grid-row:2}}
+</style>
