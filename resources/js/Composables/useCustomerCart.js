@@ -13,9 +13,10 @@ import { computed, reactive, ref } from 'vue';
  * A 419 anywhere means the table session died → onSessionExpired fires and
  * the page shows the rescan overlay instead of a dead button.
  */
-export function useCustomerCart({ urls, initial = [], onSessionExpired, onOrderingLocked, onRejected }) {
+export function useCustomerCart({ urls, initial = [], onSessionExpired, onOrderingLocked, onRejected, canMutate = () => true }) {
     const rows = reactive([...initial]);
-    const busy = ref(false);
+    const writes = ref(0);
+    const busy = computed(() => writes.value > 0);
 
     const count = computed(() => rows.reduce((s, r) => s + Number(r.quantity), 0));
     const total = computed(() => rows.reduce((s, r) => s + Number(r.subtotal), 0));
@@ -23,30 +24,33 @@ export function useCustomerCart({ urls, initial = [], onSessionExpired, onOrderi
     const csrf = () => document.querySelector('meta[name="csrf-token"]')?.content ?? '';
 
     const call = async (url, body) => {
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': csrf(),
-                Accept: 'application/json',
-                'X-Requested-With': 'XMLHttpRequest',
-            },
-            credentials: 'same-origin',
-            body: JSON.stringify(body),
-        });
+        writes.value += 1;
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrf(),
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify(body),
+            });
 
-        if (res.status === 419) {
-            onSessionExpired?.();
-            throw new Error('session_expired');
-        }
+            if (res.status === 419) {
+                onSessionExpired?.();
+                throw new Error('session_expired');
+            }
 
-        const data = await res.json().catch(() => null);
-        if (res.status === 409 && data?.error === 'ordering_device_locked') {
-            onOrderingLocked?.(data.message);
-            throw new Error('ordering_device_locked');
-        }
+            const data = await res.json().catch(() => null);
+            if (res.status === 409 && data?.error === 'ordering_device_locked') {
+                onOrderingLocked?.(data.message);
+                throw new Error('ordering_device_locked');
+            }
 
-        return { status: res.status, data };
+            return { status: res.status, data };
+        } finally { writes.value -= 1; }
     };
 
     /** Add a line. Returns true when the server accepted it. */
@@ -59,8 +63,7 @@ export function useCustomerCart({ urls, initial = [], onSessionExpired, onOrderi
         exclusions = [],
         notes = null,
     }) => {
-        if (busy.value) return false;
-        busy.value = true;
+        if (busy.value || !canMutate()) return false;
 
         // Optimistic row with a temp id — swapped for the server's row.
         const modifiersTotal = modifiers.reduce((s, m) => s + Number(m.price_delta), 0);
@@ -107,14 +110,12 @@ export function useCustomerCart({ urls, initial = [], onSessionExpired, onOrderi
                 onRejected?.('انقطع الاتصال — ما انضاف الصنف.');
             }
             return false;
-        } finally {
-            busy.value = false;
         }
     };
 
     /** Change a row's quantity (server re-checks stock on increases). */
     const setQuantity = async (row, quantity) => {
-        if (quantity < 1 || row._pending) return;
+        if (!canMutate() || quantity < 1 || row._pending) return;
         const before = { quantity: row.quantity, subtotal: row.subtotal };
         row.quantity = quantity;
         row.subtotal = (Number(row.unit_price) + Number(row.modifiers_total)) * quantity;
@@ -134,7 +135,7 @@ export function useCustomerCart({ urls, initial = [], onSessionExpired, onOrderi
     };
 
     const setNotes = async (row, notes) => {
-        if (row._pending) return;
+        if (!canMutate() || row._pending) return;
         const before = row.notes;
         row.notes = notes;
         try {
@@ -146,6 +147,7 @@ export function useCustomerCart({ urls, initial = [], onSessionExpired, onOrderi
     };
 
     const remove = async (row) => {
+        if (!canMutate()) return;
         const i = rows.findIndex((r) => r.id === row.id);
         if (i === -1) return;
         const removed = rows.splice(i, 1)[0];
@@ -167,6 +169,7 @@ export function useCustomerCart({ urls, initial = [], onSessionExpired, onOrderi
 
     /** The server accepted this round; start a clean, independent next one. */
     const clear = () => rows.splice(0, rows.length);
+    const replace = (nextRows) => rows.splice(0, rows.length, ...nextRows);
 
-    return { rows, busy, count, total, add, setQuantity, setNotes, remove, qtyOf, clear };
+    return { rows, busy, count, total, add, setQuantity, setNotes, remove, qtyOf, clear, replace };
 }

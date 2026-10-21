@@ -25,6 +25,7 @@ use App\Models\SupplierInvoice;
 use App\Models\SupplierPayment;
 use App\Models\TableSession;
 use App\Services\Accounting\AccountingService;
+use App\Services\CashierShiftService;
 use App\Services\CustomerAdvanceService;
 use App\Services\ExchangeRateService;
 use App\Support\AccountingCommandRejected;
@@ -832,6 +833,8 @@ class AccountingController extends Controller
             'reconciliation_adjustment' => 'تسوية فرق مطابقة',
             'payment_voided' => 'عكس دفعة',
             'expense_approved' => 'اعتماد مصروف',
+            'inventory_cogs_recognized' => 'إثبات تكلفة الأصناف المباعة',
+            'inventory_cogs_reversed' => 'عكس تكلفة الأصناف المباعة',
             'supplier_invoice_created' => 'فاتورة مورد',
             'supplier_invoice_cancelled' => 'إلغاء فاتورة مورد',
             'supplier_payment_recorded' => 'دفعة لمورد',
@@ -1675,7 +1678,9 @@ class AccountingController extends Controller
                         'closedAt' => $period->closed_at?->toDateString(),
                         'fiscalYearId' => $period->fiscal_year_id,
                         'fiscalYearName' => $period->fiscalYear?->name,
-                        'checks' => $checks->values(),
+                        'checks' => $checks->map(fn ($check) => $check + ['url' => isset($check['kind'])
+                            ? route('admin.accounting.periods.issues', [$period, $check['kind']])
+                            : route('admin.accounting.trial-balance', ['from' => $period->starts_on->toDateString(), 'to' => $period->ends_on->toDateString()])])->values(),
                         'checksLoaded' => $checksLoaded,
                         'checkUrl' => route('admin.accounting.periods', array_merge(request()->query(), ['check_period_id' => $period->id])),
                         'issueCount' => $checksLoaded ? $checks->where('ok', false)->count() : null,
@@ -1691,6 +1696,66 @@ class AccountingController extends Controller
                 'id' => $year->id, 'name' => $year->name, 'closed' => $year->isClosed(),
             ])->values(),
             'urls' => $this->accountingWorkspaceUrls() + ['store' => route('admin.accounting.periods.store')],
+        ]);
+    }
+
+    public function closingIssues(AccountingPeriod $period, string $kind)
+    {
+        abort_unless(auth()->user()?->hasPermission('chart_of_accounts.update'), 403);
+        $this->assertPeriodInCurrentBranch($period);
+        abort_unless(in_array($kind, ['ledger', 'sessions', 'orders', 'suppliers', 'reconciliations'], true), 404);
+        $from = $period->starts_on->toDateString();
+        $to = $period->ends_on->toDateString();
+        $query = $this->closingRowsQuery($kind, $from, $to, $period->branch_id);
+        $rows = $query->orderBy('id')->paginate(30);
+        $titles = ['ledger' => 'قيود تحتاج مراجعة التوازن', 'sessions' => 'جلسات الطاولات النشطة', 'orders' => 'الطلبات المفتوحة', 'suppliers' => 'فواتير الموردين المفتوحة', 'reconciliations' => 'فروق المطابقة غير المسوّاة'];
+
+        return AdminShell::render('Admin/Accounting/ClosingIssues', [
+            'title' => $titles[$kind], 'period' => ['name' => $period->name, 'from' => $from, 'to' => $to, 'branchId' => $period->branch_id],
+            'rows' => ['data' => $rows->getCollection()->map(function ($row) use ($kind, $from, $to) {
+                $url = match ($kind) {
+                    'ledger' => route('admin.accounting.journal', ['search' => $row->entry_no, 'from' => $from, 'to' => $to]),
+                    'sessions' => auth()->user()->can('viewAny', Payment::class) ? route('admin.cashier.show', $row->id) : null,
+                    'orders' => auth()->user()->can('view', $row) ? route('admin.orders.show', $row->id) : null,
+                    'suppliers' => auth()->user()->can('view', $row) ? route('admin.supplier-invoices.show', $row->id) : null,
+                    'reconciliations' => route('admin.accounting.reconciliations', ['account_id' => $row->account_id, 'statement_date' => $row->statement_date->toDateString(), 'from' => $from, 'to' => $to, 'reconciliation_id' => $row->id]),
+                };
+
+                return ['id' => $row->id, 'reference' => $row->entry_no ?? $row->number ?? '#'.$row->id,
+                    'status' => $kind === 'ledger' ? 'مدين '.number_format((float) $row->debit_total, 2).' / دائن '.number_format((float) $row->credit_total, 2) : ($kind === 'suppliers' ? $row->statusLabel() : ($kind === 'reconciliations' ? 'فرق '.number_format((float) $row->difference, 2) : ($kind === 'sessions' ? 'جلسة نشطة تحتاج مراجعة الكاشير' : 'طلب لم يكتمل'))),
+                    'date' => (string) ($row->opened_at ?? $row->submitted_at ?? $row->invoice_date ?? $row->statement_date ?? $row->created_at), 'url' => $url];
+            })->values(), 'total' => $rows->total(), 'links' => $rows->linkCollection()->toArray()],
+            'backUrl' => route('admin.accounting.periods', ['check_period_id' => $period->id]),
+            'createUrl' => $kind === 'reconciliations' ? route('admin.accounting.reconciliations', ['statement_date' => $to, 'from' => $from, 'to' => $to]) : null,
+        ]);
+    }
+
+    public function cashShifts(Request $request, CashierShiftService $shifts)
+    {
+        abort_unless(auth()->user()?->hasPermission('chart_of_accounts.viewAny'), 403);
+        $filters = $request->validate(['from' => ['nullable', 'date'], 'to' => ['nullable', 'date', 'after_or_equal:from'], 'status' => ['nullable', Rule::in(['open', 'closed', 'variance'])], 'shift_id' => ['nullable', 'integer']]);
+        $rows = $shifts->readQuery()
+            ->when(BranchContext::current(), fn ($query, $branch) => $query->where('cashier_shifts.branch_id', $branch))
+            ->when($filters['from'] ?? null, fn ($query, $date) => $query->where('opened_at', '>=', Carbon::parse($date)->startOfDay()))
+            ->when($filters['to'] ?? null, fn ($query, $date) => $query->where('opened_at', '<=', Carbon::parse($date)->endOfDay()))
+            ->when(($filters['status'] ?? null) === 'open', fn ($query) => $query->whereNull('closed_at'))
+            ->when(($filters['status'] ?? null) === 'closed', fn ($query) => $query->whereNotNull('closed_at'))
+            ->when(($filters['status'] ?? null) === 'variance', fn ($query) => $query->whereRaw('ABS(variance) >= 0.01'))
+            ->orderByDesc('cashier_shifts.id')->paginate(20)->withQueryString();
+        $selected = null;
+        $movements = [];
+        if (! empty($filters['shift_id'])) {
+            $selected = $shifts->readQuery()->where('cashier_shifts.id', $filters['shift_id'])
+                ->when(BranchContext::current(), fn ($query, $branch) => $query->where('cashier_shifts.branch_id', $branch))->first();
+            abort_unless($selected, 404);
+            $movements = DB::table('cashier_shift_movements')->where('cashier_shift_id', $selected->id)->orderBy('id')->paginate(50, ['*'], 'movements_page')->withQueryString();
+        }
+
+        return AdminShell::render('Admin/Accounting/CashShifts', [
+            'rows' => ['data' => $rows->getCollection()->map(fn ($row) => $shifts->describe($row)), 'links' => $rows->linkCollection()->toArray()],
+            'selected' => $selected ? $shifts->describe($selected) : null,
+            'movements' => $selected ? ['data' => $movements->items(), 'links' => $movements->linkCollection()->toArray()] : null,
+            'filters' => $filters, 'currency' => $this->accountingCurrencyMeta(), 'urls' => $this->accountingWorkspaceUrls(),
         ]);
     }
 
@@ -2387,12 +2452,13 @@ class AccountingController extends Controller
             ->where('type', 'asset')
             ->orderBy('code')
             ->get();
-        $selectedAccount = $accounts->firstWhere('id', (int) $request->get('account_id')) ?: $accounts->first();
+        $selectedAccount = $accounts->firstWhere('id', (int) $request->get('account_id'));
         $statementDate = Carbon::parse($request->get('statement_date', now()))->toDateString();
         $bookBalance = $selectedAccount ? $this->bookBalanceForAccount($selectedAccount->id, $statementDate) : 0;
         $period = $this->periodForDate($statementDate);
 
         $reconciliations = $this->scopeToCurrentBranch(CashReconciliation::with('account', 'period', 'reconciler', 'resolver', 'resolutionEntry'))
+            ->when($request->integer('reconciliation_id'), fn ($query, $id) => $query->whereKey($id))
             ->orderByDesc('statement_date')
             ->orderByDesc('id')
             ->paginate(20);
@@ -3097,28 +3163,9 @@ class AccountingController extends Controller
     private function closingChecklist(string $from, string $to, ?int $branchId): array
     {
         $ledger = $this->ledgerTotals($from, $to, $branchId);
-        $activeSessions = TableSession::query()
-            ->where('status', 'active')
-            ->whereDate('opened_at', '<=', $to)
-            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
-            ->count();
-
-        $activeOrders = Order::query()
-            ->whereIn('status', OrderStatus::active())
-            ->where(function ($query) use ($to) {
-                $query->whereDate('submitted_at', '<=', $to)
-                    ->orWhere(function ($query) use ($to) {
-                        $query->whereNull('submitted_at')->whereDate('created_at', '<=', $to);
-                    });
-            })
-            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
-            ->count();
-
-        $openSupplierInvoices = SupplierInvoice::query()
-            ->whereIn('status', ['unpaid', 'partially_paid'])
-            ->whereDate('invoice_date', '<=', $to)
-            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
-            ->count();
+        $activeSessions = $this->closingRowsQuery('sessions', $from, $to, $branchId)->count();
+        $activeOrders = $this->closingRowsQuery('orders', $from, $to, $branchId)->count();
+        $openSupplierInvoices = $this->closingRowsQuery('suppliers', $from, $to, $branchId)->count();
 
         $reconciliationsQuery = CashReconciliation::query()
             ->whereDate('statement_date', '>=', $from)
@@ -3127,14 +3174,12 @@ class AccountingController extends Controller
         $reconciliations = (clone $reconciliationsQuery)->count();
         // A saved reconciliation with a non-zero difference is NOT resolved — it
         // must not turn the checklist item green just by existing.
-        $unbalancedReconciliations = (clone $reconciliationsQuery)
-            ->whereRaw('ABS(difference) > 0.01')
-            ->where('status', '!=', 'resolved')
-            ->count();
+        $unbalancedReconciliations = $this->closingRowsQuery('reconciliations', $from, $to, $branchId)->count();
 
         return [
             [
                 'label' => 'توازن دفتر القيود',
+                'kind' => 'ledger',
                 'ok' => abs($ledger['debit'] - $ledger['credit']) <= 0.01,
                 'severity' => 'block',
                 'message' => 'ميزان الفترة غير متوازن',
@@ -3142,6 +3187,7 @@ class AccountingController extends Controller
             ],
             [
                 'label' => 'إغلاق جلسات الطاولات',
+                'kind' => 'sessions',
                 'ok' => $activeSessions === 0,
                 'severity' => 'block',
                 'message' => 'يوجد جلسات طاولات نشطة',
@@ -3149,6 +3195,7 @@ class AccountingController extends Controller
             ],
             [
                 'label' => 'إنهاء الطلبات المفتوحة',
+                'kind' => 'orders',
                 'ok' => $activeOrders === 0,
                 'severity' => 'block',
                 'message' => 'يوجد طلبات لم تكتمل',
@@ -3156,15 +3203,17 @@ class AccountingController extends Controller
             ],
             [
                 'label' => 'فواتير الموردين المفتوحة',
+                'kind' => 'suppliers',
                 'ok' => $openSupplierInvoices === 0,
-                'severity' => $unbalancedReconciliations > 0 ? 'block' : 'warn',
+                'severity' => 'warn',
                 'message' => 'يوجد فواتير موردين غير مدفوعة بالكامل',
                 'detail' => $openSupplierInvoices.' فاتورة مفتوحة',
             ],
             [
                 'label' => 'مطابقة الصندوق/البنك',
+                'kind' => 'reconciliations',
                 'ok' => $reconciliations > 0 && $unbalancedReconciliations === 0,
-                'severity' => 'warn',
+                'severity' => $unbalancedReconciliations > 0 ? 'block' : 'warn',
                 'message' => $reconciliations === 0
                     ? 'لا توجد مطابقة صندوق أو بنك داخل المدى'
                     : 'توجد مطابقة بفرق غير مسوّى بين الدفتر والكشف',
@@ -3173,6 +3222,23 @@ class AccountingController extends Controller
                     : $reconciliations.' مطابقة محفوظة',
             ],
         ];
+    }
+
+    private function closingRowsQuery(string $kind, string $from, string $to, ?int $branchId): Builder
+    {
+        $query = match ($kind) {
+            'ledger' => JournalEntry::query()->whereDate('posted_on', '>=', $from)->whereDate('posted_on', '<=', $to)
+                ->withSum('lines as debit_total', 'debit')->withSum('lines as credit_total', 'credit')
+                ->havingRaw('ABS(COALESCE(debit_total,0) - COALESCE(credit_total,0)) > 0.01'),
+            'sessions' => TableSession::query()->where('status', 'active')->whereDate('opened_at', '<=', $to),
+            'orders' => Order::query()->whereIn('status', OrderStatus::active())->where(function ($query) use ($to) {
+                $query->whereDate('submitted_at', '<=', $to)->orWhere(fn ($query) => $query->whereNull('submitted_at')->whereDate('created_at', '<=', $to));
+            }),
+            'suppliers' => SupplierInvoice::query()->whereIn('status', ['unpaid', 'partially_paid'])->whereDate('invoice_date', '<=', $to),
+            'reconciliations' => CashReconciliation::query()->whereDate('statement_date', '>=', $from)->whereDate('statement_date', '<=', $to)->whereRaw('ABS(difference) > 0.01')->where('status', '!=', 'resolved'),
+        };
+
+        return $query->when($branchId, fn ($query) => $query->where('branch_id', $branchId));
     }
 
     private function periodClosingPayload(AccountingPeriod|FiscalYear $period): array

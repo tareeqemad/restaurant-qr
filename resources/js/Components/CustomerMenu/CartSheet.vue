@@ -2,8 +2,9 @@
 /**
  * The cart sheet — the retired /cart PAGE reborn inside the menu. Rows
  * edit in place (server-synced steppers), totals honor the branch's tax
- * display mode (inclusive shows the final figure; exclusive shows the
- * subtotal + "added later" note), and identity fields appear only for
+ * display mode (inclusive includes fees; exclusive shows the
+ * subtotal + "added later" note). Cart-level offers apply on the saved order.
+ * Identity fields appear only for
  * diners the system doesn't already know. Submit emits one independent round
  * to the parent menu: the server still owns pricing and idempotency, while the
  * phone stays on the same screen and can immediately build another round.
@@ -18,6 +19,7 @@ const props = defineProps({
     money: { type: Object, required: true },     // symbol/tax/service/display
     sessionInfo: { type: Object, required: true },
     submitting: { type: Boolean, default: false },
+    pending: { type: Boolean, default: false },
     hasPreviousOrders: { type: Boolean, default: false },
     orderingEnabled: { type: Boolean, default: true },
     t: { type: Function, required: true },
@@ -49,7 +51,7 @@ function handleDialogKeydown(event) {
 
     const focusable = [...dialogPanel.value.querySelectorAll(
         'a[href], button, input, select, textarea, summary, [tabindex]',
-    )].filter((element) => element.tabIndex >= 0 && !element.disabled
+    )].filter((element) => element.tabIndex >= 0 && !element.disabled && !element.matches?.(':disabled')
         && element.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden');
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
@@ -103,7 +105,7 @@ const saveNotes = (row) => {
 };
 
 const submit = () => {
-    if (props.submitting || props.cart.rows.length === 0 || ! props.orderingEnabled) return;
+    if (props.submitting || props.cart.busy.value || (!props.pending && (props.cart.rows.length === 0 || !props.orderingEnabled))) return;
 
     emit('submit', {
         customer_phone: ! props.sessionInfo.known ? customerPhone.value.trim() : null,
@@ -161,7 +163,8 @@ onBeforeUnmount(() => {
                         </button>
                     </header>
 
-                    <div class="ct-body">
+                    <p v-if="pending" class="ct-pending" role="status">لم يصل تأكيد الإرسال. أعد التحقق من الجولة نفسها دون تكرارها.</p>
+                    <fieldset class="ct-body" :disabled="pending || submitting">
                         <div v-if="! orderingEnabled" class="ct-locked">
                             <i class="bi bi-phone"></i>
                             <div>
@@ -236,25 +239,25 @@ onBeforeUnmount(() => {
                                 <textarea v-model="orderNotes" rows="2" maxlength="1000"></textarea>
                             </label>
                         </template>
-                    </div>
+                    </fieldset>
 
-                    <footer v-if="cart.rows.length > 0" class="ct-foot">
+                    <footer v-if="cart.rows.length > 0 || pending" class="ct-foot">
                         <p v-if="hasPreviousOrders" class="ct-round-note">
                             <i class="bi bi-plus-circle"></i>
                             جولة جديدة للمطبخ، وتُجمع تلقائياً مع طلباتك السابقة في فاتورة واحدة.
                         </p>
                         <div class="ct-totals">
                             <div class="ct-total-line">
-                                <span>{{ inclusive ? (t('total_inclusive') ?? 'الإجمالي (شامل)') : (t('subtotal') ?? 'المجموع') }}</span>
+                                <span>{{ t('cart_before_offers') ?? 'المجموع قبل عروض السلة' }}</span>
                                 <strong>{{ fmt(displayTotal) }} {{ money.symbol }}</strong>
                             </div>
                             <small v-if="taxNote" class="ct-tax-note">{{ taxNote }}</small>
                         </div>
-                        <button type="button" class="ct-submit" :disabled="submitting || cart.busy.value || ! orderingEnabled" @click="submit">
+                        <button type="button" class="ct-submit" :disabled="submitting || cart.busy.value || (!pending && !orderingEnabled)" @click="submit">
                             <i class="bi" :class="submitting ? 'bi-arrow-repeat ct-spin' : 'bi-send'"></i>
                             {{ submitting
                                 ? (t('sending') ?? 'عم نبعت…')
-                                : (! orderingEnabled ? 'الجلسة مفتوحة من هاتف آخر' : (hasPreviousOrders ? 'أرسل الجولة الجديدة' : 'أرسل الطلب')) }}
+                                : (pending ? 'التحقق من الإرسال' : (!orderingEnabled ? 'الجلسة مفتوحة من هاتف آخر' : (hasPreviousOrders ? 'أرسل الجولة الجديدة' : 'أرسل الطلب'))) }}
                         </button>
                     </footer>
                 </div>
@@ -534,4 +537,6 @@ onBeforeUnmount(() => {
 
 /* Task-specific component layout. */
 .ct-sheet{border-radius:12px 12px 0 0;max-height:94dvh;background:var(--surface)}.ct-head{padding:20px 24px;border-bottom:1px solid var(--line);background:var(--surface);color:var(--ink)}.ct-head h2{font-size:23px}.ct-count{border-radius:6px;background:var(--brand-soft);color:var(--brand)}.ct-close{width:44px;height:44px;border-radius:8px;background:var(--canvas)}.ct-body{padding:0 24px}.ct-row{display:grid;grid-template-columns:56px minmax(0,1fr);gap:12px;padding:18px 0;border:0;border-bottom:1px solid var(--line);border-radius:0}.ct-thumb{width:56px;height:56px;border-radius:6px}.ct-row-top strong{font-size:16px}.ct-row-foot{padding-top:12px;gap:10px}.ct-stepper{border-radius:6px}.ct-stepper button{width:40px;height:40px}.ct-mini{min-width:40px;min-height:40px}.ct-identity,.ct-order-notes{margin:20px 0;padding:16px;background:var(--canvas);border-radius:8px;border:1px solid var(--line)}.ct-foot{padding:20px 24px;border-top:1px solid var(--line);background:var(--surface)}.ct-total-line strong{font-size:27px}.ct-submit{min-height:54px;border-radius:8px;font-size:17px}.ct-round-note,.ct-id-hint,.ct-tax-note{font-size:14px;line-height:1.65}.ct-id-grid{gap:14px}.ct-id-grid input,.ct-order-notes textarea{min-height:48px;border-radius:6px;font-size:15px}
+.ct-body { border: 0; margin: 0; min-width: 0; }
+.ct-pending { margin: 0; padding: 12px 18px; color: #7f5525; background: #f8f0e2; font-size: 14px; }
 </style>

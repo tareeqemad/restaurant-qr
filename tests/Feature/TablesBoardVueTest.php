@@ -19,6 +19,7 @@ use App\Models\Table;
 use App\Models\TableSession;
 use App\Models\User;
 use App\Services\BillingService;
+use App\Services\CashierShiftService;
 use App\Services\OrderService;
 use App\Support\BranchContext;
 use App\Support\LiveRefreshPulse;
@@ -146,9 +147,9 @@ class TablesBoardVueTest extends TestCase
     }
 
     /** @return array{0: Table, 1: TableSession, 2: Order} */
-    protected function readyOrder(): array
+    protected function readyOrder(string $tableNumber = '40'): array
     {
-        $table = $this->table('40');
+        $table = $this->table($tableNumber);
         $session = $this->openSession($table, $this->waiter->id);
 
         $order = app(OrderService::class)->createFromCart($session, [
@@ -431,7 +432,7 @@ class TablesBoardVueTest extends TestCase
         Event::fake([OrderItemStatusChanged::class, OrderStatusChanged::class]);
 
         $this->actingAs($this->waiter)
-            ->postJson(route('admin.tables.serve', $session))
+            ->postJson(route('admin.tables.serve', $session), $this->handoffRequest($session))
             ->assertOk()
             ->assertJson(['ok' => true]);
 
@@ -456,7 +457,7 @@ class TablesBoardVueTest extends TestCase
         $cooking->save();
 
         $this->actingAs($this->waiter)
-            ->postJson(route('admin.tables.serve', $session))
+            ->postJson(route('admin.tables.serve', $session), $this->handoffRequest($session))
             ->assertOk();
 
         $this->assertSame(OrderItemStatus::Preparing->value, $cooking->fresh()->status,
@@ -512,6 +513,7 @@ class TablesBoardVueTest extends TestCase
 
         $billing = app(BillingService::class);
         $invoice = $billing->issueInvoice($session->fresh(), $this->admin->id);
+        app(CashierShiftService::class)->open($this->admin->id, $this->branch->id, 0);
         $billing->addPayment($invoice, (float) $invoice->balance, 'cash', $this->admin->id);
 
         $this->assertSame(OrderStatus::Preparing->value, $order->fresh()->status,
@@ -527,7 +529,7 @@ class TablesBoardVueTest extends TestCase
         $this->assertSame('ليمون ونعنع', $row['readyHandoff']['items'][0]['name']);
 
         $this->actingAs($this->waiter)
-            ->postJson(route('admin.tables.serve', $session))
+            ->postJson(route('admin.tables.serve', $session), $this->handoffRequest($session))
             ->assertOk()
             ->assertJsonPath('served_count', '2');
 
@@ -539,7 +541,7 @@ class TablesBoardVueTest extends TestCase
 
         $service->markItemReady($mealLine, broadcast: false);
         $this->actingAs($this->waiter)
-            ->postJson(route('admin.tables.serve', $session))
+            ->postJson(route('admin.tables.serve', $session), $this->handoffRequest($session))
             ->assertOk()
             ->assertJsonPath('served_count', '1');
 
@@ -719,5 +721,83 @@ class TablesBoardVueTest extends TestCase
     public function test_guests_are_redirected(): void
     {
         $this->get(route('admin.tables.index'))->assertRedirect();
+    }
+
+    protected function handoffRequest(TableSession $session): array
+    {
+        $row = $this->rowsFor($this->waiter)[(string) $session->table->number];
+
+        return ['item_ids' => $row['readyHandoff']['itemIds'], 'handoff_version' => $row['readyHandoff']['version']];
+    }
+
+    public function test_handoff_never_includes_food_that_became_ready_after_the_snapshot(): void
+    {
+        [, $session, $order] = $this->readyOrder();
+        $payload = $this->handoffRequest($session);
+        $new = $order->items()->first()->replicate();
+        $new->uuid = (string) Str::ulid();
+        $new->save();
+        $this->actingAs($this->waiter)->postJson(route('admin.tables.serve', $session), $payload)
+            ->assertOk()->assertJsonPath('served_count', '1');
+        $this->assertSame(OrderItemStatus::Ready->value, $new->fresh()->status);
+        $this->assertSame(OrderItemStatus::Served->value, $order->items()->find($payload['item_ids'][0])->status);
+    }
+
+    public function test_stale_handoff_rolls_back_every_item_in_the_batch(): void
+    {
+        [, $session, $order] = $this->readyOrder();
+        $second = $order->items()->first()->replicate();
+        $second->uuid = (string) Str::ulid();
+        $second->save();
+        $payload = $this->handoffRequest($session);
+        $second->update(['quantity' => 2]);
+        $this->actingAs($this->waiter)->postJson(route('admin.tables.serve', $session), $payload)->assertStatus(409);
+        $this->assertSame(0, $order->items()->where('status', OrderItemStatus::Served->value)->count());
+    }
+
+    public function test_handoff_cannot_include_an_item_from_another_session_or_omit_the_snapshot(): void
+    {
+        [, $session, $order] = $this->readyOrder();
+        $payload = $this->handoffRequest($session);
+        [, $otherSession, $otherOrder] = $this->readyOrder('handoff-other');
+        $payload['item_ids'][] = $otherOrder->items()->first()->id;
+        $this->actingAs($this->waiter)->postJson(route('admin.tables.serve', $session), $payload)->assertStatus(409);
+        $this->actingAs($this->waiter)->postJson(route('admin.tables.serve', $session), [])->assertStatus(422);
+        $this->assertSame(OrderItemStatus::Ready->value, $order->items()->first()->fresh()->status);
+        $this->assertSame(OrderItemStatus::Ready->value, $otherOrder->items()->first()->fresh()->status);
+    }
+
+    public function test_handoff_rolls_back_previous_lines_if_a_later_line_fails(): void
+    {
+        [, $session, $order] = $this->readyOrder();
+        $second = $order->items()->first()->replicate();
+        $second->uuid = (string) Str::ulid();
+        $second->save();
+        $payload = $this->handoffRequest($session);
+        $real = app(OrderService::class);
+        $calls = 0;
+        $proxy = \Mockery::mock($real);
+        $proxy->shouldReceive('markItemServed')->andReturnUsing(function (...$args) use ($real, &$calls) {
+            $item = $real->markItemServed(...$args);
+            if (++$calls === 2) {
+                throw new \RuntimeException('Simulated second line failure');
+            }
+
+            return $item;
+        });
+        $this->app->instance(OrderService::class, $proxy);
+        $this->actingAs($this->waiter)->postJson(route('admin.tables.serve', $session), $payload)->assertStatus(409);
+        $this->assertSame(2, $calls);
+        $this->assertSame(2, $order->items()->where('status', OrderItemStatus::Ready->value)->count());
+        $this->assertSame(0, $order->items()->whereNotNull('served_at')->count());
+    }
+
+    public function test_cashier_cannot_deliver_items_even_with_a_valid_snapshot(): void
+    {
+        [, $session, $order] = $this->readyOrder();
+        $payload = $this->handoffRequest($session);
+        $cashier = $this->staff('handoff-cashier', 'cashier');
+        $this->actingAs($cashier)->postJson(route('admin.tables.serve', $session), $payload)->assertForbidden();
+        $this->assertSame(OrderItemStatus::Ready->value, $order->items()->first()->status);
     }
 }

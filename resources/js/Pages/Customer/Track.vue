@@ -4,6 +4,7 @@ import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import ChangeRequestDialog from '../../Components/CustomerTrack/ChangeRequestDialog.vue';
 import TrackCard from '../../Components/CustomerTrack/TrackCard.vue';
 import Toaster from '../../Components/Ui/Toaster.vue';
+import ServerHealth from '../../Components/Ui/ServerHealth.vue';
 import { useLiveRefresh } from '../../Composables/useLiveRefresh';
 import { useToast } from '../../Composables/useToast';
 
@@ -46,7 +47,22 @@ const headlineNote = computed(() => {
     return 'بانتظار اعتماد الطلب وبدء التحضير.';
 });
 
-const refresh = () => router.reload({ only: ['orders', 'sessionInfo', 'live'], preserveScroll: true });
+const lastSuccessfulAt = ref(Date.now());
+const serverFailed = ref(false);
+const refreshing = ref(false);
+const markServerSuccess = () => { lastSuccessfulAt.value = Date.now(); serverFailed.value = false; };
+let refreshPromise = null;
+const refresh = () => {
+    if (refreshPromise) return refreshPromise;
+    refreshing.value = true;
+    refreshPromise = new Promise((resolve) => router.reload({
+        only: ['orders', 'sessionInfo', 'live'], preserveScroll: true,
+        onSuccess: markServerSuccess,
+        onError: () => { serverFailed.value = true; },
+        onFinish: () => { refreshing.value = false; refreshPromise = null; resolve(); },
+    }));
+    return refreshPromise;
+};
 let lastVersion = props.live.version;
 let idlePolls = 0;
 watch(() => props.live.version, (version) => { lastVersion = version; });
@@ -58,12 +74,16 @@ const checkPulse = async (signal) => {
             credentials: 'same-origin',
             signal,
         });
-        const data = response.ok ? await response.json() : null;
-        if (! data || data.version !== lastVersion || ++idlePolls >= 6) {
+        if (!response.ok) throw new Error('Pulse failed');
+        const data = await response.json();
+        if (data?.version == null) throw new Error('Invalid pulse');
+        if (signal?.aborted) return;
+        markServerSuccess();
+        if (data.version !== lastVersion || ++idlePolls >= 6) {
             idlePolls = 0;
-            refresh();
+            await refresh();
         }
-    } catch { /* The next visible poll retries. */ }
+    } catch { if (!signal?.aborted) serverFailed.value = true; }
 };
 
 useLiveRefresh({
@@ -176,6 +196,7 @@ const goToMenu = () => router.visit(props.urls.menu, {
             </Link>
 
             <div class="header-actions">
+                <ServerHealth :last-successful-at="lastSuccessfulAt" :failed="serverFailed" :refreshing="refreshing" />
                 <span class="table-pill"><i class="bi bi-geo-alt-fill"></i> طاولة {{ sessionInfo.tableNumber }}</span>
                 <Link :href="urls.menu" class="header-link" view-transition><i class="bi bi-grid-fill"></i><span>المنيو</span></Link>
             </div>

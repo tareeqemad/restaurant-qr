@@ -10,6 +10,8 @@ use App\Models\FiscalYear;
 use App\Models\Ingredient;
 use App\Models\IngredientStock;
 use App\Models\MenuItem;
+use App\Models\MenuPromotion;
+use App\Models\Order;
 use App\Models\Setting;
 use App\Models\Table;
 use App\Models\User;
@@ -212,14 +214,19 @@ class DarAlSarwDemoSeederTest extends TestCase
     public function test_handover_clears_trial_receipts_but_preserves_selected_catalogue(): void
     {
         $this->seed(DatabaseSeeder::class);
-        foreach (['accounting_command_receipts', 'waiter_submission_receipts'] as $table) {
+        foreach (['accounting_command_receipts', 'waiter_submission_receipts', 'customer_submission_receipts'] as $table) {
             DB::table($table)->insert(['token_hash' => str_repeat('a', 64), 'payload_hash' => str_repeat('b', 64), 'created_at' => now()]);
         }
         $branch = Branch::where('code', DemoDataset::BRANCH)->firstOrFail();
         $actor = User::where('username', 'admin')->firstOrFail();
+        $order = BranchContext::forBranch($branch->id, fn () => Order::create(['order_type' => 'takeaway', 'order_source' => 'phone', 'promotion_channel' => 'cashier', 'status' => 'pending']));
+        $promotion = MenuPromotion::create(['name' => 'Trial redemption', 'target_type' => 'menu_item', 'target_id' => MenuItem::withoutGlobalScopes()->firstOrFail()->id, 'type' => 'percent', 'value' => 10, 'active' => true]);
+        DB::table('order_promotion_redemptions')->insert(['order_id' => $order->id, 'promotion_id' => $promotion->id, 'redeemed_at' => now()]);
         app(DemoResetService::class)->reset($actor, true, $branch->id);
         $this->assertDatabaseCount('accounting_command_receipts', 0);
         $this->assertDatabaseCount('waiter_submission_receipts', 0);
+        $this->assertDatabaseCount('customer_submission_receipts', 0);
+        $this->assertDatabaseCount('order_promotion_redemptions', 0);
         $this->assertDatabaseCount('menu_items', 24);
         $this->assertDatabaseCount('ingredient_stock', 0);
         $this->assertDatabaseCount('employees', 0);

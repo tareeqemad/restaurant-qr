@@ -7,8 +7,6 @@ use App\Models\Invoice;
 use App\Models\Setting;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
-use Mpdf\Config\ConfigVariables;
-use Mpdf\Config\FontVariables;
 use Mpdf\Mpdf;
 use Mpdf\Output\Destination;
 
@@ -20,7 +18,7 @@ class InvoicePdfRenderer
      */
     public function render(Invoice $invoice): string
     {
-        $cacheKey = 'cashier:invoice-pdf:v5:'.$invoice->getKey().':'.$this->fingerprint($invoice);
+        $cacheKey = 'cashier:invoice-pdf:v6:'.$invoice->getKey().':'.$this->fingerprint($invoice);
 
         // The production cache table is UTF-8 text. Raw PDF bytes are not
         // valid UTF-8 and MySQL rejects them, so cache an ASCII-safe payload.
@@ -45,26 +43,15 @@ class InvoicePdfRenderer
         $tempDir = storage_path('framework/cache/mpdf');
         File::ensureDirectoryExists($tempDir);
 
-        $baseConfig = (new ConfigVariables)->getDefaults();
-        $baseFonts = (new FontVariables)->getDefaults();
-
+        // The bundled DejaVu family keeps Arabic shaping/diacritics enabled.
+        // Cairo's GPOS MarkGlyphSets are unsupported by this mPDF version.
+        // Font files and their license ship with mpdf/mpdf (ttfonts/DejaVuinfo.txt).
         $pdf = new Mpdf([
             'mode' => 'utf-8',
             'format' => 'A4',
             'orientation' => 'P',
             'tempDir' => $tempDir,
-            'fontDir' => array_merge($baseConfig['fontDir'], [
-                public_path('assets/fonts/cairo'),
-            ]),
-            'fontdata' => $baseFonts['fontdata'] + [
-                'cairo' => [
-                    'R' => 'Cairo-Regular.ttf',
-                    'B' => 'Cairo-Bold.ttf',
-                    'useOTL' => 0xFF,
-                    'useKashida' => 75,
-                ],
-            ],
-            'default_font' => 'cairo',
+            'default_font' => 'dejavusans',
             'default_font_size' => 10,
             'margin_left' => 14,
             'margin_right' => 14,

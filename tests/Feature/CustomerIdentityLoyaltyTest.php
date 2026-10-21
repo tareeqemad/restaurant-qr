@@ -9,6 +9,7 @@ use App\Models\Table;
 use App\Models\TableSession;
 use App\Models\User;
 use App\Services\BillingService;
+use App\Services\CashierShiftService;
 use App\Services\CustomerIdentityService;
 use App\Services\RefundService;
 use App\Support\BranchContext;
@@ -20,6 +21,7 @@ class CustomerIdentityLoyaltyTest extends TestCase
     use RefreshDatabase;
 
     protected Branch $branch;
+
     protected User $cashier;
 
     protected function setUp(): void
@@ -67,6 +69,7 @@ class CustomerIdentityLoyaltyTest extends TestCase
 
     public function test_full_payment_awards_points_once_and_refund_reconciles_them(): void
     {
+        app(CashierShiftService::class)->open($this->cashier->id, $this->branch->id, 0);
         [$customer] = Customer::createFromCashier('زبون نقاط', '0599000333', defaultBranchId: $this->branch->id);
         $table = Table::create(['number' => 'L1', 'capacity' => 2, 'status' => 'occupied', 'active' => true]);
         $session = TableSession::create([

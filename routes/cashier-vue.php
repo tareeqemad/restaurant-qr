@@ -11,9 +11,13 @@ Route::get('cashier/session/{session}', [CashierVueController::class, 'show'])->
 
 Route::prefix('cashier/api')->name('cashier.api.')->group(function () {
     Route::get('state', [CashierVueController::class, 'state'])->name('state');
+    Route::post('shifts/open', [CashierVueController::class, 'openShift'])->name('shifts.open');
+    Route::post('shifts/{shift}/close', [CashierVueController::class, 'closeShift'])->whereNumber('shift')->name('shifts.close');
+    Route::post('shifts/{shift}/movements', [CashierVueController::class, 'shiftMovement'])->whereNumber('shift')->name('shifts.movements');
     Route::post('sessions/{session}/invoice', [CashierVueController::class, 'issueSession'])->name('sessions.invoice');
     Route::post('orders/{order}/invoice', [CashierVueController::class, 'issueOrder'])->name('orders.invoice');
     Route::post('invoices/{invoice}/payments', [CashierVueController::class, 'pay'])->name('payments.store');
+    Route::get('invoices/{invoice}/payments/verify', [CashierVueController::class, 'verifyPayment'])->name('payments.verify');
     Route::post('invoices/{invoice}/refunds', [CashierVueController::class, 'refund'])->name('refunds.store');
     Route::post('sessions/{session}/discounts', [CashierVueController::class, 'discountSession'])->name('sessions.discounts.store');
     Route::post('orders/{order}/discounts', [CashierVueController::class, 'discountOrder'])->name('orders.discounts.store');

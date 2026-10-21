@@ -118,6 +118,7 @@ watch(
         />
         <AdminSidebar
             :nav="shell.nav"
+            :search-tasks="shell.searchTasks || []"
             :brand="shell.brand"
             :dashboard-url="shell.urls.dashboard"
             :open="sidebarOpen"

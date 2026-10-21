@@ -140,7 +140,8 @@ class InventoryService
 
         // Non-composite (or composite with no sub-recipe defined yet) —
         // deduct directly.
-        if (! $ingredient->is_composite || ! $ingredient->subRecipe()->exists()) {
+        if (! $ingredient->is_composite || ($ingredient->relationLoaded('subRecipe')
+            ? $ingredient->subRecipe->isEmpty() : ! $ingredient->subRecipe()->exists())) {
             return [[
                 'ingredient_id' => $ingredient->id,
                 'ingredient' => $ingredient,
@@ -172,7 +173,9 @@ class InventoryService
         $seen[$ingredient->id] = true;
         $expanded = [];
 
-        foreach ($ingredient->subRecipe()->with('ingredient', 'unit', 'ingredientUnit')->get() as $line) {
+        $subRecipe = $ingredient->relationLoaded('subRecipe')
+            ? $ingredient->subRecipe : $ingredient->subRecipe()->with('ingredient', 'unit', 'ingredientUnit')->get();
+        foreach ($subRecipe as $line) {
             $child = $line->ingredient;
             // Same unit-resolution logic as top-level recipe lines —
             // sub-recipe ingredients can also be measured in tbsp/scoop.

@@ -8,6 +8,7 @@ import FieldError from '../../../Components/Settings/FieldError.vue'
 import SettingsSection from '../../../Components/Settings/SettingsSection.vue'
 import ToggleField from '../../../Components/Settings/ToggleField.vue'
 import { useConfirm } from '../../../Composables/useConfirm'
+import { useFormUx } from '../../../Composables/useFormUx'
 import { localDateInput } from '../../../Utils/dateInput'
 
 defineOptions({ layout: AdminLayout })
@@ -164,6 +165,8 @@ async function deleteExchangeRate(rate) {
 function testSms() {
     if (props.can.edit) router.post(props.urls.testSms, {}, { preserveScroll: true })
 }
+
+useFormUx([settingsForm, brandForm, currencyCreate, currencyRates, exchangeForm], { guard: () => props.can.edit })
 
 </script>
 

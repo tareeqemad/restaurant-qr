@@ -44,6 +44,7 @@ class AdminShell
                 'avatar' => $u->avatar_url ?: Brand::defaultAvatarDataUri(),
             ] : null,
             'nav' => AdminNav::build(),
+            'searchTasks' => AdminTaskSearch::build(),
             'workspace' => InventoryWorkspace::payload(),
             'branch' => static::branchSwitcher($u),
             'attendance' => static::attendance($u),

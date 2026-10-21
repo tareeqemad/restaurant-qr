@@ -2,18 +2,12 @@
 import { computed, ref, watch } from 'vue';
 import { Link, usePage } from '@inertiajs/vue3';
 import NavItem from './NavItem.vue';
-const props = defineProps({ nav: { type: Array, required: true }, brand: { type: Object, required: true }, dashboardUrl: { type: String, required: true }, open: { type: Boolean, default: false } });
+import { searchTasks } from '../../Support/taskSearch';
+const props = defineProps({ nav: { type: Array, required: true }, searchTasks: { type: Array, default: () => [] }, brand: { type: Object, required: true }, dashboardUrl: { type: String, required: true }, open: { type: Boolean, default: false } });
 const emit = defineEmits(['close']);
 const query = ref('');
 const page = usePage();
-const normalized = (value) => String(value || '').normalize('NFKD').replace(/[\u064b-\u065f\u0670]/g, '').trim().toLocaleLowerCase();
-const filterNodes = (nodes, term) => nodes.flatMap((item) => {
-    if (item.section) return [];
-    if (normalized(item.label).includes(term)) return [item];
-    const children = filterNodes(item.children || [], term);
-    return children.length ? [{ ...item, children }] : [];
-});
-const filteredNav = computed(() => normalized(query.value) ? filterNodes(props.nav, normalized(query.value)) : props.nav);
+const filteredNav = computed(() => searchTasks(props.nav, props.searchTasks, query.value));
 const clearSearchOnEscape = (event) => {
     if (!query.value) return;
     event.stopPropagation();

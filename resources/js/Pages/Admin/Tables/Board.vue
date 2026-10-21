@@ -224,9 +224,21 @@ const postJson = async (url, body = {}) => {
 
 const serve = async (row) => {
     if (busyId.value) return;
+    const snapshot = JSON.parse(JSON.stringify(row.readyHandoff ?? null));
+    if (!snapshot?.itemIds?.length || !snapshot.version) { refresh(); return; }
+    const confirmed = await ask({
+        title: `تأكيد تسليم طاولة ${row.number}`,
+        message: snapshot.items.map((item) => `${item.qty}× ${item.name} (${item.stationName})`).join(' • '),
+        confirmLabel: `تم تسليم هذه الأصناف (${snapshot.pieceCount})`,
+        cancelLabel: 'رجوع',
+    });
+    if (!confirmed || busyId.value) return;
     busyId.value = row.id;
     try {
-        const data = await postJson(row.urls.serve);
+        const data = await postJson(row.urls.serve, {
+            item_ids: snapshot.itemIds,
+            handoff_version: snapshot.version,
+        });
         if (data?.ok) toast.success(data.message);
         else toast.warning(data?.message ?? 'تعذّر التسليم — حاول مجدداً.');
     } catch {

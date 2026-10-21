@@ -17,8 +17,12 @@ use App\Models\TableSession;
 use App\Models\Unit;
 use App\Models\User;
 use App\Services\BillingService;
+use App\Services\CustomerSubmissionService;
+use App\Services\OrderService;
 use App\Support\BranchContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -575,7 +579,7 @@ class CustomerMenuVueTest extends TestCase
         $this->assertStringContainsString('<OrderTrackingSheet', $menu);
         $this->assertStringNotContainsString(':href="urls.track"', $menu);
         $this->assertStringContainsString('fetch(props.urls.trackData', $sheet);
-        $this->assertStringContainsString('window.setInterval(checkPulse, 5000)', $sheet);
+        $this->assertStringContainsString('useLiveRefresh({ pollMs: 5000, onPing:', $sheet);
         $this->assertStringContainsString('<TrackCard', $sheet);
         $this->assertStringContainsString('window.setInterval(checkOrderPulse, 5000)', $menu);
         $this->assertStringContainsString('trackingOpen.value || document.hidden', $menu);
@@ -745,5 +749,153 @@ class CustomerMenuVueTest extends TestCase
             ->assertJsonPath('error', 'pending_transfer');
 
         $this->assertSame([], session('cart.'.$this->session->token, []));
+    }
+
+    protected function reliableSubmissionPayload(string $token): array
+    {
+        $this->postJson(route('customer.cart.add'), $this->sessionParam([
+            'menu_item_id' => $this->burger->id, 'quantity' => 1,
+        ]))->assertOk();
+
+        return $this->sessionParam(['_idem' => $token, 'notes' => 'original round',
+            'cart_snapshot' => array_values(session('cart.'.$this->session->token, []))]);
+    }
+
+    public function test_customer_receipt_survives_cache_loss_and_replays_the_original_order_after_later_rounds(): void
+    {
+        $payload = $this->reliableSubmissionPayload('durable-customer');
+        $first = $this->postJson(route('customer.cart.submit'), $payload)
+            ->assertOk()->assertJsonPath('submission_state', 'committed');
+        $orderId = $first->json('receipt.orderId');
+        $next = $this->reliableSubmissionPayload('later-customer');
+        $this->postJson(route('customer.cart.submit'), $next)->assertOk();
+        Cache::flush();
+        $this->travel(20)->minutes();
+        $this->postJson(route('customer.cart.submit'), $payload)->assertOk()
+            ->assertJsonPath('replayed', true)->assertJsonPath('receipt.orderId', $orderId);
+        $this->assertSame(2, $this->session->orders()->count());
+        $this->assertDatabaseCount('customer_submission_receipts', 2);
+    }
+
+    public function test_customer_receipt_rejects_changed_payload_and_does_not_erase_a_new_cart(): void
+    {
+        $payload = $this->reliableSubmissionPayload('bound-customer');
+        $this->postJson(route('customer.cart.submit'), $payload)->assertOk();
+        $this->postJson(route('customer.cart.submit'), [...$payload, 'notes' => 'different'])
+            ->assertStatus(409)->assertJsonPath('submission_state', 'unknown');
+        $new = $this->reliableSubmissionPayload('fresh-cart');
+        $this->postJson(route('customer.cart.submit'), $payload)->assertOk()->assertJsonCount(1, 'cart');
+        $this->assertCount(1, session('cart.'.$this->session->token));
+        $this->assertSame(1, $this->session->orders()->count());
+    }
+
+    public function test_customer_order_and_receipt_roll_back_together_then_the_same_token_can_retry(): void
+    {
+        $payload = $this->reliableSubmissionPayload('rollback-customer');
+        $real = app(OrderService::class);
+        $fail = true;
+        $proxy = \Mockery::mock($real);
+        $proxy->shouldReceive('createFromCart')->andReturnUsing(function (...$args) use ($real, &$fail) {
+            $order = $real->createFromCart(...$args);
+            if ($fail) {
+                $fail = false;
+                throw new \RuntimeException('Simulated failure after order write');
+            }
+
+            return $order;
+        });
+        $this->app->instance(OrderService::class, $proxy);
+        $this->postJson(route('customer.cart.submit'), $payload)->assertStatus(422)
+            ->assertJsonPath('submission_state', 'rejected');
+        $this->assertDatabaseCount('orders', 0);
+        $this->assertDatabaseCount('customer_submission_receipts', 0);
+        $this->postJson(route('customer.cart.submit'), $payload)->assertOk();
+        $this->assertDatabaseCount('orders', 1);
+        $this->assertDatabaseCount('customer_submission_receipts', 1);
+    }
+
+    public function test_customer_changed_server_cart_is_rejected_before_any_order_is_saved(): void
+    {
+        $payload = $this->reliableSubmissionPayload('changed-cart');
+        $payload['cart_snapshot'][0]['quantity'] = 9;
+        $this->postJson(route('customer.cart.submit'), $payload)->assertStatus(422)
+            ->assertJsonPath('error', 'cart_changed')->assertJsonPath('submission_state', 'rejected');
+        $this->assertDatabaseCount('orders', 0);
+        $this->assertDatabaseCount('customer_submission_receipts', 0);
+    }
+
+    public function test_customer_incomplete_claim_is_never_presented_as_a_saved_order(): void
+    {
+        $this->withSession(['qr_order_device' => 'receipt-device']);
+        $payload = $this->reliableSubmissionPayload('incomplete-customer');
+        $scope = CustomerSubmissionService::scope($this->session, hash('sha256', 'receipt-device'));
+        DB::table('customer_submission_receipts')->insert([
+            'token_hash' => hash('sha256', $scope.'|incomplete-customer'),
+            'payload_hash' => CustomerSubmissionService::fingerprint([
+                'customer_phone' => null, 'notes' => $payload['notes'],
+                'cart_snapshot' => CustomerSubmissionService::cartSnapshot($payload['cart_snapshot']),
+            ]),
+            'response_json' => null, 'created_at' => now(),
+        ]);
+        $this->postJson(route('customer.cart.submit'), $payload)
+            ->assertStatus(409)->assertJsonPath('submission_state', 'unknown');
+        $this->assertDatabaseCount('orders', 0);
+        $this->assertCount(1, session('cart.'.$this->session->token));
+    }
+
+    public function test_customer_replay_recovers_a_lost_response_without_recreating_the_round(): void
+    {
+        $payload = $this->reliableSubmissionPayload('lost-response-customer');
+        $this->postJson(route('customer.cart.submit'), $payload)->assertOk();
+        // Simulate a process dying after DB commit but before session cleanup.
+        $this->withSession([
+            'cart.'.$this->session->token => $payload['cart_snapshot'],
+            'cart_submit_token.'.$this->session->token => $payload['_idem'],
+        ]);
+        $this->postJson(route('customer.cart.submit'), $payload)->assertOk()
+            ->assertJsonPath('replayed', true)->assertJsonCount(0, 'cart');
+        $this->assertDatabaseCount('orders', 1);
+        $this->assertSame([], session('cart.'.$this->session->token, []));
+    }
+
+    public function test_closed_customer_visit_can_replay_its_receipt_but_cannot_create_another_order(): void
+    {
+        $payload = $this->reliableSubmissionPayload('closed-customer');
+        $first = $this->postJson(route('customer.cart.submit'), $payload)->assertOk();
+        $this->session->update(['status' => 'closed', 'closed_at' => now()]);
+        $this->postJson(route('customer.cart.submit'), $payload)->assertOk()
+            ->assertJsonPath('receipt.orderId', $first->json('receipt.orderId'))
+            ->assertJsonPath('sessionInfo.canOrder', false)->assertJsonPath('replayed', true);
+        $this->postJson(route('customer.cart.submit'), [...$payload, '_idem' => 'new-after-close'])
+            ->assertStatus(409)->assertJsonPath('submission_state', 'rejected')->assertJsonPath('error', 'session_closed');
+        $this->assertDatabaseCount('orders', 1);
+        $this->assertDatabaseCount('customer_submission_receipts', 1);
+        $this->postJson(route('customer.cart.add'), $this->sessionParam([
+            'menu_item_id' => $this->burger->id, 'quantity' => 1,
+        ]))->assertStatus(419);
+    }
+
+    public function test_customer_retry_stays_on_its_original_visit_after_cookie_changes(): void
+    {
+        $this->withSession(['qr_order_device' => 'bound-visit-device']);
+        $payload = $this->reliableSubmissionPayload('visit-customer');
+        $payload['submission_scope'] = CustomerSubmissionService::scope($this->session, hash('sha256', 'bound-visit-device'));
+        $first = $this->postJson(route('customer.cart.submit'), $payload)->assertOk();
+        $other = TableSession::create([
+            'branch_id' => $this->branch->id, 'table_id' => $this->table->id,
+            'token' => 'other-visit-token', 'status' => 'active',
+            'opened_at' => now(), 'last_activity_at' => now(),
+        ]);
+        $this->withCredentials()->withCookie('table_session', $other->token);
+        $this->postJson(route('customer.cart.submit'), $payload)->assertOk()
+            ->assertJsonPath('receipt.orderId', $first->json('receipt.orderId'))
+            ->assertCookieMissing('table_session');
+        $this->postJson(route('customer.cart.submit'), [...$payload, 'session' => $other->token])
+            ->assertStatus(409)->assertJsonPath('error', 'submission_scope_changed');
+        $this->assertSame(0, $other->orders()->count());
+        $this->assertDatabaseCount('orders', 1);
+        $this->withSession(['qr_order_device' => 'another-phone']);
+        $this->postJson(route('customer.cart.submit'), $payload)
+            ->assertStatus(409)->assertJsonPath('error', 'ordering_device_locked');
     }
 }

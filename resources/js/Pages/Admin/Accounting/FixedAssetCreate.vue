@@ -1,4 +1,5 @@
 <script setup>
+import { useFormUx } from '../../../Composables/useFormUx';
 import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 import { computed } from 'vue'
 import { Link, Head, useForm } from '@inertiajs/vue3'
@@ -8,6 +9,7 @@ import AccountingNav from '../../../Components/Accounting/AccountingNav.vue'
 import AccountingPanel from '../../../Components/Accounting/AccountingPanel.vue'
 defineOptions({layout:AdminLayout})
 const props=defineProps({defaults:Object,currencies:Array,paymentMethods:Array,suppliers:Array,hasBranch:Boolean,urls:Object});const form=useForm({asset_number:props.defaults.assetNumber,name:'',category:'',description:'',vendor_name:'',supplier_id:'',acquisition_date:props.defaults.acquisitionDate,in_service_date:props.defaults.inServiceDate,foreign_cost:'',foreign_salvage_value:0,currency_code:props.defaults.currencyCode,exchange_rate:props.defaults.exchangeRate,useful_life_months:props.defaults.usefulLifeMonths,payment_method:props.defaults.paymentMethod,notes:''});const selectedCurrency=computed(()=>props.currencies.find(c=>c.code===form.currency_code));const baseCost=computed(()=>Number(form.foreign_cost||0)*Number(form.exchange_rate||0));const monthly=computed(()=>Math.max(0,(baseCost.value-Number(form.foreign_salvage_value||0)*Number(form.exchange_rate||0))/Number(form.useful_life_months||1)));function currencyChanged(){form.exchange_rate=selectedCurrency.value?.base?1:(selectedCurrency.value?.rate||'')}const submit=()=>form.post(props.urls.store)
+useFormUx(form);
 </script>
 <template>
 <Head title="إضافة أصل ثابت"/>

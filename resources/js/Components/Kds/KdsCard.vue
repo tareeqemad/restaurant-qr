@@ -215,7 +215,7 @@ const ribbon = computed(() => {
                     </div>
                 </div>
 
-                <div class="kb-item-actions">
+                <div class="kb-item-actions" :class="{ 'has-open-menu': menuOpenFor === it.id }">
                     <button v-if="it.status === 'approved'" type="button" class="kb-item-action is-start"
                             :disabled="busy || it.changePending" @click="act('start', { item_id: it.id })">
                         <i class="bi" :class="busy ? 'bi-arrow-repeat kb-spin' : 'bi-play-fill'"></i><span>{{ busy ? 'جارٍ…' : 'ابدأ' }}</span>
@@ -235,7 +235,7 @@ const ribbon = computed(() => {
                         <span v-else class="kb-item-done" title="جاهز للاستلام"><i class="bi bi-check2-circle"></i></span>
                     </template>
 
-                    <div v-if="['approved', 'preparing'].includes(it.status) && it.canCancel && ! it.changePending" class="kb-more" @click.stop>
+                    <div v-if="['approved', 'preparing'].includes(it.status) && it.canCancel && ! it.changePending" class="kb-more" :class="{ 'is-open': menuOpenFor === it.id }" @click.stop>
                         <button type="button" class="kb-more-btn" aria-label="خيارات الصنف"
                                 :disabled="busy" :aria-expanded="menuOpenFor === it.id" @click="toggleMenu(it.id)">
                             <i class="bi bi-three-dots-vertical"></i>

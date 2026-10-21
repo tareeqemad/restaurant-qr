@@ -18,6 +18,7 @@ import OrderTrackingSheet from '../../Components/CustomerMenu/OrderTrackingSheet
 import Toaster from '../../Components/Ui/Toaster.vue';
 import { useCustomerCart } from '../../Composables/useCustomerCart';
 import { useToast } from '../../Composables/useToast';
+import { createCustomerSubmission, readCustomerAcknowledgement } from '../../Support/customerSubmission';
 
 const props = defineProps({
     brand: { type: Object, required: true },
@@ -41,6 +42,16 @@ const orderingEnabled = computed(() => liveSessionInfo.value.canOrder !== false)
 const submittedOrders = ref([...props.sessionOrders]);
 const nextSubmitToken = ref(props.submitToken);
 const submittingOrder = ref(false);
+let pageActive = true;
+let submissionController = null;
+const submission = createCustomerSubmission(props.sessionInfo.submissionScope, {
+    getItem: (key) => window.localStorage.getItem(key),
+    setItem: (key, value) => window.localStorage.setItem(key, value),
+    removeItem: (key) => window.localStorage.removeItem(key),
+});
+const pendingSubmission = submission.pending;
+const withSubmissionLock = (callback) => navigator.locks?.request
+    ? navigator.locks.request(submission.storageKey, callback) : Promise.resolve(callback());
 const activeStatuses = new Set(['pending', 'approved', 'preparing', 'ready', 'delivered']);
 const currentActiveOrdersCount = computed(() => submittedOrders.value
     .filter((order) => activeStatuses.has(order.status)).length);
@@ -67,7 +78,8 @@ const markOrderingLocked = (message) => {
 // ── Cart ─────────────────────────────────────────────────────────────
 const cart = useCustomerCart({
     urls: props.urls,
-    initial: props.cart,
+    initial: pendingSubmission.value?.rows ?? props.cart,
+    canMutate: () => !pendingSubmission.value && !submittingOrder.value,
     onSessionExpired: () => { sessionDead.value = true; },
     onOrderingLocked: markOrderingLocked,
     onRejected: (message) => toast.warning(message),
@@ -79,10 +91,20 @@ const firstValidationMessage = (data) => {
 };
 
 const submitOrder = async (payload) => {
-    if (submittingOrder.value || cart.rows.length === 0 || ! orderingEnabled.value) return;
+    if (submittingOrder.value || cart.busy.value || (!pendingSubmission.value && (cart.rows.length === 0 || !orderingEnabled.value))) return;
     submittingOrder.value = true;
+    submissionController = new AbortController();
+    const timeout = window.setTimeout(() => submissionController?.abort(), 12000);
 
     try {
+        const prepare = () => submission.begin({ ...payload, _idem: nextSubmitToken.value,
+            session: props.sessionInfo.visitToken, submission_scope: props.sessionInfo.submissionScope,
+            cart_snapshot: cart.rows }, cart.rows);
+        // Serialize the brief storage claim between tabs when Web Locks exist.
+        // The server receipt remains the authority on every browser.
+        const request = await withSubmissionLock(prepare);
+        if (!pageActive) return;
+        cart.replace(pendingSubmission.value.rows);
         const response = await fetch(props.urls.cartSubmit, {
             method: 'POST',
             headers: {
@@ -92,20 +114,31 @@ const submitOrder = async (payload) => {
                 'X-Requested-With': 'XMLHttpRequest',
             },
             credentials: 'same-origin',
-            body: JSON.stringify({ ...payload, _idem: nextSubmitToken.value }),
+            signal: submissionController.signal,
+            body: JSON.stringify(request),
         });
-        const data = await response.json().catch(() => null);
+        const result = await readCustomerAcknowledgement(response, request._idem);
+        if (!pageActive) return;
+        const data = result.data;
 
         if (response.status === 419) {
             sessionDead.value = true;
             return;
         }
         if (response.status === 409 && data?.error === 'ordering_device_locked') {
+            if (result.rejected) await withSubmissionLock(() => submission.clear());
+            if (!pageActive) return;
             markOrderingLocked(data.message);
             return;
         }
-        if (! response.ok || data?.ok === false) {
-            toast.warning(firstValidationMessage(data));
+        if (!result.committed) {
+            if (result.rejected) {
+                await withSubmissionLock(() => submission.clear());
+                if (!pageActive) return;
+                if (Array.isArray(data?.cart)) cart.replace(data.cart);
+                if (data?.error === 'session_closed') sessionDead.value = true;
+            }
+            toast.warning(result.rejected ? firstValidationMessage(data) : 'لم يصل تأكيد الطلب. استخدم «التحقق من الإرسال»؛ لن نكرر الجولة.');
             return;
         }
 
@@ -115,26 +148,30 @@ const submitOrder = async (payload) => {
             liveSessionInfo.value = { ...liveSessionInfo.value, ...data.sessionInfo };
         }
 
-        cart.clear();
+        await withSubmissionLock(() => submission.clear());
+        if (!pageActive) return;
+        cart.replace(data.cart);
         cartOpen.value = false;
         // Stay on the table's QR URL, but immediately show the authoritative saved round.
         // This makes the send feel like an app transition and removes the
         // common doubt: «هل وصل الطلب أم اختفى؟».
-        trackingOpen.value = true;
-        const acceptedRound = Array.isArray(data?.orders) ? data.orders[0]?.roundNumber : null;
+        trackingOpen.value = data.sessionInfo?.active !== false;
+        const acceptedRound = data.orders.find((order) => Number(order.id) === data.receipt.orderId)?.roundNumber;
         toast.success(acceptedRound
             ? `وصلت الجولة ${acceptedRound} لفريق الصالة؛ راجع أصنافها وحالتها هنا.`
             : (data?.message ?? 'وصلت الجولة لفريق الصالة، وستبقى ظاهرة هنا.'));
-    } catch {
-        toast.error(t('offline_note') ?? 'انقطع الاتصال — الطلب بقي في سلتك، جرّب مرة ثانية.');
+    } catch (error) {
+        if (pageActive) toast.error(pendingSubmission.value ? 'لم يصل تأكيد الإرسال. الطلب محفوظ؛ أعد التحقق دون تكراره.' : error.message);
     } finally {
+        window.clearTimeout(timeout);
+        submissionController = null;
         submittingOrder.value = false;
     }
 };
 
 // ── Sheets ───────────────────────────────────────────────────────────
 const sheetItem = ref(null);
-const cartOpen = ref(false);
+const cartOpen = ref(Boolean(pendingSubmission.value));
 const trackingOpen = ref(false);
 
 const announceOrderTransitions = (nextOrders) => {
@@ -210,9 +247,10 @@ const checkOrderPulse = async () => {
     finally { orderPulseBusy.value = false; }
 };
 
-const openItem = (item) => { sheetItem.value = item; };
+const openItem = (item) => { if (pendingSubmission.value) { cartOpen.value = true; return; } sheetItem.value = item; };
 
 const onPlus = async (item) => {
+    if (pendingSubmission.value) { cartOpen.value = true; return; }
     if (! orderingEnabled.value) return;
     if (item.has_modifiers || item.removable_ingredients?.length) {
         openItem(item);
@@ -231,6 +269,7 @@ const onPlus = async (item) => {
 };
 
 const onMinus = (item) => {
+    if (pendingSubmission.value) { cartOpen.value = true; return; }
     if (! orderingEnabled.value) return;
     const rows = cart.rows.filter((r) => Number(r.menu_item_id) === Number(item.id));
     if (rows.length === 0) return;
@@ -240,6 +279,7 @@ const onMinus = (item) => {
 };
 
 const onSheetAdd = async (line) => {
+    if (pendingSubmission.value) { cartOpen.value = true; return; }
     if (! orderingEnabled.value) return;
     const ok = await cart.add(line);
     if (ok) {
@@ -334,6 +374,8 @@ onMounted(() => {
     } catch { /* private browsing */ }
 });
 onBeforeUnmount(() => {
+    pageActive = false;
+    submissionController?.abort();
     observer?.disconnect();
     window.clearInterval(orderPulseTimer);
 });
@@ -417,9 +459,15 @@ const fmt = (n) => (Number(n) || 0).toFixed(2);
         <div v-if="! orderingEnabled" class="qm-order-lock" role="status">
             <i class="bi bi-phone"></i>
             <div>
-                <strong>الطلب مفتوح من هاتف آخر</strong>
-                <span>تقدر تتصفح المنيو وتتابع طلبات الطاولة. الإضافات من الهاتف الذي بدأ الجلسة أو من فريق الصالة.</span>
+                <strong>{{ liveSessionInfo.active === false ? 'انتهت جلسة الطاولة' : 'الطلب مفتوح من هاتف آخر' }}</strong>
+                <span>{{ liveSessionInfo.active === false ? 'تم تأكيد الطلب المحفوظ. للإضافة اطلب من فريق الصالة فتح جلسة جديدة.' : 'تقدر تتصفح المنيو وتتابع طلبات الطاولة. الإضافات من الهاتف الذي بدأ الجلسة أو من فريق الصالة.' }}</span>
             </div>
+        </div>
+
+        <div v-if="pendingSubmission" class="qm-order-lock" role="status">
+            <div><strong>طلب بانتظار التأكيد</strong><span>نحتفظ بالجولة نفسها حتى نتأكد من وصولها.</span></div>
+            <button type="button" :disabled="submittingOrder" @click="submitOrder({})">التحقق من الإرسال</button>
+            <button type="button" @click="trackingOpen = true">طلبات الطاولة</button>
         </div>
 
         <!-- Sent rounds stay visible while the diner builds the next one. -->
@@ -569,7 +617,7 @@ const fmt = (n) => (Number(n) || 0).toFixed(2);
                @close="sheetItem = null" @add="onSheetAdd" />
 
     <CartSheet :open="cartOpen" :cart="cart" :money="money" :session-info="liveSessionInfo"
-               :submitting="submittingOrder" :has-previous-orders="submittedOrders.length > 0" :t="t"
+               :submitting="submittingOrder" :pending="Boolean(pendingSubmission)" :has-previous-orders="submittedOrders.length > 0" :t="t"
                :ordering-enabled="orderingEnabled"
                @close="cartOpen = false" @submit="submitOrder" />
 

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\OrderItemStatus;
+use App\Helpers\Money;
 use App\Models\Customer;
 use App\Models\MenuItem;
 use App\Models\MenuPromotion;
@@ -10,6 +11,7 @@ use App\Models\Order;
 use App\Support\BranchContext;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Resolves "what promotion applies to this menu item right now?" —
@@ -50,11 +52,11 @@ class PromotionService
      *                                   Guests fail any audience-restricted
      *                                   promo silently.
      */
-    public function resolveForItem(MenuItem $item, ?Carbon $when = null, ?int $branchId = null, ?string $channel = null, ?Customer $customer = null): ?MenuPromotion
+    public function resolveForItem(MenuItem $item, ?Carbon $when = null, ?int $branchId = null, string|array|null $channel = null, ?Customer $customer = null, ?Order $order = null): ?MenuPromotion
     {
         $when ??= now();
         $branchId ??= BranchContext::current();
-        $cacheKey = sprintf('%d:%s:%s:%s:%s', $item->id, $branchId ?? 'all', $channel ?? '_', $customer?->id ?? '_', $when->format('Y-m-d_H_i'));
+        $cacheKey = sprintf('%d:%s:%s:%s:%s:%s', $item->id, $branchId ?? 'all', is_array($channel) ? implode(',', $channel) : ($channel ?? '_'), $customer?->id ?? '_', $when->format('Y-m-d_H_i'), $order?->id ?? '_');
         if (array_key_exists($cacheKey, $this->cache)) {
             return $this->cache[$cacheKey];
         }
@@ -87,13 +89,13 @@ class PromotionService
             ->filter(fn (MenuPromotion $p) => $p->isLiveAt($when))
             // Channel guard: drop promos that don't allow the order
             // source we're resolving for. Null channel = no opinion.
-            ->filter(fn (MenuPromotion $p) => $p->allowsChannel($channel))
+            ->filter(fn (MenuPromotion $p) => $this->allowsChannel($p, $channel))
             // Audience guard: birthday-month promos only fire for the
             // matching customer. Guests are filtered out implicitly.
             ->filter(fn (MenuPromotion $p) => $p->matchesAudience($customer, $when))
             // Usage cap: a promo at its quota is treated as inactive.
             // The atomic increment lives in OrderService::addItem.
-            ->filter(fn (MenuPromotion $p) => ! $p->isExhausted())
+            ->filter(fn (MenuPromotion $p) => ! $p->isExhausted() || ($order && $this->claimedByOrder($p, $order)))
             // BXGY promos don't price the FIRST line — they discount
             // qualifying line-counts at the cart level after recalc.
             // Skip them in the per-item resolver entirely; the
@@ -142,7 +144,7 @@ class PromotionService
      * rendered for a QR session, pass channel='qr' so a cashier-only
      * promo doesn't accidentally advertise itself to the diner.
      */
-    public function resolveBulk(Collection $items, ?Carbon $when = null, ?int $branchId = null, ?string $channel = null): array
+    public function resolveBulk(Collection $items, ?Carbon $when = null, ?int $branchId = null, string|array|null $channel = null): array
     {
         if ($items->isEmpty()) {
             return [];
@@ -177,7 +179,7 @@ class PromotionService
             })
             ->get()
             ->filter(fn (MenuPromotion $p) => $p->isLiveAt($when))
-            ->filter(fn (MenuPromotion $p) => $p->allowsChannel($channel))
+            ->filter(fn (MenuPromotion $p) => $this->allowsChannel($p, $channel))
             // Keep the bulk resolver honest with resolveForItem(): a capped,
             // customer-specific or cart-level BXGY campaign must not appear
             // as a direct price on the catalogue card.
@@ -202,9 +204,16 @@ class PromotionService
                 $p->id,
             ])->first();
 
+            // Match the authoritative line resolver: choose the winning
+            // campaign first, then gate its minimum. Falling through to a
+            // weaker offer here would advertise a price the order won't use.
+            if (! $winner->meetsMinSubtotal(null)) {
+                $winner = null;
+            }
+
             $out[$item->id] = [
                 'promotion' => $winner,
-                'price' => $winner->applyTo((float) $item->price),
+                'price' => $winner ? $winner->applyTo((float) $item->price) : (float) $item->price,
             ];
         }
 
@@ -234,6 +243,7 @@ class PromotionService
      */
     public function applyBxgyToOrder(Order $order): void
     {
+        $previousReasons = $order->discounts()->where('reason', 'like', 'BXGY:%')->pluck('reason');
         // Clear stale BXGY discounts so we recompute cleanly.
         $order->discounts()->where('reason', 'like', 'BXGY:%')->delete();
 
@@ -244,20 +254,19 @@ class PromotionService
             ->where('active', true)
             ->whereNotNull('bxgy_buy_qty')
             ->whereNotNull('bxgy_get_qty')
+            // Legacy orders retain the old resolver's context. New entry
+            // channels must never introduce a discount into historical sales.
+            ->when(! $order->promotion_channel, fn ($query) => $query->whereNull('channels'))
             ->where(function ($q) use ($branchId) {
                 $q->whereNull('branch_id');
                 if ($branchId) {
                     $q->orWhere('branch_id', $branchId);
                 }
             })
-            ->where(function ($q) {
-                $q->whereNull('channels');
-                // The channel filter is handled in PHP below so all channel
-                // rules stay in MenuPromotion::allowsChannel().
-            })
             ->get()
             ->filter(fn (MenuPromotion $p) => $p->isLiveAt($now))
-            ->filter(fn (MenuPromotion $p) => $p->allowsChannel($order->order_source));
+            ->filter(fn (MenuPromotion $p) => $this->allowsChannel($p, $order->promotionChannels()))
+            ->filter(fn (MenuPromotion $p) => $p->matchesAudience($order->customer, $now));
 
         if ($bxgyPromos->isEmpty()) {
             return;
@@ -269,6 +278,16 @@ class PromotionService
             ->get();
 
         foreach ($bxgyPromos as $promo) {
+            $marker = "BXGY:#{$promo->id} ";
+            $legacyReason = "BXGY:{$promo->name} (اشترِ {$promo->bxgy_buy_qty} خذ {$promo->bxgy_get_qty})";
+            $reason = $marker."{$promo->name} (اشترِ {$promo->bxgy_buy_qty} خذ {$promo->bxgy_get_qty})";
+            $alreadyClaimed = $this->claimedByOrder($promo, $order)
+                || $previousReasons->contains(fn ($previous) => str_starts_with($previous, $marker))
+                || (! $order->promotion_channel && $previousReasons->contains($legacyReason));
+            if ((! $alreadyClaimed && $promo->isExhausted())
+                || ! $promo->meetsMinSubtotal((float) $items->sum('subtotal'))) {
+                continue;
+            }
             // Eligible lines for this promo (item or category target).
             $eligible = $items->filter(fn ($i) => $i->menuItem && $promo->appliesToItem($i->menuItem));
             if ($eligible->isEmpty()) {
@@ -302,7 +321,17 @@ class PromotionService
             $freePieceCount = $blockCount * $getQty;
             $cheapest = $pieces->sortBy('unit_price')->take($freePieceCount);
             $savings = round((float) $cheapest->sum('unit_price'), 2);
+            // Order discounts are subtracted from the NET subtotal. Catalogue
+            // prices include VAT when configured, so normalize the free item
+            // before the totals service adds VAT back to the remaining sale.
+            if ((float) $order->tax_rate > 0 && config('restaurant.tax.inclusive')) {
+                $savings = Money::round($savings / (1 + (float) $order->tax_rate / 100));
+            }
             if ($savings <= 0) {
+                continue;
+            }
+
+            if (! $this->claimForOrder($promo, $order, $alreadyClaimed)) {
                 continue;
             }
 
@@ -311,7 +340,7 @@ class PromotionService
                 'type' => 'fixed',
                 'value' => $savings,
                 'amount' => $savings,
-                'reason' => "BXGY:{$promo->name} (اشترِ {$buyQty} خذ {$getQty})",
+                'reason' => $reason,
                 'applied_by_user_id' => $order->created_by_user_id,
             ]);
         }
@@ -321,5 +350,47 @@ class PromotionService
     public function flush(): void
     {
         $this->cache = [];
+    }
+
+    private function allowsChannel(MenuPromotion $promotion, string|array|null $channels): bool
+    {
+        if (! is_array($channels)) {
+            return $promotion->allowsChannel($channels);
+        }
+
+        // An old in-memory order may not have its database default loaded.
+        return collect($channels ?: [null])->contains(fn ($channel) => $promotion->allowsChannel($channel));
+    }
+
+    private function claimedByOrder(MenuPromotion $promotion, Order $order): bool
+    {
+        return DB::table('order_promotion_redemptions')->where('order_id', $order->id)
+            ->where('promotion_id', $promotion->id)->exists();
+    }
+
+    /** Called inside the order mutation transaction: a failed order keeps no redemption. */
+    public function claimForOrder(MenuPromotion $promotion, Order $order, bool $legacyClaim = false): bool
+    {
+        if ($promotion->usage_limit === null) {
+            return true;
+        }
+
+        return DB::transaction(function () use ($promotion, $order, $legacyClaim) {
+            $inserted = DB::table('order_promotion_redemptions')->insertOrIgnore([
+                'order_id' => $order->id, 'promotion_id' => $promotion->id, 'redeemed_at' => now(),
+            ]);
+            if (! $inserted || $legacyClaim) {
+                return true;
+            }
+            $claimed = MenuPromotion::whereKey($promotion->id)
+                ->where(fn ($query) => $query->whereNull('usage_limit')->orWhereColumn('usage_count', '<', 'usage_limit'))
+                ->increment('usage_count');
+            if (! $claimed) {
+                DB::table('order_promotion_redemptions')->where('order_id', $order->id)
+                    ->where('promotion_id', $promotion->id)->delete();
+            }
+
+            return (bool) $claimed;
+        });
     }
 }

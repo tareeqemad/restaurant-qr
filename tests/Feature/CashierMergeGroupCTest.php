@@ -7,9 +7,11 @@ use App\Models\Category;
 use App\Models\Customer;
 use App\Models\Ingredient;
 use App\Models\IngredientStock;
+use App\Models\Invoice;
 use App\Models\MenuItem;
 use App\Models\RecipeItem;
 use App\Models\Role;
+use App\Models\Setting;
 use App\Models\Station;
 use App\Models\StorageLocation;
 use App\Models\Table;
@@ -17,8 +19,10 @@ use App\Models\TableSession;
 use App\Models\Unit;
 use App\Models\User;
 use App\Services\BillingService;
+use App\Services\CashierShiftService;
 use App\Services\OrderService;
 use App\Support\BranchContext;
+use Database\Seeders\PermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -49,8 +53,11 @@ class CashierMergeGroupCTest extends TestCase
     use RefreshDatabase;
 
     protected Branch $branch;
+
     protected User $admin;
+
     protected MenuItem $menuItem;
+
     protected Customer $customer;
 
     protected function setUp(): void
@@ -58,20 +65,21 @@ class CashierMergeGroupCTest extends TestCase
         parent::setUp();
         Notification::fake();
 
-        \App\Models\Setting::put('tax_enabled', false, 'billing', 'bool');
-        \App\Models\Setting::put('service_enabled', false, 'billing', 'bool');
+        Setting::put('tax_enabled', false, 'billing', 'bool');
+        Setting::put('service_enabled', false, 'billing', 'bool');
 
         $this->branch = Branch::create(['code' => 'gc', 'name' => 'GC', 'is_active' => true]);
         BranchContext::set($this->branch->id);
 
         Role::firstOrCreate(['name' => 'admin'], ['label' => 'Admin', 'is_system' => true]);
-        $this->seed(\Database\Seeders\PermissionSeeder::class);
+        $this->seed(PermissionSeeder::class);
 
         $this->admin = User::create([
             'name' => 'A', 'username' => 'gc-admin', 'role' => 'admin',
             'status' => 'active', 'password' => bcrypt('x'), 'primary_branch_id' => $this->branch->id,
         ]);
         $this->admin->branches()->attach($this->branch->id, ['is_primary' => true, 'joined_at' => now()]);
+        app(CashierShiftService::class)->open($this->admin->id, $this->branch->id, 0);
 
         $unit = Unit::create(['code' => 'pcs', 'name' => 'pcs', 'unit_type' => 'count', 'factor_to_base' => 1, 'is_base' => true]);
         $storage = StorageLocation::create(['code' => 'k', 'name' => 'K', 'is_default' => true, 'active' => true]);
@@ -98,7 +106,7 @@ class CashierMergeGroupCTest extends TestCase
         return TableSession::create(['table_id' => $table->id, 'customer_id' => $this->customer->id, 'cover_count' => 1, 'status' => 'active']);
     }
 
-    /** @return array{0: \App\Models\Invoice, 1: TableSession} A fresh issued 100.00 ticket. */
+    /** @return array{0: Invoice, 1: TableSession} A fresh issued 100.00 ticket. */
     private function issueMeal(): array
     {
         $session = $this->openSession();

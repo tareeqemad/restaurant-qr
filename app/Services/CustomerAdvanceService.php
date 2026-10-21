@@ -37,6 +37,9 @@ class CustomerAdvanceService
         }
 
         $transaction = DB::transaction(function () use ($customer, $amount, $method, $branchId, $userId, $reference, $notes, $sourcePayment) {
+            if ($method === 'cash') {
+                app(CashierShiftService::class)->forPayment($userId, $branchId, true);
+            }
             $customer = Customer::query()->whereKey($customer->id)->lockForUpdate()->firstOrFail();
             if ($customer->isBlocked()) {
                 throw new \RuntimeException('ملف الزبون محظور ويحتاج مراجعة الإدارة قبل إضافة رصيد.');
@@ -61,6 +64,9 @@ class CustomerAdvanceService
             ]);
 
             $this->accounting->recordCustomerAdvanceDeposit($transaction);
+            if ($method === 'cash') {
+                app(CashierShiftService::class)->record($userId, $branchId, $amount, 'advance_deposit', 'advance:'.$transaction->id, $reference);
+            }
 
             return $transaction;
         });
@@ -210,6 +216,9 @@ class CustomerAdvanceService
             if ($deposit->type !== CustomerAdvanceTransaction::DEPOSIT) {
                 throw new \RuntimeException('يمكن عكس عمليات الإيداع النقدي فقط من هذا الإجراء.');
             }
+            if ($deposit->payment_method === 'cash') {
+                app(CashierShiftService::class)->forPayment($userId, (int) $deposit->branch_id, true);
+            }
             if (CustomerAdvanceTransaction::withoutGlobalScope(BranchScope::class)
                 ->where('reversed_transaction_id', $deposit->id)
                 ->exists()) {
@@ -241,6 +250,9 @@ class CustomerAdvanceService
             ]);
 
             $this->accounting->reverseCustomerAdvanceDeposit($deposit, $reversal, $userId, $reason);
+            if ($deposit->payment_method === 'cash') {
+                app(CashierShiftService::class)->record($userId, (int) $deposit->branch_id, -(float) $deposit->amount, 'advance_reversal', 'advance:'.$reversal->id, $deposit->reference);
+            }
 
             ActivityLog::log(
                 'customer_advance.deposit_reversed',

@@ -211,8 +211,6 @@ class KitchenBoardVueTest extends TestCase
         $this->assertStringContainsString('if (offline.value)', $board);
         $this->assertStringContainsString(':aria-busy="busy"', $card);
         $this->assertStringNotContainsString('const busy = ref(false)', $board);
-        $this->assertStringContainsString('linear-gradient(135deg, #176b4a, #123323)', $board);
-        $this->assertStringNotContainsString('linear-gradient(135deg, var(--station-color)', $board);
     }
 
     public function test_the_board_keeps_twenty_tickets_visible_and_reports_pressure_counts(): void

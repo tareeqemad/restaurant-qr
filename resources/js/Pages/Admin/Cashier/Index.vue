@@ -5,7 +5,9 @@ import AdminLayout from "../../../Layouts/AdminLayout.vue";
 import { formatMoney } from "../../../Composables/useMoney";
 import { useCashierPolling } from "../../../Composables/cashierPolling";
 import { useCashierStore } from "../../../Stores/cashierStore";
-import { sendCashierCommand } from "../../../Api/cashierApi";
+import { sendCashierCommand, verifyCashierPayment } from "../../../Api/cashierApi";
+import { createPaymentRecovery } from "../../../Stores/cashierPaymentRecovery";
+import { confirmsPayment, confirmsRejection } from "../../../Stores/cashierAcknowledgement";
 import AttentionRail from "../../../Components/Cashier/AttentionRail.vue";
 import CheckoutWorkspace from "../../../Components/Cashier/CheckoutWorkspace.vue";
 import ConfirmSheet from "../../../Components/Cashier/ConfirmSheet.vue";
@@ -21,6 +23,8 @@ import RefundSheet from "../../../Components/Cashier/RefundSheet.vue";
 import SettleDebtSheet from "../../../Components/Cashier/SettleDebtSheet.vue";
 import SplitSheet from "../../../Components/Cashier/SplitSheet.vue";
 import TransferSheet from "../../../Components/Cashier/TransferSheet.vue";
+import ServerHealth from "../../../Components/Ui/ServerHealth.vue";
+import CashShiftPanel from "../../../Components/Cashier/CashShiftPanel.vue";
 
 defineOptions({ layout: AdminLayout });
 
@@ -40,6 +44,17 @@ const handoverOpen = ref(false);
 const paymentOpen = ref(false);
 const fullCash = ref(false);
 const paymentToken = ref("");
+const pendingPayment = ref(null);
+const paymentRecoveryError = ref("");
+const paymentRecoveryMessage = ref("");
+const lastPaymentReceipt = ref(null);
+let paymentRecovery = null;
+try {
+    paymentRecovery = createPaymentRecovery(window.localStorage, props.options.payment_recovery_scope);
+    pendingPayment.value = paymentRecovery.read();
+} catch (error) {
+    paymentRecoveryError.value = error.message || "تعذّر الوصول إلى سجل استعادة الدفع على هذا الجهاز.";
+}
 const refundOpen = ref(false);
 const refundToken = ref("");
 const discountOpen = ref(false);
@@ -64,7 +79,7 @@ const customerAdvanceLookupBusy = ref(false);
 const commandError = ref("");
 const commandErrors = ref({});
 const confirmation = ref(null);
-const { online } = useCashierPolling(cashier);
+useCashierPolling(cashier);
 let searchTimer = null;
 
 const currency = computed(() => props.options.currency);
@@ -172,6 +187,11 @@ function handleEscape(event) {
     if (event.key === "Escape" && hasOpenSheet.value) closeTopSheet();
 }
 
+function syncPaymentRecovery() {
+    try { pendingPayment.value = paymentRecovery?.read(); }
+    catch (error) { paymentRecoveryError.value = error.message; }
+}
+
 function syncBodyLock(open) {
     if (typeof document === "undefined") return;
     if (open) {
@@ -208,6 +228,11 @@ watch(
     () => {
         const update = cashier.financialUpdate;
         if (!update) return;
+        const ownPayment = pendingPayment.value
+            ? { invoiceId: pendingPayment.value.invoiceId, amount: pendingPayment.value.payload.amount }
+            : lastPaymentReceipt.value ? { invoiceId: lastPaymentReceipt.value.invoice_id, amount: lastPaymentReceipt.value.amount } : null;
+        if (ownPayment && Number(cashier.workspace?.invoice?.id) === Number(ownPayment.invoiceId)
+            && Math.abs(Number(update.previousTotal) - Number(update.currentTotal) - Number(ownPayment.amount)) < .01) return;
         showNotice(
             "warning",
             `تغيّر الحساب أثناء فتحه من ${formatMoney(update.previousTotal, currency.value)} إلى ${formatMoney(update.currentTotal, currency.value)}. راجع البنود المحدثة قبل إصدار الفاتورة أو التحصيل.`,
@@ -217,14 +242,17 @@ watch(
 
 onMounted(async () => {
     window.addEventListener("keydown", handleEscape);
+    window.addEventListener("storage", syncPaymentRecovery);
     syncBodyLock(hasOpenSheet.value);
     await openInitialTask();
+    if (pendingPayment.value) await verifyPendingPayment();
 });
 
 onBeforeUnmount(() => {
     cashier.stop();
     if (searchTimer) window.clearTimeout(searchTimer);
     window.removeEventListener("keydown", handleEscape);
+    window.removeEventListener("storage", syncPaymentRecovery);
     if (typeof document !== "undefined")
         document.body.style.overflow = previousBodyOverflow;
 });
@@ -522,6 +550,12 @@ function runCommand(name, payload = {}) {
     if (!["payment", "full-cash"].includes(name) || !cashier.workspace?.invoice)
         return;
 
+    try { pendingPayment.value = paymentRecovery?.read(); } catch (error) { paymentRecoveryError.value = error.message; }
+    if (pendingPayment.value || paymentRecoveryError.value) {
+        showNotice("warning", "تحقّق من الدفعة المحفوظة أعلى الشاشة قبل بدء دفعة أخرى.");
+        return;
+    }
+
     fullCash.value = name === "full-cash";
     paymentToken.value = commandToken();
     commandError.value = "";
@@ -734,48 +768,68 @@ function transferCommandToken(signature) {
 
 async function submitPayment(payload) {
     if (commandBusy.value || !cashier.workspace?.invoice) return;
-
-    commandBusy.value = true;
-    commandError.value = "";
-    commandErrors.value = {};
-
     try {
-        const endpoint = commands.value.pay.replace(
-            ":invoice",
-            cashier.workspace.invoice.id,
-        );
-        const result = await sendCashierCommand(endpoint, {
-            token: paymentToken.value,
-            ...payload,
+        if (!paymentRecovery || paymentRecoveryError.value) throw new Error("تعذّر حفظ معلومات استعادة الدفع. لم تُرسل الدفعة.");
+        pendingPayment.value = await paymentRecovery.reserve({
+            token: paymentToken.value, invoiceId: Number(cashier.workspace.invoice.id),
+            invoiceNumber: cashier.workspace.invoice.number, payload, createdAt: new Date().toISOString(),
         });
-
-        if (!result.ok) {
-            if (result.status === 409) {
-                paymentOpen.value = false;
-                showNotice("warning", result.data.message);
-                await refreshState(true);
-                return;
-            }
-
-            commandError.value = result.data.message || "تعذّر تسجيل الدفعة.";
-            commandErrors.value = result.data.errors ?? {};
-            return;
-        }
-
         paymentOpen.value = false;
-        showNotice(
-            result.data.warning ? "warning" : "success",
-            result.data.warning || result.data.message,
-        );
-        await refreshState(true);
-    } catch {
-        // Keep the sheet and token: if PHP committed but the response was lost,
-        // the same token turns the retry into a visible 409 instead of a double payment.
-        commandError.value =
-            "انقطع الاتصال. لا تغلق النافذة؛ أعد المحاولة بنفس العملية بعد عودة الاتصال.";
-    } finally {
-        commandBusy.value = false;
+        await sendPendingPayment();
+    } catch (error) {
+        commandError.value = error.message;
     }
+}
+
+async function finishRecoveredPayment(data, operation) {
+    lastPaymentReceipt.value = data;
+    await paymentRecovery.clearConfirmed(operation.token);
+    pendingPayment.value = paymentRecovery.read();
+    paymentRecoveryMessage.value = "";
+    showNotice("success", data.payment_status === "voided" ? "تم العثور على الدفعة؛ أُلغيت لاحقاً. راجع سجل الفاتورة." : "تم التحقق: الدفعة مسجلة، ولم تُكرر.");
+    await refreshState(true);
+}
+
+async function verifyPendingPayment() {
+    if (!pendingPayment.value || commandBusy.value) return;
+    const operation = pendingPayment.value;
+    commandBusy.value = true;
+    paymentRecoveryMessage.value = "جارٍ التحقق من النتيجة المحفوظة…";
+    try {
+        const result = await verifyCashierPayment(commands.value.verify_payment.replace(":invoice", operation.invoiceId), operation.token);
+        if (result.ok && confirmsPayment(result.data.data, operation)) await finishRecoveredPayment(result.data.data, operation);
+        else paymentRecoveryMessage.value = result.ok
+            ? "لم يصل تأكيد محفوظ بعد. يمكنك إعادة إرسال نفس العملية؛ لن تتحول إلى دفعة جديدة."
+            : result.data.message || "تعذّر التحقق. احتفظ بهذه العملية وراجع صلاحية الدخول.";
+    } catch {
+        paymentRecoveryMessage.value = "تعذّر الاتصال للتحقق. العملية محفوظة على هذا الجهاز حتى بعد إغلاق الصفحة.";
+    } finally { commandBusy.value = false; }
+}
+
+async function sendPendingPayment() {
+    if (!pendingPayment.value || commandBusy.value) return;
+    const operation = pendingPayment.value;
+    commandBusy.value = true;
+    paymentRecoveryMessage.value = "جارٍ تأكيد الدفعة…";
+    try {
+        const endpoint = operation.payload.split_id
+            ? commands.value.pay_split.replace(":invoice", operation.invoiceId).replace(":split", operation.payload.split_id)
+            : commands.value.pay.replace(":invoice", operation.invoiceId);
+        const result = await sendCashierCommand(endpoint, { token: operation.token, ...operation.payload });
+        if (result.ok && confirmsPayment(result.data.data, operation)) {
+            await finishRecoveredPayment(result.data.data, operation);
+        } else if (result.status === 422 && confirmsRejection(result.data, operation)) {
+            await paymentRecovery.clearConfirmed(operation.token);
+            pendingPayment.value = null;
+            paymentRecoveryMessage.value = "";
+            showNotice("error", result.data.message || "رُفضت الدفعة ولم تُسجل. صحّح البيانات وأعد فتح التحصيل.");
+            await refreshState(true);
+        } else {
+            paymentRecoveryMessage.value = result.data.message || "لم تصل نتيجة مؤكدة. تحقّق قبل أي دفعة أخرى.";
+        }
+    } catch {
+        paymentRecoveryMessage.value = "النتيجة غير مؤكدة بسبب الاتصال. تحقّق أو أعد إرسال نفس العملية؛ بياناتها محفوظة حتى بعد إعادة فتح الصفحة.";
+    } finally { commandBusy.value = false; }
 }
 
 async function lookupAdvanceCustomer(phone) {
@@ -985,11 +1039,14 @@ async function saveSplits(splits) {
 
 async function paySplit({ split, reference }) {
     const invoice = cashier.workspace?.invoice;
-    if (!invoice) return;
-    const endpoint = commands.value.pay_split
-        .replace(":invoice", invoice.id)
-        .replace(":split", split.id);
-    await executeSplitCommand(`pay:${split.id}`, endpoint, { reference });
+    if (!invoice || commandBusy.value) return;
+    try {
+        if (!paymentRecovery) throw new Error('تعذّر الوصول إلى سجل استعادة الدفع.');
+        pendingPayment.value = await paymentRecovery.reserve({ token: commandToken(), invoiceId: invoice.id, invoiceNumber: invoice.number,
+            payload: { amount: split.amount, method: split.method, split_id: split.id, reference }, createdAt: new Date().toISOString() });
+        splitOpen.value = false;
+        await sendPendingPayment();
+    } catch (error) { commandError.value = error.message; }
 }
 
 async function clearSplits() {
@@ -1308,7 +1365,7 @@ async function submitCustomerCreate(payload) {
                 </div>
             </div>
 
-            <details class="shift-summary"><summary><i class="bi bi-wallet2"></i> تحصيل الوردية <strong>{{ formatMoney(cashier.today.net, currency) }}</strong><i class="bi bi-chevron-down"></i></summary><div class="today-kpis" aria-label="ملخص تحصيلي اليوم">
+            <details class="shift-summary"><summary><i class="bi bi-wallet2"></i> تحصيلي اليوم <strong>{{ formatMoney(cashier.today.net, currency) }}</strong><i class="bi bi-chevron-down"></i></summary><div class="today-kpis" aria-label="ملخص تحصيلي اليوم">
                 <span class="is-primary">
                     <small>صافي تحصيلي</small>
                     <strong :class="{ 'is-negative': cashier.today.net < 0 }">{{
@@ -1316,7 +1373,7 @@ async function submitCustomerCreate(payload) {
                     }}</strong>
                 </span>
                 <span
-                    ><small>نقدي بعهدتي</small
+                    ><small>صافي النقد المحصّل اليوم</small
                     ><strong>{{
                         formatMoney(cashier.today.cash, currency)
                     }}</strong></span
@@ -1346,10 +1403,7 @@ async function submitCustomerCreate(payload) {
             </details>
 
             <div class="header-actions">
-                <span class="connection" :class="{ offline: !online }">
-                    <i :class="online ? 'bi bi-wifi' : 'bi bi-cloud-slash'"></i>
-                    {{ online ? "متصل" : "بدون اتصال" }}
-                </span>
+                <ServerHealth :last-successful-at="cashier.lastSuccessfulRefresh" :failed="Boolean(cashier.lastError)" :refreshing="cashier.refreshing" :stale-after-ms="30000" />
                 <button
                     type="button"
                     class="handover-trigger"
@@ -1417,6 +1471,17 @@ async function submitCustomerCreate(payload) {
             </div>
         </header>
 
+        <CashShiftPanel :shifts="cashier.snapshot?.cash_shifts" :commands="commands" :currency="currency" :current-branch="options.branch_id" :recovery-scope="options.payment_recovery_scope" :can-collect="cashier.abilities.collect_payment" :blocked="commandBusy || Boolean(pendingPayment)" @updated="refreshState(true)" />
+        <section v-if="pendingPayment || paymentRecoveryError" class="payment-recovery" role="status" aria-live="polite">
+            <div><strong>دفعة بانتظار التحقق</strong><p v-if="pendingPayment">{{ pendingPayment.invoiceNumber }} · {{ formatMoney(pendingPayment.payload.amount, currency) }} · {{ options.payment_methods.find(method => method.code === pendingPayment.payload.method)?.label || 'طريقة الدفع المحفوظة' }}</p><p>{{ paymentRecoveryError || paymentRecoveryMessage || 'استعد نتيجة هذه العملية قبل بدء دفعة جديدة.' }}</p></div>
+            <div v-if="pendingPayment" class="payment-recovery-actions"><button type="button" :disabled="commandBusy" @click="verifyPendingPayment">تحقّق من النتيجة</button><button type="button" :disabled="commandBusy" @click="sendPendingPayment">إعادة إرسال نفس الدفعة</button></div>
+        </section>
+        <section v-if="lastPaymentReceipt" class="payment-confirmed" role="status">
+            <div><strong>دفعة مؤكدة · {{ lastPaymentReceipt.invoice_number }}</strong><span>{{ formatMoney(lastPaymentReceipt.amount, currency) }} · {{ new Date(lastPaymentReceipt.paid_at).toLocaleString('ar') }}</span></div>
+            <a :href="lastPaymentReceipt.print_url" target="_blank" rel="noopener"><i class="bi bi-printer"></i> طباعة الفاتورة</a>
+            <button type="button" aria-label="إخفاء تأكيد الدفعة" @click="lastPaymentReceipt = null">×</button>
+        </section>
+
         <div
             v-if="notice || cashier.lastError"
             class="cashier-notice"
@@ -1448,8 +1513,8 @@ async function submitCustomerCreate(payload) {
                 <span><i class="bi" :class="handoverCount ? 'bi-clipboard2-pulse' : 'bi-shield-check'"></i></span>
                 <div>
                     <small>مراجعة تشغيلية قبل مغادرة الوردية</small>
-                    <strong>{{ handoverCount ? `${handoverCount} حركة تحتاج إنهاء` : 'عهدتك جاهزة للتسليم' }}</strong>
-                    <p>صافي تحصيلك {{ formatMoney(cashier.today.net, currency) }} · نقدي فعلي بعد الاستردادات {{ formatMoney(cashier.today.cash, currency) }}</p>
+                    <strong>{{ handoverCount ? `${handoverCount} حركة تحتاج إنهاء` : 'لا توجد مهام تحصيل معلّقة' }}</strong>
+                    <p>صافي تحصيلك {{ formatMoney(cashier.today.net, currency) }} · نقد محصل محسوب بعد الاستردادات {{ formatMoney(cashier.today.cash, currency) }}</p>
                 </div>
                 <button type="button" aria-label="إغلاق مراجعة العهدة" @click="handoverOpen = false"><i class="bi bi-x-lg"></i></button>
             </header>
@@ -1654,6 +1719,8 @@ async function submitCustomerCreate(payload) {
 </template>
 
 <style scoped>
+.payment-recovery,.payment-confirmed{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px;border:1px solid #B78338;border-radius:8px;background:#fff5df;font-size:14px}.payment-recovery p{margin:4px 0}.payment-recovery-actions{display:flex;gap:8px;flex-wrap:wrap}.payment-recovery button,.payment-confirmed a,.payment-confirmed button{min-height:44px;padding:8px 12px;border:1px solid #A3422B;border-radius:6px;background:#FFFDFA;color:#A3422B;font:inherit}.payment-confirmed{border-color:#DFD7CB;background:#FFFDFA}.payment-confirmed>div{display:grid;gap:4px}.payment-confirmed>div span{color:#626B6D}@media(max-width:700px){.payment-recovery,.payment-confirmed{align-items:stretch;flex-wrap:wrap}}
+
 .cashier-page {
     --cx-primary: var(--brand, #A3422B);
     min-height: calc(100dvh - 170px);

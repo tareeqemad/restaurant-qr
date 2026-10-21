@@ -480,13 +480,7 @@ const followUp = (card) => card.tableNum && board.value.followUpTables.map(Strin
 .kds-visible-count { margin-inline-start: auto; padding: .25rem .55rem; border-radius: 8px; background: var(--brand-soft, #F3E3D8); color: var(--brand, #A3422B); font-size: .875rem; font-weight: 800; white-space: nowrap; }
 .kds-clear-filter { min-height: 34px; padding: 0 .65rem; border: 1px solid var(--line, var(--line)); border-radius: 8px; background: var(--surface, #FFFDFA); color: var(--ink, var(--ink)); font: inherit; font-size: .875rem; font-weight: 800; cursor: pointer; }
 
-.kds-ticket-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-    gap: .8rem;
-    align-items: start;
-}
-.kds--pressure .kds-ticket-grid { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: .65rem; }
+
 .kds-empty { min-height: 210px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .25rem; color: var(--muted, var(--muted)); text-align: center; }
 .kds-empty i { font-size: 2.3rem; color: var(--brand, #A3422B); }
 .kds-empty strong { color: var(--ink, var(--ink)); }
@@ -528,9 +522,6 @@ const followUp = (card) => card.tableNum && board.value.followUpTables.map(Strin
     color: var(--brand, #A3422B);
 }
 
-@media (min-width: 1800px) {
-    .kds--pressure .kds-ticket-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
-}
 @media (max-width: 1180px) {
     .kds-command { grid-template-columns: 1fr auto; }
     .kds-stage-switch { grid-column: 1 / -1; grid-row: 2; width: 100%; order: 3; }
@@ -543,7 +534,6 @@ const followUp = (card) => card.tableNum && board.value.followUpTables.map(Strin
     .kds-sound span { display: none; }
     .kds-stage-switch { grid-column: auto; }
     .kds-stage-switch button { padding-inline: .25rem; }
-    .kds-ticket-grid, .kds--pressure .kds-ticket-grid { grid-template-columns: 1fr; }
     .kds-workspace-head p { display: none; }
 }
 
@@ -553,4 +543,18 @@ const followUp = (card) => card.tableNum && board.value.followUpTables.map(Strin
 
 /* Task-focused workspace layout. */
 .kds{padding:16px;gap:12px}.kds-command{position:relative;top:auto;grid-template-columns:minmax(180px,1fr) auto;min-height:0;background:var(--surface);color:var(--ink);border:1px solid var(--line);padding:16px;border-radius:12px}.kds-identity h1{color:var(--ink);font-size:24px}.kds-brand,.kds-identity p{color:var(--muted)}.kds-station-icon{background:var(--brand-soft)}.kds-stage-switch{grid-row:2;grid-column:1/-1;background:var(--canvas);padding:4px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-radius:8px}.kds-stage-switch button{color:var(--ink);border-radius:6px;min-height:44px}.kds-stage-switch button.is-active{background:var(--ink);color:var(--surface)}.kds-tools{grid-column:2;grid-row:1}.kds-tools button,.kds-sort,.kds-home{background:var(--surface);color:var(--ink);border:1px solid var(--line)}.kds-sort select{color:var(--ink)}.kds-workspace{padding:0;background:transparent;border:0}.kds-workspace-head{padding:8px 0}.kds-lanes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:start}.kds-lane{min-width:0;background:var(--surface-muted);padding:8px;border-radius:12px}.kds-lane-heading{display:flex;align-items:center;justify-content:space-between;padding:10px 4px 14px;border-bottom:2px solid var(--brand);margin-bottom:10px}.kds-lane-heading h3{font-size:16px;margin:0;display:flex;gap:8px}.kds-lane-heading strong{font-size:18px}.kds-lane--cooking .kds-lane-heading{border-color:var(--accent)}.kds-lane--ready .kds-lane-heading{border-color:var(--line)}.kds-lane-tickets{display:grid;gap:12px}.kds-lane-empty{padding:30px 8px;text-align:center;color:var(--muted);font-size:14px}.kds-lanes.is-focused{grid-template-columns:1fr}.is-focused .kds-lane-tickets{grid-template-columns:repeat(auto-fill,minmax(min(100%,330px),1fr))}.kb-allday{padding:12px;border:1px solid var(--line);background:var(--surface);border-radius:8px}.kb-table-filter{margin:0}.kb-table-pill{border-radius:6px;min-width:44px;min-height:40px}@media(max-width:1000px){.kds-lanes{grid-template-columns:1fr}.kds-lane-tickets{grid-template-columns:repeat(auto-fill,minmax(min(100%,310px),1fr))}.kds-command{grid-template-columns:1fr}.kds-tools{grid-column:1;grid-row:auto;justify-content:flex-start;flex-wrap:wrap}.kds-stage-switch{grid-row:auto}.kds-stage-switch button{font-size:14px;padding:8px 4px}.kds{padding:10px}}
+.kds--pressure .kds-lanes{gap:8px}.kds--pressure .kds-lane{padding:6px}.kds--pressure .kds-lane-tickets{gap:8px}.kds--pressure .kds-lane-heading{padding-block:6px 9px;margin-bottom:8px}.kds--pressure .kds-lanes.is-focused .kds-lane-tickets{grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr))}
+/* Keep cooking and pickup visible beside the backlog on station tablets. */
+@media (min-width: 760px) {
+    .kds--pressure .kds-lanes:not(.is-focused) { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; }
+    .kds--pressure .kds-lanes:not(.is-focused) .kds-lane { display: flex; flex-direction: column; max-height: max(420px, calc(100dvh - 350px)); }
+    .kds--pressure .kds-lanes:not(.is-focused) .kds-lane-heading { flex: 0 0 auto; }
+    .kds--pressure .kds-lanes:not(.is-focused) .kds-lane-tickets { grid-template-columns: minmax(0, 1fr); overflow-y: auto; overscroll-behavior-y: contain; min-height: 0; padding: 2px; }
+    /* Keep item choices inside the scrollable lane, including 760px tablets. */
+    .kds--pressure .kds-lanes:not(.is-focused) :deep(.kb-item-actions.has-open-menu) { grid-column: 1 / -1; }
+    .kds--pressure .kds-lanes:not(.is-focused) :deep(.kb-more.is-open) { flex: 1 0 100%; min-width: 0; }
+    .kds--pressure .kds-lanes:not(.is-focused) :deep(.kb-more.is-open .kb-item-menu) { position: static; width: 100%; margin-top: 5px; }
+    .kds--pressure .kds-lanes:not(.is-focused) :deep(.kb-item-menu button > i) { flex-shrink: 0; }
+    .kds--pressure .kds-lanes:not(.is-focused) :deep(.kb-item-menu button span) { min-width: 0; overflow-wrap: anywhere; }
+}
 </style>

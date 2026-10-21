@@ -19,6 +19,7 @@ use App\Models\TableSession;
 use App\Models\Unit;
 use App\Models\User;
 use App\Services\BillingService;
+use App\Services\CashierShiftService;
 use App\Services\CustomerAdvanceService;
 use App\Services\OrderService;
 use App\Support\BranchContext;
@@ -64,6 +65,7 @@ class CustomerDebtLedgerTest extends TestCase
 
         Role::create(['name' => 'cashier', 'label' => 'Cashier', 'is_system' => true]);
         $this->cashier = $this->makeCashier();
+        app(CashierShiftService::class)->open($this->cashier->id, $this->branch->id, 0);
 
         $unit = Unit::create(['code' => 'pcs', 'name' => 'pcs', 'unit_type' => 'count', 'factor_to_base' => 1, 'is_base' => true]);
         $storage = StorageLocation::create(['code' => 'main-kitchen', 'name' => 'K', 'is_default' => true, 'active' => true]);

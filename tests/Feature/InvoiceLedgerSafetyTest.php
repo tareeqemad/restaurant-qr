@@ -13,6 +13,7 @@ use App\Models\MenuItem;
 use App\Models\Payment;
 use App\Models\RecipeItem;
 use App\Models\Role;
+use App\Models\Setting;
 use App\Models\Station;
 use App\Models\StorageLocation;
 use App\Models\Table;
@@ -21,6 +22,7 @@ use App\Models\Unit;
 use App\Models\User;
 use App\Services\Accounting\AccountingService;
 use App\Services\BillingService;
+use App\Services\CashierShiftService;
 use App\Services\OrderService;
 use App\Support\BranchContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -39,8 +41,11 @@ class InvoiceLedgerSafetyTest extends TestCase
     use RefreshDatabase;
 
     protected Branch $branch;
+
     protected User $cashier;
+
     protected MenuItem $menuItem;
+
     protected Customer $customer;
 
     protected function setUp(): void
@@ -48,8 +53,8 @@ class InvoiceLedgerSafetyTest extends TestCase
         parent::setUp();
         Notification::fake();
 
-        \App\Models\Setting::put('tax_enabled',     false, 'billing', 'bool');
-        \App\Models\Setting::put('service_enabled', false, 'billing', 'bool');
+        Setting::put('tax_enabled', false, 'billing', 'bool');
+        Setting::put('service_enabled', false, 'billing', 'bool');
 
         $this->branch = Branch::create(['code' => 'main', 'name' => 'Main', 'is_active' => true]);
         BranchContext::set($this->branch->id);
@@ -57,10 +62,10 @@ class InvoiceLedgerSafetyTest extends TestCase
         Role::create(['name' => 'cashier', 'label' => 'Cashier', 'is_system' => true]);
         $this->cashier = $this->makeCashier();
 
-        $unit = Unit::create(['code'=>'pcs','name'=>'pcs','unit_type'=>'count','factor_to_base'=>1,'is_base'=>true]);
-        $storage = StorageLocation::create(['code'=>'main-kitchen','name'=>'K','is_default'=>true,'active'=>true]);
-        $station = Station::create(['code'=>'kitchen','name'=>'Kitchen','storage_location_id'=>$storage->id,'active'=>true]);
-        $category = Category::create(['slug'=>'mains','name'=>'Mains','default_station_id'=>$station->id,'active'=>true]);
+        $unit = Unit::create(['code' => 'pcs', 'name' => 'pcs', 'unit_type' => 'count', 'factor_to_base' => 1, 'is_base' => true]);
+        $storage = StorageLocation::create(['code' => 'main-kitchen', 'name' => 'K', 'is_default' => true, 'active' => true]);
+        $station = Station::create(['code' => 'kitchen', 'name' => 'Kitchen', 'storage_location_id' => $storage->id, 'active' => true]);
+        $category = Category::create(['slug' => 'mains', 'name' => 'Mains', 'default_station_id' => $station->id, 'active' => true]);
 
         $ingredient = Ingredient::create([
             'sku' => 'ING-1', 'name' => 'Stock', 'base_unit_id' => $unit->id,
@@ -142,6 +147,7 @@ class InvoiceLedgerSafetyTest extends TestCase
     public function test_debt_overpayment_is_rejected_without_committing(): void
     {
         $this->actingAs($this->cashier);
+        app(CashierShiftService::class)->open($this->cashier->id, $this->branch->id, 0);
 
         // Build a 60 debt: pay 40 of 100, park the remainder on account.
         $invoice = $this->doVisit(total: 100);
@@ -155,9 +161,9 @@ class InvoiceLedgerSafetyTest extends TestCase
         try {
             app(BillingService::class)->payCustomerDebt(
                 customer: $this->customer->refresh(),
-                amount:   200.0,
-                method:   'cash',
-                userId:   $this->cashier->id,
+                amount: 200.0,
+                method: 'cash',
+                userId: $this->cashier->id,
             );
             $this->fail('Over-payment should have thrown.');
         } catch (\RuntimeException $e) {
@@ -188,13 +194,14 @@ class InvoiceLedgerSafetyTest extends TestCase
                 }
             }
         }
+
         return round($sum, 2);
     }
 
     protected function doVisit(float $total, int $quantity = 1): Invoice
     {
         $table = Table::create([
-            'number'   => (string) random_int(1, 9999),
+            'number' => (string) random_int(1, 9999),
             'capacity' => 4, 'status' => 'occupied', 'active' => true,
         ]);
         $session = TableSession::create([
@@ -209,6 +216,7 @@ class InvoiceLedgerSafetyTest extends TestCase
 
         $invoice = app(BillingService::class)->issueInvoice($session->fresh(), $this->cashier->id);
         $this->assertSame($total, (float) $invoice->total, 'Sanity: invoice total mismatch.');
+
         return $invoice;
     }
 
@@ -220,6 +228,7 @@ class InvoiceLedgerSafetyTest extends TestCase
             'primary_branch_id' => $this->branch->id, 'role' => 'cashier',
         ]);
         $user->branches()->attach($this->branch->id);
+
         return $user;
     }
 }

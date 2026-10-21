@@ -9,6 +9,7 @@ import AccountingPanel from "../../../Components/Accounting/AccountingPanel.vue"
 import CollectionSheet from "../../../Components/Collections/CollectionSheet.vue";
 import Pagination from "../../../Components/Ui/Pagination.vue";
 import { localDateInput } from "../../../Utils/dateInput";
+import { useFormUx } from "../../../Composables/useFormUx";
 
 defineOptions({ layout: AdminLayout });
 const props = defineProps({ accounts: Array, adjustmentAccounts: Array, selectedAccount: Object, statementDate: String, bookBalance: Number, period: Object, reconciliations: Object, currency: Object, urls: Object });
@@ -26,8 +27,6 @@ function openResolution(row) {
     selectedVariance.value = row;
     resolution.reset();
     resolution.clearErrors();
-    const preferredType = Number(row.difference) < 0 ? "expense" : "revenue";
-    resolution.adjustment_account_id = props.adjustmentAccounts.find((account) => account.type === preferredType)?.id ?? "";
     resolution.posted_on = localDateInput();
 }
 
@@ -37,6 +36,7 @@ function resolveVariance() {
         onSuccess: () => { selectedVariance.value = null; },
     });
 }
+useFormUx([form, resolution]);
 </script>
 
 <template>
@@ -52,9 +52,10 @@ function resolveVariance() {
 <div class="recon-layout">
         <AccountingPanel title="مطابقة جديدة" description="أدخل ما وجدته في الصندوق أو كشف البنك." icon="bi-bank">
             <form class="selector" @change="refresh">
-                <label><span>الحساب</span><select v-model="selector.account_id" class="form-select"><option v-for="account in accounts" :key="account.id" :value="account.id">{{ account.code }} — {{ account.name }}</option></select></label>
+                <label><span>الحساب *</span><select v-model="selector.account_id" class="form-select" required><option value="" disabled>اختر الصندوق أو الحساب البنكي</option><option v-for="account in accounts" :key="account.id" :value="account.id">{{ account.code }} — {{ account.name }}</option></select></label>
                 <label><span>تاريخ الكشف أو الجرد</span><input v-model="selector.statement_date" type="date" class="form-control" /></label>
             </form>
+            <p v-if="!selectedAccount" class="note">اختر الحساب الذي تعدّ نقده أو تطابق كشفه لعرض رصيده وبدء المطابقة.</p>
             <form v-if="selectedAccount" class="recon-form" @submit.prevent="submit">
                 <div class="balance-box"><span><small>رصيد الدفتر</small><strong>{{ money(bookBalance) }}</strong></span><i class="bi bi-arrow-left-right"></i><label><span>الرصيد الفعلي *</span><input v-model="form.statement_balance" type="number" step=".01" class="form-control" placeholder="0.00" required /></label></div>
                 <div class="difference" :class="Math.abs(difference) < .01 ? 'ok' : 'warn'"><span><i class="bi" :class="Math.abs(difference) < .01 ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill'"></i>{{ Math.abs(difference) < .01 ? 'مطابق بلا فرق' : 'فرق سيبقى مفتوحاً للمراجعة' }}</span><strong>{{ money(difference) }}</strong></div>

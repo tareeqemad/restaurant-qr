@@ -18,7 +18,6 @@ use App\Models\Customer;
 use App\Models\InventoryMovement;
 use App\Models\Invoice;
 use App\Models\MenuItem;
-use App\Models\MenuPromotion;
 use App\Models\Modifier;
 use App\Models\Order;
 use App\Models\OrderChangeRequest;
@@ -294,6 +293,8 @@ class OrderService
                 'table_id' => $session->table_id,
                 'table_session_id' => $session->id,
                 'order_type' => 'dine_in',
+                'order_source' => 'dine_in',
+                'promotion_channel' => $createdByUserId ? 'waiter' : 'qr',
                 'status' => OrderStatus::Pending->value,
                 'created_by_user_id' => $createdByUserId,
                 'customer_notes' => $customerNotes,
@@ -386,6 +387,7 @@ class OrderService
                     'customer_address_id' => $opts['customer_address_id'] ?? null,
                     'order_type' => $type,
                     'order_source' => $orderSource->value,
+                    'promotion_channel' => 'cashier',
                     'status' => OrderStatus::Pending->value,
                     'created_by_user_id' => $createdByUserId,
                     'customer_notes' => $opts['customer_notes'] ?? null,
@@ -526,7 +528,10 @@ class OrderService
                     continue;
                 }
 
-                $created = $this->addItem($locked, $row);
+                // Originals awaiting replacement/deletion still carry legacy
+                // redemption evidence, but are not part of the reviewed cart's
+                // subtotal. Only already-kept lines may satisfy a minimum.
+                $created = $this->addItem($locked, $row, $existing->keys()->diff($keptIds)->all());
                 $keptIds[] = (int) $created->id;
             }
 
@@ -573,7 +578,7 @@ class OrderService
         });
     }
 
-    public function addItem(Order $order, array $row): OrderItem
+    public function addItem(Order $order, array $row, array $excludedSubtotalItemIds = []): OrderItem
     {
         $this->assertStaffMealAllocationOpen($order);
 
@@ -618,7 +623,7 @@ class OrderService
             ? $order->customer
             : ($order->customer_id ? $order->loadMissing('customer')->customer : null);
         $promotion = app(PromotionService::class)
-            ->resolveForItem($item, null, $order->branch_id, $order->order_source, $orderCustomer);
+            ->resolveForItem($item, null, $order->branch_id, $order->promotionChannels(), $orderCustomer, $order);
 
         // Min-subtotal guard: if the promo requires a cart total of X
         // and the order — INCLUDING this new line — wouldn't reach X,
@@ -627,6 +632,7 @@ class OrderService
         if ($promotion && $promotion->min_subtotal !== null && (float) $promotion->min_subtotal > 0) {
             $projectedSubtotal = (float) $order->items()
                 ->where('status', '!=', OrderItemStatus::Cancelled->value)
+                ->when($excludedSubtotalItemIds, fn ($query) => $query->whereNotIn('id', $excludedSubtotalItemIds))
                 ->sum('subtotal')
                 + (($menuPrice + $modifiersTotal) * $quantity);
             if (! $promotion->meetsMinSubtotal($projectedSubtotal)) {
@@ -642,19 +648,9 @@ class OrderService
             $alreadyClaimedByThisOrder = $order->items()
                 ->where('promotion_id', $promotion->id)
                 ->exists();
-            if (! $alreadyClaimedByThisOrder) {
-                // Atomic: update only if usage_count is still below the
-                // limit. Affected rows = 1 means we claimed a slot.
-                $affected = MenuPromotion::where('id', $promotion->id)
-                    ->where(function ($q) {
-                        $q->whereNull('usage_limit')
-                            ->orWhereColumn('usage_count', '<', 'usage_limit');
-                    })
-                    ->update(['usage_count' => \DB::raw('usage_count + 1')]);
-                if ($affected === 0) {
-                    // Exhausted between resolveForItem and now — drop the promo.
-                    $promotion = null;
-                }
+            if (! app(PromotionService::class)->claimForOrder($promotion, $order, $alreadyClaimedByThisOrder)) {
+                // Exhausted between resolveForItem and now — drop the promo.
+                $promotion = null;
             }
         }
 
@@ -670,7 +666,9 @@ class OrderService
             'quantity' => $quantity,
             'unit_price' => $unitPrice,
             'unit_price_original' => $hasPromo ? $menuPrice : null,
-            'promotion_id' => $hasPromo ? $promotion->id : null,
+            // Free-modifier-only offers still need their identity and one
+            // redemption per order, even when the base unit price is unchanged.
+            'promotion_id' => $promotion?->id,
             'modifiers_total' => $modifiersTotal,
             'subtotal' => $subtotal,
             'notes' => $row['notes'] ?? null,

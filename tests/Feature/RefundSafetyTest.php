@@ -7,12 +7,16 @@ use App\Models\Branch;
 use App\Models\Category;
 use App\Models\Customer;
 use App\Models\CustomerAdvanceTransaction;
+use App\Models\DebtWriteoff;
 use App\Models\Ingredient;
 use App\Models\IngredientStock;
+use App\Models\Invoice;
 use App\Models\JournalLine;
 use App\Models\MenuItem;
 use App\Models\RecipeItem;
+use App\Models\Refund;
 use App\Models\Role;
+use App\Models\Setting;
 use App\Models\Station;
 use App\Models\StorageLocation;
 use App\Models\Table;
@@ -20,6 +24,7 @@ use App\Models\TableSession;
 use App\Models\Unit;
 use App\Models\User;
 use App\Services\BillingService;
+use App\Services\CashierShiftService;
 use App\Services\CreditNoteService;
 use App\Services\OrderService;
 use App\Services\RefundService;
@@ -41,8 +46,11 @@ class RefundSafetyTest extends TestCase
     use RefreshDatabase;
 
     protected Branch $branch;
+
     protected User $cashier;
+
     protected MenuItem $menuItem;
+
     protected Customer $customer;
 
     protected function setUp(): void
@@ -50,8 +58,8 @@ class RefundSafetyTest extends TestCase
         parent::setUp();
         Notification::fake();
 
-        \App\Models\Setting::put('tax_enabled',     false, 'billing', 'bool');
-        \App\Models\Setting::put('service_enabled', false, 'billing', 'bool');
+        Setting::put('tax_enabled', false, 'billing', 'bool');
+        Setting::put('service_enabled', false, 'billing', 'bool');
 
         $this->branch = Branch::create(['code' => 'main', 'name' => 'Main', 'is_active' => true]);
         BranchContext::set($this->branch->id);
@@ -59,10 +67,10 @@ class RefundSafetyTest extends TestCase
         Role::create(['name' => 'cashier', 'label' => 'Cashier', 'is_system' => true]);
         $this->cashier = $this->makeCashier();
 
-        $unit = Unit::create(['code'=>'pcs','name'=>'pcs','unit_type'=>'count','factor_to_base'=>1,'is_base'=>true]);
-        $storage = StorageLocation::create(['code'=>'main-kitchen','name'=>'K','is_default'=>true,'active'=>true]);
-        $station = Station::create(['code'=>'kitchen','name'=>'Kitchen','storage_location_id'=>$storage->id,'active'=>true]);
-        $category = Category::create(['slug'=>'mains','name'=>'Mains','default_station_id'=>$station->id,'active'=>true]);
+        $unit = Unit::create(['code' => 'pcs', 'name' => 'pcs', 'unit_type' => 'count', 'factor_to_base' => 1, 'is_base' => true]);
+        $storage = StorageLocation::create(['code' => 'main-kitchen', 'name' => 'K', 'is_default' => true, 'active' => true]);
+        $station = Station::create(['code' => 'kitchen', 'name' => 'Kitchen', 'storage_location_id' => $storage->id, 'active' => true]);
+        $category = Category::create(['slug' => 'mains', 'name' => 'Mains', 'default_station_id' => $station->id, 'active' => true]);
 
         $ingredient = Ingredient::create([
             'sku' => 'ING-1', 'name' => 'Stock', 'base_unit_id' => $unit->id,
@@ -101,6 +109,7 @@ class RefundSafetyTest extends TestCase
     public function test_partial_refund_reduces_adjusted_sale_without_reopening_invoice_balance(): void
     {
         $this->actingAs($this->cashier);
+        app(CashierShiftService::class)->open($this->cashier->id, $this->branch->id, 0);
 
         // Pay the 100 invoice in full → paid.
         $invoice = $this->doVisit(total: 100);
@@ -124,6 +133,7 @@ class RefundSafetyTest extends TestCase
     public function test_pending_refunds_reserve_capacity_and_complete_without_over_refund(): void
     {
         $this->actingAs($this->cashier);
+        app(CashierShiftService::class)->open($this->cashier->id, $this->branch->id, 0);
         $invoice = $this->doVisit(total: 100);
         app(BillingService::class)->addPayment($invoice, 100.0, 'cash', $this->cashier->id);
 
@@ -132,7 +142,7 @@ class RefundSafetyTest extends TestCase
             app(RefundService::class)->issue($invoice->fresh(), 41, 'original', 'تجاوز', $this->cashier->id, ['status' => 'pending']);
             $this->fail('A second pending refund must not exceed the reserved capacity.');
         } catch (ValidationException) {
-            $this->assertSame(1, \App\Models\Refund::query()->where('status', 'pending')->count());
+            $this->assertSame(1, Refund::query()->where('status', 'pending')->count());
         }
 
         $second = app(RefundService::class)->issue($invoice->fresh(), 40, 'original', 'إرجاع ثان', $this->cashier->id, ['status' => 'pending']);
@@ -154,6 +164,7 @@ class RefundSafetyTest extends TestCase
     public function test_completed_refund_can_be_reversed_without_deleting_its_document(): void
     {
         $this->actingAs($this->cashier);
+        app(CashierShiftService::class)->open($this->cashier->id, $this->branch->id, 0);
         $invoice = $this->doVisit(total: 100);
         app(BillingService::class)->addPayment($invoice, 100, 'cash', $this->cashier->id);
         $refund = app(RefundService::class)->issue($invoice->fresh(), 30, 'cash', 'خطأ بالتجهيز', $this->cashier->id);
@@ -172,6 +183,7 @@ class RefundSafetyTest extends TestCase
     public function test_original_method_splits_refund_across_the_actual_payments(): void
     {
         $this->actingAs($this->cashier);
+        app(CashierShiftService::class)->open($this->cashier->id, $this->branch->id, 0);
         $invoice = $this->doVisit(total: 100);
         app(BillingService::class)->addPayment($invoice, 40, 'cash', $this->cashier->id);
         app(BillingService::class)->addPayment($invoice->fresh(), 60, 'card', $this->cashier->id);
@@ -188,6 +200,7 @@ class RefundSafetyTest extends TestCase
     public function test_refund_to_customer_balance_updates_subledger_and_reverses_safely(): void
     {
         $this->actingAs($this->cashier);
+        app(CashierShiftService::class)->open($this->cashier->id, $this->branch->id, 0);
         $invoice = $this->doVisit(total: 100);
         app(BillingService::class)->addPayment($invoice, 100, 'cash', $this->cashier->id);
 
@@ -238,7 +251,7 @@ class RefundSafetyTest extends TestCase
         app(BillingService::class)->settleOnAccount($invoice, $this->cashier->id);
 
         app(BillingService::class)->writeOffInvoice($invoice->fresh(), $this->cashier->id, 'تعذر تحصيل جزء معتمد', 20);
-        $writeoff = \App\Models\DebtWriteoff::query()->where('invoice_id', $invoice->id)->sole();
+        $writeoff = DebtWriteoff::query()->where('invoice_id', $invoice->id)->sole();
         $invoice->refresh();
         $this->assertSame(80.0, (float) $invoice->balance);
         $this->assertSame(20.0, (float) $invoice->written_off_total);
@@ -255,6 +268,7 @@ class RefundSafetyTest extends TestCase
     public function test_refund_is_rejected_on_written_off_invoice(): void
     {
         $this->actingAs($this->cashier);
+        app(CashierShiftService::class)->open($this->cashier->id, $this->branch->id, 0);
 
         $invoice = $this->doVisit(total: 100);
         app(BillingService::class)->addPayment($invoice, 40.0, 'cash', $this->cashier->id);
@@ -269,10 +283,10 @@ class RefundSafetyTest extends TestCase
 
     // ─── helpers ──────────────────────────────────────────────────────
 
-    protected function doVisit(float $total, int $quantity = 1): \App\Models\Invoice
+    protected function doVisit(float $total, int $quantity = 1): Invoice
     {
         $table = Table::create([
-            'number'   => (string) random_int(1, 9999),
+            'number' => (string) random_int(1, 9999),
             'capacity' => 4, 'status' => 'occupied', 'active' => true,
         ]);
         $session = TableSession::create([
@@ -287,6 +301,7 @@ class RefundSafetyTest extends TestCase
 
         $invoice = app(BillingService::class)->issueInvoice($session->fresh(), $this->cashier->id);
         $this->assertSame($total, (float) $invoice->total, 'Sanity: invoice total mismatch.');
+
         return $invoice;
     }
 
@@ -298,6 +313,7 @@ class RefundSafetyTest extends TestCase
             'primary_branch_id' => $this->branch->id, 'role' => 'cashier',
         ]);
         $user->branches()->attach($this->branch->id);
+
         return $user;
     }
 }

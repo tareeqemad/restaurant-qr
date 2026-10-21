@@ -89,6 +89,10 @@ class RecipeItem extends Model
             return $qty;
         }
 
+        if ($this->relationLoaded('unit') && $ingredient->relationLoaded('baseUnit') && $this->unit && $ingredient->baseUnit) {
+            return UnitConverter::convertUsingUnits($qty, $this->unit, $ingredient->baseUnit);
+        }
+
         return UnitConverter::convert(
             $qty,
             $this->unit_id,

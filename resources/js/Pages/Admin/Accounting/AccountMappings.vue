@@ -1,4 +1,5 @@
 <script setup>
+import { useFormUx } from '../../../Composables/useFormUx';
 import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 import { computed, ref } from 'vue'
 import { Link, Head, useForm } from '@inertiajs/vue3'
@@ -59,6 +60,7 @@ function submit() {
         onSuccess: () => form.defaults({ ...form.data() }),
     })
 }
+useFormUx(form);
 </script>
 
 <template>

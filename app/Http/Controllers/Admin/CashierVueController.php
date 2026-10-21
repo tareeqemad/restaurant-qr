@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Enums\OrderItemStatus;
 use App\Enums\OrderStatus;
+use App\Exceptions\CashierPaymentConflict;
 use App\Helpers\Money;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CashierVue\CreateCustomerRequest;
@@ -27,7 +28,6 @@ use App\Models\Invoice;
 use App\Models\InvoiceSplit;
 use App\Models\Lookup;
 use App\Models\MenuItem;
-use App\Models\MenuPromotion;
 use App\Models\Order;
 use App\Models\OrderChangeRequest;
 use App\Models\OrderDiscount;
@@ -39,13 +39,16 @@ use App\Models\Scopes\BranchScope;
 use App\Models\Setting;
 use App\Models\TableSession;
 use App\Services\BillingService;
+use App\Services\CashierPaymentService;
+use App\Services\CashierShiftService;
 use App\Services\CreditNoteService;
 use App\Services\CustomerAdvanceService;
 use App\Services\CustomerIdentityService;
-use App\Services\InventoryService;
+use App\Services\MenuAvailabilityService;
 use App\Services\OrderDiscountService;
 use App\Services\OrderService;
 use App\Services\PendingTransferService;
+use App\Services\PromotionService;
 use App\Services\RefundService;
 use App\Support\AdminShell;
 use App\Support\BranchContext;
@@ -60,6 +63,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Response;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 /**
  * Read model for the Vue cashier workspace.
@@ -88,6 +92,10 @@ class CashierVueController extends Controller
                     'issue_session' => '/admin/cashier/api/sessions/:session/invoice',
                     'issue_order' => '/admin/cashier/api/orders/:order/invoice',
                     'pay' => '/admin/cashier/api/invoices/:invoice/payments',
+                    'verify_payment' => '/admin/cashier/api/invoices/:invoice/payments/verify',
+                    'open_shift' => '/admin/cashier/api/shifts/open',
+                    'close_shift' => '/admin/cashier/api/shifts/:shift/close',
+                    'shift_movement' => '/admin/cashier/api/shifts/:shift/movements',
                     'refund' => '/admin/cashier/api/invoices/:invoice/refunds',
                     'discount_session' => '/admin/cashier/api/sessions/:session/discounts',
                     'discount_order' => '/admin/cashier/api/orders/:order/discounts',
@@ -165,6 +173,48 @@ class CashierVueController extends Controller
             'message' => null,
             'data' => $this->statePayload($filters),
         ]);
+    }
+
+    public function openShift(Request $request, CashierShiftService $shifts): JsonResponse
+    {
+        $this->authorize('create', Payment::class);
+        $data = $request->validate(['opening_cash' => ['required', 'numeric', 'min:0', 'max:99999999.99']]);
+
+        return $this->command(function () use ($data, $shifts) {
+            $branchId = BranchContext::current();
+            if (! $branchId) {
+                throw ValidationException::withMessages(['branch' => 'اختر فرعاً محدداً لافتتاح ورديتك.']);
+            }
+
+            return ['message' => 'افتُتحت ورديتك النقدية.', 'data' => $shifts->open((int) auth()->id(), $branchId, (float) $data['opening_cash'])];
+        });
+    }
+
+    public function closeShift(Request $request, int $shift, CashierShiftService $shifts): JsonResponse
+    {
+        $this->authorize('create', Payment::class);
+        $data = $request->validate(['counted_cash' => ['required', 'numeric', 'min:0', 'max:99999999.99'], 'notes' => ['nullable', 'string', 'max:1000']]);
+
+        return $this->command(fn () => ['message' => 'أُغلقت ورديتك وحُفظ العدّ والفرق.', 'data' => $shifts->close($shift, (int) auth()->id(), (float) $data['counted_cash'], $data['notes'] ?? null)]);
+    }
+
+    public function shiftMovement(Request $request, int $shift, CashierShiftService $shifts): JsonResponse
+    {
+        $this->authorize('create', Payment::class);
+
+        return $this->command(function () use ($request, $shift, $shifts) {
+            $data = $request->validate([
+                'token' => ['required', 'string', 'min:8', 'max:120'],
+                'direction' => ['required', 'in:in,out'], 'amount' => ['required', 'numeric', 'min:0.01', 'max:99999999.99'],
+                'reference' => ['required', 'string', 'max:255'], 'reason' => ['required', 'string', 'max:500'],
+            ]);
+
+            if (! BranchContext::current()) {
+                throw ValidationException::withMessages(['branch' => 'اختر فرع الوردية قبل تسجيل حركة العهدة.']);
+            }
+
+            return ['message' => 'حُفظت حركة العهدة دون قيد محاسبي إضافي.', 'data' => $shifts->manualMovement($shift, (int) auth()->id(), BranchContext::current(), $data)];
+        });
     }
 
     public function issueSession(TableSession $session, BillingService $billing): JsonResponse
@@ -270,7 +320,7 @@ class CashierVueController extends Controller
         $this->authorize('create', Payment::class);
         $data = $request->validated();
 
-        return $this->idempotentCommand('payment:'.$invoice->id, $data['token'], function () use ($data, $invoice, $billing) {
+        return $this->command(fn () => app(CashierPaymentService::class)->execute($invoice, (int) auth()->id(), $data, function () use ($data, $invoice, $billing) {
             if ($invoice->splits()->exists()) {
                 throw new \RuntimeException('هذه الفاتورة مقسّمة — حصّل كل جزء من قائمة التقسيم.');
             }
@@ -298,9 +348,25 @@ class CashierVueController extends Controller
                     'payment_id' => (int) $payment->id,
                     'invoice_id' => (int) $invoice->id,
                     'advance_added' => $advanceAdded,
+                    'invoice_number' => $invoice->number,
+                    'amount' => (float) $payment->amount,
+                    'method' => $payment->method,
+                    'paid_at' => $payment->paid_at?->toAtomString(),
+                    'print_url' => route('admin.cashier.print', $invoice),
+                    'pdf_url' => route('admin.cashier.pdf', $invoice),
                 ],
             ];
-        });
+        }));
+    }
+
+    public function verifyPayment(TokenRequest $request, Invoice $invoice): JsonResponse
+    {
+        $this->authorize('create', Payment::class);
+
+        return response()->json([
+            'ok' => true,
+            'data' => app(CashierPaymentService::class)->verify($invoice, (int) auth()->id(), $request->validated('token')),
+        ]);
     }
 
     public function lookupCustomer(Request $request): JsonResponse
@@ -517,7 +583,9 @@ class CashierVueController extends Controller
         abort_unless($split->invoice_id === $invoice->id, 404);
         $data = $request->validated();
 
-        return $this->idempotentCommand('split-payment:'.$split->id, $data['token'], function () use ($data, $invoice, $split, $billing) {
+        $receiptPayload = $data + ['amount' => $split->amount, 'method' => $split->method, 'split_id' => $split->id];
+
+        return $this->command(fn () => app(CashierPaymentService::class)->execute($invoice, (int) auth()->id(), $receiptPayload, function () use ($data, $invoice, $split, $billing) {
             $payment = $billing->paySplit(
                 $split,
                 auth()->id(),
@@ -530,9 +598,15 @@ class CashierVueController extends Controller
                     'invoice_id' => (int) $invoice->id,
                     'split_id' => (int) $split->id,
                     'payment_id' => (int) $payment->id,
+                    'invoice_number' => $invoice->number,
+                    'amount' => (float) $payment->amount,
+                    'method' => $payment->method,
+                    'paid_at' => $payment->paid_at?->toAtomString(),
+                    'print_url' => route('admin.cashier.print', $invoice),
+                    'pdf_url' => route('admin.cashier.pdf', $invoice),
                 ],
             ];
-        });
+        }));
     }
 
     public function clearSplits(
@@ -927,6 +1001,7 @@ class CashierVueController extends Controller
             ],
             'workspace' => $this->workspace($filters),
             'today' => $this->todayStats(),
+            'cash_shifts' => app(CashierShiftService::class)->workspace((int) auth()->id()),
             'abilities' => $this->abilities(),
         ];
     }
@@ -1688,6 +1763,7 @@ class CashierVueController extends Controller
                 'decimals' => 2,
             ],
             'branch_id' => BranchContext::current(),
+            'payment_recovery_scope' => hash('sha256', auth()->id().':'.(BranchContext::current() ?? 'all')),
             'csrf_token' => $request->session()->token(),
         ];
     }
@@ -1700,13 +1776,8 @@ class CashierVueController extends Controller
             ->orderBy('display_order')
             ->orderBy('name')
             ->get();
-        $hasPromotions = MenuPromotion::query()
-            ->where('active', true)
-            ->where(fn ($promotion) => $promotion
-                ->whereNull('branch_id')
-                ->orWhere('branch_id', BranchContext::current()))
-            ->exists();
-        $inventory = app(InventoryService::class);
+        $promotions = app(PromotionService::class)->resolveBulk($items, channel: ['cashier', 'phone']);
+        $availability = app(MenuAvailabilityService::class)->forItems($items);
 
         return [
             'categories' => $items->groupBy('category_id')->map(fn (Collection $group) => [
@@ -1714,9 +1785,10 @@ class CashierVueController extends Controller
                 'name' => $group->first()->category?->name ?? '',
                 'count' => $group->count(),
             ])->sortBy('name')->values(),
-            'items' => $items->map(function (MenuItem $item) use ($hasPromotions, $inventory) {
-                $promotion = $hasPromotions ? $item->activePromotion() : null;
-                $price = $promotion ? (float) $promotion->applyTo((float) $item->price) : (float) $item->price;
+            'items' => $items->map(function (MenuItem $item) use ($availability, $promotions) {
+                $promotion = $promotions[$item->id]['promotion'] ?? null;
+                $price = $promotions[$item->id]['price'] ?? (float) $item->price;
+                $freeModifierIds = array_map('intval', $promotion?->free_modifier_ids ?? []);
 
                 return [
                     'id' => (int) $item->id,
@@ -1726,7 +1798,7 @@ class CashierVueController extends Controller
                     'price' => $price,
                     'original_price' => (float) $item->price,
                     'has_promo' => $promotion && $price < (float) $item->price,
-                    'in_stock' => $this->itemInStock($inventory, $item),
+                    'in_stock' => $availability[$item->id],
                     'modifier_groups' => $item->modifierGroups->map(fn ($group) => [
                         'id' => (int) $group->id,
                         'name' => $group->name,
@@ -1736,7 +1808,7 @@ class CashierVueController extends Controller
                         'modifiers' => $group->modifiers->map(fn ($modifier) => [
                             'id' => (int) $modifier->id,
                             'name' => $modifier->name,
-                            'price_delta' => (float) $modifier->price_delta,
+                            'price_delta' => in_array((int) $modifier->id, $freeModifierIds, true) ? 0.0 : (float) $modifier->price_delta,
                         ])->values(),
                     ])->values(),
                 ];
@@ -1744,32 +1816,9 @@ class CashierVueController extends Controller
         ];
     }
 
-    private function itemInStock(InventoryService $inventory, MenuItem $item): bool
-    {
-        $needs = [];
-        foreach ($inventory->previewDeductionForItem($item, 1.0) as $line) {
-            $ingredientId = (int) $line['ingredient_id'];
-            $needs[$ingredientId] ??= ['ingredient' => $line['ingredient'], 'quantity' => 0.0];
-            $needs[$ingredientId]['quantity'] += (float) $line['quantity_in_base'];
-        }
-
-        foreach ($needs as $need) {
-            $locationId = $item->station?->storage_location_id;
-            $available = $locationId
-                ? $need['ingredient']->usableStockAtLocation((int) $locationId)
-                : $need['ingredient']->usableStockAtBranch((int) ($item->branch_id ?: BranchContext::current()));
-            if ($need['ingredient']->track_stock
-                && $need['quantity'] > $available) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
     private function pulseVersion(): string
     {
-        return LiveRefreshPulse::version(BranchContext::current());
+        return LiveRefreshPulse::version(BranchContext::current()).':'.Cache::get('cashier-custody:'.auth()->id(), '0');
     }
 
     private function dateTime($value): ?string
@@ -1818,15 +1867,27 @@ class CashierVueController extends Controller
                 'data' => $result['data'] ?? null,
                 'warning' => $result['warning'] ?? null,
             ]);
+        } catch (CashierPaymentConflict $exception) {
+            return response()->json(['ok' => false, 'message' => $exception->getMessage()], 409);
+        } catch (HttpExceptionInterface $exception) {
+            throw $exception;
         } catch (ValidationException $exception) {
             return response()->json([
                 'ok' => false,
+                'submission_state' => 'rejected',
+                'operation_token' => request()->input('token'),
                 'message' => $exception->getMessage(),
                 'errors' => $exception->errors(),
             ], 422);
+        } catch (\PDOException $exception) {
+            report($exception);
+
+            return response()->json(['ok' => false, 'message' => 'نتيجة العملية غير مؤكدة. تحقّق من السجل قبل أي دفعة جديدة.'], 500);
         } catch (\RuntimeException $exception) {
             return response()->json([
                 'ok' => false,
+                'submission_state' => 'rejected',
+                'operation_token' => request()->input('token'),
                 'message' => $exception->getMessage(),
             ], 422);
         } catch (\Throwable $exception) {
@@ -1834,7 +1895,7 @@ class CashierVueController extends Controller
 
             return response()->json([
                 'ok' => false,
-                'message' => 'حدث خطأ غير متوقع — لم تُسجل العملية. حدّث الشاشة وراجع السجل قبل المحاولة.',
+                'message' => 'لم تصل نتيجة مؤكدة للعملية. تحقّق من السجل قبل أي دفعة جديدة.',
             ], 500);
         }
     }

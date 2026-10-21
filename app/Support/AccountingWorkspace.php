@@ -44,6 +44,8 @@ class AccountingWorkspace
                 ? route('admin.accounting.mappings') : null,
             'reconciliations' => $user?->hasPermission('chart_of_accounts.update')
                 ? route('admin.accounting.reconciliations') : null,
+            'cashShifts' => $user?->hasPermission('chart_of_accounts.viewAny')
+                ? route('admin.accounting.cash-shifts') : null,
             'settlements' => $user?->hasPermission('chart_of_accounts.update')
                 ? route('admin.accounting.settlements') : null,
             'fixedAssets' => route('admin.accounting.fixed-assets.index'),

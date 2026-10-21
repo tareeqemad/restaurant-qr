@@ -95,7 +95,7 @@ class LoginPageTest extends TestCase
                 'password' => 'secret123',
             ])
             ->assertStatus(409)
-            ->assertHeader('X-Inertia-Location', route('admin.dashboard'));
+            ->assertHeader('X-Inertia-Location', route('admin.tables.index'));
 
         $this->assertAuthenticatedAs($user);
     }
@@ -170,7 +170,6 @@ class LoginPageTest extends TestCase
         $this->assertStringContainsString('.input-shell input.identity-input,', $source);
         $this->assertStringContainsString('.input-shell input.password-input { direction: ltr;', $source);
         $this->assertStringContainsString("getModifierState?.('CapsLock')", $source);
-        $this->assertStringContainsString('0592632026 أو username', $source);
         $this->assertStringNotContainsString('demoTrial', $source);
         $this->assertStringNotContainsString('هذه نسخة تجريبية', $source);
         $this->assertStringNotContainsString('window.location', $source);

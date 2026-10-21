@@ -1,4 +1,5 @@
 <script setup>
+import { useFormUx } from '../../../Composables/useFormUx';
 import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 import { Head, Link, useForm } from '@inertiajs/vue3'
 import AdminLayout from '../../../Layouts/AdminLayout.vue'
@@ -32,6 +33,7 @@ const form = useForm({
 function submit() {
     form.patch(props.urls.update)
 }
+useFormUx(form);
 </script>
 
 <template>

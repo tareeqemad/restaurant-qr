@@ -9,9 +9,13 @@ use App\Models\MenuItem;
 use App\Models\Setting;
 use App\Models\Table;
 use App\Models\TableSession;
+use App\Services\CustomerSubmissionService;
+use App\Services\MenuAvailabilityService;
+use App\Services\PromotionService;
 use App\Services\SalesTaxService;
 use App\Support\BranchContext;
 use App\Support\CustomerMenuOrderPresenter;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -123,6 +127,11 @@ class MenuController extends Controller
             ->limit(6)
             ->get();
 
+        $menuItems = new Collection($categories->flatMap->menuItems->all());
+        $menuItems = $menuItems->merge($featured);
+        $availability = app(MenuAvailabilityService::class)->forItems($menuItems);
+        $promotions = app(PromotionService::class)->resolveBulk($menuItems, channel: 'qr');
+
         $cart = array_values(session('cart.'.$session->token, []));
         $submitToken = session('cart_submit_token.'.$session->token);
         if (! $submitToken) {
@@ -149,6 +158,8 @@ class MenuController extends Controller
                 'logo' => Brand::logoUrl(),
             ],
             'sessionInfo' => [
+                'submissionScope' => CustomerSubmissionService::scope($session, $request->attributes->get('table_order_device_hash')),
+                'visitToken' => $session->token,
                 'tableNumber' => $session->table->number ?? '—',
                 'branchName' => $session->table?->branch?->name,
                 'dinerName' => $linkedCustomer?->name ?: $session->customer_name,
@@ -172,13 +183,13 @@ class MenuController extends Controller
                 ->whereIn('status', ['pending', 'approved', 'preparing', 'ready', 'delivered'])
                 ->count(),
             'sessionOrders' => $sessionOrders,
-            'featured' => $featured->map(fn ($i) => $this->itemPayload($i))->values()->all(),
+            'featured' => $featured->map(fn ($i) => $this->itemPayload($i, $availability, $promotions))->values()->all(),
             'categories' => $categories->map(fn ($c) => [
                 'id' => $c->id,
                 'label' => $c->localizedName(),
                 'icon' => $c->icon ?: 'bi-tag',
                 'color' => $c->color,
-                'items' => $c->menuItems->map(fn ($i) => $this->itemPayload($i))->values()->all(),
+                'items' => $c->menuItems->map(fn ($i) => $this->itemPayload($i, $availability, $promotions))->values()->all(),
             ])->values()->all(),
             'cart' => $cart,
             'submitToken' => $submitToken,
@@ -204,7 +215,7 @@ class MenuController extends Controller
      * LIVE stock check on top of the manual flag (with distinct reasons),
      * ingredients, allergens, and the modifier-group contract.
      */
-    protected function itemPayload(MenuItem $item): array
+    protected function itemPayload(MenuItem $item, array $availability, array $promotions): array
     {
         $ingredients = $item->relationLoaded('recipeItems')
             ? $item->recipeItems->map(fn ($r) => $r->ingredient?->localizedName())->filter()->values()
@@ -219,13 +230,13 @@ class MenuController extends Controller
             : collect();
 
         $manuallyAvailable = (bool) $item->is_available;
-        $shortages = $manuallyAvailable ? $item->stockShortages(1.0) : [];
-        $inStock = empty($shortages);
+        $inStock = $availability[$item->id] ?? false;
         $canOrder = $manuallyAvailable && $inStock;
 
-        $promo = $item->activePromotion();
+        $promo = $promotions[$item->id]['promotion'] ?? null;
+        $freeModifierIds = array_map('intval', $promo?->free_modifier_ids ?? []);
         $basePrice = (float) $item->price;
-        $effectivePrice = $promo ? $promo->applyTo($basePrice) : $basePrice;
+        $effectivePrice = $promotions[$item->id]['price'] ?? $basePrice;
         $hasPriceDiscount = $promo !== null && $effectivePrice < $basePrice;
 
         return [
@@ -234,7 +245,7 @@ class MenuController extends Controller
             'description' => $item->localizedDescription(),
             'price' => $effectivePrice,
             'original_price' => $hasPriceDiscount ? $basePrice : null,
-            'discount_pct' => $promo ? $item->discountPct() : null,
+            'discount_pct' => $hasPriceDiscount && $basePrice > 0 ? round((($basePrice - $effectivePrice) / $basePrice) * 100, 1) : null,
             'image' => $item->imageUrl(),
             'prep_minutes' => $item->prep_time_minutes,
             'featured' => (bool) $item->is_featured,
@@ -255,7 +266,7 @@ class MenuController extends Controller
                 'modifiers' => $g->modifiers->map(fn ($m) => [
                     'id' => $m->id,
                     'name' => $m->localizedName(),
-                    'price_delta' => (float) $m->price_delta,
+                    'price_delta' => in_array((int) $m->id, $freeModifierIds, true) ? 0.0 : (float) $m->price_delta,
                 ])->values()->all(),
             ])->values()->all(),
         ];

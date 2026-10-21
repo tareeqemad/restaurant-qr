@@ -55,6 +55,7 @@ const groups = computed(() => [
         items: [
             ['trialBalance', 'ميزان المراجعة', props.urls.trialBalance],
             ['reconciliations', 'مطابقة الصندوق والبنك', props.urls.reconciliations],
+            ['cashShifts', 'عهد الموظفين', props.urls.cashShifts],
             ['settlements', 'المحافظ والتسويات', props.urls.settlements],
             ['aging', 'أعمار الذمم', props.urls.aging],
         ],

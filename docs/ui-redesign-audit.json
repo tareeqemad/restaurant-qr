@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-11T10:55:25.316Z",
+  "generatedAt": "2026-10-21T08:03:12.341Z",
   "brand": "مطعم دار السرو / Dar Al Sarw",
   "scope": "Repository page inventory and source-level redesign coverage; browser evidence deliberately tracked separately.",
   "inventory": {
@@ -9,12 +9,12 @@
       "rg --files --no-ignore resources/js/Pages",
       "Recursive filesystem inventory and Vue compiler check at consolidation"
     ],
-    "vuePageCount": 127,
-    "domainComponentCount": 70,
-    "sharedComponentCount": 15,
+    "vuePageCount": 129,
+    "domainComponentCount": 71,
+    "sharedComponentCount": 16,
     "layoutCount": 1,
     "pagesByOwner": {
-      "accounting": 43,
+      "accounting": 45,
       "management": 60,
       "operations": 23,
       "root": 1
@@ -25,7 +25,7 @@
   },
   "sourceValidation": {
     "allPagesOwned": true,
-    "vueFilesCompiled": 213,
+    "vueFilesCompiled": 217,
     "failures": [],
     "operationsRuntimeJs": {
       "passed": 35,
@@ -525,8 +525,10 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "0a3bb88709a165f5c176bccd4dbc19a5df9e5a2a8adf6df0575d6980d0b25baf",
-        "businessScriptUnchanged": null
+        "sha256": "5583cff58cb3dcf90a91ed923972e72b25453a92cd23ea746ff8c5f978b3582d",
+        "businessScriptUnchanged": null,
+        "previousSha256": "0a3bb88709a165f5c176bccd4dbc19a5df9e5a2a8adf6df0575d6980d0b25baf",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -552,7 +554,8 @@
         ],
         "compilation": "passed",
         "sha256": "fa6775fefe4e5780a179a90b100b2f7362489d7bb1547ee0a68e4a1fc1573552",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -578,13 +581,66 @@
         ],
         "compilation": "passed",
         "sha256": "ea17b054888088ed591d48dabef5b1e470ec791997adba4280c20f44675d83c5",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
         "viewports": [],
         "scenarios": [],
         "notes": "Source compilation does not establish that this page mounted or was visually inspected. Root records actual browser checks separately."
+      }
+    },
+    {
+      "path": "resources/js/Pages/Admin/Accounting/CashShifts.vue",
+      "kind": "page",
+      "owner": "accounting",
+      "source": {
+        "reviewed": true,
+        "reviewEvidence": [
+          {
+            "owner": "accounting",
+            "date": "2026-10-21",
+            "report": "Coordinated operational UX review",
+            "review": "Employee custody review, branch-scoped movement drilldown, dates and pagination."
+          }
+        ],
+        "compilation": "passed",
+        "sha256": "b2bfd8da61a23d5a320b070ce370ecd5a186b6337d597eb826d923a6bf355bde",
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
+      },
+      "browser": {
+        "status": "not_recorded_individually",
+        "viewports": [],
+        "scenarios": [],
+        "notes": "Current root-reported operational scenarios are recorded separately; compilation is not browser proof."
+      }
+    },
+    {
+      "path": "resources/js/Pages/Admin/Accounting/ClosingIssues.vue",
+      "kind": "page",
+      "owner": "accounting",
+      "source": {
+        "reviewed": true,
+        "reviewEvidence": [
+          {
+            "owner": "accounting",
+            "date": "2026-10-21",
+            "report": "Coordinated operational UX review",
+            "review": "Period readiness records and permission-filtered links to resolve blockers."
+          }
+        ],
+        "compilation": "passed",
+        "sha256": "6281278d8166ec10f483e1336b79694e285640c182e109b91cabc324b65e7b29",
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
+      },
+      "browser": {
+        "status": "not_recorded_individually",
+        "viewports": [],
+        "scenarios": [],
+        "notes": "Current root-reported operational scenarios are recorded separately; compilation is not browser proof."
       }
     },
     {
@@ -603,8 +659,10 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "bda7520e6da1ce8212fc0e423e9e2f0f30a4e64cdbfbcbaccc4a7c350ec0dfbf",
-        "businessScriptUnchanged": null
+        "sha256": "4c6e6b0eac8e3bb52ba37f8bef60ba752fd7dfe3f358453b363d025fe53c8218",
+        "businessScriptUnchanged": null,
+        "previousSha256": "bda7520e6da1ce8212fc0e423e9e2f0f30a4e64cdbfbcbaccc4a7c350ec0dfbf",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -630,7 +688,8 @@
         ],
         "compilation": "passed",
         "sha256": "54af610046b9d3d71e19c867fe51f175824a6abdea18616b403db95a73cf2649",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -655,34 +714,10 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "327515af11b981b45426e524c57b6e33d9dbcdf24ddc783311e076b38b780c74",
-        "businessScriptUnchanged": null
-      },
-      "browser": {
-        "status": "not_recorded",
-        "viewports": [],
-        "scenarios": [],
-        "notes": "Source compilation does not establish that this page mounted or was visually inspected. Root records actual browser checks separately."
-      }
-    },
-    {
-      "path": "resources/js/Pages/Admin/Accounting/FixedAssetShow.vue",
-      "kind": "page",
-      "owner": "accounting",
-      "source": {
-        "reviewed": true,
-        "reviewEvidence": [
-          {
-            "owner": "accounting",
-            "report": "tmp/redesign-accounting-report.json",
-            "review": "Dedicated heading, compact accounting navigation, separate filter/summary/results zones; DataPanel-based section hierarchy, readable financial rows and controls.",
-            "changes": [],
-            "mode": "records"
-          }
-        ],
-        "compilation": "passed",
-        "sha256": "1623fd0dc4d527afcce19bb9df5314e1a20bd30d4ceab20e30c5ed881d8fe144",
-        "businessScriptUnchanged": null
+        "sha256": "22b8e7ce6439a87f58941de74b7c97e1e20e251bb19c0d656440faa126861f2a",
+        "businessScriptUnchanged": null,
+        "previousSha256": "327515af11b981b45426e524c57b6e33d9dbcdf24ddc783311e076b38b780c74",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -708,7 +743,35 @@
         ],
         "compilation": "passed",
         "sha256": "fdf25435403e2439c42072c0bcd74ce0d114777cb97319346c28438994272b67",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
+      },
+      "browser": {
+        "status": "not_recorded",
+        "viewports": [],
+        "scenarios": [],
+        "notes": "Source compilation does not establish that this page mounted or was visually inspected. Root records actual browser checks separately."
+      }
+    },
+    {
+      "path": "resources/js/Pages/Admin/Accounting/FixedAssetShow.vue",
+      "kind": "page",
+      "owner": "accounting",
+      "source": {
+        "reviewed": true,
+        "reviewEvidence": [
+          {
+            "owner": "accounting",
+            "report": "tmp/redesign-accounting-report.json",
+            "review": "Dedicated heading, compact accounting navigation, separate filter/summary/results zones; DataPanel-based section hierarchy, readable financial rows and controls.",
+            "changes": [],
+            "mode": "records"
+          }
+        ],
+        "compilation": "passed",
+        "sha256": "1623fd0dc4d527afcce19bb9df5314e1a20bd30d4ceab20e30c5ed881d8fe144",
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -734,7 +797,8 @@
         ],
         "compilation": "passed",
         "sha256": "b1632b2cdad08c05781fcdda3cc0f97b2ca4ac248fbfe1af260b4af59f69558d",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -760,7 +824,8 @@
         ],
         "compilation": "passed",
         "sha256": "d2fd75530a7505013c1dea9f81cc2b83b0c87c92c4dbe539c989f1cb6e938438",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "path": "resources/js/Pages/Admin/Accounting/Index.vue",
@@ -792,7 +857,8 @@
         ],
         "compilation": "passed",
         "sha256": "b96ab9c8a6035e0be346cd68ba40f21b7d9e04ef3093ba2a1bb972a4190bc7f9",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -818,7 +884,8 @@
         ],
         "compilation": "passed",
         "sha256": "5dd5a4dd1b1cc30b017d807c0f40b66629fee5cbd47eb28cc3b0b2fa748afccc",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -843,8 +910,10 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "e36d12f9512f82b9a2f69af85e686c3a77bf7464d36f26da957e8050a7f1535f",
-        "businessScriptUnchanged": null
+        "sha256": "0913ee3e1b5ef0d5f014be48b7e7d686dfc08dc1767441d9460ae5e7984bc04d",
+        "businessScriptUnchanged": null,
+        "previousSha256": "e36d12f9512f82b9a2f69af85e686c3a77bf7464d36f26da957e8050a7f1535f",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -869,8 +938,10 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "b12a39c663ec6ad49054e7da73b2c6b3310161d77310892d205c767153c2e2e0",
-        "businessScriptUnchanged": null
+        "sha256": "63b2650f53749aa3eb36ea8d57f3bbb2beb588e3b796ffd163d67972e149abcb",
+        "businessScriptUnchanged": null,
+        "previousSha256": "b12a39c663ec6ad49054e7da73b2c6b3310161d77310892d205c767153c2e2e0",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -895,8 +966,10 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "9614b5de03c32c7b681d86c70a516495c0b48535c7bcada35088c9cd19b04927",
-        "businessScriptUnchanged": null
+        "sha256": "a6641ab1306c5a78722a300b59930b07792f70bd89563a14fa7cdc9cede1378a",
+        "businessScriptUnchanged": null,
+        "previousSha256": "9614b5de03c32c7b681d86c70a516495c0b48535c7bcada35088c9cd19b04927",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -922,7 +995,8 @@
         ],
         "compilation": "passed",
         "sha256": "87b3849ca88b9c2be276e3bfb4f598c381df2abdd848bc8c48560b830cf95e93",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -947,8 +1021,10 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "24b0c083fe2a477e4f4ccd3e14e73cd5637e521b8972f9dee8e0c2d83d286fd9",
-        "businessScriptUnchanged": null
+        "sha256": "43683c5e9b02197854d3f81c62d55499dce59058d391927cc0da7bc3b5c1be56",
+        "businessScriptUnchanged": null,
+        "previousSha256": "24b0c083fe2a477e4f4ccd3e14e73cd5637e521b8972f9dee8e0c2d83d286fd9",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -973,8 +1049,10 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "1cc841d7e63de57cae886374b977df6724597d9bd27dae142090670df82b80cd",
-        "businessScriptUnchanged": null
+        "sha256": "4dcb9186d71adce55550e37c62bdc7b5f0886f9a7113da3c686da05803ebb9d2",
+        "businessScriptUnchanged": null,
+        "previousSha256": "1cc841d7e63de57cae886374b977df6724597d9bd27dae142090670df82b80cd",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -1000,7 +1078,8 @@
         ],
         "compilation": "passed",
         "sha256": "0f32819c8f8d232348d41fc160e4db45c03ed4fd4d07be7655b2bfd1c2124d64",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -1026,7 +1105,8 @@
         ],
         "compilation": "passed",
         "sha256": "7405200bbef3bd639eb6725239ab502f8525237d336b553e678735fcb3ed52fa",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "path": "resources/js/Pages/Admin/Accounting/TrialBalance.vue",
@@ -1059,8 +1139,10 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "12a51ed79dcf09ed99ec3e439b6b82798153ba1a3ab18cb279bd8ad35699e14b",
-        "businessScriptUnchanged": null
+        "sha256": "714136a067884b132fa265de519fede70b73c2a314c2484fb5138ae473f6f546",
+        "businessScriptUnchanged": null,
+        "previousSha256": "12a51ed79dcf09ed99ec3e439b6b82798153ba1a3ab18cb279bd8ad35699e14b",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -1085,8 +1167,10 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "3630b247630873499b39796274b51740fb4c734b890e131fd8c9eb46aaea9be3",
-        "businessScriptUnchanged": null
+        "sha256": "7a1769d91edcd073f6af122668a5188029afa70748f93472e28bc2b0e52f17b5",
+        "businessScriptUnchanged": null,
+        "previousSha256": "3630b247630873499b39796274b51740fb4c734b890e131fd8c9eb46aaea9be3",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -1112,7 +1196,8 @@
         ],
         "compilation": "passed",
         "sha256": "660bc3b9ca3fdc3fbc665a812af70f94e514d5786ed4b90de62b8d11fcc78739",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -1140,7 +1225,8 @@
         ],
         "compilation": "passed",
         "sha256": "c24bb20c64209fc24af6af9d0fc87447d67a549f34e4fa087a5707a437e6fb61",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -1170,7 +1256,8 @@
         ],
         "compilation": "passed",
         "sha256": "19e14088449454b28049ccdc22aa949c4e160375b536e7cd461d339a190b0c05",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -1200,94 +1287,8 @@
         ],
         "compilation": "passed",
         "sha256": "432c0e4f53225a8753e66770b21c85a33ad6d162dae15d6536be61bc18b01b18",
-        "businessScriptUnchanged": null
-      },
-      "browser": {
-        "status": "not_recorded",
-        "viewports": [],
-        "scenarios": [],
-        "notes": "Source compilation does not establish that this page mounted or was visually inspected. Root records actual browser checks separately."
-      }
-    },
-    {
-      "path": "resources/js/Pages/Admin/BranchTransfers/Create.vue",
-      "kind": "page",
-      "owner": "management",
-      "source": {
-        "reviewed": true,
-        "reviewEvidence": [
-          {
-            "owner": "management",
-            "report": "tmp/redesign-management-report.json",
-            "review": null,
-            "changes": [
-              "14 scoped style declarations renewed",
-              "Dedicated form layout: readable tables, forms, filters, touch controls and responsive density"
-            ],
-            "mode": "form"
-          }
-        ],
-        "compilation": "passed",
-        "sha256": "8650eb692d5fe5ed37a187f59493a532458bcdf9a762efe050deacb8b9ee7044",
-        "businessScriptUnchanged": null
-      },
-      "browser": {
-        "status": "not_recorded",
-        "viewports": [],
-        "scenarios": [],
-        "notes": "Source compilation does not establish that this page mounted or was visually inspected. Root records actual browser checks separately."
-      }
-    },
-    {
-      "path": "resources/js/Pages/Admin/BranchTransfers/Index.vue",
-      "kind": "page",
-      "owner": "management",
-      "source": {
-        "reviewed": true,
-        "reviewEvidence": [
-          {
-            "owner": "management",
-            "report": "tmp/redesign-management-report.json",
-            "review": null,
-            "changes": [
-              "0 scoped style declarations renewed",
-              "Dedicated records layout: readable tables, forms, filters, touch controls and responsive density"
-            ],
-            "mode": "records"
-          }
-        ],
-        "compilation": "passed",
-        "sha256": "50d088efb4105998a1c7b35e5e7e71cfa0479a7cd7713451e6d72d8210df3ac1",
-        "businessScriptUnchanged": null
-      },
-      "browser": {
-        "status": "not_recorded",
-        "viewports": [],
-        "scenarios": [],
-        "notes": "Source compilation does not establish that this page mounted or was visually inspected. Root records actual browser checks separately."
-      }
-    },
-    {
-      "path": "resources/js/Pages/Admin/BranchTransfers/Show.vue",
-      "kind": "page",
-      "owner": "management",
-      "source": {
-        "reviewed": true,
-        "reviewEvidence": [
-          {
-            "owner": "management",
-            "report": "tmp/redesign-management-report.json",
-            "review": null,
-            "changes": [
-              "6 scoped style declarations renewed",
-              "Dedicated detail layout: readable tables, forms, filters, touch controls and responsive density"
-            ],
-            "mode": "detail"
-          }
-        ],
-        "compilation": "passed",
-        "sha256": "e4135175edff8b866157a909264c5692d2cb987ab5a710e1334fb078b6ec5f19",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -1317,7 +1318,8 @@
         ],
         "compilation": "passed",
         "sha256": "18f3720f06bb2e4d940657a7be394d8f35fbcea40ff84f3e798cb794fa117db3",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -1347,7 +1349,98 @@
         ],
         "compilation": "passed",
         "sha256": "d61d68eaa3823428672808afc9a88d89825124d68e49eec55ed3b5ff6e393cc6",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
+      },
+      "browser": {
+        "status": "not_recorded",
+        "viewports": [],
+        "scenarios": [],
+        "notes": "Source compilation does not establish that this page mounted or was visually inspected. Root records actual browser checks separately."
+      }
+    },
+    {
+      "path": "resources/js/Pages/Admin/BranchTransfers/Create.vue",
+      "kind": "page",
+      "owner": "management",
+      "source": {
+        "reviewed": true,
+        "reviewEvidence": [
+          {
+            "owner": "management",
+            "report": "tmp/redesign-management-report.json",
+            "review": null,
+            "changes": [
+              "14 scoped style declarations renewed",
+              "Dedicated form layout: readable tables, forms, filters, touch controls and responsive density"
+            ],
+            "mode": "form"
+          }
+        ],
+        "compilation": "passed",
+        "sha256": "8650eb692d5fe5ed37a187f59493a532458bcdf9a762efe050deacb8b9ee7044",
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
+      },
+      "browser": {
+        "status": "not_recorded",
+        "viewports": [],
+        "scenarios": [],
+        "notes": "Source compilation does not establish that this page mounted or was visually inspected. Root records actual browser checks separately."
+      }
+    },
+    {
+      "path": "resources/js/Pages/Admin/BranchTransfers/Index.vue",
+      "kind": "page",
+      "owner": "management",
+      "source": {
+        "reviewed": true,
+        "reviewEvidence": [
+          {
+            "owner": "management",
+            "report": "tmp/redesign-management-report.json",
+            "review": null,
+            "changes": [
+              "0 scoped style declarations renewed",
+              "Dedicated records layout: readable tables, forms, filters, touch controls and responsive density"
+            ],
+            "mode": "records"
+          }
+        ],
+        "compilation": "passed",
+        "sha256": "50d088efb4105998a1c7b35e5e7e71cfa0479a7cd7713451e6d72d8210df3ac1",
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
+      },
+      "browser": {
+        "status": "not_recorded",
+        "viewports": [],
+        "scenarios": [],
+        "notes": "Source compilation does not establish that this page mounted or was visually inspected. Root records actual browser checks separately."
+      }
+    },
+    {
+      "path": "resources/js/Pages/Admin/BranchTransfers/Show.vue",
+      "kind": "page",
+      "owner": "management",
+      "source": {
+        "reviewed": true,
+        "reviewEvidence": [
+          {
+            "owner": "management",
+            "report": "tmp/redesign-management-report.json",
+            "review": null,
+            "changes": [
+              "6 scoped style declarations renewed",
+              "Dedicated detail layout: readable tables, forms, filters, touch controls and responsive density"
+            ],
+            "mode": "detail"
+          }
+        ],
+        "compilation": "passed",
+        "sha256": "e4135175edff8b866157a909264c5692d2cb987ab5a710e1334fb078b6ec5f19",
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -1377,8 +1470,10 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "6366fb5e247164a3823b9c7bbdf77ef8971307857656f6ced438e9f367ac3ca2",
-        "businessScriptUnchanged": true
+        "sha256": "6c5d58c48c19307f6accad5b9dcc31a582ac7ffa3a6ec7df4f1daf0c1bbdcc42",
+        "businessScriptUnchanged": null,
+        "previousSha256": "6366fb5e247164a3823b9c7bbdf77ef8971307857656f6ced438e9f367ac3ca2",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "path": "resources/js/Pages/Admin/Cashier/Index.vue",
@@ -1411,7 +1506,8 @@
         ],
         "compilation": "passed",
         "sha256": "758213691cecadc63181c4d9e936ceab95a2506a4eec117a1cb4d01c8d0071a2",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -1437,7 +1533,8 @@
         ],
         "compilation": "passed",
         "sha256": "6b49c774570eb07ac069fb608ecdd114264b483a7884984e4a0c918efbd4356d",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -1463,7 +1560,8 @@
         ],
         "compilation": "passed",
         "sha256": "ccde2bf8c296d86f25bbbbe27a65a1153dfba4321d23717a090400191d713753",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -1489,7 +1587,8 @@
         ],
         "compilation": "passed",
         "sha256": "c31c15a8846fee5466a120b04b0209fad24967d59ac7feb9ece3a92dd635083e",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -1518,8 +1617,10 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "b325dc7fbb7a2828918096108edba194e8839ae9e43103a2cf32e0454308c624",
-        "businessScriptUnchanged": true
+        "sha256": "2978ca6704b007f04974ec51e659fef70373a397ccd4d16078b01e96bb3b5ebb",
+        "businessScriptUnchanged": null,
+        "previousSha256": "b325dc7fbb7a2828918096108edba194e8839ae9e43103a2cf32e0454308c624",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "path": "resources/js/Pages/Admin/Dashboard/Index.vue",
@@ -1552,7 +1653,8 @@
         ],
         "compilation": "passed",
         "sha256": "bd180f25cfb114d3061315fd93de713f7a6f24963f24f443849504d5d98fd9de",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -1578,7 +1680,8 @@
         ],
         "compilation": "passed",
         "sha256": "f3f8059593f5350efc1bbad5cfe15ccb3a773d198448194f6d6b553dadfe1783",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -1609,7 +1712,8 @@
         ],
         "compilation": "passed",
         "sha256": "b58542ab053abeeaae0036d9ba65c3c81a1a48b8904be3714f6fa3ecabedf61d",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -1637,7 +1741,8 @@
         ],
         "compilation": "passed",
         "sha256": "aef3fa09fa6359fb83a16a1dc68262e0596190e1d66180f590fc3d6476ca5a53",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -1666,7 +1771,8 @@
         ],
         "compilation": "passed",
         "sha256": "d621f501422916361f01308d3405e3a972d0f2fd450133c640672adc2bf1645f",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -1696,7 +1802,8 @@
         ],
         "compilation": "passed",
         "sha256": "c4c609ab2d7dcfa3a78ac455dc0694f042e6d397e26399ea75dc724547bcfdb8",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -1726,7 +1833,8 @@
         ],
         "compilation": "passed",
         "sha256": "f679c689d9907e78c8f8b9a175ce476e1d98f9626556da548ca03b08f6cb5fcf",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -1757,7 +1865,8 @@
         ],
         "compilation": "passed",
         "sha256": "09844b21cc438dddbf789feec0c625ad5636b456128a86ff5ede78f11172fc69",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "path": "resources/js/Pages/Admin/Inventory/Dashboard.vue",
@@ -1798,7 +1907,8 @@
         ],
         "compilation": "passed",
         "sha256": "e542f91eb33700356c78c4f08a1715779519fa6173950380327fd7771e1ff243",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -1830,9 +1940,11 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "35fa472b313e231d1bc0b0ea7efbc47d28dde685c0e5312e8ab9f1ce85b36f1c",
-        "businessScriptUnchanged": true,
-        "contrastFollowup": "Explicit dark-on-light waiting/cooking/ready states and age markers; ready ribbon uses the light surface. Source compiled after follow-up; browser validation remains independently recorded."
+        "sha256": "981242bc3ce2e3a4316c519ba831ac6684cddc4a82b8a7ae2f6c053f460e8fb8",
+        "businessScriptUnchanged": null,
+        "contrastFollowup": "Explicit dark-on-light waiting/cooking/ready states and age markers; ready ribbon uses the light surface. Source compiled after follow-up; browser validation remains independently recorded.",
+        "previousSha256": "35fa472b313e231d1bc0b0ea7efbc47d28dde685c0e5312e8ab9f1ce85b36f1c",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "path": "resources/js/Pages/Admin/Kitchen/Board.vue",
@@ -1873,7 +1985,8 @@
         ],
         "compilation": "passed",
         "sha256": "feabb84a1b9d58e140abcffdd4f8bdc9c99abe58f44aefce30804a4ff1818e2b",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -1902,7 +2015,8 @@
         ],
         "compilation": "passed",
         "sha256": "d3039aeb44890ae802044148e8e715d04e1a32a7af5ed4a99c655ad222eacd8d",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -1931,7 +2045,8 @@
         ],
         "compilation": "passed",
         "sha256": "f4cd044bc333d523f743eb700978f3cb2640e04c40eaac8c8cf650f20fe6454e",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -1960,7 +2075,8 @@
         ],
         "compilation": "passed",
         "sha256": "9e8717943889cefd1a1ae2feffcfa187ae45e053896a2ff24e836fee9d9f8007",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -1989,7 +2105,8 @@
         ],
         "compilation": "passed",
         "sha256": "c15035c9379688fbde4c91af72b7f88934f66217335a0ac09e30c450687a1117",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2018,7 +2135,8 @@
         ],
         "compilation": "passed",
         "sha256": "f46e0b6acde61d22f9982955f87985155a35ad1f8a107b50d6d145f82f681579",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2057,7 +2175,8 @@
         ],
         "compilation": "passed",
         "sha256": "28fed18f41131e823b8bd2a5f96999d98112f422e4a1980da80dc94f9deea76d",
-        "businessScriptUnchanged": false
+        "businessScriptUnchanged": false,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2088,7 +2207,8 @@
         ],
         "compilation": "passed",
         "sha256": "c7c7724d01a55f1839b979c6b0448d6e2dda8c2bcae6249a25d7184df053f64e",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2116,7 +2236,8 @@
         ],
         "compilation": "passed",
         "sha256": "34e7337dab9742cb7dd3b32535d4292143594fabd3b2e34c23fb14a1a8089bb4",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2145,7 +2266,8 @@
         ],
         "compilation": "passed",
         "sha256": "d80731d207031ed2d0b53d1378fb2882dff2d407b2837ccbe28f5b9d5a89eb31",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2177,7 +2299,8 @@
         ],
         "compilation": "passed",
         "sha256": "7a6f5d12305ab003f3aa2afb1fe170ee6de45195b6df54977c8649ad40005c84",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2209,7 +2332,8 @@
         ],
         "compilation": "passed",
         "sha256": "2a5ab1980e35e71bd6a5748f3cd7ac0c2da665e218d078e73201976f31e8a058",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2241,7 +2365,8 @@
         ],
         "compilation": "passed",
         "sha256": "eadaf7f9caeb75dab5e9d750a826142ee0901c16f20acbc446197b77a23c3f7e",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2270,7 +2395,8 @@
         ],
         "compilation": "passed",
         "sha256": "f40539775f81fe1cac486b0ad3f7e989b938311338ca97c0f3a39e9bd1dae359",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2296,7 +2422,8 @@
         ],
         "compilation": "passed",
         "sha256": "0938fcdf52fea42c8c05627f031dd302383931ff390dc8ab9ef1628aff02b640",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2327,7 +2454,8 @@
         ],
         "compilation": "passed",
         "sha256": "cb390fde8f51dffafffc28e119959d6f7c5f4a62ef37f72d2bbab32e10f024b2",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2357,7 +2485,8 @@
         ],
         "compilation": "passed",
         "sha256": "9524647bf9888cd5beec51999f91072db1484eaab1c85be760b3fc0d0b6d334a",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2387,7 +2516,8 @@
         ],
         "compilation": "passed",
         "sha256": "52cdfec78ff2921e9044192dd84d9ed8a430f826aae13d1cc5555b8f46d486ff",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "path": "resources/js/Pages/Admin/PurchaseOrders/Form.vue",
@@ -2423,7 +2553,8 @@
         ],
         "compilation": "passed",
         "sha256": "7b867b4e077418baca4b8655329424f736ecebeea607bf79b6f57e6e5bdcf515",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2453,7 +2584,8 @@
         ],
         "compilation": "passed",
         "sha256": "82937620fdab615dc97d6af21cfc90ba3c25874fe59757439ca81616d5640b90",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2483,7 +2615,8 @@
         ],
         "compilation": "passed",
         "sha256": "7f78369473511ab957b9e99a33eb4d53e07bb7c35a49200a734f0f6e18eab5bc",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2509,7 +2642,8 @@
         ],
         "compilation": "passed",
         "sha256": "06ac2f992ee0e4540ecff51f7ee569e3ebc6e1910afb2b587c3bce8c7b584d51",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2535,7 +2669,8 @@
         ],
         "compilation": "passed",
         "sha256": "b4cc8b3cab15ef3b78ef5d9dc3831b789812b5a4ff7c265c9df8c0fea80b302b",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2561,7 +2696,8 @@
         ],
         "compilation": "passed",
         "sha256": "ce43a86f250d8bfd3ebaa6fbc60b86e3348f2ec176728965a091988da63655eb",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2587,7 +2723,8 @@
         ],
         "compilation": "passed",
         "sha256": "5cf272cea63c8aa6229b0c2d4f7c26df95cce53fc8fabcd59fb02666f878b574",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2613,7 +2750,8 @@
         ],
         "compilation": "passed",
         "sha256": "c496ecbecca30976af81ddbcdb06c2cca0de6e060f0ead66253c0a3c9d54a8fd",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "path": "resources/js/Pages/Admin/Reports/Index.vue",
@@ -2645,7 +2783,8 @@
         ],
         "compilation": "passed",
         "sha256": "90d56f67a13c9bc46733eabff8bada45b109b6ea978509f68445e9a365b9e469",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2671,7 +2810,8 @@
         ],
         "compilation": "passed",
         "sha256": "486221bfb6ef2166d726435afe22170d71c8420592ca965c033ed57ccce3c4c2",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2697,7 +2837,8 @@
         ],
         "compilation": "passed",
         "sha256": "5ed6f7827a3b68e537e26986455f7bb1c666c9df69659c96034edb3aff319a27",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2723,7 +2864,8 @@
         ],
         "compilation": "passed",
         "sha256": "a40e7a86cd05eeb683c5a4a8c29e792d75cd0c77e16db829ece2b0816e86ffd6",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2749,7 +2891,8 @@
         ],
         "compilation": "passed",
         "sha256": "5ba84ceb1c5bf9dfaa519bab9a4363437d3f71ab25f2ea62a56705e43194f69c",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2775,7 +2918,8 @@
         ],
         "compilation": "passed",
         "sha256": "59e721bdd81c79b3bda4a1c91b99bcae1039ca099113b45df90ac884d36002e6",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2805,7 +2949,8 @@
         ],
         "compilation": "passed",
         "sha256": "b23812a9fc189f1f7ede4427112b157382177d4e51a13875615399934191584b",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2837,7 +2982,8 @@
         ],
         "compilation": "passed",
         "sha256": "eb68c56af059668ff6ecdd6ab82b6104a1dae891a0077253e87abd7498eed906",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2869,7 +3015,8 @@
         ],
         "compilation": "passed",
         "sha256": "882057f86fd9cfb6f2fdd76c2444319d582ed13464878400f9904017610caad5",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2898,7 +3045,8 @@
         ],
         "compilation": "passed",
         "sha256": "e222e8b1e5739ba98c9df242a603b2f2a96db8d669f77abbe0d111e088852654",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2928,7 +3076,8 @@
         ],
         "compilation": "passed",
         "sha256": "9322b9ae07c46fddaec9a06cec2981d8d229df02c06e85ea7e13c5a054616cc0",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -2957,8 +3106,10 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "3eb864be803c96e495d45d1cbca11f17ff2880e81a22b41983634e212aa2658d",
-        "businessScriptUnchanged": null
+        "sha256": "061cc4ce9cf2af457523bfe2f40107a213b804bf86f84d7537aefd15ad0498fb",
+        "businessScriptUnchanged": null,
+        "previousSha256": "3eb864be803c96e495d45d1cbca11f17ff2880e81a22b41983634e212aa2658d",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "path": "resources/js/Pages/Admin/Settings/Index.vue",
@@ -2971,35 +3122,6 @@
         ],
         "screenshots": [],
         "notes": "Actual representative browser review; does not cover every data/permission state."
-      }
-    },
-    {
-      "path": "resources/js/Pages/Admin/StaffMeals/ClosureShow.vue",
-      "kind": "page",
-      "owner": "management",
-      "source": {
-        "reviewed": true,
-        "reviewEvidence": [
-          {
-            "owner": "management",
-            "report": "tmp/redesign-management-report.json",
-            "review": null,
-            "changes": [
-              "45 scoped style declarations renewed",
-              "Dedicated detail layout: readable tables, forms, filters, touch controls and responsive density"
-            ],
-            "mode": "detail"
-          }
-        ],
-        "compilation": "passed",
-        "sha256": "a8f8ef73ed38dd07cf3c0617bf7a74b78e10382c7dde5f4e2277f4f87aecfaa6",
-        "businessScriptUnchanged": null
-      },
-      "browser": {
-        "status": "not_recorded",
-        "viewports": [],
-        "scenarios": [],
-        "notes": "Source compilation does not establish that this page mounted or was visually inspected. Root records actual browser checks separately."
       }
     },
     {
@@ -3022,7 +3144,38 @@
         ],
         "compilation": "passed",
         "sha256": "ff6add870e0207b6a8802551f87019b3b5e0d4c9da044ddc3c52ac29bd38d1b5",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
+      },
+      "browser": {
+        "status": "not_recorded",
+        "viewports": [],
+        "scenarios": [],
+        "notes": "Source compilation does not establish that this page mounted or was visually inspected. Root records actual browser checks separately."
+      }
+    },
+    {
+      "path": "resources/js/Pages/Admin/StaffMeals/ClosureShow.vue",
+      "kind": "page",
+      "owner": "management",
+      "source": {
+        "reviewed": true,
+        "reviewEvidence": [
+          {
+            "owner": "management",
+            "report": "tmp/redesign-management-report.json",
+            "review": null,
+            "changes": [
+              "45 scoped style declarations renewed",
+              "Dedicated detail layout: readable tables, forms, filters, touch controls and responsive density"
+            ],
+            "mode": "detail"
+          }
+        ],
+        "compilation": "passed",
+        "sha256": "a8f8ef73ed38dd07cf3c0617bf7a74b78e10382c7dde5f4e2277f4f87aecfaa6",
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3052,7 +3205,8 @@
         ],
         "compilation": "passed",
         "sha256": "0ae1c144365ef5c58a69a5e59b9ef2e338ac4912afae49563977af2a11999d0d",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3082,7 +3236,8 @@
         ],
         "compilation": "passed",
         "sha256": "5ca32a412e65ea283d641752654e207a9bb75ab23c261f624b700b06ec0079b9",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3112,7 +3267,8 @@
         ],
         "compilation": "passed",
         "sha256": "b21ac64ee2a0817b2f715cd43c5b9003fcb7184862ad3c010d22839050734d54",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3142,7 +3298,8 @@
         ],
         "compilation": "passed",
         "sha256": "e94efde5a6d37eaf4417504b617cbb38314df280af63f460415fba415a1d66a6",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3172,7 +3329,8 @@
         ],
         "compilation": "passed",
         "sha256": "e3f956c4cf290a7420573350fb495ce023cb2cb029f60d982c8989216051e497",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3202,7 +3360,8 @@
         ],
         "compilation": "passed",
         "sha256": "ca349523d058551787dd8d6b603d868ab204e4e7df38572db7670e232e6fa013",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3231,7 +3390,8 @@
         ],
         "compilation": "passed",
         "sha256": "2c0f5a2c8f7f200852a07ccc8256644f2ec59c16ff706e83cf2f01e209a44460",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3261,7 +3421,8 @@
         ],
         "compilation": "passed",
         "sha256": "e2e18d931b787bb8e72cccb98c13df07480fb1a2e0df41601b547b1668825870",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3290,7 +3451,8 @@
         ],
         "compilation": "passed",
         "sha256": "bc3036931b0081bb190abf9577278870d07ec6fd9fcb90da6f7b488437b2aedf",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3319,7 +3481,8 @@
         ],
         "compilation": "passed",
         "sha256": "73ea1f122a3456b479dcf53f03cb970dd900af767d700c1e52db35c9c40bc9a1",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3348,8 +3511,10 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "da7c5f92dd02893a3f8eedaa948ddfe8b9376139bf9e933181916b909435c060",
-        "businessScriptUnchanged": null
+        "sha256": "0fa15e988a890c65dd18f61b9bc1e9da7386b6a997ff920bbbcbeb7bbd5b070b",
+        "businessScriptUnchanged": null,
+        "previousSha256": "da7c5f92dd02893a3f8eedaa948ddfe8b9376139bf9e933181916b909435c060",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3379,7 +3544,8 @@
         ],
         "compilation": "passed",
         "sha256": "6cadb1c659487e19b507aaedf1eef393faadcba8e9da6c13e0f87d27e66811ac",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3409,7 +3575,8 @@
         ],
         "compilation": "passed",
         "sha256": "d79db5a999e0a0a1d8b4d156f15e38e971cb84b0763ba05d926c0937419a7c23",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3439,7 +3606,8 @@
         ],
         "compilation": "passed",
         "sha256": "9470b4426ae72f2e13ab61fe01dcc959aa28cea0897b64fbed5938aad3e86115",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3469,7 +3637,8 @@
         ],
         "compilation": "passed",
         "sha256": "9ed40a323fe5e6575638dd42fef2c4bb39c0b11ecceeb616ae7d8b1fc96b17b4",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3499,7 +3668,8 @@
         ],
         "compilation": "passed",
         "sha256": "a412e34b40f394936588a740a3bbcbe0f2a8eb90571c9bd9d8b89658e96c49fb",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3529,7 +3699,8 @@
         ],
         "compilation": "passed",
         "sha256": "fad61a6623c761cd74d7df62b5ad748424d8940eabb7d3e23f7db6cecf938859",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3559,7 +3730,8 @@
         ],
         "compilation": "passed",
         "sha256": "d72b176df1d57fe0f0b0a1d00bd16f688fec96f0263a72fc24147a8e35cc13c9",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3586,8 +3758,10 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "311b6eaf7d943c64290b5b3f16ee2011eea32318d35694565d842deb1c36bf00",
-        "businessScriptUnchanged": true
+        "sha256": "648426c9c1cda14b0d97797c5a90baf8bf568e58bc51fbcfe52c306ede270d0b",
+        "businessScriptUnchanged": null,
+        "previousSha256": "311b6eaf7d943c64290b5b3f16ee2011eea32318d35694565d842deb1c36bf00",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "path": "resources/js/Pages/Admin/Tables/Board.vue",
@@ -3626,7 +3800,8 @@
         ],
         "compilation": "passed",
         "sha256": "947a6da65ce25b53fce041345def6fdd62b9b3ce8eaf73f48d9fda4ee1fe2712",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3652,7 +3827,8 @@
         ],
         "compilation": "passed",
         "sha256": "ab147733bff3915fe64d9568c590b2ae9a763d2cd9da38c1eb088023d12b2a9f",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3678,7 +3854,8 @@
         ],
         "compilation": "passed",
         "sha256": "3c677bceab1f3bdce8988e4c6d98556b106d6a85e1bd6ea5e3d26a068dee0e5a",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3707,7 +3884,8 @@
         ],
         "compilation": "passed",
         "sha256": "637efacbfa0a99d3d223d3f85611732971d8b837e5ac1a682d76889dec238eb9",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3736,7 +3914,8 @@
         ],
         "compilation": "passed",
         "sha256": "7d9254c5caa0da57fd701b33d12aa64123fa5cedf8d910a764c427a012c3ff3b",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3766,7 +3945,8 @@
         ],
         "compilation": "passed",
         "sha256": "f031428f0f6efbfd01a3f1b00de2fe0c090457667c56e077638407eb6d4c224d",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3796,7 +3976,8 @@
         ],
         "compilation": "passed",
         "sha256": "77e342538bfdb9cfd70033f9fcd91f7d4c5dbc4e6f925241bc360bde16229768",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3825,7 +4006,8 @@
         ],
         "compilation": "passed",
         "sha256": "043e41f8d14e431cb35a0457fbdcdab7e80ff849f7dbf2890e0b0fb121a8a549",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3854,7 +4036,8 @@
         ],
         "compilation": "passed",
         "sha256": "499279b9bb1935411cc0150c557b0723a313ca8c8e04d391073da63349a34c7c",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3883,7 +4066,8 @@
         ],
         "compilation": "passed",
         "sha256": "94cb3b8af6821caa8dbadef61faf35367e44735250d4b95bdf179821a153c850",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3912,7 +4096,8 @@
         ],
         "compilation": "passed",
         "sha256": "35e99970a7db20d3aa0f897c6c2de5c8d7dfa4d1a6f835819e3d0727a43bd3d9",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3941,7 +4126,8 @@
         ],
         "compilation": "passed",
         "sha256": "748e207732b1e975f15d03ca9463e8860e6a093af4164c7a1b1d33af117c1d62",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -3971,7 +4157,8 @@
         ],
         "compilation": "passed",
         "sha256": "cf902c38ffd8905a502e9eb132cb81478228bf6f573b247e2adb65a47ef40b4c",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4001,7 +4188,8 @@
         ],
         "compilation": "passed",
         "sha256": "f20c98d4a8787e382882518249cf7250e43f2b92dc73bbf80818c95f48b2453d",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4030,7 +4218,8 @@
         ],
         "compilation": "passed",
         "sha256": "50cf6bda475b43cac791d9a0a9b10e777d686f1393abd078285ab8b6a0d00729",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4059,8 +4248,10 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "8f9cc98df5b9d8202774a451bdb4451b5d2ccf11bf2b2236310a511da9a83b37",
-        "businessScriptUnchanged": true
+        "sha256": "6253c40c05295e28de57fdc5b83972a6453a543eb176d77ad684e5f28361e288",
+        "businessScriptUnchanged": null,
+        "previousSha256": "c08e4555323ef61ca26190edb1fd404443c0c453149dcd21438926037f747402",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "path": "resources/js/Pages/Customer/Menu.vue",
@@ -4105,8 +4296,10 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "0622e99aa4b3bb944d71ddb7d6892a7acf24def060e84100ab6a5d271f865a3e",
-        "businessScriptUnchanged": true
+        "sha256": "d88d22182b566f428e084052f5412561fe50420e913611c70ff37dcf6bdffc92",
+        "businessScriptUnchanged": null,
+        "previousSha256": "0622e99aa4b3bb944d71ddb7d6892a7acf24def060e84100ab6a5d271f865a3e",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4132,7 +4325,8 @@
         ],
         "compilation": "passed",
         "sha256": "3bca6562f85e039aeb114e9feadb6a2ea07f35891cffd49f79836fc6a2ce86db",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4162,7 +4356,8 @@
         ],
         "compilation": "passed",
         "sha256": "1950611f4e3d52ca5ab73a26a36b967b692893cf74da203d449bd7cc21231060",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4192,7 +4387,8 @@
         ],
         "compilation": "passed",
         "sha256": "dd3fbef6be1ef03efd94ecf60ed20923f932bd9ab6876ba5165a32808e63866b",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4221,8 +4417,10 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "156ae30875c4173fd3a19e592c53a1c5803402078bc09e8b1d069e14206d15b2",
-        "businessScriptUnchanged": true
+        "sha256": "49fd24c303fa618f64d2706cc0eb71138c0bec71967920bb2ef3ff46bbbc642c",
+        "businessScriptUnchanged": null,
+        "previousSha256": "156ae30875c4173fd3a19e592c53a1c5803402078bc09e8b1d069e14206d15b2",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "path": "resources/js/Pages/WaiterPos/Show.vue",
@@ -4246,32 +4444,6 @@
   ],
   "components": [
     {
-      "path": "resources/js/Components/Accounting/AccountTreeNode.vue",
-      "kind": "component",
-      "owner": "accounting",
-      "source": {
-        "reviewed": true,
-        "reviewEvidence": [
-          {
-            "owner": "accounting",
-            "report": "tmp/redesign-accounting-report.json",
-            "review": null,
-            "changes": [],
-            "mode": null
-          }
-        ],
-        "compilation": "passed",
-        "sha256": "599058d0cd4451453fae94d8229a5fdad0233c9d37cbc6ed3146b5d23a819008",
-        "businessScriptUnchanged": null
-      },
-      "browser": {
-        "status": "not_recorded",
-        "viewports": [],
-        "scenarios": [],
-        "notes": "Source compilation does not establish that this page mounted or was visually inspected. Root records actual browser checks separately."
-      }
-    },
-    {
       "path": "resources/js/Components/Accounting/AccountingNav.vue",
       "kind": "component",
       "owner": "accounting",
@@ -4287,8 +4459,10 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "fcbd3937d9e8e83b1939dfb4a3a583e482ab5f7880e42eabb076062143169f25",
-        "businessScriptUnchanged": null
+        "sha256": "49fd0ab59b0716b7437bf7c9e142f1f1b31c4949721f4bff11793420724adbea",
+        "businessScriptUnchanged": null,
+        "previousSha256": "fcbd3937d9e8e83b1939dfb4a3a583e482ab5f7880e42eabb076062143169f25",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4314,7 +4488,35 @@
         ],
         "compilation": "passed",
         "sha256": "f7a64bce4ce1eae99c542f6b59fd181117bf650e023a3de267f32aa12d69f847",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
+      },
+      "browser": {
+        "status": "not_recorded",
+        "viewports": [],
+        "scenarios": [],
+        "notes": "Source compilation does not establish that this page mounted or was visually inspected. Root records actual browser checks separately."
+      }
+    },
+    {
+      "path": "resources/js/Components/Accounting/AccountTreeNode.vue",
+      "kind": "component",
+      "owner": "accounting",
+      "source": {
+        "reviewed": true,
+        "reviewEvidence": [
+          {
+            "owner": "accounting",
+            "report": "tmp/redesign-accounting-report.json",
+            "review": null,
+            "changes": [],
+            "mode": null
+          }
+        ],
+        "compilation": "passed",
+        "sha256": "599058d0cd4451453fae94d8229a5fdad0233c9d37cbc6ed3146b5d23a819008",
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4340,7 +4542,8 @@
         ],
         "compilation": "passed",
         "sha256": "f006905bfa656251bc1ce8dd03ec270b8baeed02b4cfdc9427a7ff066ddf9397",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4366,7 +4569,8 @@
         ],
         "compilation": "passed",
         "sha256": "a2f6b58fad86cb124b1c9a5ffbc08fbfeed5a1942b38496a152f26a1d885dbb9",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4392,7 +4596,8 @@
         ],
         "compilation": "passed",
         "sha256": "718406db333619aac530e5e3949d3f910025513696277c55a0e84b837001c8e3",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4418,7 +4623,8 @@
         ],
         "compilation": "passed",
         "sha256": "f58a930afbfe20b780141451f942de9d256bb1a5cbc0f45ddfd6184c0ac4ad7e",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4444,7 +4650,8 @@
         ],
         "compilation": "passed",
         "sha256": "1a5b93fd20332cd8b08e76f693b1c27a2a7279b72b4c2210c07d9feac73e381b",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4469,8 +4676,10 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "7613a7cefc59be81c03b1e402adcfac11336bff4d4a0f3e1b3aaa1a324676674",
-        "businessScriptUnchanged": null
+        "sha256": "82586c53878452018afc55b500ce9501198009d6ff21cb3eddc5bdc6bb4a1718",
+        "businessScriptUnchanged": null,
+        "previousSha256": "7613a7cefc59be81c03b1e402adcfac11336bff4d4a0f3e1b3aaa1a324676674",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4496,7 +4705,8 @@
         ],
         "compilation": "passed",
         "sha256": "bbd19c0509490f4069cda9a59864f69332175c39ca16f4253d1bd8b07f693f0e",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4521,8 +4731,10 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "fbb91ec11eb8267becddff77bed3463dd80b2bdf03017963330a648d720e9a6f",
-        "businessScriptUnchanged": null
+        "sha256": "7ba9d7815035620e36d510bc43e237ede3a05e63d1ff304394ef44d51b9b939a",
+        "businessScriptUnchanged": null,
+        "previousSha256": "fbb91ec11eb8267becddff77bed3463dd80b2bdf03017963330a648d720e9a6f",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4548,7 +4760,8 @@
         ],
         "compilation": "passed",
         "sha256": "ba1b9980d2996807dbc1686d6058248c5654b1bfd1769aacb9f4d9e1ba596fd8",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4573,8 +4786,10 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "5b62a3da340124093a62bd33f72f4491a79f0bfb76b3a82e72e3bc3e62528b81",
-        "businessScriptUnchanged": null
+        "sha256": "8f082a2c72089db0e69ab0a620921f2fdbe93a9a80c8f1c20589b312546b880c",
+        "businessScriptUnchanged": null,
+        "previousSha256": "5b62a3da340124093a62bd33f72f4491a79f0bfb76b3a82e72e3bc3e62528b81",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4603,7 +4818,8 @@
         ],
         "compilation": "passed",
         "sha256": "46ae94896e7ce418fe2be4c7abb3b54116caafb29895a3a38ccdfe031f3b185b",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4632,7 +4848,8 @@
         ],
         "compilation": "passed",
         "sha256": "8cd2a113e7febd3e1fa8c897ee1b03d4e11296f7608abe4c4b08ea61f7d8295c",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4661,13 +4878,40 @@
         ],
         "compilation": "passed",
         "sha256": "9b989829d2452ccec9b14705f4c3cc936f66aff42423ceef1c7158fba03fbe8b",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
         "viewports": [],
         "scenarios": [],
         "notes": "Source compilation does not establish that this page mounted or was visually inspected. Root records actual browser checks separately."
+      }
+    },
+    {
+      "path": "resources/js/Components/Cashier/CashShiftPanel.vue",
+      "kind": "component",
+      "owner": "operations",
+      "source": {
+        "reviewed": true,
+        "reviewEvidence": [
+          {
+            "owner": "operations",
+            "date": "2026-10-21",
+            "report": "Coordinated operational UX review",
+            "review": "Employee cash opening/count/closure, documented manual custody movements and durable retry."
+          }
+        ],
+        "compilation": "passed",
+        "sha256": "ad7c743dff7332523191de73a076e0a3e9fe92443205b0fc1791c6c6398cbc53",
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
+      },
+      "browser": {
+        "status": "not_recorded_individually",
+        "viewports": [],
+        "scenarios": [],
+        "notes": "Current root-reported operational scenarios are recorded separately; compilation is not browser proof."
       }
     },
     {
@@ -4691,7 +4935,8 @@
         ],
         "compilation": "passed",
         "sha256": "0b44b310f8e8157c7209548406ad37c11e84e9cae9807a9e1400e402bc842a92",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4720,7 +4965,8 @@
         ],
         "compilation": "passed",
         "sha256": "d4ad27dc07ac815422f92819a94776fd923995745dcc3166103f82afa6756f95",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4749,7 +4995,8 @@
         ],
         "compilation": "passed",
         "sha256": "725c7da7fc508c8eae28bdc90dc59b211060884bd864f71d1f5f5826998455be",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4778,7 +5025,8 @@
         ],
         "compilation": "passed",
         "sha256": "88ab8171566c2bf337368f6ae4333ede70bbad24b7d90e51fb8462fadc177173",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4807,7 +5055,8 @@
         ],
         "compilation": "passed",
         "sha256": "a4df5793f4132c23fcd574edd8c8ca5135eb2e014f8c13315d9372fca11a8d82",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4836,7 +5085,8 @@
         ],
         "compilation": "passed",
         "sha256": "745216549bce2dc5e248c641fc722d0dc72bb0bb4d1d1c960d7da2340404926f",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4865,7 +5115,8 @@
         ],
         "compilation": "passed",
         "sha256": "9b19b833435efa5c763ebc3bfee422faf4ebb11900db9f97e31543be5a32f1a0",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4894,7 +5145,8 @@
         ],
         "compilation": "passed",
         "sha256": "f06ea59355029e8d9377b48d31907d85a869569215d5d19ddf50dd38ce66f801",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4923,7 +5175,8 @@
         ],
         "compilation": "passed",
         "sha256": "c5bb090f91d70e25709a6e59008f1d972dc15a9ff72148eb52c2a354c0821d07",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4952,7 +5205,8 @@
         ],
         "compilation": "passed",
         "sha256": "7c61c048623e2597380d71ec8d02787561beee515d8d51d39ad17e8858e3fe23",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -4981,7 +5235,8 @@
         ],
         "compilation": "passed",
         "sha256": "df669f99df82afb216a2597e520d4268363498bc80586b5931638d64e6ed8d5e",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5010,7 +5265,8 @@
         ],
         "compilation": "passed",
         "sha256": "23a902305e98adbf1f9f7c0f258533ebe7e47e9609373672f5753c7e974f9827",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5039,7 +5295,8 @@
         ],
         "compilation": "passed",
         "sha256": "169a3b62c1bc3ecfea8ffc867223cc2f9d71970735595dbeabcd9c99fdd56a70",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5068,7 +5325,8 @@
         ],
         "compilation": "passed",
         "sha256": "2c96d45f04cbf29f7bddfd91cf2ef21276f4abc13240ba7d9fa44f87a3e28135",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5097,7 +5355,8 @@
         ],
         "compilation": "passed",
         "sha256": "5a35d6e7ee776a0a1315ade2df97c7cc0d7fd544101640e003c7f4e141e27258",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5123,7 +5382,8 @@
         ],
         "compilation": "passed",
         "sha256": "b90cfc5c29776b72181086b6308989290fdebe9b34a19592a38fc22fba35a189",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5149,7 +5409,8 @@
         ],
         "compilation": "passed",
         "sha256": "7aef4ba8c1b921a06d679379a298596679e6e34922a5c21b7dbfcda236ddf0b7",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5176,9 +5437,11 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "3f8f200b1b3cbef64f49c55ef77ebebd3d922d88732edb8844637253fdce5a28",
-        "businessScriptUnchanged": false,
-        "focusFollowup": "Focused accessibility follow-up: initial close-button focus, Tab/Shift+Tab containment (including disclosure summaries), Escape close without parent propagation, and trigger-focus restoration. Order, pricing, selection and submission logic unchanged."
+        "sha256": "225cdf1848034b5a7909584e667440e2dd8664fd127176148ae90b46a9d098fb",
+        "businessScriptUnchanged": null,
+        "focusFollowup": "Focused accessibility follow-up: initial close-button focus, Tab/Shift+Tab containment (including disclosure summaries), Escape close without parent propagation, and trigger-focus restoration. Order, pricing, selection and submission logic unchanged.",
+        "previousSha256": "6fac34b9dd6672cbac614fef2b8af4c2c92502f2a6bed61bfd066a6f85d675e4",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5207,7 +5470,8 @@
         ],
         "compilation": "passed",
         "sha256": "555bb5159d0ac4c8f7804a78ccf79de7d38ce9d818d9fa133b9273f5cfa538e0",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5237,7 +5501,8 @@
         "sha256": "b3632d3a4b27fb6eb66c0d22764db9c20672e2da70b2fe41efd2467ab49e214b",
         "businessScriptUnchanged": false,
         "optionalIngredientsFollowup": "Native collapsed details for optional ingredient exclusions, with selected count always in summary; customer recipe list collapsed separately. Allergen warnings and modifier choices remain outside disclosure. Template/CSS only.",
-        "focusFollowup": "Focused accessibility follow-up: initial close-button focus, Tab/Shift+Tab containment (including disclosure summaries), Escape close without parent propagation, and trigger-focus restoration. Order, pricing, selection and submission logic unchanged."
+        "focusFollowup": "Focused accessibility follow-up: initial close-button focus, Tab/Shift+Tab containment (including disclosure summaries), Escape close without parent propagation, and trigger-focus restoration. Order, pricing, selection and submission logic unchanged.",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5265,8 +5530,10 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "c8dcdf356416a3425e12b2a26ff1b327279add099a66f0c7adeaf57f6118575e",
-        "businessScriptUnchanged": true
+        "sha256": "fd885aafeed45df4e4f36bc7b60913ef35d8402d97108e3270b3ce6febfb4438",
+        "businessScriptUnchanged": null,
+        "previousSha256": "c8dcdf356416a3425e12b2a26ff1b327279add099a66f0c7adeaf57f6118575e",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5295,7 +5562,8 @@
         ],
         "compilation": "passed",
         "sha256": "0f93ebab38105ed342379e827909b674ab2434c93d47df98f58495f62ad8b274",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5324,7 +5592,8 @@
         ],
         "compilation": "passed",
         "sha256": "a528515618c87466e0242b1447780e43d27d7846cc11724448d5333ed39631f7",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5353,7 +5622,8 @@
         ],
         "compilation": "passed",
         "sha256": "9cf5ac6ac2d5ff8ed946b5e9800b801fcade47e39bf85dd3ba84c685e801806a",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5381,7 +5651,8 @@
         ],
         "compilation": "passed",
         "sha256": "ea5edffad5e7fd1eb8a595861774f3c2d98ca137a75d1bd13a64248ed60163b2",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5410,7 +5681,8 @@
         ],
         "compilation": "passed",
         "sha256": "5335e0581d7a3f5eadb348b80a9bad602f3d2fd421f502c343c19ecd3af4224a",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5445,7 +5717,8 @@
         ],
         "compilation": "passed",
         "sha256": "ef891264242cd875de0e965396ab73aef93074630ad67a229dc885b6ce9bcf46",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5473,9 +5746,11 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "1f5f7799f72eef809b5fc9fd18fc481130843e69a32037bff7178b36b119c20b",
-        "businessScriptUnchanged": true,
-        "contrastFollowup": "Explicit dark-on-light waiting/cooking/ready states and age markers; ready ribbon uses the light surface. Source compiled after follow-up; browser validation remains independently recorded."
+        "sha256": "6cfb80d360210063239941eea417ba1d08aa0ff554eee59079a90502390c327c",
+        "businessScriptUnchanged": null,
+        "contrastFollowup": "Explicit dark-on-light waiting/cooking/ready states and age markers; ready ribbon uses the light surface. Source compiled after follow-up; browser validation remains independently recorded.",
+        "previousSha256": "1f5f7799f72eef809b5fc9fd18fc481130843e69a32037bff7178b36b119c20b",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5504,7 +5779,8 @@
         ],
         "compilation": "passed",
         "sha256": "7f118b84bfc52305c86e7380889b8195af90092a0ae1cfd4190054b82a86d73d",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5533,7 +5809,8 @@
         ],
         "compilation": "passed",
         "sha256": "28a871cd0959e306c10f86164d382eba7c6f79c4a2f1d83d9783049d538d2491",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5562,7 +5839,8 @@
         ],
         "compilation": "passed",
         "sha256": "cd789d80e779f4eb5d8ed50914aee06d7a65de16f872321979b05a0a90636af8",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5591,7 +5869,8 @@
         ],
         "compilation": "passed",
         "sha256": "199a8f8cca4d1be45c51f9030d3f77f38d6afa0aa0a92ec263bf33dd1d06239f",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5620,7 +5899,8 @@
         ],
         "compilation": "passed",
         "sha256": "ae2c9ef40d8b42bf3fd39227d8b65b92f9120bfb6a8a2b10e6b65a255fa55ae8",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5649,7 +5929,8 @@
         ],
         "compilation": "passed",
         "sha256": "1ceaa2a7cc039645cd76578826af50ece88ce47b9b66f9f48c91f33907bca121",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5678,7 +5959,8 @@
         ],
         "compilation": "passed",
         "sha256": "cf4f547d4370d4134c5510017fe132d0e819dea6159a6662fe7f948b796cc46e",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5706,7 +5988,8 @@
         ],
         "compilation": "passed",
         "sha256": "3ae91977ce47bba5b34ea5df576c144b0b0a798ab530a53998610cbcadf1f10b",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5735,7 +6018,8 @@
         ],
         "compilation": "passed",
         "sha256": "131db0d0dc93cc6fd816555aea0beb73f3eb4877df84d02b9607a18031869c2f",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5764,7 +6048,8 @@
         ],
         "compilation": "passed",
         "sha256": "19bcceebd8b90060ec42fe2c7cd0416be5912c04ec43e7c4ac944c67658ce20b",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5793,7 +6078,8 @@
         ],
         "compilation": "passed",
         "sha256": "48df392caac03b6bda88acd1ce991ba661abad9bc54009909217c05fdc4ff345",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5821,7 +6107,8 @@
         ],
         "compilation": "passed",
         "sha256": "0dbee5f953589feac905f2f9b7934d233306c1128648ac81dd244d782f9915b6",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5849,7 +6136,8 @@
         ],
         "compilation": "passed",
         "sha256": "5fa32331c86e5b83d95b18c161c6bb896de4113607a1dbd239c9caefb8ba1485",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5878,7 +6166,8 @@
         ],
         "compilation": "passed",
         "sha256": "189e11e72299fa6d55b09a3ff5e9a921b196d84ac4f4d043758c191226b99cb6",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5908,7 +6197,8 @@
         ],
         "compilation": "passed",
         "sha256": "e0f94dc11943deb48498135ce682b6d6377844822a585a762d69f5bf65fd28fd",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5936,7 +6226,8 @@
         ],
         "compilation": "passed",
         "sha256": "96074540c151a564fe3c49f585283cd9250a2610e2600a8125b8c7a2e29cac7b",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5964,7 +6255,8 @@
         ],
         "compilation": "passed",
         "sha256": "b25582e8c593047ef215d5b364df8176d7469865fb66cb7190d93f18a597951b",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -5990,7 +6282,8 @@
         ],
         "compilation": "passed",
         "sha256": "1aee09dfa4ecb80d78131db17bfa1c61e948b47e5bccab900bcb365543253915",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6016,7 +6309,8 @@
         ],
         "compilation": "passed",
         "sha256": "2cf0a47b65f3ea4ccbeb4810d2b507c18fd61eb828442ad7c05c889b10b8ed52",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6042,7 +6336,8 @@
         ],
         "compilation": "passed",
         "sha256": "c78e80a29b45ff3dbc092a461eb39a978df48c261cd3dbde558f14bc1055ed26",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6068,7 +6363,8 @@
         ],
         "compilation": "passed",
         "sha256": "eb278e88cef4209e057e1737fd7b020561fd08bf44ce1cdc6f58a5dd3400d43f",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6094,7 +6390,8 @@
         ],
         "compilation": "passed",
         "sha256": "6c4c078298078d66e2c7295d1d6de4dfa59e58b53348921a1c5f93d71c0eea0e",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6120,7 +6417,8 @@
         ],
         "compilation": "passed",
         "sha256": "be05649040e861fa2f388b6aa7d8926312b7d60c1289e0e9f53589404c042d37",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6146,13 +6444,40 @@
         ],
         "compilation": "passed",
         "sha256": "abe2b80fca7a47beedd7d5a05c09e5c0d028dacaaddf81063c499a9ac6022c04",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
         "viewports": [],
         "scenarios": [],
         "notes": "Source compilation does not establish that this page mounted or was visually inspected. Root records actual browser checks separately."
+      }
+    },
+    {
+      "path": "resources/js/Components/Ui/ServerHealth.vue",
+      "kind": "component",
+      "owner": "root",
+      "source": {
+        "reviewed": true,
+        "reviewEvidence": [
+          {
+            "owner": "root",
+            "date": "2026-10-21",
+            "report": "Coordinated operational UX review",
+            "review": "Online status is distinct from server response freshness; last confirmed response is shown."
+          }
+        ],
+        "compilation": "passed",
+        "sha256": "226984088a68f94aad41b0f30d6fc2958074264c0f032cb5d8e52b501ba09f5f",
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
+      },
+      "browser": {
+        "status": "not_recorded_individually",
+        "viewports": [],
+        "scenarios": [],
+        "notes": "Current root-reported operational scenarios are recorded separately; compilation is not browser proof."
       }
     },
     {
@@ -6172,7 +6497,8 @@
         ],
         "compilation": "passed",
         "sha256": "3521ca3d45631d1eaa975c21d7684c982df72ba30652dc4d16d0e6be4326e959",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6198,7 +6524,8 @@
         ],
         "compilation": "passed",
         "sha256": "22814a881e22cf683a49e8aa2200ce6a62fc15df31f23a5bcc46e84095df0b58",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6228,7 +6555,8 @@
         ],
         "compilation": "passed",
         "sha256": "b951da436da7659f57795b13eb14e43aec438b5c9954e9465ae9930ed2667f30",
-        "businessScriptUnchanged": null
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6256,7 +6584,8 @@
         ],
         "compilation": "passed",
         "sha256": "7eee07a3964111c59aa6d113bcbee523bd5712667b7e21eb2354ee4b3ceecd14",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6285,7 +6614,8 @@
         ],
         "compilation": "passed",
         "sha256": "3050d78d571006e13ee1d6409d31977e4bd0bcb0c7ccedbdf604c00724eebe14",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6313,7 +6643,8 @@
         ],
         "compilation": "passed",
         "sha256": "558cf62f06229b96ef52cb76996d74ab505e3036e3fccb5d846c9b094e1e5197",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6342,7 +6673,8 @@
         ],
         "compilation": "passed",
         "sha256": "b1dd0e98d23f4810fcfe913fbe2586f288d4d2106a24b7143c057db4f8eddf10",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6371,7 +6703,8 @@
         ],
         "compilation": "passed",
         "sha256": "4b65153c1f9f809de3c33c776e19234d1ff4fa3cddc214e0cde469ca2e489f56",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6402,7 +6735,8 @@
         "sha256": "0383ee34e94e27f679e2fbf4310a580d5bf03773d27a855294ae6d111da6e3d9",
         "businessScriptUnchanged": false,
         "optionalIngredientsFollowup": "Native collapsed details for optional ingredient exclusions, with selected count always in summary; customer recipe list collapsed separately. Allergen warnings and modifier choices remain outside disclosure. Template/CSS only.",
-        "focusFollowup": "Focused accessibility follow-up: initial close-button focus, Tab/Shift+Tab containment (including disclosure summaries), Escape close without parent propagation, and trigger-focus restoration. Order, pricing, selection and submission logic unchanged."
+        "focusFollowup": "Focused accessibility follow-up: initial close-button focus, Tab/Shift+Tab containment (including disclosure summaries), Escape close without parent propagation, and trigger-focus restoration. Order, pricing, selection and submission logic unchanged.",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6430,7 +6764,8 @@
         ],
         "compilation": "passed",
         "sha256": "c57166afb3d410600f582786e784a029b7fb58014472894f38bb54ce74ca7783",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6460,7 +6795,8 @@
         ],
         "compilation": "passed",
         "sha256": "461e41f8c4bac30fadc09ecd37301e81bdd80ffabe18a8beed5b54d9073b897d",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6488,7 +6824,8 @@
         ],
         "compilation": "passed",
         "sha256": "42467c7ad0ad2166e25cc13e657ef8fea5ffe109ce2a7b9108389b9ea756e4ed",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6516,7 +6853,8 @@
         ],
         "compilation": "passed",
         "sha256": "fc7c02d4fe6a3883de1d5b6b61008f4806c64e7393d676e0f4a1e67e9a42c629",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6544,7 +6882,8 @@
         ],
         "compilation": "passed",
         "sha256": "dab572a37f65fcdcdf821508047c08507f302629c2c067df77355ba52fe95d7c",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6573,7 +6912,8 @@
         ],
         "compilation": "passed",
         "sha256": "ef3667f1ef5962a72037270b3f2a3cf0084df8bde875d22791d065dd6924b3b8",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6602,7 +6942,8 @@
         ],
         "compilation": "passed",
         "sha256": "94304aac85601406db894e8b1648fe8fffaef8ad5f221192185a99bff8df9b08",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6631,7 +6972,8 @@
         ],
         "compilation": "passed",
         "sha256": "ead4ec86397d4be7efe936ca3104b4a3dd7a61eab999b996750f0dcf705deed3",
-        "businessScriptUnchanged": true
+        "businessScriptUnchanged": true,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6658,8 +7000,10 @@
           }
         ],
         "compilation": "passed",
-        "sha256": "2f77e3ed95f29588b527a36ca94aaa31e0ebce9ad9d77eebcd475daaf2fe0926",
-        "businessScriptUnchanged": null
+        "sha256": "85f3b8f9c638192c7d53e39f170ecb0f0ddfeb9f2b2b68b1bb1464bc99b42fb3",
+        "businessScriptUnchanged": null,
+        "previousSha256": "2f77e3ed95f29588b527a36ca94aaa31e0ebce9ad9d77eebcd475daaf2fe0926",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6678,7 +7022,8 @@
         "changes": "Focused status page with branded header, clear recovery instruction and quiet footer",
         "compilation": "passed",
         "phpLint": "passed",
-        "sha256": "218e86925d9594584ebe7f3986acb7555c3e2e5e20de7daf8726494d8f06d6d4"
+        "sha256": "218e86925d9594584ebe7f3986acb7555c3e2e5e20de7daf8726494d8f06d6d4",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6693,7 +7038,8 @@
         "changes": "Short recovery copy uses one clear next step",
         "compilation": "passed",
         "phpLint": "passed",
-        "sha256": "cbe72eb4fb171c7c46452dfa1e213c647431286c0224173e9477c2e30d63c2a6"
+        "sha256": "cbe72eb4fb171c7c46452dfa1e213c647431286c0224173e9477c2e30d63c2a6",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6708,7 +7054,8 @@
         "changes": "Remove internal reservation explanation; retain staff recovery path",
         "compilation": "passed",
         "phpLint": "passed",
-        "sha256": "45f8e06eb7389e6cc03b9624f278d7a9bc37e56c03283aeab21277f47a564adb"
+        "sha256": "45f8e06eb7389e6cc03b9624f278d7a9bc37e56c03283aeab21277f47a564adb",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6723,7 +7070,8 @@
         "changes": "Error pages become a compact recovery card with readable instructions and explicit navigation",
         "compilation": "passed",
         "phpLint": "passed",
-        "sha256": "0c3e870785f087b6d158473e15e8c28e16a3e42a22f58edc2bcb01ef16725f3a"
+        "sha256": "0c3e870785f087b6d158473e15e8c28e16a3e42a22f58edc2bcb01ef16725f3a",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6738,7 +7086,8 @@
         "changes": "Use shared redesigned error layout and concise recovery copy",
         "compilation": "passed",
         "phpLint": "passed",
-        "sha256": "6261e2725ff005ee5e0f87db8c67bfb8d0108768cb733964c55aacc6c506de00"
+        "sha256": "6261e2725ff005ee5e0f87db8c67bfb8d0108768cb733964c55aacc6c506de00",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6753,7 +7102,8 @@
         "changes": "Use shared redesigned error layout and concise recovery copy",
         "compilation": "passed",
         "phpLint": "passed",
-        "sha256": "af470ff745a27c20ecec9b9716c95db4e3e634ae7fc64cda3b9657955f7e313b"
+        "sha256": "af470ff745a27c20ecec9b9716c95db4e3e634ae7fc64cda3b9657955f7e313b",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6768,7 +7118,8 @@
         "changes": "Use shared redesigned error layout and concise recovery copy",
         "compilation": "passed",
         "phpLint": "passed",
-        "sha256": "49497d3ea8072ece58533a2136be7502b354fc28366953997469c58686ca737a"
+        "sha256": "49497d3ea8072ece58533a2136be7502b354fc28366953997469c58686ca737a",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6783,7 +7134,8 @@
         "changes": "Use shared redesigned error layout and concise recovery copy",
         "compilation": "passed",
         "phpLint": "passed",
-        "sha256": "29348d2863b41b15a48c6302cf94ccb32a6f40244b12187dd08eb9af6978dd97"
+        "sha256": "29348d2863b41b15a48c6302cf94ccb32a6f40244b12187dd08eb9af6978dd97",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6798,7 +7150,8 @@
         "changes": "Use shared redesigned error layout and concise recovery copy",
         "compilation": "passed",
         "phpLint": "passed",
-        "sha256": "f28488fc22270828848116cf2f5ceabe69c7954a40ea271e2b96c512bc3dae0b"
+        "sha256": "f28488fc22270828848116cf2f5ceabe69c7954a40ea271e2b96c512bc3dae0b",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6813,7 +7166,8 @@
         "changes": "Use shared redesigned error layout and concise recovery copy",
         "compilation": "passed",
         "phpLint": "passed",
-        "sha256": "f91d00a5d432a83a2ae13b1b503faf3a2fbda223fff31b93fdee61d4c7c9e118"
+        "sha256": "f91d00a5d432a83a2ae13b1b503faf3a2fbda223fff31b93fdee61d4c7c9e118",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6828,7 +7182,8 @@
         "changes": "Print setup sidebar beside a simplified table card; preserve QR SVG, paper sizes and print behavior",
         "compilation": "passed",
         "phpLint": "passed",
-        "sha256": "7d54153b7c8d8ebc8c2c07c0b685676366617840af9d2702c7cf81a8bb2f8f48"
+        "sha256": "7d54153b7c8d8ebc8c2c07c0b685676366617840af9d2702c7cf81a8bb2f8f48",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6842,7 +7197,8 @@
         "reviewed": true,
         "compilation": "passed",
         "phpLint": "passed",
-        "sha256": "b39c12cacdec2c9c00a312581902a1433821747496e2b125cd4d06ae71974426"
+        "sha256": "b39c12cacdec2c9c00a312581902a1433821747496e2b125cd4d06ae71974426",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "renderEvidence": {
         "font": "Cairo Regular/Bold, OTL and RTL preserved",
@@ -6863,7 +7219,8 @@
         "reviewed": true,
         "compilation": "passed",
         "phpLint": "passed",
-        "sha256": "bc219553204bddba9965aef342d92ab2102fd552361f63525c659c1245db5445"
+        "sha256": "bc219553204bddba9965aef342d92ab2102fd552361f63525c659c1245db5445",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "renderEvidence": {
         "font": "Cairo Regular/Bold, OTL and RTL preserved",
@@ -6884,7 +7241,10 @@
         "reviewed": true,
         "compilation": "passed",
         "phpLint": "passed",
-        "sha256": "fec605a64058f0a43bc1a57031b7650427766f38f34482e806663a90f492b80d"
+        "sha256": "37c4af931f356ebb0846ce222e43b8e08c13f5fb06d3f87445901da63cc4e5ec",
+        "previousSha256": "fec605a64058f0a43bc1a57031b7650427766f38f34482e806663a90f492b80d",
+        "businessScriptUnchanged": null,
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "renderEvidence": {
         "font": "Cairo Regular/Bold, OTL and RTL preserved",
@@ -6905,7 +7265,8 @@
         "reviewed": true,
         "compilation": "passed",
         "phpLint": "passed",
-        "sha256": "dd743813a17c0cbe5a012cc879cd22ea75db05692b84d0dd0d0cbd0c5157d572"
+        "sha256": "dd743813a17c0cbe5a012cc879cd22ea75db05692b84d0dd0d0cbd0c5157d572",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded",
@@ -6920,7 +7281,8 @@
       "owner": "root",
       "source": {
         "reviewed": true,
-        "sha256": "86b7abb82b9c7eb358ae176d29cb6b18f4bd7df51dc5ba3612355f2b4d355634"
+        "sha256": "86b7abb82b9c7eb358ae176d29cb6b18f4bd7df51dc5ba3612355f2b4d355634",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded"
@@ -6932,7 +7294,8 @@
       "source": {
         "reviewed": true,
         "cssParse": "passed",
-        "sha256": "e5772e6d88a0a3daa083d854bfa5731d8a362809c6f8533bc64451148da29b33"
+        "sha256": "e5772e6d88a0a3daa083d854bfa5731d8a362809c6f8533bc64451148da29b33",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded"
@@ -6944,7 +7307,8 @@
       "source": {
         "reviewed": true,
         "cssParse": "passed",
-        "sha256": "46afa1a2180c07e7101bf2883f411c3e199e1fabb442f3918399746f30fe3e3b"
+        "sha256": "46afa1a2180c07e7101bf2883f411c3e199e1fabb442f3918399746f30fe3e3b",
+        "hashRefreshedAt": "2026-10-21T08:00:33.081Z"
       },
       "browser": {
         "status": "not_recorded"
@@ -7160,5 +7524,314 @@
     "Real busy-shift staff acceptance and production network/server performance measurements remain pending. No production speedup ratio is claimed.",
     "Original restaurant data and production deployment were not touched. A separate demo database received only authorized trial actions and the guarded additive recipe correction.",
     "Backend page/permission and focused workflow regressions passed; this pass is not an exhaustive financial mutation suite."
-  ]
+  ],
+  "operational20261021": {
+    "date": "2026-10-21",
+    "sourceCapturedAt": "2026-10-21T08:00:33.081Z",
+    "scope": "Operational UX follow-up; historical 2026-10-11 browser and backend records above are preserved as historical evidence, not rerun claims.",
+    "sourceValidation": {
+      "vuePages": 129,
+      "components": 87,
+      "layouts": 1,
+      "compiledSfc": 217,
+      "failures": [],
+      "sourceHashesRefreshed": 235,
+      "method": "Recursive filesystem inventory including ignored files; Vue script/template/style compilation; SHA-256 of current source."
+    },
+    "browser": {
+      "reporter": "Root agent actual in-app browser QA",
+      "viewports": [
+        973,
+        865
+      ],
+      "status": "representative_operational_scenarios_reported",
+      "scenarios": [
+        "Waiter submitted a mixed food/drink order totalling 41; kitchen and bar progressed their own items.",
+        "Frozen waiter handoff delivered only the ready drink while food remained preparing, then delivered the food after readiness.",
+        "Twelve kitchen tickets remained in three work lanes at 973px width.",
+        "Cashier opened with 100 cash; logout was blocked while custody remained open.",
+        "Cashier issued/collected 41 with 50 tendered and 9 change.",
+        "An intentionally corrupted server success response after commit followed by reload recovered exactly one payment of 41 and one durable receipt.",
+        "A referenced manual cash-out of 10 followed by counted closure of 131 produced zero variance and allowed logout.",
+        "Accountant login opened accounting and custody movement drilldown showed the employee movements and corrected times.",
+        "On the observed DymVNAoN build, accountant reconciliation initially required explicit source-account selection; selecting the cash account showed the expected 41 balance.",
+        "On the observed DymVNAoN build at the normal 865x486 CSS viewport, month readiness showed 11 open orders and 11 open sessions with permission-safe drilldown references; the custody movement ledger showed 41 received and 10 paid out with employee and branch context."
+      ],
+      "limitations": [
+        "This operational round reports actual 973px and 865px CSS viewports; it does not add new phone/800px or physical-device coverage.",
+        "Most operational scenarios were observed before the final small refinements; explicit reconciliation source-account selection was rechecked on DymVNAoN. The subsequent final build includes a cart subtotal wording clarification; successful compilation is not a claim that every browser scenario was repeated.",
+        "Earlier full-page screenshots were clipped and are excluded from visual proof. The final normal-viewport accountant screenshot is recorded separately; the kitchen 973px dimensions and lane behavior were observed directly.",
+        "Dirty-form browser navigation confirmation was inconclusive because native dialogs and browser-tool timeouts interfered; only helper/source regression evidence is claimed for that guard."
+      ],
+      "finalBuildChecks": {
+        "entry": "assets/app-inertia-DymVNAoN.js",
+        "viewport": {
+          "width": 865,
+          "height": 486,
+          "unit": "CSS pixels"
+        },
+        "screenshot": "tmp/verification/operations-accountant-shift-final.png",
+        "scope": "Actual root browser checks of explicit reconciliation account selection, month-readiness drilldowns, and custody movement ledger. Earlier full-page captures with clipping are excluded from visual proof."
+      }
+    },
+    "backend": {
+      "database": "restaurant_qr_ux_20261021_test",
+      "databaseHost": "127.0.0.1:3306",
+      "productionDatabaseUsed": false,
+      "batches": [
+        {
+          "name": "CashierHardening, MergeGroupA/BD/C, MoneyServices, SplitUnpark",
+          "result": "passed_after_targeted_pdf_fix",
+          "testMethods": 46,
+          "fullRunAssertions": 221,
+          "fullRunReport": "tmp/ux-cashier-fixtures-after.xml",
+          "followup": {
+            "name": "receipt endpoint permission and PDF download",
+            "tests": 1,
+            "assertions": 8,
+            "result": "passed"
+          }
+        },
+        {
+          "name": "LoginPage, CustomerDebtLedger, CustomerIdentityLoyalty",
+          "tests": 14,
+          "assertions": 124,
+          "result": "passed",
+          "report": "tmp/ux-debt-loyalty-login.xml"
+        },
+        {
+          "name": "AccountingPosting cash payment balanced journal regression",
+          "tests": 1,
+          "assertions": 11,
+          "result": "passed"
+        },
+        {
+          "name": "RoleLanding plus login component regression",
+          "tests": 14,
+          "assertions": 111,
+          "result": "passed"
+        }
+      ],
+      "note": "Batches overlap; use reconciledSuite for deduplicated totals. The baseline had failures that were repaired and verified by targeted reruns; this is not one all-green full-suite invocation.",
+      "reconciledSuite": {
+        "generatedAt": "2026-10-21T08:03:10.9934645Z",
+        "result": "all_current_cases_have_passing_latest_recorded_results",
+        "methodology": "Full baseline plus explicitly ordered completed reruns of repaired/new source. This is a reconciled result, not one all-green full-suite invocation.",
+        "databaseScope": "Combines the root full baseline and isolated agent reruns; the UX database field above describes this agent's local batches only. No production database was used.",
+        "baseline": {
+          "counts": {
+            "total": 1094,
+            "passed": 1044,
+            "failed": 11,
+            "error": 39,
+            "skipped": 0,
+            "incomplete": 0
+          },
+          "assertions": 12825,
+          "sha256": "37d0cbc69d366ae6614c46cc4e13ab462e3bfb2aaf3a18a6f6816b3911e1ea57",
+          "path": "tmp/operational-full-suite.xml"
+        },
+        "latestUniqueTestcases": {
+          "total": 1134,
+          "passed": 1134,
+          "failed": 0,
+          "error": 0,
+          "skipped": 0,
+          "incomplete": 0
+        },
+        "latestUniquePhpMethods": {
+          "total": 1118,
+          "passed": 1118,
+          "failed": 0,
+          "error": 0,
+          "skipped": 0,
+          "incomplete": 0
+        },
+        "selectedAssertionTotal": 13435,
+        "baselineFailuresResolved": 50,
+        "currentInventory": {
+          "path": "tmp/operational-current-test-inventory.xml",
+          "sha256": "9ad1b4d772bac7e48ca7aa4b4a82f3b8562145ae0994fcff61a220aad0624f9a",
+          "totalTestcases": 1134,
+          "totalPhpMethods": 1118,
+          "missingResults": [],
+          "obsoleteSelectedCases": []
+        },
+        "pendingReports": [],
+        "unresolvedBaselineFailures": [],
+        "evidence": [
+          {
+            "path": "tmp/ux-role-landing-final.xml",
+            "sha256": "b1e2af5f2f3f7d80b9814d1badeb74425d0c13ead177c212972ac1b0cd4d6cf2",
+            "counts": {
+              "total": 14,
+              "passed": 14,
+              "failed": 0,
+              "error": 0,
+              "skipped": 0,
+              "incomplete": 0
+            }
+          },
+          {
+            "path": "tmp/ux-cashier-fixtures-after.xml",
+            "sha256": "55d1355b6c9428c1b03d233f8f3c603ab95c1142643f396da93b4f57a65f1352",
+            "counts": {
+              "total": 46,
+              "passed": 45,
+              "failed": 1,
+              "error": 0,
+              "skipped": 0,
+              "incomplete": 0
+            }
+          },
+          {
+            "path": "tmp/ux-debt-loyalty-login.xml",
+            "sha256": "cbe1394b81d69fae545154713468822992e696f4c34952877db5cf5ef6d6055a",
+            "counts": {
+              "total": 14,
+              "passed": 14,
+              "failed": 0,
+              "error": 0,
+              "skipped": 0,
+              "incomplete": 0
+            }
+          },
+          {
+            "path": ".tmp/reliability-production-safety.xml",
+            "sha256": "05c917063ff1d72dd877fbe9c6c2a39ee611b835796d7be95c8685afbd2bd5c4",
+            "counts": {
+              "total": 5,
+              "passed": 5,
+              "failed": 0,
+              "error": 0,
+              "skipped": 0,
+              "incomplete": 0
+            }
+          },
+          {
+            "path": ".tmp/reliability-remaining-after.xml",
+            "sha256": "0eb2a3516b945fd8fd7a98d2521628c6d611b0bb9230cc17457b7510fdd2237c",
+            "counts": {
+              "total": 27,
+              "passed": 27,
+              "failed": 0,
+              "error": 0,
+              "skipped": 0,
+              "incomplete": 0
+            }
+          },
+          {
+            "path": ".tmp/reliability-service-board.xml",
+            "sha256": "f5b8d482b41ec001b550a970c1d875424b9e818dd9262dd0a02a49d6660240e4",
+            "counts": {
+              "total": 22,
+              "passed": 22,
+              "failed": 0,
+              "error": 0,
+              "skipped": 0,
+              "incomplete": 0
+            }
+          },
+          {
+            "path": ".tmp/accounting-final.xml",
+            "sha256": "b71536db3065f16707f9c623eb004e7c733e3b6b923df33af75dfb68144122a1",
+            "counts": {
+              "total": 66,
+              "passed": 66,
+              "failed": 0,
+              "error": 0,
+              "skipped": 0,
+              "incomplete": 0
+            }
+          },
+          {
+            "path": "tmp/ux-final-coverage-gaps.xml",
+            "sha256": "c7dbee7d1e44b1fa214b6d889aa01ac7235b31acd4c98a5f169a0a610da449c6",
+            "counts": {
+              "total": 13,
+              "passed": 13,
+              "failed": 0,
+              "error": 0,
+              "skipped": 0,
+              "incomplete": 0
+            }
+          },
+          {
+            "path": "tmp/ux-final-pdf-regression.xml",
+            "sha256": "900584e67dd8e12f5b6b0d166aa00c829ef5cc8777b36a3c8b664eac254282fd",
+            "counts": {
+              "total": 1,
+              "passed": 1,
+              "failed": 0,
+              "error": 0,
+              "skipped": 0,
+              "incomplete": 0
+            }
+          },
+          {
+            "path": ".tmp/reliability-promotion-flow.xml",
+            "sha256": "c45b30a9731e02c57395f03d8f822402dabdfe947e52e8facb54b751c3daff4c",
+            "counts": {
+              "total": 36,
+              "passed": 36,
+              "failed": 0,
+              "error": 0,
+              "skipped": 0,
+              "incomplete": 0
+            }
+          },
+          {
+            "path": ".tmp/reliability-promotion-final.xml",
+            "sha256": "f4a74214163f59b567f451a03ce311e46ce7774fae56fd6f6f7de6a96d651adb",
+            "counts": {
+              "total": 118,
+              "passed": 117,
+              "failed": 0,
+              "error": 1,
+              "skipped": 0,
+              "incomplete": 0
+            }
+          },
+          {
+            "path": ".tmp/reliability-promotion-freeze.xml",
+            "sha256": "446d60ab27f0984d919379dc075a8872f431eaa13cf93da3431dfb58c8a6bfe3",
+            "counts": {
+              "total": 47,
+              "passed": 47,
+              "failed": 0,
+              "error": 0,
+              "skipped": 0,
+              "incomplete": 0
+            }
+          }
+        ],
+        "methodRenameAliases": {
+          "test_payment_is_attributed_to_the_user_and_can_be_corrected_without_a_shift": "test_payment_is_attributed_to_the_user_and_can_be_corrected_in_their_open_shift"
+        },
+        "localDetailedReport": "tmp/operational-coverage-reconciled.json",
+        "localDetailedReportSha256": "6dc7366d0d96e278c616b1d50ccb78b2ed2872297e605203d2568157fb71ab0e"
+      }
+    },
+    "invoicePdf": {
+      "result": "original_failing_download_regression_passed",
+      "font": "mPDF bundled DejaVu Sans with Arabic OTL shaping; web Cairo unchanged",
+      "tests": 1,
+      "assertions": 8,
+      "visualScope": "Independent endpoint validation only; PDF visual inspection belongs to the reliability agent evidence."
+    },
+    "limitations": [
+      "No production performance or busy-shift staff acceptance claim is made.",
+      "No deployment or publication is implied by this source audit."
+    ],
+    "frontendBuild": {
+      "result": "passed",
+      "reporter": "Root agent completed final Vite build",
+      "buildDurationSeconds": 53.94,
+      "entry": "assets/app-inertia-CxEsGBDo.js",
+      "manifestSha256": "a04a51c7f1429c41e66ed79a308c0baeb9e7f84877dc2997d61b43aadd1e5121",
+      "entrySha256": "a7f9813a8870b69f87921be55e7e1cf204c74af7877f447021d94c17ce209f91",
+      "verifiedAt": "2026-10-21T08:03:12.341Z",
+      "note": "Current 2026-10-21 build; the sourceValidation.finalFrontendBuild record above remains historical 2026-10-11 evidence."
+    }
+  }
 }

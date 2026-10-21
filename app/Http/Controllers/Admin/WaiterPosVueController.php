@@ -13,7 +13,6 @@ use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\Employee;
 use App\Models\MenuItem;
-use App\Models\MenuPromotion;
 use App\Models\Order;
 use App\Models\OrderChangeRequest;
 use App\Models\OrderItem;
@@ -23,8 +22,10 @@ use App\Models\TableSession;
 use App\Models\User;
 use App\Services\CustomerIdentityService;
 use App\Services\InventoryService;
+use App\Services\MenuAvailabilityService;
 use App\Services\OrderService;
 use App\Services\PendingTransferService;
+use App\Services\PromotionService;
 use App\Services\StaffMealService;
 use App\Support\BranchContext;
 use App\Support\OrderRoundContext;
@@ -782,17 +783,13 @@ class WaiterPosVueController extends Controller
             ->orderBy('name')
             ->get();
 
-        // Promo short-circuit: one existence query instead of one promo
-        // lookup PER item (the "seconds to open" scar from the old screen).
-        $hasPromos = MenuPromotion::where('active', true)
-            ->where(fn ($q) => $q->whereNull('branch_id')->orWhere('branch_id', BranchContext::current()))
-            ->exists();
+        $promotions = app(PromotionService::class)->resolveBulk($items, channel: 'waiter');
+        $availability = app(MenuAvailabilityService::class)->forItems($items);
 
-        $inventory = app(InventoryService::class);
-
-        $payload = $items->map(function (MenuItem $item) use ($inventory, $hasPromos) {
-            $promo = $hasPromos ? $item->activePromotion() : null;
-            $price = $promo ? (float) $promo->applyTo((float) $item->price) : (float) $item->price;
+        $payload = $items->map(function (MenuItem $item) use ($availability, $promotions) {
+            $promo = $promotions[$item->id]['promotion'] ?? null;
+            $price = $promotions[$item->id]['price'] ?? (float) $item->price;
+            $freeModifierIds = array_map('intval', $promo?->free_modifier_ids ?? []);
 
             return [
                 'id' => $item->id,
@@ -801,7 +798,7 @@ class WaiterPosVueController extends Controller
                 'price' => $price,
                 'original_price' => (float) $item->price,
                 'has_promo' => $promo && $price < (float) $item->price,
-                'in_stock' => $this->itemInStock($inventory, $item),
+                'in_stock' => $availability[$item->id],
                 'has_mods' => $item->modifierGroups->isNotEmpty(),
                 'modifier_groups' => $item->modifierGroups->map(fn ($g) => [
                     'id' => (int) $g->id,
@@ -812,7 +809,7 @@ class WaiterPosVueController extends Controller
                     'modifiers' => $g->modifiers->map(fn ($m) => [
                         'id' => (int) $m->id,
                         'name' => $m->name,
-                        'price_delta' => (float) $m->price_delta,
+                        'price_delta' => in_array((int) $m->id, $freeModifierIds, true) ? 0.0 : (float) $m->price_delta,
                     ])->values(),
                 ])->values(),
                 'removable_ingredients' => $item->removableRecipeItems()
@@ -833,29 +830,6 @@ class WaiterPosVueController extends Controller
             ->sortBy('name')->values();
 
         return ['items' => $payload, 'categories' => $categories];
-    }
-
-    /** In-memory recipe check — zero extra queries per item (see the live screen). */
-    protected function itemInStock(InventoryService $inventory, MenuItem $item): bool
-    {
-        $need = [];
-        foreach ($inventory->previewDeductionForItem($item, 1.0) as $line) {
-            $id = $line['ingredient_id'];
-            $need[$id] ??= ['ingredient' => $line['ingredient'], 'qty' => 0.0];
-            $need[$id]['qty'] += (float) $line['quantity_in_base'];
-        }
-
-        foreach ($need as $n) {
-            $locationId = $item->station?->storage_location_id;
-            $available = $locationId
-                ? $n['ingredient']->usableStockAtLocation((int) $locationId)
-                : $n['ingredient']->usableStockAtBranch((int) ($item->branch_id ?: BranchContext::current()));
-            if ($n['ingredient']->track_stock && $n['qty'] > $available) {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     /** Same ranking + cache key as the live screen — the two share one cache. */

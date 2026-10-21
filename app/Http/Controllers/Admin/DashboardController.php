@@ -21,8 +21,10 @@ use App\Models\Review;
 use App\Models\SupplierInvoice;
 use App\Models\SupplierInvoiceItem;
 use App\Models\Table;
+use App\Services\UsableStockSnapshot;
 use App\Support\AdminShell;
 use App\Support\BranchContext;
+use App\Support\RoleLanding;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -119,13 +121,15 @@ class DashboardController extends Controller
         if ($can['inventory']) {
             $trackedIngredients = Ingredient::with(['baseUnit:id,code', 'supplier:id,name'])
                 ->where('track_stock', true)
-                ->get()
-                ->map(function (Ingredient $ingredient) use ($branchId) {
+                ->get();
+            $stock = UsableStockSnapshot::capture($trackedIngredients->modelKeys());
+            $trackedIngredients = $trackedIngredients
+                ->map(function (Ingredient $ingredient) use ($branchId, $stock) {
                     $ingredient->operational_stock = $branchId
-                        ? $ingredient->usableStockAtBranch($branchId)
-                        : $ingredient->trackedUsableStock();
+                        ? $stock->atBranch($ingredient->id, $branchId)
+                        : $stock->allBranches($ingredient->id);
                     $ingredient->operational_threshold = $branchId
-                        ? $ingredient->reorderThresholdAtBranch($branchId)
+                        ? $stock->threshold($ingredient, $branchId)
                         : (float) $ingredient->reorder_threshold;
 
                     return $ingredient;
@@ -566,6 +570,10 @@ class DashboardController extends Controller
                 'overduePayables' => $row['overdue_ap'],
             ])->values(),
             'quickActions' => $quickActions,
+            'stationActions' => RoleLanding::stations($user, $branchId)->map(fn ($station) => [
+                'label' => $station->name,
+                'route' => route('admin.station.show', $station->code),
+            ])->all(),
             'inventoryAlerts' => $inventoryAlerts->map(fn (array $alert) => [
                 'ingredientId' => $alert['ingredient']->id,
                 'name' => $alert['ingredient']->name,

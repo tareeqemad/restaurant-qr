@@ -24,6 +24,7 @@ use App\Models\TableSession;
 use App\Services\Accounting\AccountingService;
 use App\Support\BranchContext;
 use App\Support\PaymentMethods;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class BillingService
@@ -333,6 +334,7 @@ class BillingService
                     }
                 }
 
+                $shiftId = app(CashierShiftService::class)->forPayment($userId, (int) $invoice->branch_id, $method === 'cash');
                 $payment = Payment::create([
                     // Stamp branch_id from the invoice itself, NOT from
                     // BranchContext. Payments arrive from contexts where the
@@ -345,10 +347,14 @@ class BillingService
                     'amount' => $amount,
                     'reference' => $reference,
                     'received_by_user_id' => $userId,
+                    'cashier_shift_id' => $shiftId,
                     'notes' => $notes,
                     'paid_at' => now(),
                 ]);
 
+                if ($method === 'cash') {
+                    app(CashierShiftService::class)->record($userId, (int) $invoice->branch_id, $amount, 'payment', 'payment:'.$payment->id, $invoice->number);
+                }
                 $advanceService = app(CustomerAdvanceService::class);
                 if ($method === PaymentMethods::CUSTOMER_ADVANCE) {
                     if (! $invoice->customer_id) {
@@ -489,6 +495,9 @@ class BillingService
                     ->firstWhere(fn ($e) => in_array($e->event_type, ['payment_received', 'customer_advance_redeemed'], true)
                         && ! in_array((int) $e->id, $reversedIds, true));
 
+                if ($payment->method === 'cash') {
+                    app(CashierShiftService::class)->forPayment($userId, (int) $invoice->branch_id, true);
+                }
                 app(CustomerAdvanceService::class)->reversePaymentEffects($payment, $userId, $reason);
                 if ($live) {
                     app(AccountingService::class)->reverseEntry(
@@ -526,6 +535,9 @@ class BillingService
 
                 $amount = (float) $payment->amount;
                 $method = $payment->method;
+                if ($method === 'cash') {
+                    app(CashierShiftService::class)->record($userId, (int) $invoice->branch_id, -$amount, 'payment_void', 'payment-void:'.$payment->id, $invoice->number);
+                }
                 ActivityLog::log(
                     'payment.voided',
                     'إلغاء دفعة '.number_format($amount, 2)." ({$method}) على فاتورة {$invoice->number} — {$reason}",
@@ -633,10 +645,10 @@ class BillingService
 
                 $termsDays = max(0, min(3650, (int) Setting::get('customer_credit_terms_days', 30)));
                 $resolvedDueDate = $dueDate
-                    ? \Carbon\Carbon::parse($dueDate)->toDateString()
+                    ? Carbon::parse($dueDate)->toDateString()
                     : now()->addDays($termsDays)->toDateString();
                 if ($dueDate) {
-                    $termsDays = max(0, now()->startOfDay()->diffInDays(\Carbon\Carbon::parse($dueDate)->startOfDay(), false));
+                    $termsDays = max(0, now()->startOfDay()->diffInDays(Carbon::parse($dueDate)->startOfDay(), false));
                 }
 
                 $invoice->update([

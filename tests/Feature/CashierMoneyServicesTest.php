@@ -11,10 +11,12 @@ use App\Models\IngredientStock;
 use App\Models\Invoice;
 use App\Models\JournalEntry;
 use App\Models\MenuItem;
+use App\Models\Order;
 use App\Models\Payment;
 use App\Models\RecipeItem;
 use App\Models\Role;
 use App\Models\Scopes\BranchScope;
+use App\Models\Setting;
 use App\Models\Station;
 use App\Models\StorageLocation;
 use App\Models\Table;
@@ -22,8 +24,10 @@ use App\Models\TableSession;
 use App\Models\Unit;
 use App\Models\User;
 use App\Services\BillingService;
+use App\Services\CashierShiftService;
 use App\Services\OrderService;
 use App\Support\BranchContext;
+use Database\Seeders\PermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
 use Tests\TestCase;
@@ -41,9 +45,13 @@ class CashierMoneyServicesTest extends TestCase
     use RefreshDatabase;
 
     protected Branch $branch;
+
     protected Branch $branchB;
+
     protected User $admin;
+
     protected MenuItem $menuItem;
+
     protected Customer $customer;
 
     protected function setUp(): void
@@ -51,29 +59,30 @@ class CashierMoneyServicesTest extends TestCase
         parent::setUp();
         Notification::fake();
 
-        \App\Models\Setting::put('tax_enabled', false, 'billing', 'bool');
-        \App\Models\Setting::put('service_enabled', false, 'billing', 'bool');
+        Setting::put('tax_enabled', false, 'billing', 'bool');
+        Setting::put('service_enabled', false, 'billing', 'bool');
 
         $this->branch = Branch::create(['code' => 'cms', 'name' => 'CMS', 'is_active' => true]);
         $this->branchB = Branch::create(['code' => 'cmsb', 'name' => 'CMS-B', 'is_active' => true]);
         BranchContext::set($this->branch->id);
 
         Role::firstOrCreate(['name' => 'admin'], ['label' => 'Admin', 'is_system' => true]);
-        $this->seed(\Database\Seeders\PermissionSeeder::class);
+        $this->seed(PermissionSeeder::class);
         $this->admin = User::create([
             'name' => 'A', 'username' => 'cms-admin', 'role' => 'admin',
             'status' => 'active', 'password' => bcrypt('x'), 'primary_branch_id' => $this->branch->id,
         ]);
         $this->admin->branches()->attach($this->branch->id, ['is_primary' => true, 'joined_at' => now()]);
+        app(CashierShiftService::class)->open($this->admin->id, $this->branch->id, 0);
 
-        $unit = Unit::create(['code'=>'pcs','name'=>'pcs','unit_type'=>'count','factor_to_base'=>1,'is_base'=>true]);
-        $storage = StorageLocation::create(['code'=>'k','name'=>'K','is_default'=>true,'active'=>true]);
-        $station = Station::create(['code'=>'kitchen','name'=>'K','storage_location_id'=>$storage->id,'active'=>true]);
-        $category = Category::create(['slug'=>'m','name'=>'M','default_station_id'=>$station->id,'active'=>true]);
-        $ing = Ingredient::create(['sku'=>'I','name'=>'S','base_unit_id'=>$unit->id,'current_stock'=>500,'reorder_threshold'=>0,'cost_per_unit'=>1,'track_stock'=>true,'active'=>true]);
-        IngredientStock::create(['ingredient_id'=>$ing->id,'storage_location_id'=>$storage->id,'quantity'=>500,'reorder_threshold'=>0]);
-        $this->menuItem = MenuItem::create(['category_id'=>$category->id,'station_id'=>$station->id,'sku'=>'M1','slug'=>'m','name'=>'Meal','price'=>100,'cost'=>10,'prep_time_minutes'=>5,'is_available'=>true]);
-        RecipeItem::create(['menu_item_id'=>$this->menuItem->id,'ingredient_id'=>$ing->id,'quantity'=>1,'unit_id'=>$unit->id]);
+        $unit = Unit::create(['code' => 'pcs', 'name' => 'pcs', 'unit_type' => 'count', 'factor_to_base' => 1, 'is_base' => true]);
+        $storage = StorageLocation::create(['code' => 'k', 'name' => 'K', 'is_default' => true, 'active' => true]);
+        $station = Station::create(['code' => 'kitchen', 'name' => 'K', 'storage_location_id' => $storage->id, 'active' => true]);
+        $category = Category::create(['slug' => 'm', 'name' => 'M', 'default_station_id' => $station->id, 'active' => true]);
+        $ing = Ingredient::create(['sku' => 'I', 'name' => 'S', 'base_unit_id' => $unit->id, 'current_stock' => 500, 'reorder_threshold' => 0, 'cost_per_unit' => 1, 'track_stock' => true, 'active' => true]);
+        IngredientStock::create(['ingredient_id' => $ing->id, 'storage_location_id' => $storage->id, 'quantity' => 500, 'reorder_threshold' => 0]);
+        $this->menuItem = MenuItem::create(['category_id' => $category->id, 'station_id' => $station->id, 'sku' => 'M1', 'slug' => 'm', 'name' => 'Meal', 'price' => 100, 'cost' => 10, 'prep_time_minutes' => 5, 'is_available' => true]);
+        RecipeItem::create(['menu_item_id' => $this->menuItem->id, 'ingredient_id' => $ing->id, 'quantity' => 1, 'unit_id' => $unit->id]);
 
         [$this->customer] = Customer::createFromCashier(name: 'ز', phone: '0599000999', defaultBranchId: $this->branch->id);
     }
@@ -84,14 +93,15 @@ class CashierMoneyServicesTest extends TestCase
         parent::tearDown();
     }
 
-    /** @return array{0: Invoice, 1: TableSession, 2: \App\Models\Order} */
+    /** @return array{0: Invoice, 1: TableSession, 2: Order} */
     private function issueMeal(): array
     {
-        $table = Table::create(['number'=>(string) random_int(1,9999),'capacity'=>4,'status'=>'occupied','active'=>true]);
-        $session = TableSession::create(['table_id'=>$table->id,'customer_id'=>$this->customer->id,'cover_count'=>1,'status'=>'active']);
-        $order = app(OrderService::class)->createFromCart($session, [['menu_item_id'=>$this->menuItem->id,'quantity'=>1,'modifier_ids'=>[]]]);
+        $table = Table::create(['number' => (string) random_int(1, 9999), 'capacity' => 4, 'status' => 'occupied', 'active' => true]);
+        $session = TableSession::create(['table_id' => $table->id, 'customer_id' => $this->customer->id, 'cover_count' => 1, 'status' => 'active']);
+        $order = app(OrderService::class)->createFromCart($session, [['menu_item_id' => $this->menuItem->id, 'quantity' => 1, 'modifier_ids' => []]]);
         app(OrderService::class)->approve($order, $this->admin->id);
         $invoice = app(BillingService::class)->issueInvoice($session->fresh(), $this->admin->id);
+
         return [$invoice, $session, $order];
     }
 
@@ -103,25 +113,25 @@ class CashierMoneyServicesTest extends TestCase
     private function makeBranchBInvoice(float $total, array $extra = []): Invoice
     {
         return BranchContext::forBranch($this->branchB->id, function () use ($total, $extra) {
-            $table = Table::create(['number'=>'B-'.random_int(1,9999),'capacity'=>4,'status'=>'occupied','active'=>true]);
-            $session = TableSession::create(['table_id'=>$table->id,'customer_id'=>$this->customer->id,'cover_count'=>1,'status'=>'active']);
+            $table = Table::create(['number' => 'B-'.random_int(1, 9999), 'capacity' => 4, 'status' => 'occupied', 'active' => true]);
+            $session = TableSession::create(['table_id' => $table->id, 'customer_id' => $this->customer->id, 'cover_count' => 1, 'status' => 'active']);
 
             return Invoice::create(array_merge([
-                'number'            => 'INV-TESTB-'.uniqid(),
-                'branch_id'         => $this->branchB->id,
-                'table_session_id'  => $session->id,
-                'customer_id'       => $this->customer->id,
+                'number' => 'INV-TESTB-'.uniqid(),
+                'branch_id' => $this->branchB->id,
+                'table_session_id' => $session->id,
+                'customer_id' => $this->customer->id,
                 'issued_by_user_id' => $this->admin->id,
-                'subtotal'          => $total,
-                'discount_total'    => 0,
-                'tax_total'         => 0,
-                'service_total'     => 0,
-                'delivery_fee'      => 0,
-                'tip'               => 0,
-                'total'             => $total,
-                'balance'           => $total,
-                'status'            => 'issued',
-                'issued_at'         => now(),
+                'subtotal' => $total,
+                'discount_total' => 0,
+                'tax_total' => 0,
+                'service_total' => 0,
+                'delivery_fee' => 0,
+                'tip' => 0,
+                'total' => $total,
+                'balance' => $total,
+                'status' => 'issued',
+                'issued_at' => now(),
             ], $extra));
         });
     }
@@ -152,16 +162,23 @@ class CashierMoneyServicesTest extends TestCase
         $this->assertEqualsWithDelta(100.0, (float) $invoice->balance, 0.001, 'Invoice fully reopens.');
     }
 
-    public function test_payment_is_attributed_to_the_user_and_can_be_corrected_without_a_shift(): void
+    public function test_payment_is_attributed_to_the_user_and_can_be_corrected_in_their_open_shift(): void
     {
         $this->actingAs($this->admin);
         [$invoice] = $this->issueMeal();
         $payment = app(BillingService::class)->addPayment($invoice, 100.0, 'cash', $this->admin->id);
         $this->assertSame($this->admin->id, $payment->received_by_user_id);
+        $this->assertNotNull($payment->cashier_shift_id);
+        $this->assertDatabaseHas('cashier_shifts', [
+            'id' => $payment->cashier_shift_id,
+            'active_user_id' => $this->admin->id,
+            'branch_id' => $this->branch->id,
+        ]);
         app(BillingService::class)->voidPayment($payment->fresh(), $this->admin->id, 'محاولة متأخرة');
 
         $this->assertDatabaseHas('payments', ['id' => $payment->id, 'status' => 'voided']);
         $this->assertEqualsWithDelta(100.0, (float) $invoice->fresh()->balance, 0.001);
+        $this->assertEqualsWithDelta(0.0, app(CashierShiftService::class)->workspace($this->admin->id)['active']['expected_cash'], 0.001);
     }
 
     /** Credit-limit check sums the customer's debt across ALL branches —
@@ -173,8 +190,8 @@ class CashierMoneyServicesTest extends TestCase
 
         // 80 already parked as debt on branch B.
         $this->makeBranchBInvoice(80.0, [
-            'status'                        => 'partially_paid',
-            'settled_on_account_at'         => now()->subDay(),
+            'status' => 'partially_paid',
+            'settled_on_account_at' => now()->subDay(),
             'settled_on_account_by_user_id' => $this->admin->id,
         ]);
 
@@ -194,8 +211,8 @@ class CashierMoneyServicesTest extends TestCase
     {
         $this->actingAs($this->admin);
         $debtB = $this->makeBranchBInvoice(80.0, [
-            'status'                        => 'partially_paid',
-            'settled_on_account_at'         => now()->subDay(),
+            'status' => 'partially_paid',
+            'settled_on_account_at' => now()->subDay(),
             'settled_on_account_by_user_id' => $this->admin->id,
         ]);
 
@@ -219,8 +236,8 @@ class CashierMoneyServicesTest extends TestCase
         $this->actingAs($this->admin);
 
         $this->makeBranchBInvoice(80.0, [
-            'status'                        => 'partially_paid',
-            'settled_on_account_at'         => now()->subDay(),
+            'status' => 'partially_paid',
+            'settled_on_account_at' => now()->subDay(),
             'settled_on_account_by_user_id' => $this->admin->id,
         ]);
 

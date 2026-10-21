@@ -1,4 +1,5 @@
 <script setup>
+import { useFormUx } from '../../../Composables/useFormUx';
 import ManagementPage from '../../../Components/Inventory/ManagementPage.vue';
 import { computed, watch } from 'vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
@@ -22,9 +23,10 @@ const taxTotal=computed(()=>hasLines.value?form.lines.reduce((s,x)=>s+Number(x.t
 const total=computed(()=>subtotal.value+taxTotal.value);
 const fmt=(n)=>Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 watch(()=>form.branch_id,()=>{if(props.selectedPo)return;if(!branchSuppliers.value.some(x=>x.id===Number(form.supplier_id)))form.supplier_id='';if(!branchPurchaseOrders.value.some(x=>x.id===Number(form.purchase_order_id)))form.purchase_order_id=''});
-function choosePo(){if(form.purchase_order_id){router.get(props.urls.create,{po:form.purchase_order_id});return}router.get(props.urls.create)}
+function choosePo(){const nextPo=form.purchase_order_id;form.purchase_order_id=props.selectedPo?.id??'';router.get(props.urls.create,nextPo?{po:nextPo}:{})}
 function chooseCurrency(){form.exchange_rate=form.currency_code===props.defaults.baseCurrency?1:(currency.value?.rate??'')}
 function submit(){if(!form.number.trim()){toast.warning('اكتب رقم فاتورة المورد.');return}if(!form.supplier_id){toast.warning('اختر المورد.');return}form.subtotal=Number(subtotal.value.toFixed(2));form.tax_total=Number(taxTotal.value.toFixed(2));form.total=Number(total.value.toFixed(2));form.post(props.urls.store,{forceFormData:true,preserveScroll:true})}
+useFormUx(form);
 </script>
 <template>
     <ManagementPage mode="form">

@@ -20,7 +20,7 @@ class Order extends Model
     protected $fillable = [
         'number', 'table_id', 'table_number_snapshot', 'table_session_id', 'customer_id', 'customer_name', 'customer_phone',
         'customer_address_id', 'order_type', 'status',
-        'order_source',
+        'order_source', 'promotion_channel',
         'created_by_user_id', 'approved_by_user_id', 'cancelled_by_user_id',
         // Operational owner of a staff meal. The legacy user column is kept
         // only while existing installations are backfilled.
@@ -107,6 +107,15 @@ class Order extends Model
         return $this->table_number_snapshot
             ?? $this->table?->number
             ?? '—';
+    }
+
+    /** Entry channel and the operational source remain separate concepts. */
+    public function promotionChannels(): array
+    {
+        return array_values(array_unique(array_filter([
+            $this->promotion_channel,
+            $this->order_source,
+        ])));
     }
 
     public static function generateNumber(): string

@@ -16,6 +16,7 @@ const props = defineProps({
     dailyOps: { type: Object, required: true },
     branchSnapshot: { type: Array, default: () => [] },
     quickActions: { type: Array, default: () => [] },
+    stationActions: { type: Array, default: () => [] },
     inventoryAlerts: { type: Array, default: () => [] },
     currency: { type: Object, required: true },
     urls: { type: Object, required: true },
@@ -42,8 +43,13 @@ const hasManagement = computed(() => props.can.inventory || props.can.customers 
 <main class="dashboard">
     <header class="hero">
         <div><small>ملخص اليوم</small><h1>أهلاً، {{ viewerName }}</h1></div>
-        <span :class="priorities.length ? 'attention' : 'clear'"><i class="bi" :class="priorities.length ? 'bi-exclamation-triangle-fill' : 'bi-check2-circle-fill'"></i>{{ priorities.length ? `${priorities.length} مهام تحتاج متابعة` : 'لا توجد مهام عاجلة' }}</span>
+        <span :class="priorities.length ? 'attention' : 'clear'"><i class="bi" :class="priorities.length ? 'bi-exclamation-triangle-fill' : 'bi-check2-circle-fill'"></i>{{ priorities.length ? `${priorities.length} مهام تحتاج متابعة` : (stationActions.length ? 'تابع التحضير من شاشة المحطة' : 'لا توجد مهام عاجلة') }}</span>
     </header>
+
+    <section v-if="stationActions.length" class="station-launcher panel" aria-label="شاشات التحضير">
+        <header><div><small>عملك المباشر</small><h2>شاشات التحضير</h2></div></header>
+        <div class="station-launcher__links"><a v-for="station in stationActions" :key="station.route" :href="station.route"><i class="bi bi-fire" aria-hidden="true"></i><span><strong>{{ station.label }}</strong><small>افتح الطلبات وابدأ التحضير أو سلّم الجاهز</small></span><i class="bi bi-arrow-left" aria-hidden="true"></i></a></div>
+    </section>
 
     <div class="dashboard-primary"><section class="tasks panel">
         <header><div><small>الأهم أولاً</small><h2>المطلوب الآن</h2></div><b>{{ priorities.length }}</b></header>
@@ -53,7 +59,7 @@ const hasManagement = computed(() => props.can.inventory || props.can.customers 
             </a>
         </div>
         <details v-if="priorities.length > 3"><summary>{{ priorities.length - 3 }} مهام إضافية <i class="bi bi-chevron-down"></i></summary><div class="task-grid more"><a v-for="item in priorities.slice(3)" :key="item.title" :href="item.route" class="task" :data-severity="item.severity"><i class="bi task-icon" :class="item.icon"></i><span><strong>{{ item.title }}</strong><small>{{ item.description }}</small></span><b>{{ item.count }}</b></a></div></details>
-        <div v-if="!priorities.length" class="all-clear"><i class="bi bi-check2-circle-fill"></i><strong>كل شيء تحت السيطرة الآن</strong><small>لا توجد إجراءات عاجلة ضمن صلاحياتك.</small></div>
+        <div v-if="!priorities.length" class="all-clear"><i class="bi bi-check2-circle-fill"></i><strong>{{ stationActions.length ? 'لا توجد تنبيهات إضافية هنا' : 'كل شيء تحت السيطرة الآن' }}</strong><small>{{ stationActions.length ? 'طلبات التحضير وحالاتها تظهر في شاشة المحطة أعلاه.' : 'لا توجد إجراءات عاجلة ضمن صلاحياتك.' }}</small></div>
     </section>
 
     </div>
@@ -81,4 +87,5 @@ const hasManagement = computed(() => props.can.inventory || props.can.customers 
 
 /* Operational layout and responsive hierarchy. */
 .dashboard{gap:20px}.hero{padding:0 0 20px;background:transparent;color:var(--ink);border:0;border-bottom:1px solid var(--line);border-radius:0}.hero h1{font-size:28px;color:var(--ink);margin-top:6px}.hero small{color:var(--muted);font-size:14px}.hero>span{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:10px 14px;color:var(--ink)}.panel{border-radius:10px;padding:20px}.panel h2{font-size:21px}.tasks .task-grid{grid-template-columns:1fr;gap:0}.task{grid-template-columns:40px minmax(0,1fr) auto 18px;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:16px 0;background:transparent;gap:14px}.task strong{font-size:16px}.task small{font-size:14px;white-space:normal;line-height:1.6}.task>b{font-size:24px;color:var(--brand)}.task-icon{border-radius:6px}.pulse{grid-template-columns:repeat(4,minmax(0,1fr));border:0;border-block:1px solid var(--line);border-radius:0;background:transparent}.pulse-label{display:none}.pulse a{display:grid;gap:12px;padding:18px;border-inline-start:1px solid var(--line);background:transparent}.pulse a strong{font-size:25px}.pulse a span{font-size:14px;color:var(--muted)}.support{grid-template-columns:1.2fr 1fr;gap:20px}.shortcut-grid{grid-template-columns:1fr;gap:0}.shortcut-grid a{border:0;border-bottom:1px solid var(--line);border-radius:0;padding:14px 0;min-height:68px}.shortcut-grid strong{font-size:16px}.finance>div{display:grid;grid-template-columns:1fr;gap:0}.finance span{display:flex;justify-content:space-between;align-items:center;padding:16px 0;border-bottom:1px solid var(--line);border-radius:0;background:transparent}.finance strong{font-size:19px}.management>summary,.inventory>summary{padding:18px 20px}.all-clear{place-items:start;text-align:start;padding:16px 0;grid-template-columns:32px 1fr;column-gap:12px}.all-clear small{grid-column:2}@media(max-width:850px){.support{grid-template-columns:1fr}.pulse{grid-template-columns:1fr 1fr}.hero{align-items:flex-start;flex-direction:column;gap:16px}}
+.station-launcher__links{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px}.station-launcher__links>a{display:flex;align-items:center;gap:12px;min-height:72px;padding:16px;background:var(--brand);border-radius:8px;color:var(--surface);text-decoration:none}.station-launcher__links>a:hover{background:var(--brand-hover)}.station-launcher__links span{display:grid;flex:1;gap:4px}.station-launcher__links strong{font-size:18px;color:inherit}.station-launcher__links small{font-size:14px;color:inherit}.station-launcher__links>a:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
 </style>

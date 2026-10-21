@@ -34,6 +34,7 @@ use App\Models\Unit;
 use App\Models\User;
 use App\Services\Accounting\AccountingService;
 use App\Services\BillingService;
+use App\Services\CashierShiftService;
 use App\Services\CustomerAdvanceService;
 use App\Services\OrderService;
 use App\Services\PendingTransferService;
@@ -96,6 +97,8 @@ class CashierVueTest extends TestCase
             'is_primary' => true,
             'joined_at' => now(),
         ]);
+        // These operational fixtures represent a cashier already on duty.
+        app(CashierShiftService::class)->open($this->admin->id, $this->branch->id, 0);
 
         $unit = Unit::create([
             'code' => 'pcs',
@@ -773,8 +776,9 @@ class CashierVueTest extends TestCase
         ]);
 
         $this->postJson(route('admin.cashier.api.payments.store', $invoice), $payload)
-            ->assertStatus(409)
-            ->assertJsonPath('ok', false);
+            ->assertOk()
+            ->assertJsonPath('data.replayed', true)
+            ->assertJsonPath('data.payment_id', $payment->id);
 
         $this->assertSame(1, Payment::query()->count());
         $this->assertSame(1, JournalEntry::query()
@@ -936,8 +940,8 @@ class CashierVueTest extends TestCase
             ->assertJsonPath('ok', true)
             ->assertJsonPath('data.split_id', $split->id);
         $this->postJson($payEndpoint, $payPayload)
-            ->assertStatus(409)
-            ->assertJsonPath('ok', false);
+            ->assertOk()
+            ->assertJsonPath('data.replayed', true);
 
         $payment = Payment::query()->sole();
         $this->assertTrue($split->fresh()->paid);

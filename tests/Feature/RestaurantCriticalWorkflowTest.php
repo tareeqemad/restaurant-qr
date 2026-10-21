@@ -12,7 +12,6 @@ use App\Models\InventoryMovement;
 use App\Models\Invoice;
 use App\Models\MenuItem;
 use App\Models\Order;
-use App\Models\OrderItem;
 use App\Models\Payment;
 use App\Models\Permission;
 use App\Models\RecipeItem;
@@ -25,6 +24,7 @@ use App\Models\TableSession;
 use App\Models\Unit;
 use App\Models\User;
 use App\Services\BillingService;
+use App\Services\CashierShiftService;
 use App\Services\OrderService;
 use App\Support\BranchContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -37,14 +37,23 @@ class RestaurantCriticalWorkflowTest extends TestCase
     use RefreshDatabase;
 
     protected Branch $branch;
+
     protected Unit $unit;
+
     protected StorageLocation $storage;
+
     protected Station $kitchen;
+
     protected Category $category;
+
     protected Ingredient $ingredient;
+
     protected MenuItem $menuItem;
+
     protected User $cashier;
+
     protected User $waiter;
+
     protected User $chef;
 
     protected function setUp(): void
@@ -192,6 +201,7 @@ class RestaurantCriticalWorkflowTest extends TestCase
     public function test_cashier_can_create_no_table_delivery_send_it_to_kitchen_and_take_payment(): void
     {
         $this->actingAs($this->cashier);
+        app(CashierShiftService::class)->open($this->cashier->id, $this->branch->id, 0);
         $this->assertTrue($this->cashier->can('create', Order::class));
 
         $order = app(OrderService::class)->createCashierOrder(
@@ -299,6 +309,7 @@ class RestaurantCriticalWorkflowTest extends TestCase
 
     public function test_cashier_service_blocks_closed_invoice_edge_cases(): void
     {
+        app(CashierShiftService::class)->open($this->cashier->id, $this->branch->id, 0);
         $billing = app(BillingService::class);
 
         $paidInvoice = $this->createDirectInvoice();

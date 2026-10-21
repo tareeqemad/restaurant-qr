@@ -288,7 +288,7 @@ class CustomerTrackVueTest extends TestCase
         $bill = file_get_contents(resource_path('js/Pages/Customer/Bill.vue'));
         $root = file_get_contents(resource_path('views/inertia.blade.php'));
 
-        $this->assertStringContainsString("import { Head, Link } from '@inertiajs/vue3'", $menu);
+        $this->assertStringContainsString("import { Head, Link, usePage } from '@inertiajs/vue3'", $menu);
         $this->assertStringContainsString('view-transition @click="rememberMenuPosition"', $menu);
         $this->assertStringContainsString('sessionStorage.setItem(menuScrollKey', $menu);
 

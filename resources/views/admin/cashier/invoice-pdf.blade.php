@@ -10,7 +10,7 @@
     <style>
         @page { margin: 20mm 17mm 18mm; }
         * { box-sizing: border-box; }
-        body { margin: 0; color: #243129; text-align: right; font-family: cairo, sans-serif; font-size: 10px; line-height: 1.55; }
+        body { margin: 0; color: #243129; text-align: right; font-family: dejavusans, sans-serif; font-size: 10px; line-height: 1.55; }
         .invoice-a4 { width: 100%; }
         .a4-head { width: 100%; margin-bottom: 18px; border-collapse: collapse; }
         .a4-head td { vertical-align: middle; }
@@ -31,7 +31,7 @@
         .brand-copy p { margin: 2px 0 0; color: #68756e; font-size: 8.5px; }
         .document-copy { width: 235px; text-align: start; }
         .document-copy h2 { margin: 0; color: {!! $theme['primary'] !!}; font-size: 19px; }
-        .document-number { margin-top: 3px; color: #28352e; unicode-bidi: plaintext; font-family: cairo, sans-serif; font-size: 9px; }
+        .document-number { margin-top: 3px; color: #28352e; unicode-bidi: plaintext; font-family: dejavusans, sans-serif; font-size: 9px; }
         .status-badge {
             display: inline-block;
             margin-top: 6px;

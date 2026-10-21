@@ -44,7 +44,12 @@ export function useFormUx(form, options = {}) {
 
     const formRoot = () => unref(root) || document;
     const guardEnabled = () => Boolean(optionValue(guard));
-    const hasUnsavedChanges = () => guardEnabled() && Boolean(form.isDirty) && ! form.processing;
+    // Multi-section pages get one confirmation, including edits in inactive tabs.
+    const forms = () => {
+        const value = optionValue(form);
+        return (Array.isArray(value) ? value : [value]).filter(Boolean);
+    };
+    const hasUnsavedChanges = () => guardEnabled() && forms().some((item) => item.isDirty && !item.processing);
 
     function handleBeforeUnload(event) {
         if (! hasUnsavedChanges()) return;
@@ -140,7 +145,7 @@ export function useFormUx(form, options = {}) {
     }
 
     function markSaved() {
-        form.defaults?.();
+        forms().forEach((item) => item.defaults?.());
     }
 
     onMounted(() => {

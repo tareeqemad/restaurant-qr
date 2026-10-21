@@ -19,7 +19,7 @@ class Payment extends Model
     // workers, customer portal paying for a takeaway).
     protected $fillable = [
         'branch_id', 'invoice_id', 'method', 'amount', 'status', 'reference',
-        'received_by_user_id', 'notes', 'paid_at', 'voided_at', 'voided_by', 'void_reason',
+        'received_by_user_id', 'cashier_shift_id', 'notes', 'paid_at', 'voided_at', 'voided_by', 'void_reason',
     ];
 
     protected $casts = [
@@ -47,5 +47,4 @@ class Payment extends Model
     {
         return $this->belongsTo(User::class, 'voided_by');
     }
-
 }

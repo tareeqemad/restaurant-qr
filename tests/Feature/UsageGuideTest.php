@@ -70,7 +70,6 @@ class UsageGuideTest extends TestCase
     public function test_guide_is_presented_under_profile_in_the_user_menu(): void
     {
         $header = file_get_contents(resource_path('js/Components/AdminShell/AdminHeader.vue'));
-        $componentsCss = file_get_contents(public_path('assets/dashtic/css/relax-components.css'));
         $profilePosition = strpos($header, 'الملف الشخصي');
         $guidePosition = strpos($header, 'دليل الاستخدام');
         $logoutPosition = strpos($header, 'تسجيل الخروج');
@@ -80,9 +79,10 @@ class UsageGuideTest extends TestCase
         $this->assertNotFalse($logoutPosition);
         $this->assertTrue($profilePosition < $guidePosition);
         $this->assertTrue($guidePosition < $logoutPosition);
-        $this->assertStringContainsString('top: calc(100% + 10px) !important;', $header);
-        $this->assertStringNotContainsString('top: auto !important;', $header);
-        $this->assertStringContainsString('html body .app-header .profile-dd .profile-menu', $componentsCss);
+        $this->assertStringContainsString(':href="shell.urls.profile" role="menuitem"', $header);
+        $this->assertStringContainsString(':href="shell.urls.usageGuide" role="menuitem"', $header);
+        $this->assertStringContainsString('aria-controls="admin-profile-menu" :aria-expanded="profileOpen"', $header);
+        $this->assertStringContainsString('role="menu" aria-label="قائمة حساب المستخدم"', $header);
     }
 
     public function test_guide_only_exposes_quick_links_the_viewer_can_open(): void

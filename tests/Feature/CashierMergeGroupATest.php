@@ -19,6 +19,7 @@ use App\Models\TableSession;
 use App\Models\Unit;
 use App\Models\User;
 use App\Services\BillingService;
+use App\Services\CashierShiftService;
 use App\Services\OrderService;
 use App\Support\BranchContext;
 use Database\Seeders\PermissionSeeder;
@@ -69,6 +70,7 @@ class CashierMergeGroupATest extends TestCase
             'status' => 'active', 'password' => bcrypt('x'), 'primary_branch_id' => $this->branch->id,
         ]);
         $this->admin->branches()->attach($this->branch->id, ['is_primary' => true, 'joined_at' => now()]);
+        app(CashierShiftService::class)->open($this->admin->id, $this->branch->id, 0);
 
         // Waiter has no Payment ability — the deny side of every guard test.
         $this->waiter = User::create([

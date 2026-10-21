@@ -15,6 +15,7 @@ const props = defineProps({
     urls: { type: Object, required: true }, // { recent, readAll, base, index }
     floating: { type: Boolean, default: true },
 });
+const emit = defineEmits(['server-health']);
 
 const { open, root, toggle, close } = useDropdown();
 const unread = ref(0);
@@ -51,9 +52,15 @@ const call = (url, method = 'GET', payload = null, signal = undefined) => fetch(
 }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
 
 const refreshNotifications = async (signal) => {
+    emit('server-health', { refreshing: true });
     try {
         const data = await call(props.urls.recent, 'GET', null, signal);
-        if (! data || signal.aborted) return;
+        if (signal.aborted) return;
+        if (!data || !Array.isArray(data.items)) {
+            emit('server-health', { failed: true });
+            return;
+        }
+        emit('server-health', { failed: false, lastSuccessfulAt: Date.now() });
         const next = data.items ?? [];
         if (initialized) {
             const fresh = next
@@ -70,6 +77,7 @@ const refreshNotifications = async (signal) => {
         unread.value = data.unread ?? 0;
         items.value = next;
     } finally {
+        emit('server-health', { refreshing: false });
         loading.value = false;
     }
 };

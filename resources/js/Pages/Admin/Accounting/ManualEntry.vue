@@ -1,4 +1,5 @@
 <script setup>
+import { useFormUx } from '../../../Composables/useFormUx';
 import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 import { createAccountingToken } from '../../../Components/Accounting/accountingToken'
 import { computed } from 'vue'
@@ -10,6 +11,7 @@ import JournalLinesEditor from '../../../Components/Accounting/JournalLinesEdito
 import { localDateInput } from '../../../Utils/dateInput'
 defineOptions({layout:AdminLayout})
 const props=defineProps({accounts:Array,currencies:Array,baseCurrencyCode:String,urls:Object});const today=localDateInput();const line=()=>({account_id:'',foreign_debit:'',foreign_credit:'',currency_code:props.baseCurrencyCode,exchange_rate:1,description:'',details:false});const form=useForm({_idem:createAccountingToken(),posted_on:today,description:'',lines:[line(),line()]});const debit=computed(()=>form.lines.reduce((s,l)=>s+Number(l.foreign_debit||0)*Number(l.exchange_rate||1),0));const credit=computed(()=>form.lines.reduce((s,l)=>s+Number(l.foreign_credit||0)*Number(l.exchange_rate||1),0));const balanced=computed(()=>debit.value>0&&Math.abs(debit.value-credit.value)<.01&&form.lines.filter(l=>l.account_id).length>=2);const submit=()=>form.post(props.urls.store)
+useFormUx(form);
 </script>
 <template>
 <Head title="قيد محاسبي يدوي"/>

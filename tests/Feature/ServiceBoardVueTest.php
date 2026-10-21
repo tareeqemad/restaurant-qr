@@ -305,8 +305,11 @@ class ServiceBoardVueTest extends TestCase
 
         $this->assertStringContainsString("'order.change'", $bell);
         $this->assertStringContainsString('class="operational-float"', $bell);
-        $this->assertStringContainsString('timer = setInterval(refresh, 3000)', $bell);
-        $this->assertStringContainsString("document.addEventListener('visibilitychange', refresh)", $bell);
+        $this->assertStringContainsString('const poller = createNotificationPolling({', $bell);
+        $this->assertStringContainsString('canPoll: () => !document.hidden && navigator.onLine && !navigationBusy', $bell);
+        $this->assertStringContainsString("document.addEventListener('visibilitychange', syncPolling)", $bell);
+        $this->assertStringContainsString('poller.stop()', $bell);
+        $this->assertStringNotContainsString('setInterval(', $bell);
         $this->assertStringContainsString('router.visit(notification.action_url)', $bell);
         $this->assertStringNotContainsString('window.location', $bell);
     }

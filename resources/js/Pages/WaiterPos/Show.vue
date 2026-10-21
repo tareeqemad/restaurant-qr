@@ -19,6 +19,7 @@ import StaffSheet from '../../Components/WaiterPos/StaffSheet.vue';
 import TransferSheet from '../../Components/WaiterPos/TransferSheet.vue';
 import NotificationsBell from '../../Components/AdminShell/NotificationsBell.vue';
 import ConfirmHost from '../../Components/Ui/ConfirmHost.vue';
+import ServerHealth from '../../Components/Ui/ServerHealth.vue';
 import { useToast } from '../../Composables/useToast';
 import { requiresChoices } from '../../Support/waiterChoices';
 
@@ -58,6 +59,8 @@ const confirmedCovers = ref(covers.value);
 const pendingCoverDelta = ref(0);
 const coverRequestRunning = ref(false);
 const isOnline = ref(typeof navigator === 'undefined' ? true : navigator.onLine);
+const connectionHealth = ref({ lastSuccessfulAt: Date.now(), failed: false, refreshing: false });
+const updateServerHealth = (health) => { connectionHealth.value = { ...connectionHealth.value, ...health }; };
 const notice = ref(null);
 let noticeTimer = null;
 let pageActive = true;
@@ -493,11 +496,8 @@ async function flushCoverChanges() {
                 <h1>طاولة {{ table.number }}</h1>
             </div>
             <div class="heading-tools">
-                <NotificationsBell class="waiter-live-bell" :urls="notificationUrls" />
-                <span class="connection-state" :class="{ 'is-offline': !isOnline }" role="status">
-                    <i :class="isOnline ? 'bi bi-wifi' : 'bi bi-cloud-slash'"></i>
-                    {{ isOnline ? 'متصل' : 'أوفلاين — السلة محفوظة' }}
-                </span>
+                <NotificationsBell class="waiter-live-bell" :urls="notificationUrls" @server-health="updateServerHealth" />
+                <ServerHealth class="waiter-server-health" v-bind="connectionHealth" />
             </div>
         </header>
 
@@ -699,12 +699,7 @@ async function flushCoverChanges() {
     border: 1px solid color-mix(in srgb, var(--brand) 15%, transparent); border-radius: 12px;
     color: var(--wp-primary); background: var(--surface); text-decoration: none;
 }
-.connection-state {
-    display: inline-flex; align-items: center; gap: .35rem; min-height: 44px;
-    padding-inline: .7rem; border-radius: 8px;
-    color: var(--muted) !important !important; background: var(--surface); white-space: nowrap; border: 1px solid var(--line);
-}
-.connection-state.is-offline { color: #92400E !important !important; background: #F8F0E2; }
+
 .page-notice, .carry-over {
     display: flex; align-items: center; gap: .65rem; width: min(100%, 1180px);
     box-sizing: border-box; margin: 0 auto .65rem; padding: .7rem .8rem;
@@ -761,9 +756,6 @@ async function flushCoverChanges() {
 }
 .cart-backdrop { position: fixed; inset: 0; z-index: 1060; background: rgba(15, 23, 42, .45); }
 @media (max-width: 560px) {
-    .connection-state { width: 44px; padding: 0; justify-content: center; overflow: hidden; color: transparent !important; }
-    .connection-state i { color: var(--brand); font-size: 1rem; }
-    .connection-state.is-offline i { color: #b45309; }
     .carry-over { align-items: flex-start; flex-wrap: wrap; }
     .carry-over__details { width: 100%; }
 }
@@ -778,4 +770,6 @@ async function flushCoverChanges() {
 
 /* Task-focused workspace layout. */
 .waiter-pos-page{max-width:1480px;margin:auto;padding:20px 24px 100px}.page-heading{padding:0 0 18px;margin-bottom:14px}.heading-copy h1{font-size:28px}.order-entry-layout{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:22px;align-items:start;margin-top:18px}.menu-workspace{min-width:0;border:0;background:transparent;padding:0}.menu-toolbar{position:sticky;top:0;z-index:30;background:var(--canvas);padding:0 0 14px;gap:12px}.waiter-order-rail{position:sticky;top:20px;display:flex;flex-direction:column;max-height:calc(100dvh - 40px);border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}.waiter-order-rail>header{display:flex;justify-content:space-between;align-items:center;padding:18px;border-bottom:1px solid var(--line)}.waiter-order-rail h2{font-size:19px;margin:4px 0 0}.waiter-order-rail small{font-size:14px;color:var(--muted)}.waiter-order-rail header>strong{font-size:24px;color:var(--brand)}.rail-lines{overflow-y:auto;padding:0 16px}.rail-lines>button{display:grid;grid-template-columns:28px minmax(0,1fr) 18px;gap:8px;align-items:start;width:100%;padding:16px 0;background:none;border:0;border-bottom:1px solid var(--line);color:var(--ink);font:inherit;text-align:start}.rail-lines>button>span{display:grid;gap:4px}.rail-lines strong{font-size:15px}.rail-lines>button>i{font-size:14px;color:var(--muted)}.waiter-order-rail>footer{display:grid;gap:14px;padding:18px;background:var(--canvas);margin-top:auto}.waiter-order-rail footer>span{display:flex;justify-content:space-between;font-size:14px;gap:8px}.waiter-order-rail footer strong{font-size:18px}.waiter-order-rail footer>button{min-height:48px;border:0;border-radius:8px;background:var(--brand);color:#fff;font:inherit;font-weight:700}.waiter-order-rail footer>button:disabled{opacity:.5}.rail-empty{display:grid;justify-items:center;gap:12px;padding:40px 16px;margin:0;color:var(--muted);font-size:14px}.rail-empty i{font-size:32px;color:var(--accent)}.rail-pending{padding:12px;margin:12px;background:#fff4df;color:#755522;font-size:14px;border-inline-start:3px solid var(--accent)}@media(min-width:1000px){:deep(.cart-fab){display:none}}@media(max-width:999px){.order-entry-layout{grid-template-columns:1fr}.waiter-order-rail{display:none}.waiter-pos-page{padding:16px 14px 110px}}
+.waiter-server-health{max-width:260px;min-width:0;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+@media(max-width:700px){.page-heading{flex-wrap:wrap}.heading-tools{width:100%;justify-content:space-between}.waiter-server-health{max-width:none;flex:1}}
 </style>

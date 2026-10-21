@@ -20,21 +20,23 @@ const switchTo = (url) => formPost(url);
 <template>
     <div class="header-element bsx" ref="root">
         <!-- Single-branch staff: static chip, nothing to switch. -->
-        <span v-if="branch.single" class="bsx-trigger is-static">
+        <span v-if="branch.single" class="bsx-trigger is-static" :title="`الفرع: ${branch.activeName}`">
             <span class="bsx-avatar" :style="{ '--hue': branch.activeHue }">{{ initial(branch.activeName) }}</span>
             <span class="bsx-trigger__name">{{ branch.activeName }}</span>
         </span>
 
         <template v-else>
-            <a href="#" class="bsx-trigger" :class="{ 'bsx-trigger--all': branch.allMode }"
-               role="button" :aria-expanded="open" @click.prevent="toggle">
+            <button type="button" class="bsx-trigger" :class="{ 'bsx-trigger--all': branch.allMode }"
+               :title="branch.allMode ? 'كل الفروع' : `الفرع: ${branch.activeName}`"
+               :aria-label="branch.allMode ? 'تغيير الفرع: كل الفروع' : `تغيير الفرع: ${branch.activeName}`"
+               :aria-expanded="open" @click="toggle">
                 <span v-if="branch.allMode" class="bsx-avatar bsx-avatar--all">
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.6"/><path d="M1.5 8h13M8 1.5c2 2 2 11 0 13M8 1.5c-2 2-2 11 0 13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
                 </span>
                 <span v-else class="bsx-avatar" :style="{ '--hue': branch.activeHue }">{{ initial(branch.activeName) }}</span>
                 <span class="bsx-trigger__name">{{ branch.allMode ? 'كل الفروع' : branch.activeName }}</span>
                 <svg class="bsx-trigger__chev" :class="{ 'is-open': open }" width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </a>
+            </button>
 
             <div v-show="open" class="bsx-menu">
                 <div class="bsx-menu__head">اختر الفرع</div>
@@ -239,5 +241,12 @@ button.bsx-row {
     .bsx-trigger { padding: 0 8px; max-width: 44px; justify-content: center; }
     .bsx-trigger__name, .bsx-trigger__chev { display: none; }
     .bsx-menu { min-width: 280px; max-width: calc(100vw - 24px); }
+}
+/* Keep branch identity readable despite the legacy mobile icon-only rules. */
+@media(max-width:768px){
+.bsx .bsx-trigger{min-height:44px!important;max-width:clamp(100px,32vw,180px)!important;padding:6px 8px!important;border-radius:8px!important;gap:5px}
+.bsx .bsx-trigger .bsx-trigger__name{display:block!important;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}
+.bsx .bsx-trigger .bsx-avatar{display:none!important}
+.bsx .bsx-trigger .bsx-trigger__chev{display:block!important;flex:none}
 }
 </style>

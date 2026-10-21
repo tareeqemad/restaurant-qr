@@ -14,10 +14,14 @@ class TableSessionMiddleware
 {
     public function handle(Request $request, Closure $next): Response
     {
-        $token = $request->cookie('table_session') ?? $request->input('session');
+        $isSubmission = $request->routeIs('customer.cart.submit');
+        // A persisted retry belongs to its original visit, even if another tab
+        // has since scanned a different table and replaced the browser cookie.
+        $token = ($isSubmission ? $request->input('session') : null)
+            ?? $request->cookie('table_session') ?? $request->input('session');
         $isQrEntry = $request->routeIs('customer.menu.open');
 
-        if (! $token) {
+        if (! is_string($token) || $token === '') {
             // The QR entry action creates or rejoins the table session, then
             // redirects once to the same tokenized URL with the visit cookie.
             if ($isQrEntry) {
@@ -32,7 +36,7 @@ class TableSessionMiddleware
         // branch this customer is in.
         $session = TableSession::withoutGlobalScopes()
             ->where('token', $token)
-            ->where('status', 'active')
+            ->when(! $isSubmission, fn ($query) => $query->where('status', 'active'))
             ->with('table')
             ->first();
 
@@ -70,7 +74,12 @@ class TableSessionMiddleware
             config('restaurant.order.session_ttl_minutes', 240),
         );
 
-        $response->headers->setCookie(cookie('table_session', $session->token, max(5, $ttl)));
+        // Receipt recovery must neither reopen a closed visit nor overwrite a
+        // newer table cookie. The controller refuses all new closed-visit writes.
+        if ($session->status === 'active'
+            && (! $isSubmission || ! $request->cookie('table_session') || $request->cookie('table_session') === $session->token)) {
+            $response->headers->setCookie(cookie('table_session', $session->token, max(5, $ttl)));
+        }
         $response->headers->setCookie(cookie('qr_order_device', $deviceToken, max(5, $ttl)));
 
         return $response;

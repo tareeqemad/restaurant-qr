@@ -3,17 +3,16 @@
 namespace Tests\Feature;
 
 use App\Enums\OrderItemStatus;
+use App\Models\ActivityLog;
 use App\Models\Branch;
 use App\Models\Category;
+use App\Models\Customer;
 use App\Models\Ingredient;
 use App\Models\IngredientStock;
-use App\Models\InventoryMovement;
 use App\Models\Invoice;
-use App\Models\InvoiceSplit;
 use App\Models\JournalEntry;
 use App\Models\MenuItem;
 use App\Models\Order;
-use App\Models\OrderItem;
 use App\Models\Payment;
 use App\Models\RecipeItem;
 use App\Models\Refund;
@@ -25,9 +24,11 @@ use App\Models\Table;
 use App\Models\TableSession;
 use App\Models\Unit;
 use App\Models\User;
+use App\Services\CashierShiftService;
 use App\Services\InventoryService;
 use App\Services\OrderService;
 use App\Services\RefundService;
+use App\Services\StaffMealService;
 use App\Support\BranchContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -46,9 +47,13 @@ class MinorAuditGapsClosureTest extends TestCase
     use RefreshDatabase;
 
     protected Branch $branch;
+
     protected User $cashier;
+
     protected MenuItem $burger;
+
     protected Table $table;
+
     protected Ingredient $patty;
 
     protected function setUp(): void
@@ -102,6 +107,7 @@ class MinorAuditGapsClosureTest extends TestCase
 
     public function test_g4_refund_partial_reduces_sale_without_creating_false_balance(): void
     {
+        app(CashierShiftService::class)->open($this->cashier->id, $this->branch->id, 0);
         $invoice = $this->makeInvoice(total: 100);
         $invoice->update(['paid_total' => 100, 'balance' => 0, 'status' => 'paid', 'paid_at' => now()]);
 
@@ -115,11 +121,11 @@ class MinorAuditGapsClosureTest extends TestCase
         ]);
         app(RefundService::class)->issue(
             invoice: $invoice,
-            amount:  30,
-            method:  'cash',
-            reason:  'wrong item',
-            userId:  $this->cashier->id,
-            opts:    ['payment_id' => $payment->id, 'status' => 'completed'],
+            amount: 30,
+            method: 'cash',
+            reason: 'wrong item',
+            userId: $this->cashier->id,
+            opts: ['payment_id' => $payment->id, 'status' => 'completed'],
         );
 
         $invoice->refresh();
@@ -164,7 +170,7 @@ class MinorAuditGapsClosureTest extends TestCase
             ->first();
         $this->assertNotNull($entry, 'Reclassification journal MUST post (was silent before G6 fix).');
 
-        $debit  = $entry->lines->firstWhere(fn ($l) => $l->debit > 0);
+        $debit = $entry->lines->firstWhere(fn ($l) => $l->debit > 0);
         $credit = $entry->lines->firstWhere(fn ($l) => $l->credit > 0);
         $this->assertSame('5400', $debit->account->code, 'Cost moves INTO waste expense.');
         $this->assertSame('5000', $credit->account->code, 'Cost moves OUT of COGS.');
@@ -174,9 +180,9 @@ class MinorAuditGapsClosureTest extends TestCase
     // G7 — addItem does not N+1 on customer lookup
     // ───────────────────────────────────────────────────────────────
 
-    public function test_g7_addItem_customer_queries_dont_scale_with_cart_size(): void
+    public function test_g7_add_item_customer_queries_dont_scale_with_cart_size(): void
     {
-        $customer = \App\Models\Customer::create([
+        $customer = Customer::create([
             'name' => 'X', 'phone' => '999111', 'status' => 'active',
             'password' => bcrypt('x'),
         ]);
@@ -203,6 +209,7 @@ class MinorAuditGapsClosureTest extends TestCase
                 ->filter(fn ($q) => str_contains(strtolower($q['query']), 'from "customers"'))
                 ->count();
             \DB::disableQueryLog();
+
             return $count;
         };
 
@@ -220,7 +227,7 @@ class MinorAuditGapsClosureTest extends TestCase
     public function test_g8_staff_meal_service_strip_is_logged_in_activity_feed(): void
     {
         Setting::put('service_enabled', true, 'billing', 'bool');
-        Setting::put('service_rate',    10, 'billing', 'float');
+        Setting::put('service_rate', 10, 'billing', 'float');
         Setting::put('staff_meal_include_service', false, 'staff_meals', 'bool');
 
         $employee = User::create([
@@ -247,10 +254,10 @@ class MinorAuditGapsClosureTest extends TestCase
         $this->assertGreaterThan(0, (float) $order->fresh()->service_total,
             'Sanity: order opened with service on so the strip is meaningful.');
 
-        app(\App\Services\StaffMealService::class)->chargeOrder($order->fresh(), $this->cashier->id);
+        app(StaffMealService::class)->chargeOrder($order->fresh(), $this->cashier->id);
 
         // ActivityLog row must be present, with the stripped amount in metadata.
-        $log = \App\Models\ActivityLog::where('event', 'staff_meal.service_stripped')
+        $log = ActivityLog::where('event', 'staff_meal.service_stripped')
             ->where('subject_id', $order->id)
             ->first();
         $this->assertNotNull($log,
@@ -273,15 +280,15 @@ class MinorAuditGapsClosureTest extends TestCase
         ]], createdByUserId: $this->cashier->id);
 
         return Invoice::create([
-            'branch_id'         => $this->branch->id,
-            'order_id'          => $order->id,
+            'branch_id' => $this->branch->id,
+            'order_id' => $order->id,
             'issued_by_user_id' => $this->cashier->id,
-            'subtotal'          => $total, 'discount_total' => 0,
-            'tax_total'         => 0, 'service_total' => 0,
-            'delivery_fee'      => 0, 'tip' => 0,
-            'total'             => $total, 'balance' => $total,
-            'status'            => 'issued',
-            'issued_at'         => now()->subMinutes(30),
+            'subtotal' => $total, 'discount_total' => 0,
+            'tax_total' => 0, 'service_total' => 0,
+            'delivery_fee' => 0, 'tip' => 0,
+            'total' => $total, 'balance' => $total,
+            'status' => 'issued',
+            'issued_at' => now()->subMinutes(30),
         ]);
     }
 }

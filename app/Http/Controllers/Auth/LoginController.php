@@ -7,8 +7,10 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Support\FirstRunSetup;
 use App\Support\PhoneNumber;
+use App\Support\RoleLanding;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class LoginController extends Controller
@@ -21,7 +23,9 @@ class LoginController extends Controller
 
         if ($user = Auth::user()) {
             if ($user->canLogin() && $user->canAccessAdmin()) {
-                return redirect()->route('admin.dashboard');
+                return FirstRunSetup::shouldRunWizard()
+                    ? redirect()->route('setup.show')
+                    : redirect()->to(RoleLanding::destination($user, $request));
             }
 
             Auth::logout();
@@ -100,7 +104,7 @@ class LoginController extends Controller
             return redirect()->route('setup.show');
         }
 
-        $destination = (string) $request->session()->pull('url.intended', route('admin.dashboard'));
+        $destination = (string) $request->session()->pull('url.intended', RoleLanding::destination($user, $request));
 
         // Login and admin pages intentionally use different Inertia root
         // documents. A normal SPA redirect would keep the lean login shell
@@ -116,6 +120,9 @@ class LoginController extends Controller
 
     public function destroy(Request $request)
     {
+        if (DB::table('cashier_shifts')->where('active_user_id', $request->user()->id)->exists()) {
+            return redirect()->route('admin.cashier.index')->with('error', 'أغلق ورديتك النقدية وسجّل المبلغ المعدود قبل تسجيل الخروج.');
+        }
         Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();

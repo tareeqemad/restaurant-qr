@@ -12,6 +12,8 @@ use App\Models\FiscalYear;
 use App\Models\JournalEntry;
 use App\Models\Role;
 use App\Models\Setting;
+use App\Models\Table;
+use App\Models\TableSession;
 use App\Models\User;
 use App\Services\Accounting\AccountingService;
 use App\Support\BranchContext;
@@ -88,6 +90,55 @@ class AccountantWorkspaceTest extends TestCase
                 ->where('accounting.taxEnabled', false)
                 ->where('urls.mappings', route('admin.accounting.mappings'))
             );
+    }
+
+    public function test_period_check_links_drill_into_the_same_branch_and_cutoff_including_older_open_sessions(): void
+    {
+        $period = AccountingPeriod::create(['branch_id' => $this->branch->id, 'name' => 'شهر الفحص', 'starts_on' => '2026-10-01', 'ends_on' => '2026-10-31', 'status' => 'open']);
+        $table = Table::create(['branch_id' => $this->branch->id, 'number' => 'audit-1', 'capacity' => 4, 'status' => 'occupied', 'active' => true]);
+        foreach (['2026-09-30', '2026-10-20', '2026-11-01'] as $date) {
+            TableSession::create(['table_id' => $table->id, 'status' => 'active', 'opened_at' => $date]);
+        }
+        $other = Branch::create(['name' => 'فرع آخر', 'code' => 'closing-other', 'is_active' => true]);
+        BranchContext::forBranch($other->id, function () {
+            $table = Table::create(['number' => 'audit-2', 'capacity' => 4, 'status' => 'occupied', 'active' => true]);
+            TableSession::create(['table_id' => $table->id, 'status' => 'active', 'opened_at' => '2026-10-20']);
+        });
+        $url = route('admin.accounting.periods.issues', [$period, 'sessions']);
+        $this->actingAs($this->accountant)->withSession(['active_branch_id' => $this->branch->id])
+            ->get(route('admin.accounting.periods', ['check_period_id' => $period->id]))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('periods.data.0.checks.1.detail', '2 جلسة نشطة')->where('periods.data.0.checks.1.url', $url));
+        $this->get($url)->assertOk()->assertInertia(fn (Assert $page) => $page->component('Admin/Accounting/ClosingIssues')->where('rows.total', 2)->where('period.branchId', $this->branch->id)->where('period.to', '2026-10-31'));
+        $foreign = AccountingPeriod::create(['branch_id' => $other->id, 'name' => 'شهر آخر', 'starts_on' => '2026-10-01', 'ends_on' => '2026-10-31', 'status' => 'open']);
+        $this->get(route('admin.accounting.periods.issues', [$foreign, 'sessions']))->assertNotFound();
+    }
+
+    public function test_reconciliation_drilldown_preserves_exact_record_and_resolution_requires_an_explicit_account(): void
+    {
+        $period = AccountingPeriod::create(['branch_id' => $this->branch->id, 'name' => 'شهر المطابقة', 'starts_on' => now()->startOfMonth()->toDateString(), 'ends_on' => now()->endOfMonth()->toDateString(), 'status' => 'open']);
+        $cash = Account::query()->where('type', 'asset')->where('is_active', true)->firstOrFail();
+        $reconciliation = CashReconciliation::create(['branch_id' => $this->branch->id, 'accounting_period_id' => $period->id, 'account_id' => $cash->id, 'statement_date' => now()->toDateString(), 'book_balance' => 20, 'statement_balance' => 15, 'difference' => -5, 'status' => 'variance', 'reconciled_at' => now(), 'reconciled_by' => $this->accountant->id]);
+        $this->actingAs($this->accountant)->withSession(['active_branch_id' => $this->branch->id]);
+        $response = $this->get(route('admin.accounting.periods.issues', [$period, 'reconciliations']));
+        $response->assertOk()->assertInertia(fn (Assert $page) => $page->where('rows.total', 1)->where('rows.data.0.id', $reconciliation->id));
+        $this->get(route('admin.accounting.reconciliations', ['reconciliation_id' => $reconciliation->id, 'statement_date' => now()->toDateString()]))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('reconciliations.total', 1)->where('reconciliations.data.0.id', $reconciliation->id));
+        $this->post(route('admin.accounting.reconciliations.resolve', $reconciliation), ['posted_on' => now()->toDateString(), 'notes' => 'قيد المراجعة'])
+            ->assertSessionHasErrors('adjustment_account_id');
+        $this->assertSame('variance', $reconciliation->fresh()->status);
+        $this->assertNull($reconciliation->fresh()->resolution_journal_entry_id);
+        $this->post(route('admin.accounting.periods.close', $period))->assertSessionHas('error');
+        $this->assertSame('open', $period->fresh()->status, 'An unresolved cash variance must block closing even with no supplier invoices.');
+    }
+
+    public function test_reconciliation_source_account_must_be_selected_explicitly(): void
+    {
+        $account = Account::query()->where('type', 'asset')->where('is_active', true)->firstOrFail();
+        $this->actingAs($this->accountant)->withSession(['active_branch_id' => $this->branch->id]);
+        $this->get(route('admin.accounting.reconciliations'))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('selectedAccount', null));
+        $this->get(route('admin.accounting.reconciliations', ['account_id' => $account->id]))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('selectedAccount.id', $account->id));
     }
 
     public function test_accounting_guide_uses_live_mappings_and_payment_destinations(): void

@@ -3,6 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import ChangeRequestDialog from '../CustomerTrack/ChangeRequestDialog.vue';
 import TrackCard from '../CustomerTrack/TrackCard.vue';
 import { useToast } from '../../Composables/useToast';
+import { useLiveRefresh } from '../../Composables/useLiveRefresh';
+import ServerHealth from '../Ui/ServerHealth.vue';
 
 const props = defineProps({
     open: { type: Boolean, default: false },
@@ -21,6 +23,11 @@ const actionBusy = ref(false);
 const cancelOrder = ref(null);
 const cancelReason = ref('');
 const changeOrder = ref(null);
+const lastSuccessfulAt = ref(null);
+const serverFailed = ref(false);
+const markServerSuccess = () => { lastSuccessfulAt.value = Date.now(); serverFailed.value = false; };
+let disposed = false;
+let loadController = null;
 
 const active = computed(() => orders.value.filter((order) => ! ['cancelled', 'completed'].includes(order.status)));
 const finished = computed(() => orders.value.filter((order) => ['cancelled', 'completed'].includes(order.status)));
@@ -49,50 +56,68 @@ const handleExpired = () => {
     emit('close');
 };
 
-const loadOrders = async (silent = false) => {
+const loadOrders = async (silent = false, signal) => {
     if (loading.value || refreshing.value) return;
     if (silent) refreshing.value = true;
     else loading.value = true;
     errorMessage.value = '';
+    loadController = new AbortController();
+    const abort = () => loadController?.abort();
+    signal?.addEventListener('abort', abort, { once: true });
 
     try {
         const response = await fetch(props.urls.trackData, {
             headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
             credentials: 'same-origin',
+            signal: loadController.signal,
         });
+        if (disposed || !props.open || loadController.signal.aborted) return;
         if (response.status === 419) {
             handleExpired();
             return;
         }
         const data = await response.json().catch(() => null);
-        if (! response.ok || ! data) throw new Error(data?.message ?? 'تعذّر تحديث الطلبات.');
+        if (! response.ok || ! Array.isArray(data?.orders)) throw new Error(data?.message ?? 'تعذّر تحديث الطلبات.');
+        if (disposed || !props.open || loadController.signal.aborted) return;
+        markServerSuccess();
 
         orders.value = Array.isArray(data.orders) ? data.orders : [];
         version.value = data.version ?? null;
         emit('orders', orders.value);
     } catch (error) {
+        if (disposed || !props.open || loadController.signal.aborted) return;
+        serverFailed.value = true;
         errorMessage.value = error?.message ?? 'تعذّر تحديث الطلبات. تأكد من الاتصال وحاول ثانية.';
     } finally {
+        signal?.removeEventListener('abort', abort);
+        loadController = null;
         loading.value = false;
         refreshing.value = false;
     }
 };
 
-const checkPulse = async () => {
-    if (! props.open || document.hidden) return;
+const checkPulse = async (signal) => {
+    if (! props.open || document.hidden || loading.value || refreshing.value) return;
     try {
         const response = await fetch(props.urls.trackPulse, {
             headers: { Accept: 'application/json' },
             credentials: 'same-origin',
+            signal,
         });
+        if (disposed || !props.open || signal?.aborted) return;
         if (response.status === 419) {
             handleExpired();
             return;
         }
-        const data = response.ok ? await response.json() : null;
-        if (data && (version.value === null || data.version !== version.value)) await loadOrders(true);
-    } catch { /* The next five-second pulse retries without disturbing the diner. */ }
+        if (!response.ok) throw new Error('Pulse failed');
+        const data = await response.json();
+        if (data?.version == null) throw new Error('Invalid pulse');
+        if (disposed || !props.open || signal?.aborted) return;
+        markServerSuccess();
+        if (version.value === null || data.version !== version.value) await loadOrders(true, signal);
+    } catch { if (!disposed && props.open && !signal?.aborted) serverFailed.value = true; }
 };
+useLiveRefresh({ pollMs: 5000, onPing: (_reason, signal) => checkPulse(signal) });
 
 const postJson = async (url, payload) => {
     const response = await fetch(url, {
@@ -181,7 +206,6 @@ const handleEscape = (event) => {
     if (event.key === 'Escape' && props.open) closeTopLayer();
 };
 
-let pulseTimer = null;
 let previousBodyOverflow = '';
 
 watch(() => props.open, (open) => {
@@ -191,6 +215,7 @@ watch(() => props.open, (open) => {
         document.body.style.overflow = 'hidden';
         loadOrders();
     } else {
+        loadController?.abort();
         document.body.style.overflow = previousBodyOverflow;
         cancelOrder.value = null;
         changeOrder.value = null;
@@ -199,12 +224,12 @@ watch(() => props.open, (open) => {
 
 onMounted(() => {
     window.addEventListener('keydown', handleEscape);
-    pulseTimer = window.setInterval(checkPulse, 5000);
 });
 
 onBeforeUnmount(() => {
+    disposed = true;
+    loadController?.abort();
     window.removeEventListener('keydown', handleEscape);
-    window.clearInterval(pulseTimer);
     if (typeof document !== 'undefined') document.body.style.overflow = previousBodyOverflow;
 });
 </script>
@@ -216,7 +241,7 @@ onBeforeUnmount(() => {
                 <section class="ots-sheet" role="dialog" aria-modal="true" aria-labelledby="tracking-title">
                     <header class="ots-header">
                         <div>
-                            <span class="ots-live"><i></i> تحديث تلقائي</span>
+                            <ServerHealth :last-successful-at="lastSuccessfulAt" :failed="serverFailed" :refreshing="loading || refreshing" />
                             <h2 id="tracking-title">تتبع طلباتك</h2>
                         </div>
                         <button type="button" class="ots-close" aria-label="إغلاق التتبع" @click="emit('close')">

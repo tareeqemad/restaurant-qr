@@ -33,6 +33,16 @@ function report(month, sales, costs) {
     }
 }
 
+test('reconciliation never chooses the first revenue or expense account on behalf of the accountant', () => {
+    const useForm = initial => ({ ...initial, errors: {}, reset() { Object.assign(this, initial) }, clearErrors() {}, post() {} });
+    const page = setupPage('Reconciliations', { selectedAccount: null, statementDate: '2026-10-21', bookBalance: 0, adjustmentAccounts: [{ id: 1, type: 'expense' }, { id: 2, type: 'revenue' }], currency: { symbol: '₪' }, urls: {} }, ['openResolution', 'resolution'], { useForm, useFormUx() {}, router: {} });
+    page.openResolution({ id: 1, difference: -5 });
+    assert.equal(page.resolution.adjustment_account_id, '');
+    page.resolution.adjustment_account_id = 1;
+    page.openResolution({ id: 2, difference: 5 });
+    assert.equal(page.resolution.adjustment_account_id, '', 'A previous selection cannot silently carry into another variance');
+});
+
 test('profit and loss replaces displayed totals and period after a preserved Inertia visit', async () => {
     const props = reactive({ report: report('08', 100, 40), currency: { symbol: 'ILS' }, urls: { index: '/profit-loss' } })
     const scope = effectScope()

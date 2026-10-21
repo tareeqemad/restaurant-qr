@@ -8,6 +8,7 @@ use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Models\Lookup;
 use App\Models\Order;
+use App\Models\OrderItem;
 use App\Models\SectionAssignment;
 use App\Models\Table;
 use App\Models\TableSession;
@@ -20,6 +21,7 @@ use App\Support\LiveRefreshPulse;
 use App\Support\OrderRoundContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
 /**
@@ -201,35 +203,51 @@ class TablesBoardController extends Controller
     }
 
     /**
-     * "Delivered." Marks every READY line served, even when another station
-     * still has lines cooking on the same order. Per-item broadcasts stay
-     * muted and each touched order gets one refresh. Items still cooking are
-     * deliberately left alone.
+     * Deliver only the ready lines the waiter reviewed. A stale snapshot is
+     * rejected atomically; newly ready lines stay for the next handoff.
      */
-    public function serve(TableSession $session, OrderService $orders)
+    public function serve(Request $request, TableSession $session, OrderService $orders)
     {
         abort_unless($session->table && auth()->user()?->can('view', $session->table), 403);
+        abort_unless($this->canServe(), 403);
+        $data = $request->validate([
+            'item_ids' => ['required', 'array', 'min:1', 'max:1000'],
+            'item_ids.*' => ['required', 'integer', 'distinct'],
+            'handoff_version' => ['required', 'string', 'size:64'],
+        ]);
 
         try {
-            $readyOrders = $session->orders()
-                ->whereHas('items', fn ($items) => $items
-                    ->where('status', OrderItemStatus::Ready->value))
-                ->with(['items' => fn ($items) => $items
-                    ->where('status', OrderItemStatus::Ready->value)])
-                ->get();
-
-            $servedPieces = 0.0;
-
-            foreach ($readyOrders as $order) {
-                abort_unless(auth()->user()->can('serve', $order), 403);
-
-                foreach ($order->items as $item) {
-                    $servedPieces += (float) $item->quantity;
+            $servedPieces = DB::transaction(function () use ($session, $orders, $data) {
+                // Lock orders before items, matching OrderService's workflow lock order.
+                $selectedOrders = $session->orders()
+                    ->whereHas('items', fn ($items) => $items->whereIn('id', $data['item_ids']))
+                    ->orderBy('id')->lockForUpdate()->get();
+                foreach ($selectedOrders as $order) {
+                    abort_unless(auth()->user()->can('serve', $order), 403);
+                }
+                $items = OrderItem::whereIn('order_id', $selectedOrders->modelKeys())
+                    ->whereIn('id', $data['item_ids'])->orderBy('id')->lockForUpdate()->get();
+                if ($items->count() !== count($data['item_ids'])
+                    || $items->contains(fn ($item) => $item->status !== OrderItemStatus::Ready->value)
+                    || ! hash_equals($this->handoffVersion($items), $data['handoff_version'])) {
+                    throw new \RuntimeException('تغيّرت أصناف التسليم. راجع القائمة المحدثة وأكّد ما استلمته فقط.');
+                }
+                $pieces = (float) $items->sum('quantity');
+                foreach ($items as $item) {
                     $orders->markItemServed($item, (int) auth()->id(), broadcast: false);
                 }
+                foreach ($selectedOrders as $order) {
+                    DB::afterCommit(function () use ($orders, $order) {
+                        try {
+                            $orders->broadcastOrderRefresh($order);
+                        } catch (\Throwable $exception) {
+                            report($exception);
+                        }
+                    });
+                }
 
-                $orders->broadcastOrderRefresh($order);
-            }
+                return $pieces;
+            }, 3);
 
             return response()->json([
                 'ok' => true,
@@ -604,14 +622,26 @@ class TablesBoardController extends Controller
             'lineCount' => $items->count(),
             'pieceCount' => $this->fmtQty((float) $items->sum(fn ($item) => (float) $item->quantity)),
             'stationNames' => $stationNames->all(),
-            'items' => $items->take(4)->map(fn ($item) => [
+            'itemIds' => $items->pluck('id')->map(fn ($id) => (int) $id)->values()->all(),
+            'version' => $this->handoffVersion($items),
+            'items' => $items->map(fn ($item) => [
                 'id' => (int) $item->id,
                 'name' => (string) $item->name_snapshot,
                 'qty' => $this->fmtQty((float) $item->quantity),
                 'stationName' => $item->station?->name ?: 'بدون محطة',
             ])->values()->all(),
-            'hiddenItems' => max(0, $items->count() - 4),
+            'hiddenItems' => 0,
         ];
+    }
+
+    private function handoffVersion(Collection $items): string
+    {
+        $snapshot = $items->sortBy('id')->map(fn ($item) => [
+            (int) $item->id, (int) $item->order_id, (string) $item->quantity,
+            $item->ready_at?->format('Y-m-d H:i:s.u'),
+        ])->values()->all();
+
+        return hash_hmac('sha256', json_encode($snapshot, JSON_THROW_ON_ERROR), (string) config('app.key'));
     }
 
     protected function fmtQty(float $quantity): string

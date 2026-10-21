@@ -228,6 +228,7 @@ class RefundService
             }
 
             return BranchContext::forBranch($refund->branch_id, function () use ($refund, $invoice, $userId, $reason) {
+                app(CashierShiftService::class)->record($userId, (int) $refund->branch_id, (float) $refund->allocations->where('method', 'cash')->sum('amount'), 'refund_reversal', 'refund-reversal:'.$refund->id, $refund->number);
                 $this->advances->reverseRefundCredits($refund, $userId, $reason);
                 $this->accounting->reverseRefundCompleted($refund, $userId, $reason);
                 $invoice->update([
@@ -270,6 +271,7 @@ class RefundService
         $invoice = $invoice->fresh();
         $invoice->recomputeBalanceAfterRefund();
         $refund = $refund->fresh('allocations');
+        app(CashierShiftService::class)->record($userId, (int) $refund->branch_id, -(float) $refund->allocations->where('method', 'cash')->sum('amount'), 'refund', 'refund:'.$refund->id, $refund->number);
         $this->advances->creditRefundAllocations($refund, $userId);
         $this->accounting->recordRefundCompleted($refund);
         app(LoyaltyService::class)->reverseForRefund($invoice->fresh(), (float) $refund->amount, $userId);

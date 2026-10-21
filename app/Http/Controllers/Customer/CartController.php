@@ -8,12 +8,15 @@ use App\Models\Modifier;
 use App\Models\Order;
 use App\Models\PendingTransfer;
 use App\Services\CustomerIdentityService;
+use App\Services\CustomerSubmissionService;
 use App\Services\InventoryService;
 use App\Services\OrderService;
+use App\Services\PromotionService;
 use App\Support\CustomerMenuOrderPresenter;
 use App\Support\PhoneNumber;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class CartController extends Controller
@@ -22,6 +25,7 @@ class CartController extends Controller
         protected OrderService $orders,
         protected InventoryService $inventory,
         protected CustomerIdentityService $identity,
+        protected CustomerSubmissionService $submissions,
     ) {}
 
     /**
@@ -122,6 +126,22 @@ class CartController extends Controller
         }
 
         $modifiers = Modifier::whereIn('id', $data['modifier_ids'] ?? [])->get();
+        $session->loadMissing('customer');
+        $promotion = app(PromotionService::class)->resolveForItem(
+            $item, branchId: (int) $session->branch_id, channel: 'qr', customer: $session->customer,
+        );
+        // Draft rows survive quantity/removal edits. Keep cart-dependent
+        // discounts out of their fixed unit price; the saved order applies
+        // any earned threshold reduction using its authoritative totals.
+        if ($promotion && ! $promotion->meetsMinSubtotal(null)) {
+            $promotion = null;
+        }
+        $freeModifierIds = array_map('intval', $promotion?->free_modifier_ids ?? []);
+        $modifierRows = $modifiers->map(fn ($modifier) => [
+            'id' => (int) $modifier->id,
+            'name' => $modifier->localizedName(),
+            'price_delta' => in_array((int) $modifier->id, $freeModifierIds, true) ? 0.0 : (float) $modifier->price_delta,
+        ])->values();
 
         $row = [
             'id' => uniqid(),
@@ -129,9 +149,9 @@ class CartController extends Controller
             'name' => $item->localizedName(),
             'image' => $item->imageUrl(),
             'quantity' => (int) $data['quantity'],                // force int — avoids "1"+1="11" on client
-            'unit_price' => (float) $item->price,
+            'unit_price' => $promotion ? $promotion->applyTo((float) $item->price) : (float) $item->price,
             'modifier_ids' => $data['modifier_ids'] ?? [],
-            'modifiers' => $modifiers->map(fn ($m) => ['id' => (int) $m->id, 'name' => $m->localizedName(), 'price_delta' => (float) $m->price_delta])->values()->toArray(),
+            'modifiers' => $modifierRows->all(),
             'excluded_ingredient_ids' => $excludedIngredientIds->values()->all(),
             'excluded_ingredients' => $excludedIngredientIds->map(function ($id) use ($allowedExclusions) {
                 $recipe = $allowedExclusions->get((int) $id);
@@ -142,7 +162,7 @@ class CartController extends Controller
                     'requires_confirmation' => ! (bool) $recipe->is_optional,
                 ];
             })->values()->all(),
-            'modifiers_total' => (float) $modifiers->sum('price_delta'),
+            'modifiers_total' => (float) $modifierRows->sum('price_delta'),
             'notes' => $data['notes'] ?? null,
         ];
         $row['subtotal'] = ($row['unit_price'] + $row['modifiers_total']) * $row['quantity'];
@@ -258,23 +278,6 @@ class CartController extends Controller
     public function submit(Request $request)
     {
         $session = $request->attributes->get('table_session');
-        if ($this->hasIssuedInvoice($session)) {
-            return $this->submitRejected(
-                request: $request,
-                message: __('ui.customer_order.invoice_already_issued_extra'),
-                code: 'invoice_already_issued',
-                redirectRoute: 'customer.bill',
-            );
-        }
-        if ($this->hasPendingTransfer($session)) {
-            return $this->submitRejected(
-                request: $request,
-                message: 'يوجد تحويل بنكي بانتظار التحقق. لا يمكن إضافة طلب جديد حتى يراجعه الكاشير.',
-                code: 'pending_transfer',
-                redirectRoute: 'customer.bill',
-            );
-        }
-
         $data = $request->validate([
             'customer_phone' => [
                 'nullable',
@@ -288,101 +291,114 @@ class CartController extends Controller
             ],
             'notes' => ['nullable', 'string', 'max:1000'],
             '_idem' => ['nullable', 'string', 'max:100'],
+            'submission_scope' => ['sometimes', 'string', 'size:64'],
+            'cart_snapshot' => ['sometimes', 'array', 'min:1', 'max:1000'],
+            'cart_snapshot.*' => ['array'],
+            'cart_snapshot.*.id' => ['required', 'string', 'max:100'],
+            'cart_snapshot.*.menu_item_id' => ['required', 'integer', 'min:1'],
+            'cart_snapshot.*.quantity' => ['required', 'numeric', 'min:1'],
+            'cart_snapshot.*.notes' => ['nullable', 'string', 'max:1000'],
+            'cart_snapshot.*.modifier_ids' => ['sometimes', 'array'],
+            'cart_snapshot.*.modifier_ids.*' => ['integer'],
+            'cart_snapshot.*.excluded_ingredient_ids' => ['sometimes', 'array'],
+            'cart_snapshot.*.excluded_ingredient_ids.*' => ['integer'],
         ]);
 
+        $scope = CustomerSubmissionService::scope($session, $request->attributes->get('table_order_device_hash'));
+        if (isset($data['submission_scope']) && ! hash_equals($scope, $data['submission_scope'])) {
+            return response()->json(['ok' => false, 'submission_state' => 'unknown',
+                'error' => 'submission_scope_changed', 'message' => 'هذا الإرسال يخص جلسة طاولة أخرى. افتح المنيو الأصلي للتحقق منه.'], 409);
+        }
         $submitToken = $data['_idem']
             ?? session('cart_submit_token.'.$session->token)
             ?? (string) Str::uuid();
-        $idempotencyKey = 'idem:qr-order:'.hash('sha256', $session->token.'|'.$submitToken);
-
-        // A mobile retry can arrive after the first request already emptied
-        // the cart. Recognise it before the empty-cart guard and return the
-        // authoritative session rounds instead of showing a false error.
-        if (Cache::has($idempotencyKey)) {
-            return $this->submitAccepted(
-                request: $request,
-                session: $session,
-                order: $session->orders()->latest()->first(),
-                message: 'تم استلام هذه الجولة مسبقاً، وهي ظاهرة ضمن طلبات جلستك.',
-                replayed: true,
-            );
-        }
-
-        $cart = session('cart.'.$session->token, []);
-        if (empty($cart)) {
-            return $this->submitRejected($request, __('ui.customer_order.empty_cart'), 'empty_cart');
-        }
-
-        $issues = $this->inventory->checkStockForOrderPreview($cart);
-        if (! empty($issues)) {
-            $msg = collect($issues)
-                ->map(fn ($i) => $i['ingredient'].': '.__('ui.customer_order.available_qty', ['qty' => $i['available']]).', '.__('ui.customer_order.required_qty', ['qty' => $i['required']]))
-                ->join(' | ');
-
-            return $this->submitRejected(
-                $request,
-                __('ui.customer_order.stock_shortage', ['items' => $msg]),
-                'stock_short',
-            );
-        }
-
-        $shouldLinkCustomer = empty($session->customer_id) && filled($data['customer_phone'] ?? null);
-        if ($shouldLinkCustomer) {
-            $identity = $this->identity->resolveOrCreate(
-                phone: $data['customer_phone'],
-                name: null,
-                defaultBranchId: $session->branch_id,
-                source: 'qr_menu',
-            );
-
-            $session = $this->identity->linkSession(
-                session: $session,
-                customer: $identity['customer'],
-            );
-        }
-
-        if (! Cache::add($idempotencyKey, true, now()->addMinutes(15))) {
-            return $this->submitAccepted(
-                request: $request,
-                session: $session,
-                order: $session->orders()->latest()->first(),
-                message: 'تم استلام هذه الجولة مسبقاً، وهي ظاهرة ضمن طلبات جلستك.',
-                replayed: true,
-            );
-        }
-
+        $payload = [
+            'customer_phone' => $data['customer_phone'] ?? null,
+            'notes' => $data['notes'] ?? null,
+            'cart_snapshot' => isset($data['cart_snapshot'])
+                ? CustomerSubmissionService::cartSnapshot($data['cart_snapshot']) : null,
+        ];
         try {
-            $order = $this->orders->createFromCart(
-                session: $session,
-                cart: $cart,
-                customerNotes: $data['notes'] ?? null,
-                orderingDeviceHash: $request->attributes->get('table_order_device_hash'),
-            );
-        } catch (\RuntimeException $e) {
-            Cache::forget($idempotencyKey);
+            $receipt = $this->submissions->run(
+                $scope,
+                $submitToken,
+                $payload,
+                function () use ($request, $session, $data, $payload) {
+                    $session = $session->newQuery()->whereKey($session->id)->lockForUpdate()->firstOrFail();
+                    if ($session->status !== 'active') {
+                        throw new HttpResponseException($this->submitRejected($request,
+                            'انتهت جلسة الطاولة. لم يُنشأ طلب جديد؛ يمكنك التحقق من إرسال محفوظ فقط.', 'session_closed', status: 409));
+                    }
+                    if ($this->hasIssuedInvoice($session)) {
+                        throw new HttpResponseException($this->submitRejected($request,
+                            __('ui.customer_order.invoice_already_issued_extra'), 'invoice_already_issued', 'customer.bill'));
+                    }
+                    if ($this->hasPendingTransfer($session)) {
+                        throw new HttpResponseException($this->submitRejected($request,
+                            'يوجد تحويل بنكي بانتظار التحقق. راجع الكاشير قبل الإضافة.', 'pending_transfer', 'customer.bill'));
+                    }
+                    $cart = session('cart.'.$session->token, []);
+                    if (empty($cart)) {
+                        throw new HttpResponseException($this->submitRejected($request, __('ui.customer_order.empty_cart'), 'empty_cart'));
+                    }
+                    $cartHash = CustomerSubmissionService::fingerprint(CustomerSubmissionService::cartSnapshot($cart));
+                    if ($payload['cart_snapshot'] !== null
+                        && ! hash_equals($cartHash, CustomerSubmissionService::fingerprint($payload['cart_snapshot']))) {
+                        throw new HttpResponseException($this->submitRejected($request,
+                            'تغيّرت السلة. تم تحديثها؛ راجع الأصناف قبل الإرسال.', 'cart_changed', cart: array_values($cart)));
+                    }
+                    $issues = $this->inventory->checkStockForOrderPreview($cart);
+                    if (! empty($issues)) {
+                        $msg = collect($issues)->map(fn ($i) => $i['ingredient'].': '
+                            .__('ui.customer_order.available_qty', ['qty' => $i['available']]).', '
+                            .__('ui.customer_order.required_qty', ['qty' => $i['required']]))->join(' | ');
+                        throw new HttpResponseException($this->submitRejected($request,
+                            __('ui.customer_order.stock_shortage', ['items' => $msg]), 'stock_short'));
+                    }
+                    if (empty($session->customer_id) && filled($data['customer_phone'] ?? null)) {
+                        $identity = $this->identity->resolveOrCreate(phone: $data['customer_phone'], name: null,
+                            defaultBranchId: $session->branch_id, source: 'qr_menu');
+                        $session = $this->identity->linkSession(session: $session, customer: $identity['customer']);
+                    }
+                    $order = $this->orders->createFromCart(session: $session, cart: $cart,
+                        customerNotes: $data['notes'] ?? null,
+                        orderingDeviceHash: $request->attributes->get('table_order_device_hash'));
+                    DB::afterCommit(function () use ($order) {
+                        try {
+                            $this->orders->broadcastOrderRefresh($order);
+                        } catch (\Throwable $exception) {
+                            report($exception);
+                        }
+                    });
 
-            $orderingDeviceLocked = $e->getCode() === 409;
-
-            return $this->submitRejected(
-                request: $request,
-                message: $e->getMessage(),
-                code: $orderingDeviceLocked ? 'ordering_device_locked' : 'order_rejected',
-                status: $orderingDeviceLocked ? 409 : 422,
+                    return ['order_id' => (int) $order->id, 'cart_hash' => $cartHash, 'next_token' => (string) Str::uuid()];
+                },
             );
-        } catch (\Throwable $e) {
-            Cache::forget($idempotencyKey);
-            throw $e;
+        } catch (HttpResponseException $exception) {
+            return $exception->getResponse();
+        } catch (\DomainException $exception) {
+            return response()->json(['ok' => false, 'submission_state' => 'unknown',
+                'error' => 'submission_conflict', 'message' => $exception->getMessage()], 409);
+        } catch (\PDOException $exception) {
+            // A lost commit acknowledgement must stay unknown and use the receipt on retry.
+            throw $exception;
+        } catch (\RuntimeException $exception) {
+            return $this->submitRejected($request, $exception->getMessage(),
+                $exception->getCode() === 409 ? 'ordering_device_locked' : 'order_rejected',
+                status: $exception->getCode() === 409 ? 409 : 422);
         }
 
-        session()->forget('cart.'.$session->token);
+        // A replay must never clear a newer draft prepared in another tab.
+        $currentCart = session('cart.'.$session->token, []);
+        $ownsCurrentDraft = ! $receipt['replayed'] || session('cart_submit_token.'.$session->token) === $submitToken;
+        if ($ownsCurrentDraft && hash_equals($receipt['cart_hash'], CustomerSubmissionService::fingerprint(CustomerSubmissionService::cartSnapshot($currentCart)))) {
+            session()->forget('cart.'.$session->token);
+        }
+        $order = $session->orders()->findOrFail($receipt['order_id']);
 
-        return $this->submitAccepted(
-            request: $request,
-            session: $session,
-            order: $order,
-            message: __('ui.customer_order.order_sent_success', ['number' => $order->number])
-                .' يمكنك إضافة جولة جديدة؛ وستُجمع كل الجولات في فاتورة جلستك نفسها.',
-        );
+        return $this->submitAccepted($request, $session, $order,
+            $receipt['replayed'] ? 'تم تأكيد الجولة المحفوظة دون تكرارها.' : __('ui.customer_order.order_sent_success', ['number' => $order->number]),
+            $receipt['replayed'], $submitToken, $receipt['replayed'] ? (string) Str::uuid() : $receipt['next_token']);
     }
 
     /**
@@ -393,11 +409,12 @@ class CartController extends Controller
     protected function submitAccepted(
         Request $request,
         $session,
-        ?Order $order,
+        Order $order,
         string $message,
-        bool $replayed = false,
+        bool $replayed,
+        string $submittedToken,
+        string $nextSubmitToken,
     ) {
-        $nextSubmitToken = (string) Str::uuid();
         session()->put('cart_submit_token.'.$session->token, $nextSubmitToken);
 
         if ($request->expectsJson() || $request->ajax()) {
@@ -406,6 +423,9 @@ class CartController extends Controller
             return response()->json([
                 'ok' => true,
                 'replayed' => $replayed,
+                'submission_state' => 'committed',
+                'receipt' => ['token' => $submittedToken, 'orderId' => (int) $order->id],
+                'cart' => array_values(session('cart.'.$session->token, [])),
                 'message' => $message,
                 'orderNumber' => $order?->number,
                 'orders' => CustomerMenuOrderPresenter::forSession((int) $session->id),
@@ -414,7 +434,8 @@ class CartController extends Controller
                     'dinerName' => $session->customer?->name ?: $session->customer_name,
                     'known' => (bool) $session->customer_id,
                     'defaultPhone' => $session->customer_phone ?? '',
-                    'canOrder' => $session->canOrderFromDevice(
+                    'active' => $session->status === 'active',
+                    'canOrder' => $session->status === 'active' && $session->canOrderFromDevice(
                         $request->attributes->get('table_order_device_hash'),
                     ),
                 ],
@@ -433,13 +454,16 @@ class CartController extends Controller
         string $code,
         ?string $redirectRoute = null,
         int $status = 422,
+        ?array $cart = null,
     ) {
         if ($request->expectsJson() || $request->ajax()) {
             return response()->json([
                 'ok' => false,
                 'error' => $code,
+                'submission_state' => 'rejected',
                 'message' => $message,
                 'redirectUrl' => $redirectRoute ? route($redirectRoute) : null,
+                ...($cart !== null ? ['cart' => $cart] : []),
             ], $status);
         }
 

@@ -61,7 +61,10 @@ class ProductionDatabaseSafetyTest extends TestCase
     public function test_refresh_handles_legacy_batches_where_refunds_predate_credit_notes(): void
     {
         $this->assertSame('testing', $this->app->environment());
-        $this->assertSame('restaurant_qr_vue_test', DB::connection()->getDatabaseName());
+        $database = DB::connection()->getDatabaseName();
+        $this->assertMatchesRegularExpression('/\Arestaurant_qr_[a-z0-9_]+_test\z/', $database,
+            'Destructive migration checks require an explicitly named disposable test database.');
+        $this->assertSame($database, DB::selectOne('SELECT DATABASE() AS database_name')->database_name);
 
         $legacyFeatureBatch = ((int) DB::table('migrations')->max('batch')) + 1;
         DB::table('migrations')->whereIn('migration', [

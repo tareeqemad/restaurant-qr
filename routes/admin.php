@@ -432,6 +432,8 @@ Route::middleware(['auth', 'setup.complete', 'admin', 'branch'])->group(function
         Route::post('opening-balances/customer-advance', [Admin\AccountingController::class, 'storeCustomerAdvanceOpeningBalance'])->name('opening-balances.customer-advance.store');
         Route::post('opening-balances/supplier-debt', [Admin\AccountingController::class, 'storeSupplierOpeningDebt'])->name('opening-balances.supplier-debt.store');
         Route::get('periods', [Admin\AccountingController::class, 'periods'])->name('periods');
+        Route::get('periods/{period}/issues/{kind}', [Admin\AccountingController::class, 'closingIssues'])->name('periods.issues');
+        Route::get('cash-shifts', [Admin\AccountingController::class, 'cashShifts'])->name('cash-shifts');
         Route::post('periods', [Admin\AccountingController::class, 'storePeriod'])->name('periods.store');
         Route::put('periods/{period}', [Admin\AccountingController::class, 'updatePeriod'])->name('periods.update');
         Route::delete('periods/{period}', [Admin\AccountingController::class, 'destroyPeriod'])->name('periods.destroy');

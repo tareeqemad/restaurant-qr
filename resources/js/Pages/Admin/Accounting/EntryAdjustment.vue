@@ -1,4 +1,5 @@
 <script setup>
+import { useFormUx } from '../../../Composables/useFormUx';
 import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 import { computed } from 'vue'
 import { Link, Head, useForm } from '@inertiajs/vue3'
@@ -10,6 +11,7 @@ import JournalLinesEditor from '../../../Components/Accounting/JournalLinesEdito
 import { localDateInput } from '../../../Utils/dateInput'
 defineOptions({layout:AdminLayout})
 const props=defineProps({entry:Object,accounts:Array,isReversed:Boolean,currencies:Array,baseCurrencyCode:String,urls:Object});const today=localDateInput();const form=useForm({mode:'reverse',posted_on:today,reason:'',correction_description:`تصحيح قيد ${props.entry.number}`,lines:props.entry.lines.map(l=>({account_id:l.accountId,description:l.description||'',foreign_debit:l.foreignDebit||'',foreign_credit:l.foreignCredit||'',currency_code:l.currencyCode,exchange_rate:l.exchangeRate,details:l.currencyCode!==props.baseCurrencyCode||Boolean(l.description)}))});const debit=computed(()=>form.lines.reduce((s,l)=>s+Number(l.foreign_debit||0)*Number(l.exchange_rate||1),0));const credit=computed(()=>form.lines.reduce((s,l)=>s+Number(l.foreign_credit||0)*Number(l.exchange_rate||1),0));const ready=computed(()=>!props.isReversed&&form.reason.trim()&&(form.mode==='reverse'||(Math.abs(debit.value-credit.value)<.01&&debit.value>0)));const money=v=>new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(v||0));const submit=()=>form.post(props.urls.store)
+useFormUx(form);
 </script>
 <template>
 <Head title="عكس أو تصحيح قيد"/>

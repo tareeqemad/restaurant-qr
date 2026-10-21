@@ -183,3 +183,68 @@ remain pending.
   not a claim that every permission, data state, printer, browser engine or
   real busy shift has been exercised. Production timing and staff acceptance
   remain part of the field trial described above.
+
+## Operational reliability and employee custody — 2026-10-21
+
+- Prioritized confirmed order submission, exact kitchen/bar handoff, recoverable
+  collection, employee custody, and the slow menu queries before visual polish.
+- Customer submissions now retain their original payload and operation receipt
+  across reloads and uncertain responses. A retry can recover its original order
+  after the table visit closes; it cannot create a new order in a closed visit.
+  Waiter handoff confirms a frozen list of ready items, with server checks for
+  changes, so a newly ready kitchen item cannot silently join a bar delivery.
+- Cash collection saves its operation before sending. The server commits the
+  payment, accounting and durable receipt together; reload/retry verifies the
+  original result. An uncertain or malformed response does not authorize a
+  replacement payment. Browser storage failures block sending with an explanation.
+- Each employee opens an individual cash shift with an opening amount and closes
+  it with a counted amount. Hours are flexible and may cross midnight. A cash
+  operation requires an open shift; logout requires closing it. Recorded cash
+  receipts, advances, refunds and reversals belong to the actual employee's
+  custody. Document and ledger branch attribution remain intact.
+- A reason and reference identify manual cash in/out. These are custody movements,
+  not duplicate expense or ledger postings. Closing preserves expected/counted
+  balances and variance; a nonzero variance requires a note. Accountants can
+  inspect movements and follow period-closing issues to their source documents.
+  Reconciliation requires choosing the intended account explicitly.
+- Menu availability now loads stock and recipe graphs in batches and resolves
+  channel-specific promotions in bulk. For the same local 120-composite-item
+  fixture, waiter catalog queries fell from 1,207 to 16; observed local execution
+  fell from 1,424 ms to 152 ms. Cashier used 16 queries / 88 ms; the full customer
+  menu request used 45 queries. These are local regression measurements, not
+  production end-to-end navigation timings. Write operations still check fresh stock.
+- Role-specific landing pages reduce navigation. Permission-aware task search,
+  shared connection feedback, non-overlapping polling and unsaved-form protection
+  support the work screens. Kitchen/bar pressure mode keeps all three lanes visible
+  on tablets with independent scrolling. Card menus expand within narrow lanes.
+- Arabic PDF receipts use bundled DejaVu Sans with shaping and embedded fonts;
+  this fixes the Cairo/mPDF diacritic crash. UI typography remains unchanged.
+- New orders retain their promotion channel separately from their operational
+  source, so direct QR/waiter/cashier offers and free modifiers use the intended
+  price when saved. Existing orders keep their previous pricing context; they are
+  not retroactively assigned a new channel. Durable per-order redemptions prevent
+  consuming an offer twice or losing it when quantities change. BXGY discounts
+  use net amounts when prices include tax. Draft totals are explicitly before
+  cart-level/threshold offers; those discounts appear on the saved order.
+- Actual isolated browser workflow: waiter submitted a 41 ILS food/drink order;
+  kitchen and bar prepared independently; waiter delivered each ready item;
+  cashier opened at 100, collected 41, recovered a deliberately corrupted payment
+  acknowledgement after reload with exactly one payment, recorded a 10 cash
+  handover, and closed at counted/expected 131 with zero variance. Logout was
+  blocked before close and allowed afterwards. Accountant saw the same shift.
+- Twelve kitchen tickets exposed a lane-height problem, fixed and rechecked at
+  the actual 973px browser viewport. Browser QA also exposed MariaDB's implicit
+  first-TIMESTAMP update: cash shift event times now use DATETIME and a regression
+  asserts that closing does not change the opening time.
+- Rollout requires the four new additive migrations (customer submission
+  receipts, cashier payment receipts, cashier shifts and order promotion channel) before serving the new
+  frontend build. Existing payments are not retroactively assigned to a shift.
+  No production database or original restaurant data was changed during this work.
+  Field acceptance still needs a real busy shift and timing on the deployment host.
+- Final verification reconciled the baseline suite with subsequent targeted
+  reruns against the current PHPUnit inventory: 1,134 passing cases, 1,118 distinct
+  test methods and 13,435 assertions, with no missing or unresolved cases. This
+  is consolidated evidence, not a single all-green full-suite invocation. All
+  59 JavaScript tests passed, all 217 Vue files compiled, and the production
+  frontend build completed successfully. The audit records browser coverage
+  and remaining field-test limits.

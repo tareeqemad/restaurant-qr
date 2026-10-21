@@ -1,4 +1,5 @@
 <script setup>
+import { useFormUx } from '../../../Composables/useFormUx';
 import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 import { createAccountingToken } from '../../../Components/Accounting/accountingToken'
 import { computed, ref } from "vue";
@@ -172,6 +173,7 @@ const submitSupplier = () =>
             supplierForm._idem = createAccountingToken();
         },
     });
+useFormUx([accountForm, customerForm, advanceForm, supplierForm]);
 </script>
 <template>
 <Head title="الأرصدة الافتتاحية" />

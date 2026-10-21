@@ -1,4 +1,5 @@
 <script setup>
+import { useFormUx } from '../../../Composables/useFormUx';
 import FinancialWorkspace from '../../../Components/Accounting/FinancialWorkspace.vue'
 import { createAccountingToken } from '../../../Components/Accounting/accountingToken'
 import { computed, reactive } from 'vue'
@@ -116,6 +117,7 @@ function settlementIcon(type) {
         tax_payment: 'bi-percent',
     }[type] ?? 'bi-arrow-left-right'
 }
+useFormUx([walletForm, taxForm, tipsForm]);
 </script>
 
 <template>

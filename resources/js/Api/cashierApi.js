@@ -66,3 +66,11 @@ export async function sendCashierCommand(endpoint, body, method = 'POST') {
 
     return parseResponse(response);
 }
+
+export async function verifyCashierPayment(endpoint, token) {
+    const url = new URL(endpoint, window.location.origin);
+    url.searchParams.set('token', token);
+    return parseResponse(await fetch(url, {
+        credentials: 'same-origin', headers: { Accept: 'application/json' }, cache: 'no-store',
+    }));
+}

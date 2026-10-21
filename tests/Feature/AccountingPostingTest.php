@@ -30,6 +30,7 @@ use App\Models\Unit;
 use App\Models\User;
 use App\Services\Accounting\AccountingService;
 use App\Services\BillingService;
+use App\Services\CashierShiftService;
 use App\Services\InventoryService;
 use App\Services\Reports\ProfitLossReport;
 use App\Support\BranchContext;
@@ -120,7 +121,9 @@ class AccountingPostingTest extends TestCase
         $this->assertDatabaseHas('journal_lines', ['debit' => 0, 'credit' => 100, 'branch_id' => $this->branch->id]);
         $this->assertDatabaseHas('journal_lines', ['debit' => 0, 'credit' => 14.4, 'branch_id' => $this->branch->id]);
 
+        $shift = app(CashierShiftService::class)->open($this->cashier->id, $this->branch->id, 0);
         $payment = app(BillingService::class)->addPayment($invoice, 104.4, 'cash', $this->cashier->id);
+        $this->assertSame($shift['id'], $payment->cashier_shift_id);
         $paymentEntry = JournalEntry::where('source_type', $payment::class)
             ->where('source_id', $payment->id)
             ->where('event_type', 'payment_received')

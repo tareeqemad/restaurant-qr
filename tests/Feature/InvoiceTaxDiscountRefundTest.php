@@ -7,11 +7,13 @@ use App\Models\Category;
 use App\Models\Customer;
 use App\Models\Ingredient;
 use App\Models\IngredientStock;
+use App\Models\Invoice;
 use App\Models\JournalLine;
 use App\Models\MenuItem;
 use App\Models\OrderDiscount;
 use App\Models\RecipeItem;
 use App\Models\Role;
+use App\Models\Setting;
 use App\Models\Station;
 use App\Models\StorageLocation;
 use App\Models\Table;
@@ -19,6 +21,7 @@ use App\Models\TableSession;
 use App\Models\Unit;
 use App\Models\User;
 use App\Services\BillingService;
+use App\Services\CashierShiftService;
 use App\Services\OrderService;
 use App\Services\RefundService;
 use App\Support\BranchContext;
@@ -36,8 +39,11 @@ class InvoiceTaxDiscountRefundTest extends TestCase
     use RefreshDatabase;
 
     protected Branch $branch;
+
     protected User $cashier;
+
     protected MenuItem $menuItem;
+
     protected Customer $customer;
 
     protected function setUp(): void
@@ -45,9 +51,9 @@ class InvoiceTaxDiscountRefundTest extends TestCase
         parent::setUp();
         Notification::fake();
 
-        \App\Models\Setting::put('tax_enabled', true, 'billing', 'bool');
-        \App\Models\Setting::put('tax_rate', 16, 'billing', 'int');
-        \App\Models\Setting::put('service_enabled', false, 'billing', 'bool');
+        Setting::put('tax_enabled', true, 'billing', 'bool');
+        Setting::put('tax_rate', 16, 'billing', 'int');
+        Setting::put('service_enabled', false, 'billing', 'bool');
 
         $this->branch = Branch::create(['code' => 'tdr', 'name' => 'TDR', 'is_active' => true]);
         BranchContext::set($this->branch->id);
@@ -59,14 +65,14 @@ class InvoiceTaxDiscountRefundTest extends TestCase
         ]);
         $this->cashier->branches()->attach($this->branch->id);
 
-        $unit = Unit::create(['code'=>'pcs','name'=>'pcs','unit_type'=>'count','factor_to_base'=>1,'is_base'=>true]);
-        $storage = StorageLocation::create(['code'=>'k','name'=>'K','is_default'=>true,'active'=>true]);
-        $station = Station::create(['code'=>'kitchen','name'=>'K','storage_location_id'=>$storage->id,'active'=>true]);
-        $category = Category::create(['slug'=>'m','name'=>'M','default_station_id'=>$station->id,'active'=>true]);
-        $ing = Ingredient::create(['sku'=>'I1','name'=>'S','base_unit_id'=>$unit->id,'current_stock'=>500,'reorder_threshold'=>0,'cost_per_unit'=>1,'track_stock'=>true,'active'=>true]);
-        IngredientStock::create(['ingredient_id'=>$ing->id,'storage_location_id'=>$storage->id,'quantity'=>500,'reorder_threshold'=>0]);
-        $this->menuItem = MenuItem::create(['category_id'=>$category->id,'station_id'=>$station->id,'sku'=>'M1','slug'=>'m','name'=>'Meal','price'=>100,'cost'=>10,'prep_time_minutes'=>5,'is_available'=>true]);
-        RecipeItem::create(['menu_item_id'=>$this->menuItem->id,'ingredient_id'=>$ing->id,'quantity'=>1,'unit_id'=>$unit->id]);
+        $unit = Unit::create(['code' => 'pcs', 'name' => 'pcs', 'unit_type' => 'count', 'factor_to_base' => 1, 'is_base' => true]);
+        $storage = StorageLocation::create(['code' => 'k', 'name' => 'K', 'is_default' => true, 'active' => true]);
+        $station = Station::create(['code' => 'kitchen', 'name' => 'K', 'storage_location_id' => $storage->id, 'active' => true]);
+        $category = Category::create(['slug' => 'm', 'name' => 'M', 'default_station_id' => $station->id, 'active' => true]);
+        $ing = Ingredient::create(['sku' => 'I1', 'name' => 'S', 'base_unit_id' => $unit->id, 'current_stock' => 500, 'reorder_threshold' => 0, 'cost_per_unit' => 1, 'track_stock' => true, 'active' => true]);
+        IngredientStock::create(['ingredient_id' => $ing->id, 'storage_location_id' => $storage->id, 'quantity' => 500, 'reorder_threshold' => 0]);
+        $this->menuItem = MenuItem::create(['category_id' => $category->id, 'station_id' => $station->id, 'sku' => 'M1', 'slug' => 'm', 'name' => 'Meal', 'price' => 100, 'cost' => 10, 'prep_time_minutes' => 5, 'is_available' => true]);
+        RecipeItem::create(['menu_item_id' => $this->menuItem->id, 'ingredient_id' => $ing->id, 'quantity' => 1, 'unit_id' => $unit->id]);
 
         [$this->customer] = Customer::createFromCashier(name: 'ز', phone: '0599000444', defaultBranchId: $this->branch->id);
     }
@@ -80,20 +86,23 @@ class InvoiceTaxDiscountRefundTest extends TestCase
     private function acctNet(string $code): float
     {
         $lines = JournalLine::whereHas('account', fn ($q) => $q->where('code', $code))->get();
+
         return round((float) $lines->sum('debit') - (float) $lines->sum('credit'), 2);
     }
 
     private function openSession(): TableSession
     {
-        $table = Table::create(['number'=>(string) random_int(1,9999),'capacity'=>4,'status'=>'occupied','active'=>true]);
-        return TableSession::create(['table_id'=>$table->id,'customer_id'=>$this->customer->id,'cover_count'=>1,'status'=>'active']);
+        $table = Table::create(['number' => (string) random_int(1, 9999), 'capacity' => 4, 'status' => 'occupied', 'active' => true]);
+
+        return TableSession::create(['table_id' => $table->id, 'customer_id' => $this->customer->id, 'cover_count' => 1, 'status' => 'active']);
     }
 
-    private function issueOneMeal(): \App\Models\Invoice
+    private function issueOneMeal(): Invoice
     {
         $session = $this->openSession();
-        $order = app(OrderService::class)->createFromCart($session, [['menu_item_id'=>$this->menuItem->id,'quantity'=>1,'modifier_ids'=>[]]]);
+        $order = app(OrderService::class)->createFromCart($session, [['menu_item_id' => $this->menuItem->id, 'quantity' => 1, 'modifier_ids' => []]]);
         app(OrderService::class)->approve($order, $this->cashier->id);
+
         return app(BillingService::class)->issueInvoice($session->fresh(), $this->cashier->id);
     }
 
@@ -101,6 +110,7 @@ class InvoiceTaxDiscountRefundTest extends TestCase
     public function test_refund_relieves_output_vat(): void
     {
         $this->actingAs($this->cashier);
+        app(CashierShiftService::class)->open($this->cashier->id, $this->branch->id, 0);
 
         $invoice = $this->issueOneMeal();          // 100 + 16% = 116, VAT 16 credited to 2100
         $this->assertSame(116.0, (float) $invoice->total);
@@ -122,11 +132,11 @@ class InvoiceTaxDiscountRefundTest extends TestCase
         $this->actingAs($this->cashier);
 
         $session = $this->openSession();
-        $order = app(OrderService::class)->createFromCart($session, [['menu_item_id'=>$this->menuItem->id,'quantity'=>1,'modifier_ids'=>[]]]);
+        $order = app(OrderService::class)->createFromCart($session, [['menu_item_id' => $this->menuItem->id, 'quantity' => 1, 'modifier_ids' => []]]);
 
         // Two discounts that together (40 + 80 = 120) exceed the 100 subtotal.
-        OrderDiscount::create(['branch_id'=>$this->branch->id,'order_id'=>$order->id,'name_snapshot'=>'خصم أ','type'=>'fixed','value'=>40,'amount'=>40,'reason'=>'أ','applied_by_user_id'=>$this->cashier->id]);
-        OrderDiscount::create(['branch_id'=>$this->branch->id,'order_id'=>$order->id,'name_snapshot'=>'خصم ب','type'=>'fixed','value'=>80,'amount'=>80,'reason'=>'ب','applied_by_user_id'=>$this->cashier->id]);
+        OrderDiscount::create(['branch_id' => $this->branch->id, 'order_id' => $order->id, 'name_snapshot' => 'خصم أ', 'type' => 'fixed', 'value' => 40, 'amount' => 40, 'reason' => 'أ', 'applied_by_user_id' => $this->cashier->id]);
+        OrderDiscount::create(['branch_id' => $this->branch->id, 'order_id' => $order->id, 'name_snapshot' => 'خصم ب', 'type' => 'fixed', 'value' => 80, 'amount' => 80, 'reason' => 'ب', 'applied_by_user_id' => $this->cashier->id]);
         app(OrderService::class)->recalculateTotals($order->fresh());
 
         $order->refresh();
@@ -147,15 +157,15 @@ class InvoiceTaxDiscountRefundTest extends TestCase
         $this->actingAs($this->cashier);
 
         $session = $this->openSession();
-        $order = app(OrderService::class)->createFromCart($session, [['menu_item_id'=>$this->menuItem->id,'quantity'=>1,'modifier_ids'=>[]]]);
+        $order = app(OrderService::class)->createFromCart($session, [['menu_item_id' => $this->menuItem->id, 'quantity' => 1, 'modifier_ids' => []]]);
         app(OrderService::class)->recalculateTotals($order->fresh());
 
         // The 100 menu price is tax-INCLUSIVE, so the customer pays 100 (net 86.21
         // + tax 13.79), NOT 100 + an extra 16 extracted on top.
         $order->refresh();
-        $this->assertEqualsWithDelta(100.0,  (float) $order->total,     0.01, 'Inclusive price must not be charged tax on top.');
-        $this->assertEqualsWithDelta(86.21,  (float) $order->subtotal,  0.01);
-        $this->assertEqualsWithDelta(13.79,  (float) $order->tax_total, 0.01);
+        $this->assertEqualsWithDelta(100.0, (float) $order->total, 0.01, 'Inclusive price must not be charged tax on top.');
+        $this->assertEqualsWithDelta(86.21, (float) $order->subtotal, 0.01);
+        $this->assertEqualsWithDelta(13.79, (float) $order->tax_total, 0.01);
     }
 
     /** #6 — split shares must sum exactly to the total. */
